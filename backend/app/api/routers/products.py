@@ -1,7 +1,28 @@
 import uuid
 import os
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status, Request
+
+# Magic bytes para validação de tipo real de imagem
+_MAGIC: dict[bytes, str] = {
+    b"\xff\xd8\xff": "jpg",
+    b"\x89PNG\r\n\x1a\n": "png",
+    b"GIF87a": "gif",
+    b"GIF89a": "gif",
+    b"RIFF": "webp",   # WebP começa com RIFF....WEBP (verificado abaixo)
+}
+
+
+def _detect_mime(data: bytes) -> Optional[str]:
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -34,8 +55,8 @@ def _to_read(product: Product, request: Request) -> ProductRead:
 @router.get("", response_model=List[ProductRead])
 async def list_products(
     request: Request,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, le=500),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ANY,
 ):
@@ -129,6 +150,10 @@ async def upload_photo(
     content = await file.read()
     if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"Arquivo excede {settings.MAX_UPLOAD_SIZE_MB}MB.")
+    # Valida magic bytes — impede arquivos maliciosos com extensão trocada
+    detected = _detect_mime(content)
+    if detected is None or detected not in settings.get_allowed_extensions():
+        raise HTTPException(status_code=422, detail="Conteúdo do arquivo não é uma imagem válida.")
     if product.photo_path and os.path.exists(product.photo_path):
         os.remove(product.photo_path)
     filename = f"{uuid.uuid4()}.{ext}"

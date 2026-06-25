@@ -1,56 +1,62 @@
 import uuid
-from typing import AsyncGenerator, Callable
+from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.db.session import get_db
-from app.core.security import decode_access_token
 from app.models.user import User, UserRole
+from app.core.security import decode_access_token
 
-_bearer = HTTPBearer(auto_error=False)
+reusable_oauth2 = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login"
+)
 
 
+# Re-export get_db for routers
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_db():
         yield session
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: AsyncSession = Depends(get_db_session),
+    token: str = Depends(reusable_oauth2),
+    db: AsyncSession = Depends(get_db_session)
 ) -> User:
-    exc = HTTPException(
+    credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Não autenticado.",
+        detail="Credenciais inválidas ou token expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not credentials:
-        raise exc
+    payload = decode_access_token(token)
+    if payload is None:
+        raise credentials_exception
 
-    payload = decode_access_token(credentials.credentials)
-    if not payload:
-        raise exc
+    user_id: str = payload.get("sub")
+    if user_id is None:
+        raise credentials_exception
 
     try:
-        user_id = uuid.UUID(payload["sub"])
-    except (KeyError, ValueError):
-        raise exc
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise credentials_exception
 
-    result = await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
+    result = await db.execute(select(User).where(User.id == user_uuid, User.is_active.is_(True)))
     user = result.scalar_one_or_none()
-    if not user:
-        raise exc
+    if user is None:
+        raise credentials_exception
     return user
 
 
-def require_roles(*roles: UserRole) -> Callable:
-    async def _check(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
+def require_roles(*allowed_roles: UserRole):
+    def dependency(current_user: User = Depends(get_current_user)):
+        if current_user.role == UserRole.admin:
+            return current_user  # Admin possui bypass total
+        if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permissão insuficiente. Requerido: {[r.value for r in roles]}.",
+                detail="Operação não permitida para o seu nível de acesso."
             )
         return current_user
-    return _check
+    return dependency

@@ -7,9 +7,16 @@ from app.models.user import User, UserRole
 from app.models.refresh_token import RefreshToken
 
 __all__ = [
-    "Base", "TimestampMixin",
-    "Product", "Client", "Representative",
-    "Order", "OrderItem",
-    "User", "UserRole",
+    "Base",
+    "TimestampMixin",
+    "Product",
+    "Client",
+    "Representative",
+    "Order",
+    "OrderItem",
+    "User",
+    "UserRole",
     "RefreshToken",
 ]
+
+

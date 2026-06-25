@@ -4,16 +4,17 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
-from jose import jwt, JWTError
 
 from app.core.config import settings
 
+# OWASP recommendation: time_cost>=3, memory_cost>=64MB, parallelism>=4
 _hasher = PasswordHasher(
-    time_cost=2,
+    time_cost=3,
     memory_cost=65536,
-    parallelism=2,
+    parallelism=4,
     hash_len=32,
     salt_len=16,
 )
@@ -53,7 +54,7 @@ def decode_access_token(token: str) -> Optional[dict]:
         if payload.get("type") != "access":
             return None
         return payload
-    except JWTError:
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
 
@@ -68,4 +69,5 @@ def hash_refresh_token(token: str) -> str:
 
 
 def refresh_token_expiry() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS)
+    # Coluna no DB é TIMESTAMP WITHOUT TIME ZONE — armazena UTC naive
+    return (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS)).replace(tzinfo=None)

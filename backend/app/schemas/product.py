@@ -8,6 +8,7 @@ from datetime import datetime
 class ProductBase(BaseModel):
     product_code: str = Field(..., max_length=100)
     description: str
+    price: Decimal = Field(..., ge=0, decimal_places=2)
     altura: Decimal = Field(..., ge=0, decimal_places=2)
     largura: Decimal = Field(..., ge=0, decimal_places=2)
     profundidade: Decimal = Field(..., ge=0, decimal_places=2)
@@ -23,6 +24,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     product_code: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    price: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     altura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     largura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     profundidade: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
@@ -33,8 +35,8 @@ class ProductUpdate(BaseModel):
 
 class ProductRead(ProductBase):
     id: uuid.UUID
-    photo_path: Optional[str] = None
-    photo_url: Optional[str] = None
+    price: Decimal = Field(..., ge=0, decimal_places=2)
+    photo_url: Optional[str] = None  # photo_path nunca exposto — caminho interno do servidor
     created_at: datetime
     updated_at: datetime
 

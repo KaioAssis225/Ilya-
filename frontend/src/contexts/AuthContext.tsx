@@ -28,39 +28,33 @@ interface AuthContextValue extends AuthState {
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
-const REFRESH_KEY = 'ilya_refresh_token'
+// O refresh token agora vive em Cookie HttpOnly — o frontend nunca o lê diretamente.
+// O browser o envia automaticamente nas requisições para /api/v1/auth/*.
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, accessToken: null })
   const [isLoading, setIsLoading] = useState(true)
   const refreshingRef = useRef<Promise<string | null> | null>(null)
 
-  const setSession = useCallback((accessToken: string, refreshToken: string, user: AuthUser) => {
-    localStorage.setItem(REFRESH_KEY, refreshToken)
+  const setSession = useCallback((accessToken: string, user: AuthUser) => {
     setState({ user, accessToken })
   }, [])
 
   const clearSession = useCallback(() => {
-    localStorage.removeItem(REFRESH_KEY)
     setState({ user: null, accessToken: null })
   }, [])
 
   const refreshSession = useCallback((): Promise<string | null> => {
     if (refreshingRef.current) return refreshingRef.current
 
-    const stored = localStorage.getItem(REFRESH_KEY)
-    if (!stored) return Promise.resolve(null)
-
     refreshingRef.current = axios
-      .post<{ access_token: string; refresh_token: string }>('/api/v1/auth/refresh', {
-        refresh_token: stored,
-      })
+      .post<{ access_token: string }>('/api/v1/auth/refresh', null, { withCredentials: true })
       .then(async (res) => {
-        const { access_token, refresh_token } = res.data
+        const { access_token } = res.data
         const me = await axios.get<AuthUser>('/api/v1/auth/me', {
           headers: { Authorization: `Bearer ${access_token}` },
         })
-        setSession(access_token, refresh_token, me.data)
+        setSession(access_token, me.data)
         return access_token
       })
       .catch(() => {
@@ -74,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return refreshingRef.current
   }, [setSession, clearSession])
 
-  // Conecta interceptores Axios com os handlers de auth
+  // Conecta interceptores Axios
   useEffect(() => {
     bindAuthHandlers(
       () => state.accessToken,
@@ -82,39 +76,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }, [state.accessToken, refreshSession])
 
-  // Restaura sessão ao iniciar
+  // Tenta restaurar sessão ao montar via cookie HttpOnly
   useEffect(() => {
-    const stored = localStorage.getItem(REFRESH_KEY)
-    if (!stored) {
-      setIsLoading(false)
-      return
-    }
     refreshSession().finally(() => setIsLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const res = await axios.post<{ access_token: string; refresh_token: string }>(
+      const res = await axios.post<{ access_token: string }>(
         '/api/v1/auth/login',
-        { email, password }
+        { email, password },
+        { withCredentials: true }
       )
-      const { access_token, refresh_token } = res.data
+      const { access_token } = res.data
       const me = await axios.get<AuthUser>('/api/v1/auth/me', {
         headers: { Authorization: `Bearer ${access_token}` },
       })
-      setSession(access_token, refresh_token, me.data)
+      setSession(access_token, me.data)
     },
     [setSession]
   )
 
   const logout = useCallback(async () => {
-    const stored = localStorage.getItem(REFRESH_KEY)
-    if (stored) {
-      try {
-        await axios.post('/api/v1/auth/logout', { refresh_token: stored })
-      } catch {
-        // ignora falha de rede no logout
-      }
+    try {
+      await axios.post('/api/v1/auth/logout', null, { withCredentials: true })
+    } catch {
+      // ignora falha de rede no logout
     }
     clearSession()
   }, [clearSession])

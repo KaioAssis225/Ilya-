@@ -3,6 +3,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,  // envia Cookie HttpOnly do refresh token automaticamente
 })
 
 // Injetado pelo AuthProvider após montar — evita dependência circular

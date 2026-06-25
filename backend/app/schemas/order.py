@@ -8,7 +8,7 @@ from datetime import datetime
 class OrderItemCreate(BaseModel):
     product_code: str
     qty: int = Field(..., ge=1)
-    unit_price: Decimal = Field(..., ge=0, decimal_places=2)
+    # unit_price ignorado — o backend usa o preço registrado no produto
 
 
 class OrderCreate(BaseModel):

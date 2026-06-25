@@ -1,6 +1,7 @@
+import logging
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -12,6 +13,7 @@ from app.models.product import Product
 from app.models.user import User, UserRole
 from app.schemas.order import OrderCreate, OrderRead
 
+logger = logging.getLogger("ilya.orders")
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 _ANY = Depends(get_current_user)
@@ -45,9 +47,24 @@ async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
 async def create_order(
     payload: OrderCreate,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN_VENDEDOR,
+    current_user: User = Depends(get_current_user),
 ):
+    if current_user.role not in [UserRole.admin, UserRole.vendedor, UserRole.representante]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operação não permitida para o seu nível de acesso."
+        )
+
+    if current_user.role == UserRole.representante:
+        if not current_user.rep_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="O usuário representante não possui um registro de representante associado."
+            )
+        payload.rep_id = current_user.rep_id
+
     client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
+
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
 
@@ -64,7 +81,9 @@ async def create_order(
         )).scalar_one_or_none()
         if not product:
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-        subtotal = float(item_in.qty) * float(item_in.unit_price)
+        # CRIT-02: usa preço do banco — payload não pode manipular preço
+        unit_price = float(product.price)
+        subtotal = float(item_in.qty) * unit_price
         total += subtotal
         order_items.append(OrderItem(
             id=uuid.uuid4(),
@@ -77,7 +96,7 @@ async def create_order(
             opt_tecido=product.opt_tecido,
             opt_corda=product.opt_corda,
             qty=item_in.qty,
-            unit_price=item_in.unit_price,
+            unit_price=unit_price,
         ))
 
     code, orc_id = await _next_code(db)
@@ -94,13 +113,14 @@ async def create_order(
     db.add(order)
     await db.commit()
     await db.refresh(order)
+    logger.info("Pedido criado: code=%s orc=%s total=%.2f user_id=%s", code, orc_id, order.total_value, current_user.id)
     return order
 
 
 @router.get("", response_model=List[OrderRead])
 async def list_orders(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, le=500),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -128,8 +148,9 @@ async def get_order(
 async def delete_order(
     id_or_code: str,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    current_user: User = _ADMIN,
 ):
     order = await _get_order(db, id_or_code)
+    logger.warning("Pedido excluído: code=%s por user_id=%s", order.code, current_user.id)
     await db.delete(order)
     await db.commit()

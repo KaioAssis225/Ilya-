@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useNavigate, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
@@ -14,20 +14,17 @@ const queryClient = new QueryClient({
   },
 })
 
-function AppLayout() {
+function Nav() {
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
+
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `nav-link ${isActive ? 'nav-link-active' : ''}`
 
-  async function handleLogout() {
-    await logout()
-    navigate('/login', { replace: true })
-  }
+  if (!user) return null
 
   return (
-    <>
-      <nav className="bg-stone-900/95 backdrop-blur border-b border-stone-800 px-6 py-3 flex items-center gap-1 sticky top-0 z-40">
+    <nav className="bg-stone-900/95 backdrop-blur border-b border-stone-800 px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+      <div className="flex items-center gap-1">
         <h1
           className="text-base font-semibold tracking-widest mr-5 text-stone-100"
           style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
@@ -37,45 +34,40 @@ function AppLayout() {
         <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>
         <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>
         <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>
-
-        <div className="ml-auto flex items-center gap-3">
-          {user && (
-            <span className="text-xs text-stone-400 tracking-wide">
-              {user.full_name} <span className="text-stone-600">·</span> {user.role}
-            </span>
-          )}
-          <button
-            onClick={handleLogout}
-            className="text-xs text-stone-400 hover:text-stone-200 uppercase tracking-widest transition"
-          >
-            Sair
-          </button>
+      </div>
+      <div className="flex items-center gap-4 text-xs">
+        <div className="text-stone-400 text-right">
+          <span className="block font-medium text-stone-200">{user.full_name}</span>
+          <span className="block text-[10px] uppercase tracking-wider text-yellow-500/80">{user.role}</span>
         </div>
-      </nav>
-      <Outlet />
-    </>
+        <button
+          onClick={logout}
+          className="text-stone-400 hover:text-white border border-stone-700 hover:border-stone-500 px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
+        >
+          Sair
+        </button>
+      </div>
+    </nav>
   )
 }
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Nav />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
-              <Route element={<AppLayout />}>
-                <Route path="/" element={<Navigate to="/cadastros" replace />} />
-                <Route path="/cadastros" element={<CadastroPage />} />
-                <Route path="/orcamentos" element={<OrcamentoPage />} />
-                <Route path="/pedidos" element={<PedidosPage />} />
-              </Route>
+              <Route path="/" element={<Navigate to="/cadastros" replace />} />
+              <Route path="/cadastros" element={<CadastroPage />} />
+              <Route path="/orcamentos" element={<OrcamentoPage />} />
+              <Route path="/pedidos" element={<PedidosPage />} />
             </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </AuthProvider>
-      </BrowserRouter>
+        </BrowserRouter>
+      </AuthProvider>
     </QueryClientProvider>
   )
 }

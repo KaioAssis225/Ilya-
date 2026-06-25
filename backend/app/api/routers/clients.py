@@ -1,29 +1,36 @@
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.api.deps import get_db_session, get_current_user, require_roles
 from app.models.client import Client
+from app.models.order import Order
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
 
 router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 
-_ANY = Depends(get_current_user)
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
 _ADMIN = Depends(require_roles(UserRole.admin))
 
 
 @router.get("", response_model=List[ClientRead])
 async def list_clients(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, le=500),
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Client).offset(skip).limit(limit))
+    # HIGH-04: representante só vê clientes dos seus próprios pedidos
+    if current_user.role == UserRole.representante:
+        subq = select(Order.client_id).where(Order.rep_id == current_user.rep_id).distinct()
+        result = await db.execute(
+            select(Client).where(Client.id.in_(subq)).offset(skip).limit(limit)
+        )
+    else:
+        result = await db.execute(select(Client).offset(skip).limit(limit))
     return result.scalars().all()
 
 
@@ -44,12 +51,19 @@ async def create_client(
 async def get_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    # HIGH-04: representante só acessa clientes vinculados aos seus pedidos
+    if current_user.role == UserRole.representante:
+        linked = await db.execute(
+            select(Order.id).where(Order.client_id == client_id, Order.rep_id == current_user.rep_id).limit(1)
+        )
+        if not linked.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Acesso negado a este cliente.")
     return client
 
 
