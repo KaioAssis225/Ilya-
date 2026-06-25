@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: #0c0a09;
+    color: #e7e5e4;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+}
+
+@layer components {
+  /* ── Inputs ─────────────────────────────────────────────────────── */
+  .input {
+    @apply w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-sm
+      placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/40 focus:border-yellow-500/60
+      transition-all duration-200;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-stone-900 font-semibold text-sm
+      px-4 py-2 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed
+      shadow-sm hover:shadow-yellow-500/20 hover:shadow-md;
+  }
+
+  .btn-secondary {
+    @apply bg-stone-700 hover:bg-stone-600 active:bg-stone-800 text-stone-200 font-medium text-sm
+      px-4 py-2 rounded-lg transition-all duration-150;
+  }
+
+  .btn-danger {
+    @apply bg-red-700 hover:bg-red-600 active:bg-red-800 text-white font-semibold text-sm
+      px-4 py-2 rounded-lg transition-all duration-150;
+  }
+
+  /* ── Modal overlay + panel ───────────────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4
+      bg-black/60 backdrop-blur-sm;
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  .modal-panel {
+    @apply bg-stone-900 border border-stone-700 rounded-xl shadow-2xl;
+    animation: slideUp 0.18s ease-out;
+  }
+
+  /* ── Nav link ────────────────────────────────────────────────────── */
+  .nav-link {
+    @apply px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150
+      text-stone-400 hover:text-stone-100 hover:bg-stone-800;
+  }
+
+  .nav-link-active {
+    @apply bg-yellow-500/15 text-yellow-400;
+  }
+
+  /* ── Table rows ──────────────────────────────────────────────────── */
+  .table-row {
+    @apply border-t border-stone-800 transition-colors duration-100 hover:bg-stone-800/40;
+  }
+
+  /* ── Sidebar tab button ──────────────────────────────────────────── */
+  .tab-btn {
+    @apply relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
+      text-stone-400 hover:text-stone-200;
+  }
+
+  .tab-btn-active {
+    @apply text-yellow-400 after:absolute after:bottom-0 after:left-0 after:right-0
+      after:h-0.5 after:bg-yellow-400 after:rounded-full;
+  }
+
+  /* ── Badge ───────────────────────────────────────────────────────── */
+  .badge {
+    @apply ml-2 text-xs px-1.5 py-0.5 rounded-full;
+  }
+
+  .badge-active {
+    @apply bg-yellow-400/20 text-yellow-400;
+  }
+
+  .badge-inactive {
+    @apply bg-stone-800 text-stone-500;
+  }
+
+  /* ── Toast ───────────────────────────────────────────────────────── */
+  .toast {
+    animation: slideInRight 0.25s ease-out;
+  }
+
+  /* ── Section card ────────────────────────────────────────────────── */
+  .card-section {
+    @apply bg-stone-900 border border-stone-800 rounded-xl p-5
+      transition-shadow duration-200 hover:border-stone-700;
+  }
+
+  /* ── Sortable table header ───────────────────────────────────────── */
+  .th-sort {
+    @apply px-4 py-3 text-left text-xs font-semibold text-stone-400 uppercase tracking-wider
+      cursor-pointer select-none hover:text-yellow-400 transition-colors duration-100;
+  }
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: #1c1917; }
+::-webkit-scrollbar-thumb  { background: #44403c; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #57534e; }
