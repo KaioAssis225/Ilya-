@@ -10,14 +10,21 @@ const LINE: [number, number, number] = [232, 224, 214]
 
 // ── Swatch colors para opcionais ──────────────────────────────────────────────
 const SWATCH: Record<string, [number, number, number]> = {
-  camomila: [232, 213, 160],
-  canela:   [196, 120, 60],
-  areia:    [200, 170, 130],
-  taupe:    [158, 141, 126],
-  natural:  [220, 210, 195],
-  grafite:  [100, 100, 100],
-  escovado: [180, 180, 175],
-  preto:    [30, 30, 30],
+  camomila:      [232, 213, 160],
+  canela:        [196, 120, 60],
+  areia:         [200, 170, 130],
+  taupe:         [158, 141, 126],
+  natural:       [220, 210, 195],
+  grafite:       [100, 100, 100],
+  escovado:      [180, 180, 175],
+  preto:         [30, 30, 30],
+  'pátina':      [168, 148, 118],
+  'óleo natural': [195, 165, 120],
+  'carvão':      [60, 50, 40],
+  caramelo:      [185, 120, 65],
+  palha:         [228, 205, 150],
+  'arara azul':  [50, 100, 175],
+  cidreira:      [190, 195, 90],
 }
 
 // ── Carrega imagem de URL para base64 via canvas ──────────────────────────────
@@ -207,7 +214,8 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
 
   for (const item of order.items) {
-    const rowH = 14
+    const optCount = [item.opt_aluminio, item.opt_madeira, item.opt_tecido, item.opt_couro, item.opt_corda].filter(Boolean).length
+    const rowH = Math.max(14, 6 + optCount * 3.5)
     if (y + rowH > 265) {
       doc.addPage()
       y = 20
@@ -242,36 +250,43 @@ export async function generateOrderPDF(
     // Dimensões
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
-    doc.text(`${item.altura} × ${item.largura} × ${item.profundidade}`, 96, y)
+    const dimText = item.is_circular
+      ? `Ø ${item.largura} × A ${item.altura}`
+      : `L ${item.largura} × P ${item.profundidade} × A ${item.altura}`
+    doc.text(dimText, 96, y)
 
     // Opcionais com swatches
-    let ox = 127
-    const optY = y
-    if (item.opt_aluminio) {
-      doc.setFontSize(6.5)
-      doc.setTextColor(...MUTED)
-      doc.text('Al:', ox, optY)
-      ox += doc.getTextWidth('Al:') + 1
-      ox += drawSwatch(doc, item.opt_aluminio, ox, optY)
+    const optSlots: { prefix: string; value: string }[] = []
+    if (item.opt_aluminio) optSlots.push({ prefix: 'Al', value: item.opt_aluminio })
+    if (item.opt_madeira) {
+      const slash = item.opt_madeira.indexOf('/')
+      const color = slash !== -1 ? item.opt_madeira.slice(slash + 1) : item.opt_madeira
+      const prefix = item.opt_madeira.startsWith('madeira_teka') ? 'Tk' : 'Fr'
+      optSlots.push({ prefix, value: color })
     }
     if (item.opt_tecido) {
-      const ty = item.opt_aluminio ? optY + 3.5 : optY
-      let tx = 127
+      const slash = item.opt_tecido.indexOf('/')
+      const color = slash !== -1 ? item.opt_tecido.slice(slash + 1) : item.opt_tecido
+      const prefix = item.opt_tecido.startsWith('tecido_faixa_1') ? 'F1' : item.opt_tecido.startsWith('tecido_faixa_2') ? 'F2' : 'Tc'
+      optSlots.push({ prefix, value: color })
+    }
+    if (item.opt_couro) {
+      const slash = item.opt_couro.indexOf('/')
+      const color = slash !== -1 ? item.opt_couro.slice(slash + 1) : item.opt_couro
+      const prefix = item.opt_couro.startsWith('couro_pele') ? 'Cp' : 'Cs'
+      optSlots.push({ prefix, value: color })
+    }
+    if (item.opt_corda) optSlots.push({ prefix: 'Co', value: item.opt_corda })
+
+    optSlots.forEach((slot, idx) => {
+      const sy = y + idx * 3.5
+      let sx = 127
       doc.setFontSize(6.5)
       doc.setTextColor(...MUTED)
-      doc.text('Tc:', tx, ty)
-      tx += doc.getTextWidth('Tc:') + 1
-      drawSwatch(doc, item.opt_tecido, tx, ty)
-    }
-    if (item.opt_corda) {
-      const cy = item.opt_aluminio || item.opt_tecido ? optY + 7 : optY
-      let cx = 127
-      doc.setFontSize(6.5)
-      doc.setTextColor(...MUTED)
-      doc.text('Co:', cx, cy)
-      cx += doc.getTextWidth('Co:') + 1
-      drawSwatch(doc, item.opt_corda, cx, cy)
-    }
+      doc.text(`${slot.prefix}:`, sx, sy)
+      sx += doc.getTextWidth(`${slot.prefix}:`) + 1
+      drawSwatch(doc, slot.value, sx, sy)
+    })
 
     // Qtd + valores
     doc.setTextColor(...DARK)

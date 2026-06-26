@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Numeric, Integer, ForeignKey, Index
+from sqlalchemy import String, Text, Numeric, Integer, Boolean, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -35,10 +35,13 @@ class OrderItem(Base, TimestampMixin):
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
-    opt_aluminio: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    opt_tecido: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    opt_corda: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    opt_aluminio: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    opt_madeira: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    opt_tecido: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    opt_couro: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    opt_corda: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
 

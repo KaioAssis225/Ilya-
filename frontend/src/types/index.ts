@@ -1,14 +1,26 @@
+export interface OptionalColor {
+  id: string
+  category: string
+  color_name: string
+  photo_url: string | null
+}
+
+export interface OptionalColorCreate {
+  category: string
+  color_name: string
+}
+
+export interface OptionalColorUpdate extends Partial<OptionalColorCreate> {}
+
 export interface Product {
   id: string
   product_code: string
   description: string
+  is_circular: boolean
   altura: number
   largura: number
   profundidade: number
-  opt_aluminio: string | null
-  opt_tecido: string | null
-  opt_corda: string | null
-  photo_path: string | null
+  optionals: OptionalColor[]
   photo_url: string | null
   created_at: string
   updated_at: string
@@ -17,12 +29,11 @@ export interface Product {
 export interface ProductCreate {
   product_code: string
   description: string
+  is_circular: boolean
   altura: number
   largura: number
   profundidade: number
-  opt_aluminio?: string | null
-  opt_tecido?: string | null
-  opt_corda?: string | null
+  optional_ids?: string[]
 }
 
 export interface ProductUpdate extends Partial<ProductCreate> {}
@@ -67,6 +78,11 @@ export interface OrderItemCreate {
   product_code: string
   qty: number
   unit_price: number
+  opt_aluminio?: string | null
+  opt_madeira?: string | null
+  opt_tecido?: string | null
+  opt_couro?: string | null
+  opt_corda?: string | null
 }
 
 export interface OrderCreate {
@@ -81,11 +97,14 @@ export interface OrderItem {
   order_id: string
   product_code: string
   description: string
+  is_circular: boolean
   altura: number
   largura: number
   profundidade: number
   opt_aluminio: string | null
+  opt_madeira: string | null
   opt_tecido: string | null
+  opt_couro: string | null
   opt_corda: string | null
   qty: number
   unit_price: number

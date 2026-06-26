@@ -56,7 +56,7 @@ async def login(
 
     if not user or not verify_password(payload.password, user.hashed_password):
         client_ip = request.client.host if request.client else "unknown"
-        logger.warning("Falha de login: email='%s' ip=%s", payload.email, client_ip)
+        logger.warning("Falha de login: ip=%s", client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-mail ou senha incorretos.",

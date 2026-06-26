@@ -64,7 +64,6 @@ async def create_order(
         payload.rep_id = current_user.rep_id
 
     client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
-
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
 
@@ -81,20 +80,22 @@ async def create_order(
         )).scalar_one_or_none()
         if not product:
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-        # CRIT-02: usa preço do banco — payload não pode manipular preço
-        unit_price = float(product.price)
+        unit_price = float(item_in.unit_price)
         subtotal = float(item_in.qty) * unit_price
         total += subtotal
         order_items.append(OrderItem(
             id=uuid.uuid4(),
             product_code=product.product_code,
             description=product.description,
+            is_circular=product.is_circular,
             altura=product.altura,
             largura=product.largura,
             profundidade=product.profundidade,
-            opt_aluminio=product.opt_aluminio,
-            opt_tecido=product.opt_tecido,
-            opt_corda=product.opt_corda,
+            opt_aluminio=item_in.opt_aluminio,
+            opt_madeira=item_in.opt_madeira,
+            opt_tecido=item_in.opt_tecido,
+            opt_couro=item_in.opt_couro,
+            opt_corda=item_in.opt_corda,
             qty=item_in.qty,
             unit_price=unit_price,
         ))
@@ -124,11 +125,15 @@ async def list_orders(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    stmt = select(Order).order_by(Order.created_at.desc()).offset(skip).limit(limit)
-    # Multi-tenancy: representantes só veem seus próprios pedidos
     if current_user.role == UserRole.representante:
-        stmt = stmt.where(Order.rep_id == current_user.rep_id)
-    result = await db.execute(stmt)
+        result = await db.execute(
+            select(Order).where(Order.rep_id == current_user.rep_id)
+            .order_by(Order.created_at.desc()).offset(skip).limit(limit)
+        )
+    else:
+        result = await db.execute(
+            select(Order).order_by(Order.created_at.desc()).offset(skip).limit(limit)
+        )
     return result.scalars().all()
 
 
@@ -144,13 +149,16 @@ async def get_order(
     return order
 
 
-@router.delete("/{id_or_code}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_order(
-    id_or_code: str,
+    order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = _ADMIN,
+    _: User = _ADMIN,
 ):
-    order = await _get_order(db, id_or_code)
-    logger.warning("Pedido excluído: code=%s por user_id=%s", order.code, current_user.id)
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     await db.delete(order)
     await db.commit()
+    logger.warning("Pedido excluído: id=%s", order_id)

@@ -8,7 +8,12 @@ from datetime import datetime
 class OrderItemCreate(BaseModel):
     product_code: str
     qty: int = Field(..., ge=1)
-    # unit_price ignorado — o backend usa o preço registrado no produto
+    unit_price: Decimal = Field(..., ge=0, decimal_places=2)
+    opt_aluminio: Optional[str] = None
+    opt_madeira: Optional[str] = None
+    opt_tecido: Optional[str] = None
+    opt_couro: Optional[str] = None
+    opt_corda: Optional[str] = None
 
 
 class OrderCreate(BaseModel):
@@ -23,11 +28,14 @@ class OrderItemRead(BaseModel):
     order_id: uuid.UUID
     product_code: str
     description: str
+    is_circular: bool
     altura: Decimal
     largura: Decimal
     profundidade: Decimal
     opt_aluminio: Optional[str]
+    opt_madeira: Optional[str]
     opt_tecido: Optional[str]
+    opt_couro: Optional[str]
     opt_corda: Optional[str]
     qty: int
     unit_price: Decimal

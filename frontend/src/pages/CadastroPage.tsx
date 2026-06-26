@@ -1,21 +1,40 @@
 import { useState, useRef } from 'react'
-import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon } from 'lucide-react'
+import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
-import type { Product, ProductCreate, Client, ClientCreate, Representative, ViaCepResponse } from '../types'
+import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
+import type { Product, ProductCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
-type Tab = 'produtos' | 'clientes' | 'representantes'
+type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais'
 type SortDir = 'asc' | 'desc'
-
-const OPT_ALUMINIO = ['Natural', 'Escovado', 'Preto']
-const OPT_TECIDO = ['Camomila', 'Canela', 'Areia', 'Taupe']
-const OPT_CORDA = ['Natural', 'Grafite', 'Areia']
 
 const ESTADOS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
   'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ]
+
+const CATEGORY_OPTIONS = [
+  { value: 'aluminio',       label: 'Alumínio' },
+  { value: 'tecido_faixa_1', label: 'Tecido Faixa 1' },
+  { value: 'tecido_faixa_2', label: 'Tecido Faixa 2' },
+  { value: 'corda',          label: 'Corda' },
+  { value: 'madeira_teka',   label: 'Madeira Teka' },
+  { value: 'madeira_freijo', label: 'Madeira Freijó' },
+  { value: 'couro_soleta',   label: 'Couro Soleta' },
+  { value: 'couro_pele',     label: 'Couro Pele' },
+]
+
+const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
+  CATEGORY_OPTIONS.map(({ value, label }) => [value, label])
+)
+
+const TAB_PALETTE = {
+  produtos:        { color: '#b25e50', label: 'Terracota' },
+  clientes:        { color: '#648261', label: 'Verde Oliva' },
+  representantes:  { color: '#507a9b', label: 'Azul Mineral' },
+  opcionais:       { color: '#c47e4a', label: 'Âmbar' },
+} as const
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,24 +56,26 @@ function useSortedList<T>(items: T[] | undefined, defaultKey: keyof T) {
   return { sorted, sortKey, sortDir, toggle }
 }
 
-function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ChevronUp className="w-3 h-3 opacity-30" />
+function SortIcon({ active, dir, color }: { active: boolean; dir: SortDir; color: string }) {
+  if (!active) return <ChevronUp className="w-3 h-3 opacity-25" />
   return dir === 'asc'
-    ? <ChevronUp className="w-3 h-3 text-yellow-400" />
-    : <ChevronDown className="w-3 h-3 text-yellow-400" />
+    ? <ChevronUp className="w-3 h-3" style={{ color }} />
+    : <ChevronDown className="w-3 h-3" style={{ color }} />
 }
 
-function Th({ label, col, sortKey, sortDir, onSort }: {
-  label: string; col: string; sortKey: string; sortDir: SortDir; onSort: (k: string) => void
+function Th({ label, col, sortKey, sortDir, onSort, color }: {
+  label: string; col: string; sortKey: string; sortDir: SortDir; onSort: (k: string) => void; color: string
 }) {
   return (
     <th
-      className="px-4 py-3 text-left text-xs font-semibold text-stone-400 uppercase tracking-wider cursor-pointer select-none hover:text-yellow-400 transition-colors"
+      className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase tracking-wider cursor-pointer select-none transition-colors"
       onClick={() => onSort(col)}
+      onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+      onMouseLeave={(e) => (e.currentTarget.style.color = '')}
     >
       <span className="flex items-center gap-1">
         {label}
-        <SortIcon active={sortKey === col} dir={sortDir} />
+        <SortIcon active={sortKey === col} dir={sortDir} color={color} />
       </span>
     </th>
   )
@@ -72,12 +93,9 @@ async function fetchCep(cep: string): Promise<ViaCepResponse | null> {
   }
 }
 
-// ── Address form fields (shared by Client + Rep) ─────────────────────────────
+// ── Address form fields ──────────────────────────────────────────────────────
 
-function AddressFields({ form, setForm }: {
-  form: ClientCreate
-  setForm: (v: ClientCreate) => void
-}) {
+function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: ClientCreate) => void }) {
   const [cepLoading, setCepLoading] = useState(false)
 
   async function handleCepBlur() {
@@ -97,45 +115,36 @@ function AddressFields({ form, setForm }: {
   return (
     <div className="grid grid-cols-2 gap-3">
       <label className="col-span-2 flex flex-col gap-1">
-        <span className="text-xs text-stone-400">Nome *</span>
+        <span className="text-xs text-[#9d8d81]">Nome *</span>
         <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-stone-400">Telefone *</span>
+        <span className="text-xs text-[#9d8d81]">Telefone *</span>
         <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-stone-400">E-mail *</span>
+        <span className="text-xs text-[#9d8d81]">E-mail *</span>
         <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1 relative">
-        <span className="text-xs text-stone-400">CEP *</span>
-        <input
-          className="input pr-8"
-          value={form.cep}
-          onChange={(e) => setForm({ ...form, cep: e.target.value })}
-          onBlur={handleCepBlur}
-          maxLength={9}
-          required
-        />
-        {cepLoading && (
-          <span className="absolute right-2 bottom-2 text-xs text-yellow-400 animate-pulse">...</span>
-        )}
+        <span className="text-xs text-[#9d8d81]">CEP *</span>
+        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={9} required />
+        {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-[#8b6914] animate-pulse">...</span>}
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-stone-400">Número</span>
+        <span className="text-xs text-[#9d8d81]">Número</span>
         <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
       </label>
       <label className="col-span-2 flex flex-col gap-1">
-        <span className="text-xs text-stone-400">Endereço *</span>
+        <span className="text-xs text-[#9d8d81]">Endereço *</span>
         <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-stone-400">Cidade *</span>
+        <span className="text-xs text-[#9d8d81]">Cidade *</span>
         <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-stone-400">Estado *</span>
+        <span className="text-xs text-[#9d8d81]">Estado *</span>
         <select className="input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required>
           <option value="">UF</option>
           {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -147,26 +156,27 @@ function AddressFields({ form, setForm }: {
 
 // ── Modal wrapper ─────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children, accentColor }: {
+  title: string; onClose: () => void; children: React.ReactNode; accentColor?: string
+}) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-stone-100">{title}</h3>
-          <button onClick={onClose} className="text-stone-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+      <div className="modal-panel w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6]"
+          style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
+          <h3 className="text-base font-semibold text-[#2c2420]">{title}</h3>
+          <button onClick={onClose} className="text-[#9d8d81] hover:text-[#2c2420] transition-colors"><X className="w-5 h-5" /></button>
         </div>
-        {children}
+        <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
       </div>
     </div>
   )
 }
 
-// ── Confirm delete dialog ─────────────────────────────────────────────────────
-
 function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
   return (
     <Modal title="Confirmar exclusão" onClose={onCancel}>
-      <p className="text-stone-300 mb-6">Excluir <span className="text-white font-medium">"{name}"</span>? Esta ação não pode ser desfeita.</p>
+      <p className="text-[#4a3f38] mb-6">Excluir <span className="text-[#2c2420] font-medium">"{name}"</span>? Esta ação não pode ser desfeita.</p>
       <div className="flex justify-end gap-3">
         <button className="btn-secondary" onClick={onCancel}>Cancelar</button>
         <button className="btn-danger" onClick={onConfirm}>Excluir</button>
@@ -178,123 +188,158 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 // ── PRODUTOS ──────────────────────────────────────────────────────────────────
 
 const EMPTY_PRODUCT: ProductCreate = {
-  product_code: '', description: '',
-  altura: 0, largura: 0, profundidade: 0,
-  opt_aluminio: null, opt_tecido: null, opt_corda: null,
+  product_code: '', description: '', is_circular: false,
+  altura: 0, largura: 0, profundidade: 0, optional_ids: [],
 }
 
-function ProductsTab() {
+function groupOptionalsByCategory(optionals: OptionalColor[]): { category: string; label: string; items: OptionalColor[] }[] {
+  const map = new Map<string, OptionalColor[]>()
+  for (const opt of optionals) {
+    if (!map.has(opt.category)) map.set(opt.category, [])
+    map.get(opt.category)!.push(opt)
+  }
+  return Array.from(map.entries()).map(([category, items]) => ({
+    category,
+    label: CATEGORY_LABEL[category] || category,
+    items,
+  }))
+}
+
+type OptRow = { category: string; selectedIds: string[] }
+
+function ProductsTab({ color }: { color: string }) {
   const { data: products, isLoading } = useProducts()
+  const { data: allOptionals = [] } = useOptionals()
   const createM = useCreateProduct()
   const updateM = useUpdateProduct()
   const deleteM = useDeleteProduct()
   const uploadM = useUploadProductPhoto()
 
   const { sorted, sortKey, sortDir, toggle } = useSortedList<Product>(products, 'product_code')
-
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
   const [form, setForm] = useState<ProductCreate>(EMPTY_PRODUCT)
+  const [optRows, setOptRows] = useState<OptRow[]>([])
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   function openCreate() {
-    setForm(EMPTY_PRODUCT); setEditing(null); setPhotoPreview(null); setPendingFile(null); setShowForm(true)
+    setForm(EMPTY_PRODUCT); setEditing(null)
+    setOptRows([]); setPhotoPreview(null); setPendingFile(null); setShowForm(true)
   }
-
   function openEdit(p: Product) {
+    const catMap = new Map<string, string[]>()
+    for (const opt of p.optionals) {
+      if (!catMap.has(opt.category)) catMap.set(opt.category, [])
+      catMap.get(opt.category)!.push(opt.id)
+    }
+    setOptRows(Array.from(catMap.entries()).map(([cat, ids]) => ({ category: cat, selectedIds: ids })))
     setForm({
-      product_code: p.product_code, description: p.description,
-      altura: p.altura, largura: p.largura, profundidade: p.profundidade,
-      opt_aluminio: p.opt_aluminio, opt_tecido: p.opt_tecido, opt_corda: p.opt_corda,
+      product_code: p.product_code,
+      description: p.description,
+      is_circular: p.is_circular,
+      altura: p.altura,
+      largura: p.largura,
+      profundidade: p.profundidade,
+      optional_ids: p.optionals.map((o) => o.id),
     })
-    setPhotoPreview(p.photo_url ?? null)
-    setPendingFile(null)
-    setEditing(p)
-    setShowForm(true)
+    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p); setShowForm(true)
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setPendingFile(file)
-    setPhotoPreview(URL.createObjectURL(file))
+  function addOptRow() {
+    const usedCats = new Set(optRows.map(r => r.category))
+    const next = CATEGORY_OPTIONS.find(o => !usedCats.has(o.value))
+    if (!next) return
+    setOptRows(prev => [...prev, { category: next.value, selectedIds: [] }])
+  }
+  function removeOptRow(idx: number) {
+    setOptRows(prev => prev.filter((_, i) => i !== idx))
+  }
+  function changeRowCategory(idx: number, cat: string) {
+    setOptRows(prev => prev.map((r, i) => i === idx ? { category: cat, selectedIds: [] } : r))
+  }
+  function toggleOptInRow(idx: number, optId: string) {
+    setOptRows(prev => prev.map((r, i) => {
+      if (i !== idx) return r
+      const has = r.selectedIds.includes(optId)
+      return { ...r, selectedIds: has ? r.selectedIds.filter(id => id !== optId) : [...r.selectedIds, optId] }
+    }))
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const optional_ids = optRows.flatMap(r => r.selectedIds)
+    const payload = { ...form, optional_ids, profundidade: form.is_circular ? 0 : form.profundidade }
     if (editing) {
-      const updated = await updateM.mutateAsync({ id: editing.id, data: form })
+      const updated = await updateM.mutateAsync({ id: editing.id, data: payload })
       if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
     } else {
-      const created = await createM.mutateAsync(form)
+      const created = await createM.mutateAsync(payload)
       if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
     }
     setShowForm(false)
   }
 
-  const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof Product) }
+  const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof Product), color }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-stone-200 font-medium">
-          Produtos <span className="ml-2 text-xs bg-stone-700 text-yellow-400 px-2 py-0.5 rounded-full">{products?.length ?? 0}</span>
-        </h2>
-        <button className="btn-primary flex items-center gap-2" onClick={openCreate}>
+        <span className="text-sm text-[#9d8d81]">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'} cadastrados</span>
+        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
           <Plus className="w-4 h-4" /> Novo Produto
         </button>
       </div>
 
       {isLoading ? (
-        <p className="text-stone-500 text-sm">Carregando...</p>
+        <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-stone-800">
+        <div className="overflow-x-auto rounded-xl border border-[#e8e0d6]">
           <table className="w-full text-sm">
-            <thead className="bg-stone-800/60">
+            <thead style={{ backgroundColor: `${color}12` }}>
               <tr>
                 <Th label="Código" col="product_code" {...thProps} />
                 <Th label="Descrição" col="description" {...thProps} />
-                <Th label="Alt (cm)" col="altura" {...thProps} />
-                <Th label="Larg (cm)" col="largura" {...thProps} />
-                <Th label="Prof (cm)" col="profundidade" {...thProps} />
-                <th className="px-4 py-3 text-xs font-semibold text-stone-400 uppercase">Opcionais</th>
-                <th className="px-4 py-3 text-xs font-semibold text-stone-400 uppercase">Foto</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Dimensões</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Opcionais</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#9d8d81] uppercase">Foto</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((p) => (
                 <tr key={p.id} className="table-row">
-                  <td className="px-4 py-3 font-mono text-yellow-400">{p.product_code}</td>
-                  <td className="px-4 py-3 text-stone-200 max-w-[200px] truncate">{p.description}</td>
-                  <td className="px-4 py-3 text-stone-300">{p.altura}</td>
-                  <td className="px-4 py-3 text-stone-300">{p.largura}</td>
-                  <td className="px-4 py-3 text-stone-300">{p.profundidade}</td>
-                  <td className="px-4 py-3 text-stone-400 text-xs">
-                    {[p.opt_aluminio, p.opt_tecido, p.opt_corda].filter(Boolean).join(', ') || '—'}
+                  <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
+                  <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
+                  <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
+                    {p.is_circular
+                      ? `Ø ${p.largura} × A ${p.altura} cm`
+                      : `L ${p.largura} × P ${p.profundidade} × A ${p.altura} cm`}
+                  </td>
+                  <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
+                    {p.optionals.length > 0
+                      ? groupOptionalsByCategory(p.optionals).map(g => g.label).join(', ')
+                      : '—'}
                   </td>
                   <td className="px-4 py-3">
                     {p.photo_url
-                      ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-stone-700" />
-                      : <ImageIcon className="w-6 h-6 text-stone-600" />}
+                      ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-[#e8e0d6]" />
+                      : <ImageIcon className="w-6 h-6 text-[#c8bdb5]" />}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => openEdit(p)} className="text-stone-400 hover:text-yellow-400 transition-colors">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setDeleting(p)} className="text-stone-400 hover:text-red-400 transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => openEdit(p)} className="text-[#9d8d81] transition-colors"
+                        onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleting(p)} className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-stone-500">Nenhum produto cadastrado.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum produto cadastrado.</td></tr>
               )}
             </tbody>
           </table>
@@ -302,73 +347,160 @@ function ProductsTab() {
       )}
 
       {showForm && (
-        <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => setShowForm(false)}>
-          <form onSubmit={handleSubmit} className="space-y-3">
+        <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => setShowForm(false)} accentColor={color}>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Código *</span>
+                <span className="text-xs text-[#9d8d81]">Código *</span>
                 <input className="input" value={form.product_code} onChange={(e) => setForm({ ...form, product_code: e.target.value })} required />
               </label>
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-stone-400">Descrição *</span>
+                <span className="text-xs text-[#9d8d81]">Descrição *</span>
                 <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Altura (cm) *</span>
-                <input className="input" type="number" min="0" step="0.01" value={form.altura} onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Largura (cm) *</span>
-                <input className="input" type="number" min="0" step="0.01" value={form.largura} onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Profundidade (cm) *</span>
-                <input className="input" type="number" min="0" step="0.01" value={form.profundidade} onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
-              </label>
             </div>
 
+            {/* is_circular toggle */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.is_circular}
+                onChange={(e) => setForm({ ...form, is_circular: e.target.checked, profundidade: e.target.checked ? 0 : form.profundidade })}
+                style={{ accentColor: color }}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø — circular)</span>
+            </label>
+
+            {/* Dimensões */}
             <div className="grid grid-cols-3 gap-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Alumínio</span>
-                <select className="input" value={form.opt_aluminio ?? ''} onChange={(e) => setForm({ ...form, opt_aluminio: e.target.value || null })}>
-                  <option value="">—</option>
-                  {OPT_ALUMINIO.map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Tecido</span>
-                <select className="input" value={form.opt_tecido ?? ''} onChange={(e) => setForm({ ...form, opt_tecido: e.target.value || null })}>
-                  <option value="">—</option>
-                  {OPT_TECIDO.map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-stone-400">Corda</span>
-                <select className="input" value={form.opt_corda ?? ''} onChange={(e) => setForm({ ...form, opt_corda: e.target.value || null })}>
-                  <option value="">—</option>
-                  {OPT_CORDA.map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </label>
+              {form.is_circular ? (
+                <>
+                  <label className="flex flex-col gap-1 col-span-2">
+                    <span className="text-xs text-[#9d8d81]">Diâmetro Ø (cm) *</span>
+                    <input className="input" type="number" min="0" step="0.01" value={form.largura}
+                      onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-[#9d8d81]">Altura A (cm) *</span>
+                    <input className="input" type="number" min="0" step="0.01" value={form.altura}
+                      onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-[#9d8d81]">Largura L (cm) *</span>
+                    <input className="input" type="number" min="0" step="0.01" value={form.largura}
+                      onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-[#9d8d81]">Prof. P (cm) *</span>
+                    <input className="input" type="number" min="0" step="0.01" value={form.profundidade}
+                      onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-[#9d8d81]">Altura A (cm) *</span>
+                    <input className="input" type="number" min="0" step="0.01" value={form.altura}
+                      onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
+                  </label>
+                </>
+              )}
             </div>
 
-            {/* Photo upload */}
+            {/* Opcionais — Categoria → Cores */}
             <div>
-              <span className="text-xs text-stone-400 block mb-1">Foto</span>
-              <div
-                className="border-2 border-dashed border-stone-700 rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer hover:border-yellow-500/50 transition-colors"
-                onClick={() => fileRef.current?.click()}
-              >
-                {photoPreview
-                  ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" />
-                  : <Upload className="w-8 h-8 text-stone-600" />}
-                <span className="text-xs text-stone-500">{photoPreview ? 'Clique para trocar' : 'Clique para enviar (JPG, PNG, WEBP, max 5MB)'}</span>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-[#9d8d81]">Opcionais Associados</span>
+                {optRows.length < CATEGORY_OPTIONS.length && (
+                  <button type="button" onClick={addOptRow}
+                    className="text-xs flex items-center gap-1 transition-colors"
+                    style={{ color }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                  >
+                    <Plus className="w-3 h-3" /> Adicionar Opcional
+                  </button>
+                )}
               </div>
-              <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={handleFileChange} />
+              {optRows.length === 0 && (
+                <p className="text-xs text-[#c8bdb5] italic">Nenhum opcional adicionado.</p>
+              )}
+              <div className="space-y-2">
+                {optRows.map((row, idx) => {
+                  const catItems = allOptionals.filter(o => o.category === row.category)
+                  const usedCats = new Set(optRows.filter((_, i) => i !== idx).map(r => r.category))
+                  return (
+                    <div key={idx} className="border border-[#e8e0d6] rounded-lg p-2.5 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="input text-xs py-1 flex-1"
+                          value={row.category}
+                          onChange={(e) => changeRowCategory(idx, e.target.value)}
+                        >
+                          {CATEGORY_OPTIONS.map(({ value, label }) => (
+                            <option key={value} value={value} disabled={usedCats.has(value)}>{label}</option>
+                          ))}
+                        </select>
+                        <button type="button" onClick={() => removeOptRow(idx)}
+                          className="text-[#c8bdb5] hover:text-red-500 transition-colors flex-shrink-0">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {catItems.map(opt => {
+                          const isSelected = row.selectedIds.includes(opt.id)
+                          return (
+                            <button
+                              type="button"
+                              key={opt.id}
+                              onClick={() => toggleOptInRow(idx, opt.id)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-all"
+                              style={isSelected
+                                ? { backgroundColor: `${color}20`, borderColor: color, color }
+                                : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                            >
+                              {opt.photo_url && (
+                                <img src={opt.photo_url} alt={opt.color_name}
+                                  className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
+                              )}
+                              {opt.color_name}
+                            </button>
+                          )
+                        })}
+                        {catItems.length === 0 && (
+                          <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
+            {/* Foto */}
+            <div>
+              <span className="text-xs text-[#9d8d81] block mb-1">Foto</span>
+              <div
+                className="border-2 border-dashed border-[#e8e0d6] rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
+                onClick={() => fileRef.current?.click()}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = color)}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
+              >
+                {photoPreview ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" /> : <Upload className="w-8 h-8 text-[#c8bdb5]" />}
+                <span className="text-xs text-[#9d8d81]">{photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB'}</span>
+              </div>
+              <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]; if (!file) return
+                  setPendingFile(file); setPhotoPreview(URL.createObjectURL(file))
+                }} />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-              <button type="submit" className="btn-primary" disabled={createM.isPending || updateM.isPending || uploadM.isPending}>
+              <button type="submit" className="btn-primary" style={{ backgroundColor: color }}
+                disabled={createM.isPending || updateM.isPending || uploadM.isPending}>
                 {editing ? 'Salvar' : 'Criar'}
               </button>
             </div>
@@ -377,38 +509,24 @@ function ProductsTab() {
       )}
 
       {deleting && (
-        <ConfirmDelete
-          name={deleting.description}
+        <ConfirmDelete name={deleting.description}
           onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
-          onCancel={() => setDeleting(null)}
-        />
+          onCancel={() => setDeleting(null)} />
       )}
     </div>
   )
 }
 
-// ── CLIENTES ──────────────────────────────────────────────────────────────────
+// ── CLIENTES / REPRESENTANTES ─────────────────────────────────────────────────
 
-const EMPTY_ADDRESS: ClientCreate = {
-  name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '',
-}
+const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '' }
 
 function PeopleTab<T extends Client | Representative>({
-  label,
-  items,
-  isLoading,
-  onCreate,
-  onUpdate,
-  onDelete,
-  isPending,
+  label, items, isLoading, onCreate, onUpdate, onDelete, isPending, color,
 }: {
-  label: string
-  items: T[] | undefined
-  isLoading: boolean
-  onCreate: (data: ClientCreate) => Promise<void>
-  onUpdate: (id: string, data: Partial<ClientCreate>) => Promise<void>
-  onDelete: (id: string) => Promise<void>
-  isPending: boolean
+  label: string; items: T[] | undefined; isLoading: boolean
+  onCreate: (data: ClientCreate) => Promise<void>; onUpdate: (id: string, data: Partial<ClientCreate>) => Promise<void>
+  onDelete: (id: string) => Promise<void>; isPending: boolean; color: string
 }) {
   const { sorted, sortKey, sortDir, toggle } = useSortedList<T>(items, 'name' as keyof T)
   const [showForm, setShowForm] = useState(false)
@@ -418,40 +536,32 @@ function PeopleTab<T extends Client | Representative>({
 
   function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setShowForm(true) }
   function openEdit(item: T) {
-    setForm({
-      name: item.name, phone: item.phone, email: item.email,
-      cep: item.cep, numero: item.numero ?? '', address: item.address,
-      city: item.city, state: item.state,
-    })
+    setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state })
     setEditing(item); setShowForm(true)
   }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (editing) await onUpdate(editing.id, form)
-    else await onCreate(form)
+    if (editing) await onUpdate(editing.id, form); else await onCreate(form)
     setShowForm(false)
   }
 
-  const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof T) }
+  const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof T), color }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-stone-200 font-medium">
-          {label} <span className="ml-2 text-xs bg-stone-700 text-yellow-400 px-2 py-0.5 rounded-full">{items?.length ?? 0}</span>
-        </h2>
-        <button className="btn-primary flex items-center gap-2" onClick={openCreate}>
+        <span className="text-sm text-[#9d8d81]">{items?.length ?? 0} {label.toLowerCase()} cadastrados</span>
+        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
           <Plus className="w-4 h-4" /> Novo {label.slice(0, -1)}
         </button>
       </div>
 
       {isLoading ? (
-        <p className="text-stone-500 text-sm">Carregando...</p>
+        <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-stone-800">
+        <div className="overflow-x-auto rounded-xl border border-[#e8e0d6]">
           <table className="w-full text-sm">
-            <thead className="bg-stone-800/60">
+            <thead style={{ backgroundColor: `${color}12` }}>
               <tr>
                 <Th label="Nome" col="name" {...thProps} />
                 <Th label="Telefone" col="phone" {...thProps} />
@@ -464,25 +574,23 @@ function PeopleTab<T extends Client | Representative>({
             <tbody>
               {sorted.map((item) => (
                 <tr key={item.id} className="table-row">
-                  <td className="px-4 py-3 text-stone-200 font-medium">{item.name}</td>
-                  <td className="px-4 py-3 text-stone-300">{item.phone}</td>
-                  <td className="px-4 py-3 text-stone-300">{item.email}</td>
-                  <td className="px-4 py-3 text-stone-300">{item.city}</td>
-                  <td className="px-4 py-3 text-stone-400">{item.state}</td>
+                  <td className="px-4 py-3 text-[#2c2420] font-medium">{item.name}</td>
+                  <td className="px-4 py-3 text-[#4a3f38]">{item.phone}</td>
+                  <td className="px-4 py-3 text-[#4a3f38]">{item.email}</td>
+                  <td className="px-4 py-3 text-[#4a3f38]">{item.city}</td>
+                  <td className="px-4 py-3 text-[#8a7a6e]">{item.state}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => openEdit(item)} className="text-stone-400 hover:text-yellow-400 transition-colors">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setDeleting(item)} className="text-stone-400 hover:text-red-400 transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => openEdit(item)} className="text-[#9d8d81] transition-colors"
+                        onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleting(item)} className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-stone-500">Nenhum registro encontrado.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum registro encontrado.</td></tr>
               )}
             </tbody>
           </table>
@@ -490,12 +598,172 @@ function PeopleTab<T extends Client | Representative>({
       )}
 
       {showForm && (
-        <Modal title={editing ? `Editar ${label.slice(0, -1)}` : `Novo ${label.slice(0, -1)}`} onClose={() => setShowForm(false)}>
+        <Modal title={editing ? `Editar ${label.slice(0, -1)}` : `Novo ${label.slice(0, -1)}`} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <AddressFields form={form} setForm={setForm} />
-            <div className="flex justify-end gap-3 pt-2">
+            <p className="text-[10px] text-[#b8b0a6] leading-relaxed pt-1">
+              Os dados coletados neste formulário são processados estritamente para a elaboração de orçamentos e gestão do pedido, conforme a nossa Política de Privacidade.
+            </p>
+            <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-              <button type="submit" className="btn-primary" disabled={isPending}>
+              <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={isPending}>{editing ? 'Salvar' : 'Criar'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {deleting && (
+        <ConfirmDelete name={deleting.name}
+          onConfirm={async () => { await onDelete(deleting.id); setDeleting(null) }}
+          onCancel={() => setDeleting(null)} />
+      )}
+    </div>
+  )
+}
+
+// ── OPCIONAIS ─────────────────────────────────────────────────────────────────
+
+const EMPTY_OPT: OptionalColorCreate = { category: 'aluminio', color_name: '' }
+
+function OptionaisTab({ color }: { color: string }) {
+  const { data: optionals, isLoading } = useOptionals()
+  const createM = useCreateOptional()
+  const updateM = useUpdateOptional()
+  const deleteM = useDeleteOptional()
+  const uploadOptM = useUploadOptionalPhoto()
+
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<OptionalColor | null>(null)
+  const [deleting, setDeleting] = useState<OptionalColor | null>(null)
+  const [form, setForm] = useState<OptionalColorCreate>(EMPTY_OPT)
+  const [pendingOptFile, setPendingOptFile] = useState<File | null>(null)
+  const [optPhotoPreview, setOptPhotoPreview] = useState<string | null>(null)
+  const optFileRef = useRef<HTMLInputElement>(null)
+
+  function openCreate() {
+    setForm(EMPTY_OPT); setEditing(null)
+    setPendingOptFile(null); setOptPhotoPreview(null); setShowForm(true)
+  }
+  function openEdit(opt: OptionalColor) {
+    setForm({ category: opt.category, color_name: opt.color_name })
+    setOptPhotoPreview(opt.photo_url ?? null); setPendingOptFile(null)
+    setEditing(opt); setShowForm(true)
+  }
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    let optId: string
+    if (editing) {
+      await updateM.mutateAsync({ id: editing.id, data: form })
+      optId = editing.id
+    } else {
+      const created = await createM.mutateAsync(form)
+      optId = created.id
+    }
+    if (pendingOptFile) await uploadOptM.mutateAsync({ id: optId, file: pendingOptFile })
+    setPendingOptFile(null); setOptPhotoPreview(null)
+    setShowForm(false)
+  }
+
+  const grouped = optionals ? groupOptionalsByCategory(optionals) : []
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-[#9d8d81]">{optionals?.length ?? 0} opcionais cadastrados</span>
+        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
+          <Plus className="w-4 h-4" /> Novo Opcional
+        </button>
+      </div>
+
+      {isLoading ? (
+        <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
+      ) : (
+        <div className="space-y-4">
+          {grouped.map(({ category, label, items }) => (
+            <div key={category} className="rounded-xl border border-[#e8e0d6] overflow-hidden">
+              <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider"
+                style={{ backgroundColor: `${color}12`, color }}>
+                {label}
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {items.map((opt) => (
+                    <tr key={opt.id} className="table-row">
+                      <td className="px-4 py-2.5 w-12">
+                        {opt.photo_url
+                          ? <img src={opt.photo_url} alt={opt.color_name}
+                              className="w-8 h-8 rounded-md object-cover border border-[#e8e0d6]" />
+                          : <div className="w-8 h-8 rounded-md bg-[#f0ece6] border border-[#e8e0d6]" />}
+                      </td>
+                      <td className="px-4 py-2.5 text-[#2c2420]">{opt.color_name}</td>
+                      <td className="px-4 py-2.5 w-16">
+                        <div className="flex gap-2">
+                          <button onClick={() => openEdit(opt)} className="text-[#9d8d81] transition-colors"
+                            onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = '')}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setDeleting(opt)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          {grouped.length === 0 && (
+            <p className="text-[#9d8d81] text-sm py-8 text-center">Nenhum opcional cadastrado.</p>
+          )}
+        </div>
+      )}
+
+      {showForm && (
+        <Modal title={editing ? 'Editar Opcional' : 'Novo Opcional'} onClose={() => setShowForm(false)} accentColor={color}>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Categoria *</span>
+              <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
+                {CATEGORY_OPTIONS.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Nome da Cor *</span>
+              <input className="input" value={form.color_name}
+                onChange={(e) => setForm({ ...form, color_name: e.target.value })} required />
+            </label>
+
+            {/* Swatch upload */}
+            <div>
+              <span className="text-xs text-[#9d8d81] block mb-1">Imagem de Textura (swatch)</span>
+              <div
+                className="border-2 border-dashed border-[#e8e0d6] rounded-xl p-3 flex flex-col items-center gap-1.5 cursor-pointer transition-colors"
+                onClick={() => optFileRef.current?.click()}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = color)}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
+              >
+                {optPhotoPreview
+                  ? <img src={optPhotoPreview} alt="" className="w-16 h-16 object-cover rounded-lg" />
+                  : <Upload className="w-6 h-6 text-[#c8bdb5]" />}
+                <span className="text-xs text-[#9d8d81]">
+                  {optPhotoPreview ? 'Clique para trocar' : 'PNG, JPG — textura do material'}
+                </span>
+              </div>
+              <input ref={optFileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]; if (!f) return
+                  setPendingOptFile(f); setOptPhotoPreview(URL.createObjectURL(f))
+                }} />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="submit" className="btn-primary" style={{ backgroundColor: color }}
+                disabled={createM.isPending || updateM.isPending || uploadOptM.isPending}>
                 {editing ? 'Salvar' : 'Criar'}
               </button>
             </div>
@@ -504,11 +772,9 @@ function PeopleTab<T extends Client | Representative>({
       )}
 
       {deleting && (
-        <ConfirmDelete
-          name={deleting.name}
-          onConfirm={async () => { await onDelete(deleting.id); setDeleting(null) }}
-          onCancel={() => setDeleting(null)}
-        />
+        <ConfirmDelete name={`${CATEGORY_LABEL[deleting.category] || deleting.category} — ${deleting.color_name}`}
+          onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
+          onCancel={() => setDeleting(null)} />
       )}
     </div>
   )
@@ -516,78 +782,111 @@ function PeopleTab<T extends Client | Representative>({
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 
+const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
+  { key: 'produtos',       label: 'Produtos',       Icon: Package   },
+  { key: 'clientes',       label: 'Clientes',        Icon: Users     },
+  { key: 'representantes', label: 'Representantes',  Icon: UserCheck },
+  { key: 'opcionais',      label: 'Opcionais',       Icon: Tag       },
+]
+
 export default function CadastroPage() {
   const [tab, setTab] = useState<Tab>('produtos')
 
   const { data: products } = useProducts()
-  const { data: clients } = useClients()
-  const { data: reps } = useRepresentatives()
+  const { data: clients }  = useClients()
+  const { data: reps }     = useRepresentatives()
+  const { data: optionals } = useOptionals()
 
   const { data: clientsData, isLoading: clientsLoading } = useClients()
-  const createClient = useCreateClient()
-  const updateClient = useUpdateClient()
-  const deleteClient = useDeleteClient()
+  const createClient = useCreateClient(); const updateClient = useUpdateClient(); const deleteClient = useDeleteClient()
 
   const { data: repsData, isLoading: repsLoading } = useRepresentatives()
-  const createRep = useCreateRepresentative()
-  const updateRep = useUpdateRepresentative()
-  const deleteRep = useDeleteRepresentative()
+  const createRep = useCreateRepresentative(); const updateRep = useUpdateRepresentative(); const deleteRep = useDeleteRepresentative()
 
-  const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: 'produtos', label: 'Produtos', count: products?.length ?? 0 },
-    { key: 'clientes', label: 'Clientes', count: clients?.length ?? 0 },
-    { key: 'representantes', label: 'Representantes', count: reps?.length ?? 0 },
-  ]
+  const counts: Record<Tab, number> = {
+    produtos:       products?.length ?? 0,
+    clientes:       clients?.length  ?? 0,
+    representantes: reps?.length     ?? 0,
+    opcionais:      optionals?.length ?? 0,
+  }
+
+  const activeColor = TAB_PALETTE[tab].color
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100">
+    <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
       <div className="max-w-7xl mx-auto px-8 py-6">
-        {/* Tabs */}
-        <nav className="flex gap-1 mb-6 border-b border-stone-800">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                tab === t.key
-                  ? 'text-yellow-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-yellow-400'
-                  : 'text-stone-400 hover:text-stone-200'
-              }`}
-            >
-              {t.label}
-              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${tab === t.key ? 'bg-yellow-400/20 text-yellow-400' : 'bg-stone-800 text-stone-500'}`}>
-                {t.count}
-              </span>
-            </button>
-          ))}
-        </nav>
+        <div className="grid gap-6" style={{ gridTemplateColumns: '220px 1fr' }}>
 
-        {/* Content */}
-        {tab === 'produtos' && <ProductsTab />}
+          {/* ── Sidebar ──────────────────────────────────────────── */}
+          <aside>
+            <div className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
+              <p className="text-[10px] font-semibold text-[#c8bdb5] uppercase tracking-widest px-3 pb-2">Cadastros</p>
+              {TAB_CONFIG.map(({ key, label, Icon }) => {
+                const { color } = TAB_PALETTE[key]
+                const isActive = tab === key
+                const count = counts[key]
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setTab(key)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 text-left"
+                    style={isActive
+                      ? { backgroundColor: `${color}12`, color, borderLeft: `3px solid ${color}`, paddingLeft: '9px' }
+                      : { borderLeft: '3px solid transparent', paddingLeft: '9px' }
+                    }
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = '#f8f6f2' }}
+                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: '#9d8d81' }} />
+                    <span className="flex-1" style={isActive ? {} : { color: '#6b5d55' }}>{label}</span>
+                    <span
+                      className="text-xs px-1.5 py-0.5 rounded-full font-semibold min-w-[22px] text-center"
+                      style={isActive
+                        ? { backgroundColor: `${color}20`, color }
+                        : { backgroundColor: '#f0ece6', color: '#9d8d81' }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </aside>
 
-        {tab === 'clientes' && (
-          <PeopleTab
-            label="Clientes"
-            items={clientsData}
-            isLoading={clientsLoading}
-            isPending={createClient.isPending || updateClient.isPending}
-            onCreate={async (data) => { await createClient.mutateAsync(data) }}
-            onUpdate={async (id, data) => { await updateClient.mutateAsync({ id, data }) }}
-            onDelete={async (id) => { await deleteClient.mutateAsync(id) }}
-          />
-        )}
+          {/* ── Painel de Dados ───────────────────────────────────── */}
+          <main className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-6"
+            style={{ borderTop: `3px solid ${activeColor}` }}>
+            {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} />}
 
-        {tab === 'representantes' && (
-          <PeopleTab
-            label="Representantes"
-            items={repsData}
-            isLoading={repsLoading}
-            isPending={createRep.isPending || updateRep.isPending}
-            onCreate={async (data) => { await createRep.mutateAsync(data) }}
-            onUpdate={async (id, data) => { await updateRep.mutateAsync({ id, data }) }}
-            onDelete={async (id) => { await deleteRep.mutateAsync(id) }}
-          />
-        )}
+            {tab === 'clientes' && (
+              <PeopleTab
+                label="Clientes"
+                items={clientsData}
+                isLoading={clientsLoading}
+                isPending={createClient.isPending || updateClient.isPending}
+                color={TAB_PALETTE.clientes.color}
+                onCreate={async (data) => { await createClient.mutateAsync(data) }}
+                onUpdate={async (id, data) => { await updateClient.mutateAsync({ id, data }) }}
+                onDelete={async (id) => { await deleteClient.mutateAsync(id) }}
+              />
+            )}
+
+            {tab === 'representantes' && (
+              <PeopleTab
+                label="Representantes"
+                items={repsData}
+                isLoading={repsLoading}
+                isPending={createRep.isPending || updateRep.isPending}
+                color={TAB_PALETTE.representantes.color}
+                onCreate={async (data) => { await createRep.mutateAsync(data) }}
+                onUpdate={async (id, data) => { await updateRep.mutateAsync({ id, data }) }}
+                onDelete={async (id) => { await deleteRep.mutateAsync(id) }}
+              />
+            )}
+
+            {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} />}
+          </main>
+        </div>
       </div>
     </div>
   )

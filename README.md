@@ -18,7 +18,10 @@ Este repositório contém a transposição de nível de produção para o **Proj
 *   **CSS / Estilo:** Tailwind CSS v4, Fontes Google (Cormorant Garamond + Inter), Animações Customizadas
 *   **Server State:** TanStack Query v5 (React Query)
 *   **Routing & Auth:** React Router Dom v7, Axios com Interceptores de Autenticação (Silent Refresh)
-*   **Utilitários:** jsPDF (geração client-side de orçamentos A4 com fotos e swatches coloridos), Lucide React (ícones)
+*   **Utilitários:** jsPDF (geração client-side de orçamentos A4 com fotos, swatches coloridos e dimensões adaptativas Ø/L×P×A), Lucide React (ícones)
+
+> **Block 12 (Medidas Especiais, Opcionais Relacionais & Seed de Luxo)** — implementado em 2026-06-26:
+> catálogo de opcionais de cor/material (`optionals` + `product_optionals` N-to-N), flag `is_circular` em produtos e itens de pedido, remoção de `price` do produto (preço passa a ser negociado pelo vendedor em `unit_price` no orçamento), seed de luxo com 5 produtos ILY-001–005 e 29 opcionais em 8 categorias.
 
 ---
 
@@ -99,16 +102,26 @@ erDiagram
         timestamp created_at
         timestamp updated_at
     }
+    optionals {
+        uuid id PK
+        varchar category
+        varchar color_name
+        varchar photo_path
+        timestamp created_at
+        timestamp updated_at
+    }
+    product_optionals {
+        uuid product_id FK
+        uuid optional_id FK
+    }
     products {
         uuid id PK
         varchar product_code UK
         text description
+        boolean is_circular
         numeric altura
         numeric largura
         numeric profundidade
-        varchar opt_aluminio
-        varchar opt_tecido
-        varchar opt_corda
         varchar photo_path
         timestamp created_at
         timestamp updated_at
@@ -148,6 +161,7 @@ erDiagram
         uuid order_id FK
         varchar product_code
         text description
+        boolean is_circular
         numeric altura
         numeric largura
         numeric profundidade
@@ -163,6 +177,8 @@ erDiagram
     orders ||--o{ order_items : "contem"
     orders ||--|| clients : "gerado_para"
     orders ||--o| representatives : "emitido_por"
+    products ||--o{ product_optionals : "tem"
+    optionals ||--o{ product_optionals : "associado_em"
 ```
 
 > [!NOTE]

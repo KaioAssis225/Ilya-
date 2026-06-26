@@ -23,26 +23,26 @@ function Nav() {
   if (!user) return null
 
   return (
-    <nav className="bg-stone-900/95 backdrop-blur border-b border-stone-800 px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+    <nav className="bg-white/80 backdrop-blur-md border-b border-[#e8e0d6] px-6 py-3 flex items-center justify-between sticky top-0 z-40">
       <div className="flex items-center gap-1">
         <h1
-          className="text-base font-semibold tracking-widest mr-5 text-stone-100"
+          className="text-base font-semibold tracking-widest mr-5 text-[#2c2420]"
           style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
         >
-          ILYA <span className="text-yellow-400 text-sm font-normal tracking-normal">— Sistema</span>
+          ILYA <span className="text-[#8b6914] text-sm font-normal tracking-normal">— Sistema</span>
         </h1>
         <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>
         <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>
         <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>
       </div>
       <div className="flex items-center gap-4 text-xs">
-        <div className="text-stone-400 text-right">
-          <span className="block font-medium text-stone-200">{user.full_name}</span>
-          <span className="block text-[10px] uppercase tracking-wider text-yellow-500/80">{user.role}</span>
+        <div className="text-[#8a7a6e] text-right">
+          <span className="block font-medium text-[#2c2420]">{user.full_name}</span>
+          <span className="block text-[10px] uppercase tracking-wider text-[#8b6914]/80">{user.role}</span>
         </div>
         <button
           onClick={logout}
-          className="text-stone-400 hover:text-white border border-stone-700 hover:border-stone-500 px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
+          className="text-[#8a7a6e] hover:text-[#2c2420] border border-[#e8e0d6] hover:border-[#2c2420] px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
         >
           Sair
         </button>
