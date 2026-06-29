@@ -20,6 +20,7 @@ export interface Product {
   altura: number
   largura: number
   profundidade: number
+  price: number
   optionals: OptionalColor[]
   photo_url: string | null
   created_at: string
@@ -33,6 +34,7 @@ export interface ProductCreate {
   altura: number
   largura: number
   profundidade: number
+  price: number
   optional_ids?: string[]
 }
 

@@ -14,6 +14,7 @@ class ProductBase(BaseModel):
     altura: Decimal = Field(..., ge=0, decimal_places=2)
     largura: Decimal = Field(..., ge=0, decimal_places=2)
     profundidade: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
+    price: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
 
 
 class ProductCreate(ProductBase):
@@ -27,6 +28,7 @@ class ProductUpdate(BaseModel):
     altura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     largura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     profundidade: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    price: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     optional_ids: Optional[List[uuid.UUID]] = None
 
 

@@ -15,6 +15,7 @@ class Product(Base, TimestampMixin):
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     optionals: Mapped[list["OptionalColor"]] = relationship(

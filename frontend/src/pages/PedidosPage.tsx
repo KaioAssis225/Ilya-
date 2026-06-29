@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Eye, Trash2, FileText, X } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon } from 'lucide-react'
 import { useOrders, useDeleteOrder } from '../hooks/useOrders'
 import { useClients } from '../hooks/useClients'
 import { useRepresentatives } from '../hooks/useRepresentatives'
@@ -7,7 +7,7 @@ import { useProducts } from '../hooks/useProducts'
 import { useOptionals } from '../hooks/useOptionals'
 import { generateOrderPDF } from '../lib/generatePDF'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
-import type { Order, OptionalColor } from '../types'
+import type { Order, OptionalColor, Product } from '../types'
 
 function fmt(n: number) {
   return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -28,14 +28,17 @@ function OrderDetailModal({
   clientName,
   repName,
   allOptionals,
+  products,
   onClose,
 }: {
   order: Order
   clientName: string
   repName: string
   allOptionals: OptionalColor[]
+  products: Product[]
   onClose: () => void
 }) {
+  const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   // Values may be "category/color" (qualified) or plain color names
   function parseOptValue(value: string | null): { label: string; swatch: string | null } | null {
     if (!value) return null
@@ -100,8 +103,9 @@ function OrderDetailModal({
           <table className="w-full text-sm">
             <thead className="bg-[#f0ece6]">
               <tr>
+                <th className="px-3 py-2 w-10"></th>
                 <th className="px-3 py-2 text-left text-xs text-[#9d8d81]">Produto</th>
-                <th className="px-3 py-2 text-left text-xs text-[#9d8d81]">Dim. (cm)</th>
+                <th className="px-3 py-2 text-left text-xs text-[#9d8d81]">Dim. (m)</th>
                 <th className="px-3 py-2 text-left text-xs text-[#9d8d81]">Opcionais</th>
                 <th className="px-3 py-2 text-center text-xs text-[#9d8d81]">Qtd</th>
                 <th className="px-3 py-2 text-right text-xs text-[#9d8d81]">Unit.</th>
@@ -109,13 +113,29 @@ function OrderDetailModal({
               </tr>
             </thead>
             <tbody>
-              {order.items.map((item) => (
+              {order.items.map((item) => {
+                const photoUrl = products.find(p => p.product_code === item.product_code)?.photo_url ?? null
+                const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
+                return (
                 <tr key={item.id} className="border-t border-[#e8e0d6]">
+                  <td className="px-2 py-2 w-10">
+                    {photoUrl
+                      ? <img src={photoUrl} alt="" onClick={() => setActivePhotoModal(photoUrl)}
+                          className="w-9 h-9 object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity" />
+                      : <div className="w-9 h-9 bg-[#f0ece6] rounded-lg flex items-center justify-center">
+                          <ImageIcon className="w-4 h-4 text-[#c8bdb5]" />
+                        </div>
+                    }
+                  </td>
                   <td className="px-3 py-2">
                     <span className="text-[#8b6914] font-mono text-xs">{item.product_code}</span>
                     <div className="text-[#4a3f38] text-xs mt-0.5 max-w-[150px] truncate">{item.description}</div>
                   </td>
-                  <td className="px-3 py-2 text-[#8a7a6e] text-xs">{item.altura}×{item.largura}×{item.profundidade}</td>
+                  <td className="px-3 py-2 text-[#8a7a6e] text-xs whitespace-nowrap">
+                    {item.is_circular
+                      ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
+                      : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`}
+                  </td>
                   <td className="px-3 py-2 text-[#8a7a6e] text-xs">
                     {(() => {
                       const rawVals = [item.opt_aluminio, item.opt_madeira, item.opt_tecido, item.opt_couro, item.opt_corda]
@@ -133,16 +153,31 @@ function OrderDetailModal({
                   <td className="px-3 py-2 text-right text-[#4a3f38]">R$ {fmt(item.unit_price)}</td>
                   <td className="px-3 py-2 text-right font-medium text-[#2c2420]">R$ {fmt(item.qty * item.unit_price)}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
             <tfoot>
               <tr className="border-t border-[#e8e0d6] bg-[#f8f6f2]">
-                <td colSpan={5} className="px-3 py-2 text-right text-sm text-[#4a3f38] font-medium">Total</td>
+                <td colSpan={6} className="px-3 py-2 text-right text-sm text-[#4a3f38] font-medium">Total</td>
                 <td className="px-3 py-2 text-right text-[#8b6914] font-bold">R$ {fmt(order.total_value)}</td>
               </tr>
             </tfoot>
           </table>
         </div>
+
+        {activePhotoModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#1a1410]/75 backdrop-blur-sm"
+            onClick={() => setActivePhotoModal(null)}>
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <img src={activePhotoModal} alt="" className="max-w-[480px] max-h-[480px] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-[#e8e0d6]" />
+              <button
+                onClick={() => setActivePhotoModal(null)}
+                className="absolute -top-3 -right-3 bg-white border border-[#e8e0d6] rounded-full w-8 h-8 flex items-center justify-center shadow-md text-[#9d8d81] hover:text-[#2c2420] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -262,6 +297,7 @@ export default function PedidosPage() {
           clientName={clientMap[viewing.client_id] ?? viewing.client_id}
           repName={viewing.rep_id ? (repMap[viewing.rep_id] ?? '') : ''}
           allOptionals={allOptionals}
+          products={products}
           onClose={() => setViewing(null)}
         />
       )}

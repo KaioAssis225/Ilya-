@@ -189,7 +189,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 
 const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', is_circular: false,
-  altura: 0, largura: 0, profundidade: 0, optional_ids: [],
+  altura: 0, largura: 0, profundidade: 0, price: 0, optional_ids: [],
 }
 
 function groupOptionalsByCategory(optionals: OptionalColor[]): { category: string; label: string; items: OptionalColor[] }[] {
@@ -205,8 +205,6 @@ function groupOptionalsByCategory(optionals: OptionalColor[]): { category: strin
   }))
 }
 
-type OptRow = { category: string; selectedIds: string[] }
-
 function ProductsTab({ color }: { color: string }) {
   const { data: products, isLoading } = useProducts()
   const { data: allOptionals = [] } = useOptionals()
@@ -220,22 +218,18 @@ function ProductsTab({ color }: { color: string }) {
   const [editing, setEditing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
   const [form, setForm] = useState<ProductCreate>(EMPTY_PRODUCT)
-  const [optRows, setOptRows] = useState<OptRow[]>([])
+  const [activeCategories, setActiveCategories] = useState<string[]>([])
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
-    setOptRows([]); setPhotoPreview(null); setPendingFile(null); setShowForm(true)
+    setActiveCategories([]); setPhotoPreview(null); setPendingFile(null); setShowForm(true)
   }
   function openEdit(p: Product) {
-    const catMap = new Map<string, string[]>()
-    for (const opt of p.optionals) {
-      if (!catMap.has(opt.category)) catMap.set(opt.category, [])
-      catMap.get(opt.category)!.push(opt.id)
-    }
-    setOptRows(Array.from(catMap.entries()).map(([cat, ids]) => ({ category: cat, selectedIds: ids })))
+    const cats = Array.from(new Set(p.optionals.map((o) => o.category)))
+    setActiveCategories(cats)
     setForm({
       product_code: p.product_code,
       description: p.description,
@@ -243,35 +237,25 @@ function ProductsTab({ color }: { color: string }) {
       altura: p.altura,
       largura: p.largura,
       profundidade: p.profundidade,
+      price: p.price ?? 0,
       optional_ids: p.optionals.map((o) => o.id),
     })
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p); setShowForm(true)
   }
 
-  function addOptRow() {
-    const usedCats = new Set(optRows.map(r => r.category))
-    const next = CATEGORY_OPTIONS.find(o => !usedCats.has(o.value))
-    if (!next) return
-    setOptRows(prev => [...prev, { category: next.value, selectedIds: [] }])
-  }
-  function removeOptRow(idx: number) {
-    setOptRows(prev => prev.filter((_, i) => i !== idx))
-  }
-  function changeRowCategory(idx: number, cat: string) {
-    setOptRows(prev => prev.map((r, i) => i === idx ? { category: cat, selectedIds: [] } : r))
-  }
-  function toggleOptInRow(idx: number, optId: string) {
-    setOptRows(prev => prev.map((r, i) => {
-      if (i !== idx) return r
-      const has = r.selectedIds.includes(optId)
-      return { ...r, selectedIds: has ? r.selectedIds.filter(id => id !== optId) : [...r.selectedIds, optId] }
-    }))
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const optional_ids = optRows.flatMap(r => r.selectedIds)
-    const payload = { ...form, optional_ids, profundidade: form.is_circular ? 0 : form.profundidade }
+    const activeCatsSet = new Set(activeCategories)
+    const filteredOptionalIds = (form.optional_ids ?? []).filter((optId) => {
+      const opt = allOptionals.find((o) => o.id === optId)
+      return opt ? activeCatsSet.has(opt.category) : false
+    })
+
+    const payload = {
+      ...form,
+      optional_ids: filteredOptionalIds,
+      profundidade: form.is_circular ? 0 : form.profundidade,
+    }
     if (editing) {
       const updated = await updateM.mutateAsync({ id: editing.id, data: payload })
       if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
@@ -303,6 +287,7 @@ function ProductsTab({ color }: { color: string }) {
                 <Th label="Código" col="product_code" {...thProps} />
                 <Th label="Descrição" col="description" {...thProps} />
                 <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Dimensões</th>
+                <Th label="Preço Base" col="price" {...thProps} />
                 <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Opcionais</th>
                 <th className="px-4 py-3 text-xs font-semibold text-[#9d8d81] uppercase">Foto</th>
                 <th className="px-4 py-3"></th>
@@ -315,8 +300,11 @@ function ProductsTab({ color }: { color: string }) {
                   <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
                   <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
                     {p.is_circular
-                      ? `Ø ${p.largura} × A ${p.altura} cm`
-                      : `L ${p.largura} × P ${p.profundidade} × A ${p.altura} cm`}
+                      ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
+                      : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
+                  </td>
+                  <td className="px-4 py-3 text-[#2c2420] text-sm font-medium whitespace-nowrap">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}
                   </td>
                   <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
                     {p.optionals.length > 0
@@ -339,7 +327,7 @@ function ProductsTab({ color }: { color: string }) {
                 </tr>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum produto cadastrado.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum produto cadastrado.</td></tr>
               )}
             </tbody>
           </table>
@@ -354,13 +342,16 @@ function ProductsTab({ color }: { color: string }) {
                 <span className="text-xs text-[#9d8d81]">Código *</span>
                 <input className="input" value={form.product_code} onChange={(e) => setForm({ ...form, product_code: e.target.value })} required />
               </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-[#9d8d81]">Preço Base (R$) *</span>
+                <input className="input" type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required />
+              </label>
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-[#9d8d81]">Descrição *</span>
                 <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
               </label>
             </div>
 
-            {/* is_circular toggle */}
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -372,17 +363,16 @@ function ProductsTab({ color }: { color: string }) {
               <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø — circular)</span>
             </label>
 
-            {/* Dimensões */}
             <div className="grid grid-cols-3 gap-3">
               {form.is_circular ? (
                 <>
                   <label className="flex flex-col gap-1 col-span-2">
-                    <span className="text-xs text-[#9d8d81]">Diâmetro Ø (cm) *</span>
+                    <span className="text-xs text-[#9d8d81]">Diâmetro Ø (m) *</span>
                     <input className="input" type="number" min="0" step="0.01" value={form.largura}
                       onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Altura A (cm) *</span>
+                    <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
                     <input className="input" type="number" min="0" step="0.01" value={form.altura}
                       onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
                   </label>
@@ -390,17 +380,17 @@ function ProductsTab({ color }: { color: string }) {
               ) : (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Largura L (cm) *</span>
+                    <span className="text-xs text-[#9d8d81]">Largura L (m) *</span>
                     <input className="input" type="number" min="0" step="0.01" value={form.largura}
                       onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Prof. P (cm) *</span>
+                    <span className="text-xs text-[#9d8d81]">Prof. P (m) *</span>
                     <input className="input" type="number" min="0" step="0.01" value={form.profundidade}
                       onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Altura A (cm) *</span>
+                    <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
                     <input className="input" type="number" min="0" step="0.01" value={form.altura}
                       onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
                   </label>
@@ -408,77 +398,89 @@ function ProductsTab({ color }: { color: string }) {
               )}
             </div>
 
-            {/* Opcionais — Categoria → Cores */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-[#9d8d81]">Opcionais Associados</span>
-                {optRows.length < CATEGORY_OPTIONS.length && (
-                  <button type="button" onClick={addOptRow}
-                    className="text-xs flex items-center gap-1 transition-colors"
-                    style={{ color }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-                  >
-                    <Plus className="w-3 h-3" /> Adicionar Opcional
-                  </button>
-                )}
-              </div>
-              {optRows.length === 0 && (
-                <p className="text-xs text-[#c8bdb5] italic">Nenhum opcional adicionado.</p>
-              )}
-              <div className="space-y-2">
-                {optRows.map((row, idx) => {
-                  const catItems = allOptionals.filter(o => o.category === row.category)
-                  const usedCats = new Set(optRows.filter((_, i) => i !== idx).map(r => r.category))
+              <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                {CATEGORY_OPTIONS.map(({ value, label }) => {
+                  const isActive = activeCategories.includes(value)
                   return (
-                    <div key={idx} className="border border-[#e8e0d6] rounded-lg p-2.5 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <select
-                          className="input text-xs py-1 flex-1"
-                          value={row.category}
-                          onChange={(e) => changeRowCategory(idx, e.target.value)}
-                        >
-                          {CATEGORY_OPTIONS.map(({ value, label }) => (
-                            <option key={value} value={value} disabled={usedCats.has(value)}>{label}</option>
-                          ))}
-                        </select>
-                        <button type="button" onClick={() => removeOptRow(idx)}
-                          className="text-[#c8bdb5] hover:text-red-500 transition-colors flex-shrink-0">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {catItems.map(opt => {
-                          const isSelected = row.selectedIds.includes(opt.id)
-                          return (
-                            <button
-                              type="button"
-                              key={opt.id}
-                              onClick={() => toggleOptInRow(idx, opt.id)}
-                              className="flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-all"
-                              style={isSelected
-                                ? { backgroundColor: `${color}20`, borderColor: color, color }
-                                : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
-                            >
-                              {opt.photo_url && (
-                                <img src={opt.photo_url} alt={opt.color_name}
-                                  className="w-4 h-4 rounded-full object-cover flex-shrink-0" />
-                              )}
-                              {opt.color_name}
-                            </button>
-                          )
-                        })}
-                        {catItems.length === 0 && (
-                          <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
-                        )}
-                      </div>
-                    </div>
+                    <label key={value} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={isActive}
+                        style={{ accentColor: color }}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setActiveCategories([...activeCategories, value])
+                          } else {
+                            setActiveCategories(activeCategories.filter(c => c !== value))
+                            const catOptionalIds = allOptionals.filter(o => o.category === value).map(o => o.id)
+                            setForm(prev => ({
+                              ...prev,
+                              optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id))
+                            }))
+                          }
+                        }}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-xs text-[#4a3f38] select-none">{label}</span>
+                    </label>
                   )
                 })}
               </div>
+
+              {activeCategories.length > 0 && (
+                <div className="space-y-3">
+                  <span className="text-xs text-[#9d8d81] block font-medium">Escolha as Cores para cada Opcional</span>
+                  {activeCategories.map((catValue) => {
+                    const catLabel = CATEGORY_LABEL[catValue] || catValue
+                    const catItems = allOptionals.filter(o => o.category === catValue)
+                    return (
+                      <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2 bg-[#fdfdfd] shadow-sm">
+                        <div className="text-xs font-semibold text-[#2c2420] pb-1 border-b border-[#f3ede6]" style={{ color }}>
+                          {catLabel.toUpperCase()}
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {catItems.map(opt => {
+                            const isSelected = (form.optional_ids ?? []).includes(opt.id)
+                            return (
+                              <button
+                                type="button"
+                                key={opt.id}
+                                onClick={() => {
+                                  setForm(prev => {
+                                    const ids = prev.optional_ids ?? []
+                                    const has = ids.includes(opt.id)
+                                    return {
+                                      ...prev,
+                                      optional_ids: has ? ids.filter(id => id !== opt.id) : [...ids, opt.id]
+                                    }
+                                  })
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all"
+                                style={isSelected
+                                  ? { backgroundColor: `${color}20`, borderColor: color, color }
+                                  : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                              >
+                                {opt.photo_url && (
+                                  <img src={opt.photo_url} alt={opt.color_name}
+                                    className="w-4 h-4 rounded-md object-cover flex-shrink-0" />
+                                )}
+                                <span className="font-medium">{opt.color_name}</span>
+                              </button>
+                            )
+                          })}
+                          {catItems.length === 0 && (
+                            <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Foto */}
             <div>
               <span className="text-xs text-[#9d8d81] block mb-1">Foto</span>
               <div

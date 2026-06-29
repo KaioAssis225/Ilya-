@@ -4,28 +4,9 @@ import type { Order, Client, Representative, Product } from '../types'
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const GOLD: [number, number, number] = [139, 105, 20]
 const DARK: [number, number, number] = [44, 36, 32]
-const MUTED: [number, number, number] = [138, 126, 114]
+const MUTED: [number, number, number] = [117, 107, 97]
 const LIGHT: [number, number, number] = [245, 240, 235]
 const LINE: [number, number, number] = [232, 224, 214]
-
-// ── Swatch colors para opcionais ──────────────────────────────────────────────
-const SWATCH: Record<string, [number, number, number]> = {
-  camomila:      [232, 213, 160],
-  canela:        [196, 120, 60],
-  areia:         [200, 170, 130],
-  taupe:         [158, 141, 126],
-  natural:       [220, 210, 195],
-  grafite:       [100, 100, 100],
-  escovado:      [180, 180, 175],
-  preto:         [30, 30, 30],
-  'pátina':      [168, 148, 118],
-  'óleo natural': [195, 165, 120],
-  'carvão':      [60, 50, 40],
-  caramelo:      [185, 120, 65],
-  palha:         [228, 205, 150],
-  'arara azul':  [50, 100, 175],
-  cidreira:      [190, 195, 90],
-}
 
 // ── Carrega imagem de URL para base64 via canvas ──────────────────────────────
 async function urlToBase64(url: string): Promise<string | null> {
@@ -35,11 +16,26 @@ async function urlToBase64(url: string): Promise<string | null> {
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas')
-        canvas.width = img.naturalWidth
-        canvas.height = img.naturalHeight
+        const w = img.naturalWidth
+        const h = img.naturalHeight
+        canvas.width = w
+        canvas.height = h
         const ctx = canvas.getContext('2d')!
+        const r = w * 0.08
+        ctx.beginPath()
+        ctx.moveTo(r, 0)
+        ctx.lineTo(w - r, 0)
+        ctx.quadraticCurveTo(w, 0, w, r)
+        ctx.lineTo(w, h - r)
+        ctx.quadraticCurveTo(w, h, w - r, h)
+        ctx.lineTo(r, h)
+        ctx.quadraticCurveTo(0, h, 0, h - r)
+        ctx.lineTo(0, r)
+        ctx.quadraticCurveTo(0, 0, r, 0)
+        ctx.closePath()
+        ctx.clip()
         ctx.drawImage(img, 0, 0)
-        resolve(canvas.toDataURL('image/jpeg', 0.85))
+        resolve(canvas.toDataURL('image/png', 0.9))
       } catch {
         resolve(null)
       }
@@ -49,31 +45,9 @@ async function urlToBase64(url: string): Promise<string | null> {
   })
 }
 
-// ── Desenha swatch + label de opcional ───────────────────────────────────────
-function drawSwatch(
-  doc: jsPDF,
-  label: string,
-  x: number,
-  y: number,
-): number {
-  const key = label.toLowerCase()
-  const color = SWATCH[key]
-  if (color) {
-    doc.setFillColor(...color)
-    doc.rect(x, y - 2.5, 3, 3, 'F')
-    doc.setDrawColor(...LINE)
-    doc.setLineWidth(0.1)
-    doc.rect(x, y - 2.5, 3, 3)
-    doc.setTextColor(...DARK)
-    doc.setFontSize(6.5)
-    doc.text(label, x + 4, y)
-    return 4 + doc.getTextWidth(label) + 3
-  } else {
-    doc.setTextColor(...MUTED)
-    doc.setFontSize(6.5)
-    doc.text(label, x, y)
-    return doc.getTextWidth(label) + 2
-  }
+// ── Formatação monetária pt-BR ────────────────────────────────────────────────
+function formatBRL(value: number): string {
+  return 'R$ ' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 // ── Gerador principal ─────────────────────────────────────────────────────────
@@ -113,11 +87,6 @@ export async function generateOrderPDF(
   doc.text('ILYA', 20, y)
   y += 5
 
-  doc.setFontSize(8)
-  doc.setTextColor(...MUTED)
-  doc.text('Ilya — Móveis & Estofados', 20, y)
-  y += 3
-
   doc.setDrawColor(...GOLD)
   doc.setLineWidth(0.3)
   doc.line(20, y, 60, y)
@@ -148,42 +117,44 @@ export async function generateOrderPDF(
   // ── Boxes cliente + representante ──────────────────────────────────────────
   const boxW = (w - 50) / 2
   doc.setFillColor(...LIGHT)
-  doc.roundedRect(20, y, boxW, 32, 2, 2, 'F')
-  doc.roundedRect(20 + boxW + 10, y, boxW, 32, 2, 2, 'F')
+  doc.roundedRect(20, y, boxW, 35, 2, 2, 'F')
+  doc.roundedRect(20 + boxW + 10, y, boxW, 35, 2, 2, 'F')
 
+  // Esquerda: Representante
   const bx = 24
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text('CLIENTE', bx, y + 6)
+  doc.text('REPRESENTANTE', bx, y + 6)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
-  doc.text(client.name, bx, y + 12)
-  doc.setFontSize(8)
-  doc.setTextColor(...MUTED)
-  doc.text(client.phone, bx, y + 17)
-  doc.text(client.email, bx, y + 22)
-  const clientAddr = `${client.address}${client.numero ? ', ' + client.numero : ''} — ${client.city}/${client.state}`
-  doc.text(doc.splitTextToSize(clientAddr, boxW - 8)[0], bx, y + 27)
+  doc.text(rep ? rep.name : 'Nenhum', bx, y + 12)
+  if (rep) {
+    doc.setFontSize(8)
+    doc.setTextColor(...MUTED)
+    doc.text(rep.phone, bx, y + 17)
+    doc.text(rep.email, bx, y + 22)
+    const repAddr = `${rep.address}${rep.numero ? ', ' + rep.numero : ''} — ${rep.city}/${rep.state}`
+    doc.text(doc.splitTextToSize(repAddr, boxW - 8).slice(0, 2), bx, y + 27)
+  }
 
+  // Direita: Cliente
   const rx = 20 + boxW + 14
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text('REPRESENTANTE', rx, y + 6)
+  doc.text('CLIENTE', rx, y + 6)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
-  doc.text(rep ? rep.name : 'Nenhum', rx, y + 12)
-  if (rep) {
-    doc.setFontSize(8)
-    doc.setTextColor(...MUTED)
-    doc.text(rep.phone, rx, y + 17)
-    doc.text(rep.email, rx, y + 22)
-    const repAddr = `${rep.address}${rep.numero ? ', ' + rep.numero : ''} — ${rep.city}/${rep.state}`
-    doc.text(doc.splitTextToSize(repAddr, boxW - 8)[0], rx, y + 27)
-  }
+  doc.text(client.name, rx, y + 12)
+  doc.setFontSize(8)
+  doc.setTextColor(...MUTED)
+  doc.text(client.phone, rx, y + 17)
+  doc.text(client.email, rx, y + 22)
+  const clientAddr = `${client.address}${client.numero ? ', ' + client.numero : ''} — ${client.city}/${client.state}`
+  doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 27)
 
   y += 42
 
@@ -196,13 +167,10 @@ export async function generateOrderPDF(
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text('PRODUTO', 24, y)
-  doc.text('FOTO', 82, y)
-  doc.text('DIM. (cm)', 96, y)
-  doc.text('OPCIONAIS', 127, y)
-  doc.text('QTD', 158, y)
-  doc.text('VALOR UN.', 166, y)
-  doc.text('TOTAL', w - 24, y, { align: 'right' })
+  doc.text('PRODUTO', 22, y)
+  doc.text('QTD', 140, y, { align: 'right' })
+  doc.text('VALOR UN.', 164, y, { align: 'right' })
+  doc.text('TOTAL', 186, y, { align: 'right' })
 
   y += 4
   doc.setDrawColor(...LINE)
@@ -214,48 +182,50 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
 
   for (const item of order.items) {
-    const optCount = [item.opt_aluminio, item.opt_madeira, item.opt_tecido, item.opt_couro, item.opt_corda].filter(Boolean).length
-    const rowH = Math.max(14, 6 + optCount * 3.5)
+    const rowH = 20
     if (y + rowH > 265) {
       doc.addPage()
       y = 20
     }
 
-    // Descrição + código
-    doc.setTextColor(...DARK)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    const descLines = doc.splitTextToSize(item.description, 54)
-    doc.text(descLines[0], 24, y)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(...MUTED)
-    doc.text(item.product_code, 24, y + 4)
-
-    // Foto do produto
+    // Foto (14×14mm, x=22, centrada verticalmente)
     const b64 = photoMap[item.product_code]
     if (b64) {
       try {
-        doc.addImage(b64, 'JPEG', 82, y - 3, 11, 11)
+        doc.addImage(b64, 'PNG', 22, y - 1, 14, 14)
       } catch { /* foto inválida — ignora */ }
     } else {
       doc.setDrawColor(...LINE)
       doc.setLineWidth(0.2)
-      doc.rect(82, y - 3, 11, 11)
+      doc.rect(22, y - 1, 14, 14)
       doc.setFontSize(5)
       doc.setTextColor(...MUTED)
-      doc.text('sem foto', 83, y + 3)
+      doc.text('sem\nfoto', 29, y + 5, { align: 'center' })
     }
 
+    // Nome do produto
+    doc.setTextColor(...DARK)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    const descLines = doc.splitTextToSize(item.description, 95)
+    doc.text(descLines[0], 40, y)
+
+    // Código
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...MUTED)
+    doc.text(item.product_code, 40, y + 4.5)
+
     // Dimensões
+    const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
+    const dimRaw = item.is_circular
+      ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
+      : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
-    const dimText = item.is_circular
-      ? `Ø ${item.largura} × A ${item.altura}`
-      : `L ${item.largura} × P ${item.profundidade} × A ${item.altura}`
-    doc.text(dimText, 96, y)
+    doc.text(`Dimensões: ${dimRaw}`, 40, y + 8.5)
 
-    // Opcionais com swatches
+    // Opcionais — linha horizontal com swatches
     const optSlots: { prefix: string; value: string }[] = []
     if (item.opt_aluminio) optSlots.push({ prefix: 'Al', value: item.opt_aluminio })
     if (item.opt_madeira) {
@@ -278,28 +248,25 @@ export async function generateOrderPDF(
     }
     if (item.opt_corda) optSlots.push({ prefix: 'Co', value: item.opt_corda })
 
-    optSlots.forEach((slot, idx) => {
-      const sy = y + idx * 3.5
-      let sx = 127
+    if (optSlots.length > 0) {
+      const optText = 'Opcionais: ' + optSlots.map((s) => `${s.prefix}: ${s.value}`).join(', ')
       doc.setFontSize(6.5)
       doc.setTextColor(...MUTED)
-      doc.text(`${slot.prefix}:`, sx, sy)
-      sx += doc.getTextWidth(`${slot.prefix}:`) + 1
-      drawSwatch(doc, slot.value, sx, sy)
-    })
+      doc.text(optText, 40, y + 12.5)
+    }
 
-    // Qtd + valores
+    // Colunas numéricas (alinhadas ao y do nome do produto)
+    const unitPrice = Number(item.unit_price)
+    const subtotal = unitPrice * item.qty
+
     doc.setTextColor(...DARK)
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
-    doc.text(String(item.qty), 161, y)
-
-    const unitPrice = Number(item.unit_price)
-    const subtotal = unitPrice * item.qty
-    doc.text('R$ ' + unitPrice.toFixed(2).replace('.', ','), 166, y)
+    doc.text(String(item.qty), 140, y, { align: 'right' })
+    doc.text(formatBRL(unitPrice), 164, y, { align: 'right' })
 
     doc.setFont('helvetica', 'bold')
-    doc.text('R$ ' + subtotal.toFixed(2).replace('.', ','), w - 24, y, { align: 'right' })
+    doc.text(formatBRL(subtotal), 186, y, { align: 'right' })
 
     // Linha separadora leve
     doc.setFont('helvetica', 'normal')
@@ -321,23 +288,18 @@ export async function generateOrderPDF(
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
   doc.setFont('helvetica', 'normal')
-  doc.text('Total de Itens:', w - 70, y)
+  doc.text('Total de Itens:', 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
-  doc.text(String(totalItems), w - 24, y, { align: 'right' })
+  doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
 
   doc.setFontSize(12)
   doc.setTextColor(...GOLD)
   doc.setFont('helvetica', 'normal')
-  doc.text('VALOR TOTAL:', w - 70, y)
+  doc.text('VALOR TOTAL:', 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
-  doc.text(
-    'R$ ' + Number(order.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-    w - 24,
-    y,
-    { align: 'right' },
-  )
+  doc.text(formatBRL(Number(order.total_value)), 186, y, { align: 'right' })
   y += 12
 
   // ── Observações ────────────────────────────────────────────────────────────
