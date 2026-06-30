@@ -56,6 +56,7 @@ export async function generateOrderPDF(
   client: Client,
   rep: Representative | null,
   products: Product[],
+  userId?: string,
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
   const w = doc.internal.pageSize.getWidth()
@@ -320,40 +321,52 @@ export async function generateOrderPDF(
     doc.text(obsLines, 24, y)
   }
 
-  // ── Bloco de assinaturas ──────────────────────────────────────────────────
-  const sigB64 = localStorage.getItem(`signature_${order.code}`)
-  if (sigB64) {
-    if (y + 40 > 265) { doc.addPage(); y = 20 }
-    y += 6
-    doc.setDrawColor(...LINE)
-    doc.setLineWidth(0.3)
-    doc.line(20, y, w - 20, y)
-    y += 8
+  // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
+  // Isolamento rígido: repSig nunca vaza para clientSig e vice-versa.
+  const repSig = order.rep_signature
+    || localStorage.getItem(`signature_rep_${order.code}`)
 
-    const colW = (w - 50) / 2
-    // Coluna esquerda: linha manual + legenda
-    doc.setDrawColor(...DARK)
-    doc.setLineWidth(0.3)
-    doc.line(20, y + 18, 20 + colW, y + 18)
-    doc.setFontSize(7)
-    doc.setTextColor(...MUTED)
-    doc.setFont('helvetica', 'normal')
-    doc.text('Representante / Ilya', 20 + colW / 2, y + 23, { align: 'center' })
+  const clientSig = order.client_signature
+    || localStorage.getItem(`signature_cli_${order.code}`)
 
-    // Coluna direita: assinatura eletrônica + legenda
-    const sx = 20 + colW + 10
+  if (y + 40 > 265) { doc.addPage(); y = 20 }
+  y += 6
+  doc.setDrawColor(...LINE)
+  doc.setLineWidth(0.3)
+  doc.line(20, y, w - 20, y)
+  y += 8
+
+  const colW = (w - 50) / 2
+
+  // Coluna esquerda: assinatura do representante
+  if (repSig) {
     try {
-      doc.addImage(sigB64, 'PNG', sx, y, colW, 20, undefined, 'FAST')
+      doc.addImage(repSig, 'PNG', 20, y, colW, 20, undefined, 'FAST')
     } catch { /* assinatura inválida — ignora */ }
-    doc.setDrawColor(...DARK)
-    doc.setLineWidth(0.3)
-    doc.line(sx, y + 20, sx + colW, y + 20)
-    doc.setFontSize(7)
-    doc.setTextColor(...MUTED)
-    doc.text('Cliente / Contratado', sx + colW / 2, y + 25, { align: 'center' })
-
-    y += 30
   }
+  doc.setDrawColor(...DARK)
+  doc.setLineWidth(0.3)
+  doc.line(20, y + 20, 20 + colW, y + 20)
+  doc.setFontSize(7)
+  doc.setTextColor(...MUTED)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Representante / Ilya', 20 + colW / 2, y + 25, { align: 'center' })
+
+  // Coluna direita: assinatura do cliente
+  const sx = 20 + colW + 10
+  if (clientSig) {
+    try {
+      doc.addImage(clientSig, 'PNG', sx, y, colW, 20, undefined, 'FAST')
+    } catch { /* assinatura inválida — ignora */ }
+  }
+  doc.setDrawColor(...DARK)
+  doc.setLineWidth(0.3)
+  doc.line(sx, y + 20, sx + colW, y + 20)
+  doc.setFontSize(7)
+  doc.setTextColor(...MUTED)
+  doc.text('Cliente / Contratado', sx + colW / 2, y + 25, { align: 'center' })
+
+  y += 30
 
   // ── Rodapé da página ───────────────────────────────────────────────────────
   y = 285

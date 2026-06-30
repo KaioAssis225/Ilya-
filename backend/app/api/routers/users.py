@@ -1,21 +1,21 @@
 import re
+import secrets
 import uuid
 import unicodedata
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.api.deps import get_db_session, get_current_user, require_roles
 from app.core.security import hash_password
 from app.models.user import User, UserRole
 from app.models.client import Client
 from app.models.representative import Representative
-from app.schemas.auth import UserRead, UserCreate, UserUpdate, UserPasswordReset
+from app.models.refresh_token import RefreshToken
+from app.schemas.auth import UserRead, UserCreate, UserUpdate, UserPasswordReset, UserCreateResponse
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 _admin_only = require_roles(UserRole.admin)
-
-DEFAULT_PASSWORD = "senhailya"
 
 
 def _normalize_username(full_name: str) -> str:
@@ -118,11 +118,16 @@ async def delete_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked.is_(False))
+        .values(revoked=True)
+    )
     await db.delete(user)
     await db.commit()
 
 
-@router.post("/from-client/{client_id}", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("/from-client/{client_id}", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_from_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
@@ -147,11 +152,12 @@ async def create_user_from_client(
     username = await _resolve_unique_username(base_username, db)
 
     synthetic_email = f"{username}@clientes.ilya.internal"
+    temp_password = secrets.token_urlsafe(9)
 
     user = User(
         email=synthetic_email,
         username=username,
-        hashed_password=hash_password(DEFAULT_PASSWORD),
+        hashed_password=hash_password(temp_password),
         full_name=client.name,
         role=UserRole.vendedor,
         must_change_password=True,
@@ -160,10 +166,17 @@ async def create_user_from_client(
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return user
+    return UserCreateResponse(
+        id=user.id,
+        username=user.username or '',
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role.value,
+        temp_password=temp_password,
+    )
 
 
-@router.post("/from-rep/{rep_id}", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("/from-rep/{rep_id}", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_from_rep(
     rep_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
@@ -182,11 +195,12 @@ async def create_user_from_rep(
     username = await _resolve_unique_username(base_username, db)
 
     synthetic_email = f"{username}@reps.ilya.internal"
+    temp_password = secrets.token_urlsafe(9)
 
     user = User(
         email=synthetic_email,
         username=username,
-        hashed_password=hash_password(DEFAULT_PASSWORD),
+        hashed_password=hash_password(temp_password),
         full_name=rep.name,
         role=UserRole.representante,
         rep_id=rep_id,
@@ -196,4 +210,11 @@ async def create_user_from_rep(
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return user
+    return UserCreateResponse(
+        id=user.id,
+        username=user.username or '',
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role.value,
+        temp_password=temp_password,
+    )

@@ -28,6 +28,9 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/seed.py:/app/seed.py
+      - ./backend/seed_admin.py:/app/seed_admin.py
     depends_on:
       db:
         condition: service_healthy

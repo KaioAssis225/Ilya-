@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
 import { AuthProvider } from './contexts/AuthContext'
+import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
+import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
 import ProtectedRoute from './components/ProtectedRoute'
+import ProfileModal from './components/ProfileModal'
 import LoginPage from './pages/LoginPage'
 import CadastroPage from './pages/CadastroPage'
 import OrcamentoPage from './pages/OrcamentoPage'
@@ -11,12 +15,49 @@ import PedidosPage from './pages/PedidosPage'
 import ProdutosPage from './pages/ProdutosPage'
 import AdminPage from './pages/AdminPage'
 import TrocarSenhaPage from './pages/TrocarSenhaPage'
+import SignContractPage from './pages/SignContractPage'
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 30_000, retry: 1 },
   },
 })
+
+// ── RBAC helpers ──────────────────────────────────────────────────────────────
+
+function isCliente(user: AuthUser) {
+  return user.role === 'vendedor' && !!user.linked_id
+}
+
+function canSeeOrcamentoPedidos(user: AuthUser) {
+  return user.role !== 'cadastros'
+}
+
+function canSeeCadastros(user: AuthUser) {
+  return !isCliente(user)
+}
+
+function canSeeAdmin(user: AuthUser) {
+  return user.role === 'admin'
+}
+
+function defaultRoute(user: AuthUser) {
+  if (user.role === 'representante') return '/orcamentos'
+  if (canSeeCadastros(user)) return '/cadastros'
+  return '/orcamentos'
+}
+
+// ── RoleGuard: redirect if user doesn't have access to this route ─────────────
+
+function RoleGuard({ allowed, children }: { allowed: (user: AuthUser) => boolean; children: React.ReactNode }) {
+  const { user } = useAuth()
+  if (!user) return null
+  if (!allowed(user)) return <Navigate to={defaultRoute(user)} replace />
+  return <>{children}</>
+}
+
+// ── BottomNav ─────────────────────────────────────────────────────────────────
 
 function BottomNav() {
   const { user, logout } = useAuth()
@@ -36,21 +77,25 @@ function BottomNav() {
         <LayoutGrid className="w-5 h-5" />
         <span className="text-[9px] font-semibold uppercase tracking-wider">Produtos</span>
       </NavLink>
-      <NavLink to="/orcamentos" className={itemClass('/orcamentos')}>
-        <ShoppingCart className="w-5 h-5" />
-        <span className="text-[9px] font-semibold uppercase tracking-wider">Orçamento</span>
-      </NavLink>
-      <NavLink to="/pedidos" className={itemClass('/pedidos')}>
-        <ClipboardList className="w-5 h-5" />
-        <span className="text-[9px] font-semibold uppercase tracking-wider">Pedidos</span>
-      </NavLink>
-      {user.role !== 'cliente' && (
+      {canSeeOrcamentoPedidos(user) && (
+        <NavLink to="/orcamentos" className={itemClass('/orcamentos')}>
+          <ShoppingCart className="w-5 h-5" />
+          <span className="text-[9px] font-semibold uppercase tracking-wider">Orçamento</span>
+        </NavLink>
+      )}
+      {canSeeOrcamentoPedidos(user) && (
+        <NavLink to="/pedidos" className={itemClass('/pedidos')}>
+          <ClipboardList className="w-5 h-5" />
+          <span className="text-[9px] font-semibold uppercase tracking-wider">Pedidos</span>
+        </NavLink>
+      )}
+      {canSeeCadastros(user) && (
         <NavLink to="/cadastros" className={itemClass('/cadastros')}>
           <Users className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Cadastros</span>
         </NavLink>
       )}
-      {user.role === 'admin' && (
+      {canSeeAdmin(user) && (
         <NavLink to="/admin" className={itemClass('/admin')}>
           <ShieldCheck className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Admin</span>
@@ -67,49 +112,109 @@ function BottomNav() {
   )
 }
 
+// ── Desktop Nav ───────────────────────────────────────────────────────────────
+
 function Nav() {
   const { user, logout } = useAuth()
+  const [showProfile, setShowProfile] = useState(false)
+  const [showNotifs, setShowNotifs] = useState(false)
+  const { data: notifications = [] } = useNotifications()
+  const markRead = useMarkNotificationRead()
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `nav-link ${isActive ? 'nav-link-active' : ''}`
 
   if (!user) return null
 
+  const unreadCount = notifications.filter(n => !n.is_read).length
+
   return (
-    <nav className="bg-white/80 backdrop-blur-md border-b border-[#e8e0d6] px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
-      <div className="flex items-center gap-1">
-        <h1
-          className="text-base font-semibold tracking-widest mr-5 text-[#2c2420]"
-          style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
-        >
-          ILYA <span className="text-[#8b6914] text-sm font-normal tracking-normal hidden sm:inline">— Sistema</span>
-        </h1>
-        {!user.must_change_password && (
-          <div className="hidden md:flex items-center gap-1">
-            <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>
-            <NavLink to="/produtos" className={linkClass}>Produtos</NavLink>
-            <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>
-            <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>
-            {user.role === 'admin' && (
-              <NavLink to="/admin" className={linkClass}>Admin</NavLink>
+    <>
+      <nav className="bg-white/80 backdrop-blur-md border-b border-[#e8e0d6] px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+        <div className="flex items-center gap-1">
+          <h1
+            className="text-base font-semibold tracking-widest mr-5 text-[#2c2420]"
+            style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
+          >
+            ILYA <span className="text-[#8b6914] text-sm font-normal tracking-normal hidden sm:inline">— Sistema</span>
+          </h1>
+          {!user.must_change_password && (
+            <div className="hidden md:flex items-center gap-1">
+              {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>}
+              <NavLink to="/produtos" className={linkClass}>Produtos</NavLink>
+              {canSeeOrcamentoPedidos(user) && <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>}
+              {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>}
+              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass}>Admin</NavLink>}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3 md:gap-4 text-xs">
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifs(v => !v)}
+              className="relative text-[#8a7a6e] hover:text-[#8b6914] transition-colors p-1"
+              title="Notificações"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#8b6914] text-white text-[9px] font-bold flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            {showNotifs && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-[#e8e0d6] rounded-xl shadow-lg z-50 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[#e8e0d6] flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#2c2420] uppercase tracking-wider">Notificações</span>
+                  <button onClick={() => setShowNotifs(false)} className="text-[#9d8d81] hover:text-[#2c2420] text-lg leading-none">&times;</button>
+                </div>
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-xs text-[#9d8d81]">Nenhuma notificação.</div>
+                ) : (
+                  <ul className="divide-y divide-[#f0ece6] max-h-72 overflow-y-auto">
+                    {notifications.map(n => (
+                      <li
+                        key={n.id}
+                        className="px-4 py-3 hover:bg-[#fdf9f0] cursor-pointer transition-colors"
+                        onClick={() => { markRead.mutate(n.id); setShowNotifs(false) }}
+                      >
+                        <p className="text-xs text-[#2c2420]">{n.message}</p>
+                        <p className="text-[10px] text-[#a89a8e] mt-0.5">
+                          {new Date(n.created_at).toLocaleString('pt-BR')}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
-      <div className="flex items-center gap-3 md:gap-4 text-xs">
-        <div className="text-[#8a7a6e] text-right">
-          <span className="block font-medium text-[#2c2420] max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
-          <span className="hidden sm:block text-[10px] uppercase tracking-wider text-[#8b6914]/80">{user.role}</span>
+          <button
+            onClick={() => setShowProfile(true)}
+            className="text-right hover:opacity-70 transition-opacity cursor-pointer"
+          >
+            <span className="block font-medium text-[#2c2420] max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
+            <span className="hidden sm:block text-[10px] uppercase tracking-wider text-[#8b6914]/80">{user.role}</span>
+          </button>
+          <button
+            onClick={logout}
+            className="hidden md:block text-[#8a7a6e] hover:text-[#2c2420] border border-[#e8e0d6] hover:border-[#2c2420] px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
+          >
+            Sair
+          </button>
         </div>
-        <button
-          onClick={logout}
-          className="hidden md:block text-[#8a7a6e] hover:text-[#2c2420] border border-[#e8e0d6] hover:border-[#2c2420] px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
-        >
-          Sair
-        </button>
-      </div>
-    </nav>
+      </nav>
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+    </>
   )
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function RootRedirect() {
+  const { user } = useAuth()
+  if (!user) return <Navigate to="/login" replace />
+  return <Navigate to={defaultRoute(user)} replace />
 }
 
 export default function App() {
@@ -120,14 +225,37 @@ export default function App() {
           <Nav />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/sign-contract" element={<SignContractPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
-              <Route path="/" element={<Navigate to="/cadastros" replace />} />
+              <Route path="/" element={<RootRedirect />} />
               <Route path="/cadastros" element={<CadastroPage />} />
               <Route path="/produtos" element={<ProdutosPage />} />
-              <Route path="/orcamentos" element={<OrcamentoPage />} />
-              <Route path="/pedidos" element={<PedidosPage />} />
-              <Route path="/admin" element={<AdminPage />} />
+              <Route
+                path="/orcamentos"
+                element={
+                  <RoleGuard allowed={canSeeOrcamentoPedidos}>
+                    <OrcamentoPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/pedidos"
+                element={
+                  <RoleGuard allowed={canSeeOrcamentoPedidos}>
+                    <PedidosPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <RoleGuard allowed={canSeeAdmin}>
+                    <AdminPage />
+                  </RoleGuard>
+                }
+              />
             </Route>
           </Routes>
           <BottomNav />

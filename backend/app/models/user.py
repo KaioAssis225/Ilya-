@@ -9,6 +9,8 @@ class UserRole(str, enum.Enum):
     admin = "admin"
     vendedor = "vendedor"
     representante = "representante"
+    cadastros = "cadastros"
+    produtos = "produtos"
 
 
 class User(Base, TimestampMixin):

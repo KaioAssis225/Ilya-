@@ -35,6 +35,19 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+# Pré-computado na inicialização para uniformizar o tempo de resposta do login
+# quando o usuário não existe (CWE-204 timing side-channel mitigation).
+_DUMMY_HASH: str = _hasher.hash("ilya_sentinel_dummy_2026")
+
+
+def dummy_verify() -> None:
+    """Queima tempo Argon2 equivalente quando usuário não é encontrado no login."""
+    try:
+        _hasher.verify(_DUMMY_HASH, "nonexistent")
+    except Exception:
+        pass
+
+
 # ── JWT Access Token ──────────────────────────────────────────────────────────
 
 def create_access_token(user_id: uuid.UUID, role: str) -> str:
@@ -71,3 +84,21 @@ def hash_refresh_token(token: str) -> str:
 def refresh_token_expiry() -> datetime:
     # Coluna no DB é TIMESTAMP WITHOUT TIME ZONE — armazena UTC naive
     return (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS)).replace(tzinfo=None)
+
+
+# ── Sign Token (60-min, for contract signing) ─────────────────────────────────
+
+def create_sign_token(order_id: str, client_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=60)
+    payload = {"order_id": order_id, "client_id": client_id, "exp": expire, "type": "sign"}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_sign_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM], leeway=timedelta(seconds=30))
+        if payload.get("type") != "sign":
+            return None
+        return payload
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None

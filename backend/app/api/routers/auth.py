@@ -1,13 +1,15 @@
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from app.api.deps import get_db_session, get_authenticated_user
+from app.api.deps import get_db_session, get_authenticated_user, get_current_user
 from app.core.limiter import limiter
 from app.core.security import (
     verify_password,
+    dummy_verify,
     hash_password,
     create_access_token,
     generate_refresh_token,
@@ -15,7 +17,8 @@ from app.core.security import (
     refresh_token_expiry,
 )
 from app.core.config import settings
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.models.client import Client
 from app.models.refresh_token import RefreshToken
 from app.schemas.auth import LoginRequest, AccessTokenResponse, UserRead, ChangePasswordRequest
 
@@ -58,7 +61,16 @@ async def login(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(payload.password, user.hashed_password):
+    if not user:
+        dummy_verify()
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning("Falha de login: ip=%s", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário ou senha incorretos.",
+        )
+
+    if not verify_password(payload.password, user.hashed_password):
         client_ip = request.client.host if request.client else "unknown"
         logger.warning("Falha de login: ip=%s", client_ip)
         raise HTTPException(
@@ -155,7 +167,9 @@ async def me(current_user: User = Depends(get_authenticated_user)):
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
 async def change_password(
+    request: Request,
     body: ChangePasswordRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_authenticated_user),
@@ -167,3 +181,83 @@ async def change_password(
     user.hashed_password = hash_password(body.new_password)
     user.must_change_password = False
     await db.commit()
+
+
+@router.get("/my-data")
+async def my_data(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_authenticated_user),
+):
+    """ACT-01 / ACT-02: retorna todos os dados pessoais do titular (Art. 18, I e II)."""
+    payload: dict = {
+        "usuario": {
+            "id": str(current_user.id),
+            "nome": current_user.full_name,
+            "email": current_user.email,
+            "username": current_user.username,
+            "role": current_user.role.value,
+            "ativo": current_user.is_active,
+        },
+        "dados_cliente": None,
+    }
+    if current_user.linked_id and current_user.role == UserRole.vendedor:
+        client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
+        if client:
+            payload["dados_cliente"] = {
+                "id": str(client.id),
+                "nome": client.name,
+                "telefone": client.phone,
+                "email": client.email,
+                "cep": client.cep,
+                "numero": client.numero,
+                "endereco": client.address,
+                "cidade": client.city,
+                "estado": client.state,
+            }
+    return payload
+
+
+@router.get("/my-data/export")
+async def my_data_export(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_authenticated_user),
+):
+    """ACT-02: exportação portável dos dados pessoais em JSON (Art. 18, V)."""
+    data = await my_data(db=db, current_user=current_user)
+    import json
+    content = json.dumps(data, ensure_ascii=False, indent=2)
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=\"meus-dados-ilya.json\""},
+    )
+
+
+@router.post("/anonymize", status_code=status.HTTP_204_NO_CONTENT)
+async def anonymize_my_data(
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """ACT-03: anonimiza os dados PII do titular e desativa a conta (Art. 18, IV e VI)."""
+    if current_user.role != UserRole.vendedor or not current_user.linked_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Operação disponível apenas para usuários clientes.")
+
+    client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
+    if client:
+        client.name = "CLIENTE ANONIMIZADO"
+        client.phone = "(00) 00000-0000"
+        client.email = f"anonimizado_{client.id}@excluido.ilya"
+        client.cep = "00000-000"
+        client.numero = None
+        client.address = "Endereço Excluído, 00"
+        client.city = "—"
+        client.state = "EX"
+
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one()
+    user.is_active = False
+
+    await db.commit()
+    logger.info("Anonimização solicitada: user_id=%s client_id=%s", current_user.id, current_user.linked_id)
+    _clear_refresh_cookie(response)

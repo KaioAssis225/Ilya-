@@ -29,6 +29,8 @@ from sqlalchemy import text
 from app.db.session import AsyncSessionLocal
 from app.models.optional_color import OptionalColor
 from app.models.product import Product
+from app.models.product_type import ProductType
+from app.models.optional_category import OptionalCategory
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.order import Order, OrderItem
@@ -276,9 +278,33 @@ async def seed() -> None:
         await db.execute(text("DELETE FROM product_optionals"))
         await db.execute(text("DELETE FROM products"))
         await db.execute(text("DELETE FROM optionals"))
+        await db.execute(text("UPDATE users SET rep_id = NULL, linked_id = NULL WHERE rep_id IS NOT NULL OR linked_id IS NOT NULL"))
         await db.execute(text("DELETE FROM clients"))
         await db.execute(text("DELETE FROM representatives"))
+        await db.execute(text("DELETE FROM product_types"))
+        await db.execute(text("DELETE FROM optional_categories"))
         await db.commit()
+
+        # ── Tipos de Móveis ───────────────────────────────────────────────
+        print("Criando tipos de móveis...")
+        for name in ['Poltrona', 'Sofá', 'Mesa', 'Cadeira', 'Banqueta', 'Chaise', 'Aparador', 'Outro']:
+            db.add(ProductType(name=name))
+        await db.flush()
+
+        # ── Categorias de Opcionais ───────────────────────────────────────
+        print("Criando categorias de opcionais...")
+        for code, name in [
+            ('aluminio',       'Alumínio'),
+            ('tecido_faixa_1', 'Tecido Faixa 1'),
+            ('tecido_faixa_2', 'Tecido Faixa 2'),
+            ('corda',          'Corda'),
+            ('madeira_teka',   'Madeira Teka'),
+            ('madeira_freijo', 'Madeira Freijó'),
+            ('couro_soleta',   'Couro Soleta'),
+            ('couro_pele',     'Couro Pele'),
+        ]:
+            db.add(OptionalCategory(name=name, code=code))
+        await db.flush()
 
         # ── Opcionais ──────────────────────────────────────────────────────
         print("Criando catálogo de opcionais...")

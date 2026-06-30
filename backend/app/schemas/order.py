@@ -8,7 +8,6 @@ from datetime import datetime
 class OrderItemCreate(BaseModel):
     product_code: str
     qty: int = Field(..., ge=1)
-    unit_price: Decimal = Field(..., ge=0, decimal_places=2)
     opt_aluminio: Optional[str] = None
     opt_madeira: Optional[str] = None
     opt_tecido: Optional[str] = None
@@ -53,6 +52,8 @@ class OrderRead(BaseModel):
     rep_id: Optional[uuid.UUID]
     total_value: Decimal
     notes: Optional[str]
+    rep_signature: Optional[str] = None
+    client_signature: Optional[str] = None
     items: List[OrderItemRead]
     created_at: datetime
     updated_at: datetime

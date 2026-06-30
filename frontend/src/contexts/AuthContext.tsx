@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import axios from 'axios'
 import { bindAuthHandlers } from '../lib/api'
 
-export type UserRole = 'admin' | 'vendedor' | 'representante'
+export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
 
 export interface AuthUser {
   id: string

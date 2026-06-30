@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
+import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
 import { useClients, useCreateClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative } from '../hooks/useRepresentatives'
 import { useCreateOrder, useOrders } from '../hooks/useOrders'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
+import { SafePrice } from '../components/SafePrice'
 import { useAuth } from '../hooks/useAuth'
 import type { Product, Client, Representative, ClientCreate } from '../types'
 
@@ -134,16 +136,13 @@ function QuickRegisterModal({ title, onSave, onClose }: {
     if (clean.length !== 8) return
     setCepLoading(true)
     try {
-      const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
-      const data = await r.json()
-      if (!data.erro) {
-        setForm((f) => ({
-          ...f,
-          address: `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}`,
-          city: data.localidade,
-          state: data.uf,
-        }))
-      }
+      const { data } = await api.get(`/utils/cep/${clean}`)
+      setForm((f) => ({
+        ...f,
+        address: `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}`,
+        city: data.localidade,
+        state: data.uf,
+      }))
     } finally { setCepLoading(false) }
   }
 
@@ -208,7 +207,6 @@ function QuickRegisterModal({ title, onSave, onClose }: {
 interface CartItem {
   product_code: string
   qty: number
-  unit_price: number
   discount: number
   opt_categories: Partial<Record<string, string>>
   _product: Product
@@ -232,7 +230,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
 // ── Opcionais estáticos ────────────────────────────────────────────────────────
 
 function StaticOptionals({ item }: { item: CartItem }) {
-  const entries = Object.entries(item.opt_categories)
+  const entries = (Object.entries(item.opt_categories) as [string, string | undefined][]).filter((e): e is [string, string] => e[1] !== undefined)
   if (entries.length === 0) return null
   return (
     <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -338,14 +336,14 @@ function MobileCartCard({
         {/* Pricing */}
         <div className="text-right">
           {hasDiscount && (
-            <p className="text-[10px] text-[#c8bdb5] line-through">R$ {fmt(item._product.price * item.qty)}</p>
+            <p className="text-[10px] text-[#c8bdb5] line-through"><SafePrice value={item._product.price * item.qty} /></p>
           )}
           {hasDiscount && (
             <span className="text-[10px] bg-[#8b6914]/10 text-[#8b6914] font-semibold px-1.5 py-0.5 rounded-full">
               -{item.discount}%
             </span>
           )}
-          <p className="text-sm font-bold text-[#2c2420] mt-0.5">R$ {fmt(subtotal)}</p>
+          <p className="text-sm font-bold text-[#2c2420] mt-0.5"><SafePrice value={subtotal} /></p>
         </div>
       </div>
     </div>
@@ -370,7 +368,7 @@ function OrderForm({
   reps, clients, selectedRep, selectedClient, notes,
   onRepChange, onClientChange, onNotesChange,
   onQuickAddRep, onQuickAddClient,
-  budgetCode, cart, total, onSubmit, isGenerating,
+  budgetCode, cart, onSubmit, isGenerating,
   repLocked, clientLocked,
 }: {
   reps: Representative[]; clients: Client[]
@@ -379,7 +377,7 @@ function OrderForm({
   onClientChange: (c: Client | null) => void
   onNotesChange: (n: string) => void
   onQuickAddRep: () => void; onQuickAddClient: () => void
-  budgetCode: string; cart: CartItem[]; total: number
+  budgetCode: string; cart: CartItem[]
   onSubmit: () => void; isGenerating: boolean
   repLocked?: boolean; clientLocked?: boolean
 }) {
@@ -392,8 +390,11 @@ function OrderForm({
         </span>
       </div>
 
-      {repLocked && selectedRep ? (
-        <LockedField label="Representante" value={`${selectedRep.name} — ${selectedRep.city}/${selectedRep.state}`} />
+      {repLocked ? (
+        <LockedField
+          label="Representante"
+          value={selectedRep ? `${selectedRep.name} — ${selectedRep.city}/${selectedRep.state}` : '—'}
+        />
       ) : (
         <div className="space-y-1">
           <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Representante</span>
@@ -575,7 +576,6 @@ export default function OrcamentoPage() {
       return [...prev, {
         product_code: selectedProduct.product_code,
         qty: 1,
-        unit_price: selectedProduct.price ?? 0,
         discount: 0,
         opt_categories: auto_categories,
         _product: selectedProduct,
@@ -614,10 +614,9 @@ export default function OrcamentoPage() {
           client_id: selectedClient.id,
           rep_id: selectedRep?.id ?? null,
           notes: notes || null,
-          items: cart.map(({ product_code, qty, discount, opt_categories, _product }) => ({
+          items: cart.map(({ product_code, qty, opt_categories }) => ({
             product_code,
             qty,
-            unit_price: (_product.price ?? 0) * (1 - (discount || 0) / 100),
             ...computeOptFields(opt_categories),
           })),
         }),
@@ -685,9 +684,7 @@ export default function OrcamentoPage() {
           <div className="text-[11px] pr-5 flex-1 min-w-0">
             <p className="text-[#8b6914] font-mono font-semibold">{selectedProduct.product_code}</p>
             <p className="text-[#2c2420] font-medium truncate">{selectedProduct.description}</p>
-            <p className="text-[#8b6914] font-bold mt-0.5">
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedProduct.price)}
-            </p>
+            <p className="text-[#8b6914] font-bold mt-0.5"><SafePrice value={selectedProduct.price} /></p>
           </div>
         </div>
       )}
@@ -715,7 +712,7 @@ export default function OrcamentoPage() {
               selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
               onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
               onQuickAddRep={() => setQuickModal('rep')} onQuickAddClient={() => setQuickModal('client')}
-              budgetCode={budgetCode} cart={cart} total={total}
+              budgetCode={budgetCode} cart={cart}
               onSubmit={handleSubmit} isGenerating={isGenerating}
               repLocked={repLocked} clientLocked={clientLocked}
             />
@@ -820,7 +817,7 @@ export default function OrcamentoPage() {
                             />
                           </td>
                           <td className="px-4 py-3.5 text-[#4a3f38] text-xs font-semibold whitespace-nowrap align-middle">
-                            R$ {fmt(item._product.price)}
+                            <SafePrice value={item._product.price} />
                           </td>
                           <td className="px-4 py-3.5 align-middle">
                             <input
@@ -835,12 +832,12 @@ export default function OrcamentoPage() {
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-[#9d8d81] mt-0.5 text-center whitespace-nowrap">
-                                − R$ {fmt(item._product.price * item.discount / 100)}
+                                <SafePrice value={item._product.price * item.discount / 100} prefix="− R$ " />
                               </p>
                             )}
                           </td>
                           <td className="px-4 py-3.5 text-right text-xs font-bold text-[#2c2420] align-middle whitespace-nowrap">
-                            R$ {fmt(subtotal)}
+                            <SafePrice value={subtotal} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
                             <button onClick={() => removeItem(item.product_code)} className="text-[#c8bdb5] hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center mx-auto">
@@ -865,7 +862,7 @@ export default function OrcamentoPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[#2c2420] font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
-                <span className="text-[#8b6914] font-bold text-base">R$ {fmt(total)}</span>
+                <span className="text-[#8b6914] font-bold text-base"><SafePrice value={total} /></span>
               </div>
             </div>
           )}
@@ -888,7 +885,7 @@ export default function OrcamentoPage() {
             </span>
           </div>
           {cart.length > 0 && (
-            <span className="text-sm font-bold">R$ {fmt(total)}</span>
+            <span className="text-sm font-bold"><SafePrice value={total} /></span>
           )}
         </button>
       </div>
@@ -901,8 +898,9 @@ export default function OrcamentoPage() {
           onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
           onQuickAddRep={() => { setDrawerOpen(false); setQuickModal('rep') }}
           onQuickAddClient={() => { setDrawerOpen(false); setQuickModal('client') }}
-          budgetCode={budgetCode} cart={cart} total={total}
+          budgetCode={budgetCode} cart={cart}
           onSubmit={handleSubmit} isGenerating={isGenerating}
+          repLocked={repLocked} clientLocked={clientLocked}
         />
       </BottomDrawer>
 
@@ -913,7 +911,7 @@ export default function OrcamentoPage() {
           onClose={() => setQuickModal(null)}
         />
       )}
-      {quickModal === 'rep' && (
+      {quickModal === 'rep' && !isRep && (
         <QuickRegisterModal
           title="Novo Representante"
           onSave={async (data) => { await createRepM.mutateAsync(data) }}

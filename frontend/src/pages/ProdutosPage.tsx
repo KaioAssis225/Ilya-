@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { X, ShoppingCart, Check } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
+import { useProductTypes } from '../hooks/useProductTypes'
 import type { Product } from '../types'
-
-const TIPOS = ['Todos', 'Poltrona', 'Sofá', 'Cadeira', 'Mesa', 'Banqueta', 'Chaise', 'Aparador', 'Outro']
 
 const CAT_LABEL: Record<string, string> = {
   aluminio: 'Alumínio', corda: 'Corda',
@@ -38,7 +37,6 @@ function addToCart(product: Product) {
     cart.push({
       product_code: product.product_code,
       qty: 1,
-      unit_price: product.price,
       discount: 0,
       opt_categories,
       _product: product,
@@ -192,8 +190,11 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
 
 export default function ProdutosPage() {
   const { data: products = [], isLoading } = useProducts()
+  const { data: productTypes = [] } = useProductTypes()
   const [activeTipo, setActiveTipo] = useState('Todos')
   const [selected, setSelected] = useState<Product | null>(null)
+
+  const tipos = ['Todos', ...productTypes.map(t => t.name)]
 
   const filtered = activeTipo === 'Todos'
     ? products
@@ -211,7 +212,7 @@ export default function ProdutosPage() {
 
         {/* Chips de filtro — scroll horizontal no mobile */}
         <div className="flex gap-2 mb-5 md:mb-7 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
-          {TIPOS.map(tipo => (
+          {tipos.map(tipo => (
             <button
               key={tipo}
               onClick={() => setActiveTipo(tipo)}

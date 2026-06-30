@@ -56,6 +56,7 @@ export interface Client {
   created_at: string
   updated_at: string
   has_user?: boolean
+  user_validated?: boolean
 }
 
 export interface ClientCreate {
@@ -84,7 +85,6 @@ export interface RepresentativeUpdate extends Partial<RepresentativeCreate> {}
 export interface OrderItemCreate {
   product_code: string
   qty: number
-  unit_price: number
   opt_aluminio?: string | null
   opt_madeira?: string | null
   opt_tecido?: string | null
@@ -127,6 +127,8 @@ export interface Order {
   rep_id: string | null
   total_value: number
   notes: string | null
+  rep_signature: string | null
+  client_signature: string | null
   items: OrderItem[]
   created_at: string
   updated_at: string

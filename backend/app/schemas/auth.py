@@ -50,3 +50,12 @@ class UserPasswordReset(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     new_password: str
+
+
+class UserCreateResponse(BaseModel):
+    id: uuid.UUID
+    username: str
+    email: str
+    full_name: str
+    role: str
+    temp_password: str

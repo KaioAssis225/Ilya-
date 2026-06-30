@@ -1,15 +1,18 @@
 import { useState, useRef } from 'react'
-import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle } from 'lucide-react'
+import api from '../lib/api'
+import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
+import { useProductTypes, useCreateProductType, useUpdateProductType, useDeleteProductType } from '../hooks/useProductTypes'
+import { useOptionalCategories, useCreateOptionalCategory, useUpdateOptionalCategory, useDeleteOptionalCategory } from '../hooks/useOptionalCategories'
 import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
-import type { UserRead } from '../hooks/useUsers'
+import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import type { Product, ProductCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
-type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais'
+type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos'
 type SortDir = 'asc' | 'desc'
 
 const ESTADOS = [
@@ -37,6 +40,7 @@ const TAB_PALETTE = {
   clientes:        { color: '#648261', label: 'Verde Oliva' },
   representantes:  { color: '#507a9b', label: 'Azul Mineral' },
   opcionais:       { color: '#c47e4a', label: 'Âmbar' },
+  tipos:           { color: '#7a5c9b', label: 'Violeta' },
 } as const
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -88,15 +92,32 @@ async function fetchCep(cep: string): Promise<ViaCepResponse | null> {
   const clean = cep.replace(/\D/g, '')
   if (clean.length !== 8) return null
   try {
-    const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
-    const data: ViaCepResponse = await r.json()
-    return data.erro ? null : data
+    const r = await api.get<ViaCepResponse>(`/utils/cep/${clean}`)
+    return r.data
   } catch {
     return null
   }
 }
 
 // ── Address form fields ──────────────────────────────────────────────────────
+
+function formatPhone(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 11)
+  if (d.length === 0) return ''
+  if (d.length <= 2) return `(${d}`
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
+
+function formatCep(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8)
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
+}
+
+function formatOnlyNumbers(value: string): string {
+  return value.replace(/\D/g, '')
+}
 
 function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: ClientCreate) => void }) {
   const [cepLoading, setCepLoading] = useState(false)
@@ -123,7 +144,7 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-[#9d8d81]">Telefone *</span>
-        <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+        <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} required />
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-[#9d8d81]">E-mail *</span>
@@ -131,12 +152,12 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
       </label>
       <label className="flex flex-col gap-1 relative">
         <span className="text-xs text-[#9d8d81]">CEP *</span>
-        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={9} required />
+        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: formatCep(e.target.value) })} onBlur={handleCepBlur} maxLength={9} required />
         {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-[#8b6914] animate-pulse">...</span>}
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-[#9d8d81]">Número</span>
-        <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
+        <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: formatOnlyNumbers(e.target.value) })} />
       </label>
       <label className="col-span-2 flex flex-col gap-1">
         <span className="text-xs text-[#9d8d81]">Endereço *</span>
@@ -208,13 +229,28 @@ function groupOptionalsByCategory(optionals: OptionalColor[]): { category: strin
   }))
 }
 
+function groupOptionalsByCategoryDynamic(optionals: OptionalColor[], catLabel: (code: string) => string): { category: string; label: string; items: OptionalColor[] }[] {
+  const map = new Map<string, OptionalColor[]>()
+  for (const opt of optionals) {
+    if (!map.has(opt.category)) map.set(opt.category, [])
+    map.get(opt.category)!.push(opt)
+  }
+  return Array.from(map.entries()).map(([category, items]) => ({
+    category,
+    label: catLabel(category),
+    items,
+  }))
+}
+
 function ProductsTab({ color }: { color: string }) {
   const { data: products, isLoading } = useProducts()
   const { data: allOptionals = [] } = useOptionals()
+  const { data: allTypes = [] } = useProductTypes()
   const createM = useCreateProduct()
   const updateM = useUpdateProduct()
   const deleteM = useDeleteProduct()
   const uploadM = useUploadProductPhoto()
+  const createTypeM = useCreateProductType()
 
   const { sorted, sortKey, sortDir, toggle } = useSortedList<Product>(products, 'product_code')
   const [showForm, setShowForm] = useState(false)
@@ -225,6 +261,9 @@ function ProductsTab({ color }: { color: string }) {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [showNewTypeModal, setShowNewTypeModal] = useState(false)
+  const [newTypeName, setNewTypeName] = useState('')
+  const [newTypeErr, setNewTypeErr] = useState('')
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
@@ -381,6 +420,33 @@ function ProductsTab({ color }: { color: string }) {
         </>
       )}
 
+      {showNewTypeModal && (
+        <Modal title="Novo Tipo de Móvel" onClose={() => { setShowNewTypeModal(false); setNewTypeName(''); setNewTypeErr('') }} accentColor={color}>
+          <form onSubmit={async (e) => {
+            e.preventDefault(); setNewTypeErr('')
+            try {
+              const created = await createTypeM.mutateAsync({ name: newTypeName.trim() })
+              setForm(prev => ({ ...prev, type: created.name }))
+              setShowNewTypeModal(false); setNewTypeName('')
+            } catch {
+              setNewTypeErr('Tipo já existe ou nome inválido.')
+            }
+          }} className="space-y-4">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Nome do Novo Tipo *</span>
+              <input className="input" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} required autoFocus />
+            </label>
+            {newTypeErr && <p className="text-xs text-red-500">{newTypeErr}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={createTypeM.isPending} className="btn-primary flex-1">
+                {createTypeM.isPending ? 'Salvando...' : 'Criar e Selecionar'}
+              </button>
+              <button type="button" onClick={() => { setShowNewTypeModal(false); setNewTypeName('') }} className="btn-secondary px-4">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {showForm && (
         <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -399,10 +465,14 @@ function ProductsTab({ color }: { color: string }) {
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-[#9d8d81]">Tipo</span>
-                <select className="input" value={form.type ?? 'Outro'} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                  {['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro'].map(t => (
+                <select className="input" value={form.type ?? 'Outro'} onChange={(e) => {
+                  if (e.target.value === '__new__') { setShowNewTypeModal(true) }
+                  else setForm({ ...form, type: e.target.value })
+                }}>
+                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro']).map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
+                  <option value="__new__">+ Adicionar Novo...</option>
                 </select>
               </label>
             </div>
@@ -595,7 +665,7 @@ function PeopleTab<T extends Client | Representative>({
   const [editing, setEditing] = useState<T | null>(null)
   const [deleting, setDeleting] = useState<T | null>(null)
   const [viewing, setViewing] = useState<T | null>(null)
-  const [createdUser, setCreatedUser] = useState<UserRead | null>(null)
+  const [createdUser, setCreatedUser] = useState<UserCreateResponse | null>(null)
   const [createUserError, setCreateUserError] = useState<string | null>(null)
   const [form, setForm] = useState<ClientCreate>(EMPTY_ADDRESS)
 
@@ -620,7 +690,7 @@ function PeopleTab<T extends Client | Representative>({
     if (!viewing) return
     setCreateUserError(null)
     try {
-      let user: UserRead
+      let user: UserCreateResponse
       if (entityType === 'client') {
         user = await createFromClient.mutateAsync(viewing.id)
       } else {
@@ -665,9 +735,11 @@ function PeopleTab<T extends Client | Representative>({
                     <button onClick={() => openEdit(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setDeleting(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!(isRep && entityType === 'client') && (
+                      <button onClick={() => setDeleting(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="mt-2 space-y-0.5 text-xs text-[#4a3f38]">
@@ -708,7 +780,9 @@ function PeopleTab<T extends Client | Representative>({
                         <button onClick={() => openEdit(item)} title="Editar" className="text-[#9d8d81] transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => setDeleting(item)} title="Excluir" className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        {!(isRep && entityType === 'client') && (
+                          <button onClick={() => setDeleting(item)} title="Excluir" className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -746,7 +820,7 @@ function PeopleTab<T extends Client | Representative>({
                   </div>
                   <div className="text-sm text-[#4a3f38] space-y-1">
                     <p><span className="text-[#9d8d81]">Usuário:</span> <strong>{createdUser.username}</strong></p>
-                    <p><span className="text-[#9d8d81]">Senha inicial:</span> <strong>senhailya</strong></p>
+                    <p><span className="text-[#9d8d81]">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>
                     <p><span className="text-[#9d8d81]">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Vendedor'}</p>
                   </div>
                   <p className="text-xs text-[#8a7a6e] mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
@@ -778,7 +852,7 @@ function PeopleTab<T extends Client | Representative>({
                     {createUserPending ? 'Criando…' : 'Criar Usuário'}
                   </button>
                   <p className="text-xs text-[#9d8d81] mt-2">
-                    Cria acesso com usuário gerado pelo nome e senha padrão <em>"senhailya"</em>.
+                    Cria acesso com usuário gerado pelo nome e senha temporária aleatória.
                   </p>
                 </>
               )}
@@ -819,12 +893,16 @@ function PeopleTab<T extends Client | Representative>({
 
 const EMPTY_OPT: OptionalColorCreate = { category: 'aluminio', color_name: '' }
 
-function OptionaisTab({ color }: { color: string }) {
+function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: boolean }) {
   const { data: optionals, isLoading } = useOptionals()
+  const { data: categories = [] } = useOptionalCategories()
   const createM = useCreateOptional()
   const updateM = useUpdateOptional()
   const deleteM = useDeleteOptional()
   const uploadOptM = useUploadOptionalPhoto()
+  const createCatM = useCreateOptionalCategory()
+  const updateCatM = useUpdateOptionalCategory()
+  const deleteCatM = useDeleteOptionalCategory()
 
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<OptionalColor | null>(null)
@@ -834,8 +912,19 @@ function OptionaisTab({ color }: { color: string }) {
   const [optPhotoPreview, setOptPhotoPreview] = useState<string | null>(null)
   const optFileRef = useRef<HTMLInputElement>(null)
 
+  // Group modal
+  const [showGroupForm, setShowGroupForm] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; code: string } | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<{ id: string; name: string } | null>(null)
+  const [groupForm, setGroupForm] = useState({ name: '', code: '' })
+  const [groupErr, setGroupErr] = useState('')
+
+  // Lightbox
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+
   function openCreate() {
-    setForm(EMPTY_OPT); setEditing(null)
+    const defaultCat = categories[0]?.code ?? CATEGORY_OPTIONS[0]?.value ?? 'aluminio'
+    setForm({ category: defaultCat, color_name: '' }); setEditing(null)
     setPendingOptFile(null); setOptPhotoPreview(null); setShowForm(true)
   }
   function openEdit(opt: OptionalColor) {
@@ -858,15 +947,47 @@ function OptionaisTab({ color }: { color: string }) {
     setShowForm(false)
   }
 
-  const grouped = optionals ? groupOptionalsByCategory(optionals) : []
+  function openNewGroup() { setEditingGroup(null); setGroupForm({ name: '', code: '' }); setGroupErr(''); setShowGroupForm(true) }
+  function openEditGroup(g: { id: string; name: string; code: string }) { setEditingGroup(g); setGroupForm({ name: g.name, code: g.code }); setGroupErr(''); setShowGroupForm(true) }
+  async function handleGroupSubmit(e: React.FormEvent) {
+    e.preventDefault(); setGroupErr('')
+    try {
+      if (editingGroup) await updateCatM.mutateAsync({ id: editingGroup.id, ...groupForm })
+      else await createCatM.mutateAsync(groupForm)
+      setShowGroupForm(false)
+    } catch {
+      setGroupErr('Código já existe ou dados inválidos.')
+    }
+  }
+
+  // Dynamic category list: prefer API, fall back to static
+  const catOptions = categories.length > 0
+    ? categories.map(c => ({ value: c.code, label: c.name }))
+    : CATEGORY_OPTIONS
+
+  const catLabel = (code: string) => {
+    const found = categories.find(c => c.code === code)
+    return found?.name ?? CATEGORY_LABEL[code] ?? code
+  }
+
+  const grouped = optionals
+    ? groupOptionalsByCategoryDynamic(optionals, catLabel)
+    : []
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2">
         <span className="text-sm text-[#9d8d81]">{optionals?.length ?? 0} opcionais cadastrados</span>
-        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
-          <Plus className="w-4 h-4" /> Novo Opcional
-        </button>
+        {!readOnly && (
+          <div className="flex gap-2">
+            <button className="btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={openNewGroup}>
+              <Plus className="w-3.5 h-3.5" /> Adicionar Grupos
+            </button>
+            <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
+              <Plus className="w-4 h-4" /> Novo Opcional
+            </button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -885,23 +1006,27 @@ function OptionaisTab({ color }: { color: string }) {
                     <tr key={opt.id} className="table-row">
                       <td className="px-4 py-2.5 w-12">
                         {opt.photo_url
-                          ? <img src={opt.photo_url} alt={opt.color_name}
-                              className="w-8 h-8 rounded-md object-cover border border-[#e8e0d6]" />
+                          ? <button onClick={() => setLightboxUrl(opt.photo_url!)} className="cursor-zoom-in">
+                              <img src={opt.photo_url} alt={opt.color_name}
+                                className="w-8 h-8 rounded-md object-cover border border-[#e8e0d6] hover:opacity-80 transition-opacity" />
+                            </button>
                           : <div className="w-8 h-8 rounded-md bg-[#f0ece6] border border-[#e8e0d6]" />}
                       </td>
                       <td className="px-4 py-2.5 text-[#2c2420]">{opt.color_name}</td>
-                      <td className="px-4 py-2.5 w-16">
-                        <div className="flex gap-2">
-                          <button onClick={() => openEdit(opt)} className="text-[#9d8d81] transition-colors"
-                            onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = '')}>
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setDeleting(opt)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
+                      {!readOnly && (
+                        <td className="px-4 py-2.5 w-16">
+                          <div className="flex gap-2">
+                            <button onClick={() => openEdit(opt)} className="text-[#9d8d81] transition-colors"
+                              onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '')}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeleting(opt)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -914,13 +1039,29 @@ function OptionaisTab({ color }: { color: string }) {
         </div>
       )}
 
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setLightboxUrl(null)}>
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <img src={lightboxUrl} alt="Swatch ampliado"
+              className="max-w-[90vw] max-h-[80vh] w-64 h-64 object-cover rounded-2xl shadow-2xl border border-white/20" />
+            <button onClick={() => setLightboxUrl(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-lg text-[#2c2420] hover:bg-[#f8f6f2] transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Optional form modal */}
       {showForm && (
         <Modal title={editing ? 'Editar Opcional' : 'Novo Opcional'} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-[#9d8d81]">Categoria *</span>
               <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
-                {CATEGORY_OPTIONS.map(({ value, label }) => (
+                {catOptions.map(({ value, label }) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
               </select>
@@ -931,7 +1072,6 @@ function OptionaisTab({ color }: { color: string }) {
                 onChange={(e) => setForm({ ...form, color_name: e.target.value })} required />
             </label>
 
-            {/* Swatch upload */}
             <div>
               <span className="text-xs text-[#9d8d81] block mb-1">Imagem de Textura (swatch)</span>
               <div
@@ -965,10 +1105,133 @@ function OptionaisTab({ color }: { color: string }) {
         </Modal>
       )}
 
+      {/* Group form modal */}
+      {showGroupForm && (
+        <Modal title={editingGroup ? 'Editar Grupo' : 'Novo Grupo de Opcionais'} onClose={() => setShowGroupForm(false)} accentColor={color}>
+          <form onSubmit={handleGroupSubmit} className="space-y-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Nome do Grupo *</span>
+              <input className="input" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} required autoFocus placeholder="ex: Alumínio" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Código (identificador único) *</span>
+              <input className="input font-mono text-sm" value={groupForm.code} onChange={(e) => setGroupForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} required placeholder="ex: aluminio" />
+              <span className="text-[10px] text-[#c8bdb5]">Apenas letras minúsculas, números e underscores.</span>
+            </label>
+            {groupErr && <p className="text-xs text-red-500">{groupErr}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={createCatM.isPending || updateCatM.isPending} className="btn-primary flex-1" style={{ backgroundColor: color }}>
+                {createCatM.isPending || updateCatM.isPending ? 'Salvando...' : editingGroup ? 'Salvar' : 'Criar Grupo'}
+              </button>
+              <button type="button" className="btn-secondary px-4" onClick={() => setShowGroupForm(false)}>Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {deleting && (
-        <ConfirmDelete name={`${CATEGORY_LABEL[deleting.category] || deleting.category} — ${deleting.color_name}`}
+        <ConfirmDelete name={`${catLabel(deleting.category)} — ${deleting.color_name}`}
           onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
           onCancel={() => setDeleting(null)} />
+      )}
+
+      {deletingGroup && (
+        <ConfirmDelete name={deletingGroup.name}
+          onConfirm={async () => { await deleteCatM.mutateAsync(deletingGroup.id); setDeletingGroup(null) }}
+          onCancel={() => setDeletingGroup(null)} />
+      )}
+    </div>
+  )
+}
+
+// ── TypesTab ──────────────────────────────────────────────────────────────────
+
+function TypesTab({ color }: { color: string }) {
+  const { data: items = [], isLoading } = useProductTypes()
+  const createM = useCreateProductType()
+  const updateM = useUpdateProductType()
+  const deleteM = useDeleteProductType()
+
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  const [name, setName] = useState('')
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
+  const [err, setErr] = useState('')
+
+  function openNew() { setEditing(null); setName(''); setErr(''); setShowForm(true) }
+  function openEdit(item: { id: string; name: string }) { setEditing(item); setName(item.name); setErr(''); setShowForm(true) }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setErr('')
+    try {
+      if (editing) {
+        await updateM.mutateAsync({ id: editing.id, name: name.trim() })
+      } else {
+        await createM.mutateAsync({ name: name.trim() })
+      }
+      setShowForm(false)
+    } catch (ex: unknown) {
+      const detail = (ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setErr(detail ?? 'Erro ao salvar tipo.')
+    }
+  }
+
+  const isPending = createM.isPending || updateM.isPending
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-[#2c2420]">Tipos de Móveis</h2>
+        <button onClick={openNew} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+          style={{ backgroundColor: color }}>
+          <Plus className="w-3.5 h-3.5" /> Novo Tipo
+        </button>
+      </div>
+
+      {showForm && (
+        <Modal title={editing ? 'Editar Tipo' : 'Novo Tipo'} onClose={() => setShowForm(false)} accentColor={color}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Nome do Tipo *</span>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+            </label>
+            {err && <p className="text-xs text-red-500">{err}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={isPending} className="btn-primary flex-1">
+                {isPending ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Criar Tipo'}
+              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary px-4">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {deleting && (
+        <ConfirmDelete name={deleting.name}
+          onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
+          onCancel={() => setDeleting(null)} />
+      )}
+
+      {isLoading ? (
+        <p className="text-sm text-[#9d8d81]">Carregando...</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-[#9d8d81]">Nenhum tipo cadastrado.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {items.map(item => (
+            <div key={item.id}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e8e0d6] bg-white text-sm text-[#2c2420]">
+              <span>{item.name}</span>
+              <button onClick={() => openEdit(item)} className="text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button onClick={() => setDeleting(item)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -977,22 +1240,33 @@ function OptionaisTab({ color }: { color: string }) {
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 
 const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
-  { key: 'produtos',       label: 'Produtos',       Icon: Package   },
-  { key: 'clientes',       label: 'Clientes',        Icon: Users     },
-  { key: 'representantes', label: 'Representantes',  Icon: UserCheck },
-  { key: 'opcionais',      label: 'Opcionais',       Icon: Tag       },
+  { key: 'produtos',       label: 'Produtos',       Icon: Package     },
+  { key: 'clientes',       label: 'Clientes',        Icon: Users       },
+  { key: 'representantes', label: 'Representantes',  Icon: UserCheck   },
+  { key: 'opcionais',      label: 'Opcionais',       Icon: Tag         },
+  { key: 'tipos',          label: 'Tipos',           Icon: LayoutGrid  },
 ]
 
 export default function CadastroPage() {
   const { user } = useAuth()
   const isRep = user?.role === 'representante'
-  const [tab, setTab] = useState<Tab>('produtos')
-  const visibleTabs = TAB_CONFIG.filter(t => !(isRep && t.key === 'representantes'))
+  const isCliente = user?.role === 'vendedor' && !!user.linked_id
+  const isLimited = isRep || isCliente
+
+  const visibleTabs = TAB_CONFIG.filter(t => {
+    if (isCliente) return t.key === 'opcionais'
+    if (isRep) return t.key === 'clientes' || t.key === 'opcionais'
+    return true
+  })
+
+  const defaultTab: Tab = isCliente ? 'opcionais' : isRep ? 'clientes' : 'produtos'
+  const [tab, setTab] = useState<Tab>(defaultTab)
 
   const { data: products } = useProducts()
   const { data: clients }  = useClients()
   const { data: reps }     = useRepresentatives()
   const { data: optionals } = useOptionals()
+  const { data: tipos }    = useProductTypes()
 
   const { data: clientsData, isLoading: clientsLoading } = useClients()
   const createClient = useCreateClient(); const updateClient = useUpdateClient(); const deleteClient = useDeleteClient()
@@ -1005,6 +1279,7 @@ export default function CadastroPage() {
     clientes:       clients?.length  ?? 0,
     representantes: reps?.length     ?? 0,
     opcionais:      optionals?.length ?? 0,
+    tipos:          tipos?.length    ?? 0,
   }
 
   const activeColor = TAB_PALETTE[tab].color
@@ -1115,7 +1390,9 @@ export default function CadastroPage() {
               />
             )}
 
-            {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} />}
+            {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
+
+            {tab === 'tipos' && <TypesTab color={TAB_PALETTE.tipos.color} />}
           </main>
         </div>
       </div>

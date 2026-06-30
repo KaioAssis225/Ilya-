@@ -4,8 +4,9 @@ import api from '../lib/api'
 export interface UserRead {
   id: string
   email: string
+  username: string | null
   full_name: string
-  role: 'admin' | 'vendedor' | 'representante'
+  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
   rep_id: string | null
   is_active: boolean
 }
@@ -14,14 +15,14 @@ export interface UserCreate {
   email: string
   password: string
   full_name: string
-  role: 'admin' | 'vendedor' | 'representante'
+  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
   rep_id?: string | null
 }
 
 export interface UserUpdate {
   email?: string
   full_name?: string
-  role?: 'admin' | 'vendedor' | 'representante'
+  role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
   rep_id?: string | null
   is_active?: boolean
 }
@@ -68,20 +69,29 @@ export function useDeleteUser() {
   })
 }
 
+export interface UserCreateResponse {
+  id: string
+  email: string
+  username: string
+  full_name: string
+  role: string
+  temp_password: string
+}
+
 export function useCreateUserFromClient() {
   const qc = useQueryClient()
-  return useMutation<UserRead, { response?: { data?: { detail?: string } } }, string>({
+  return useMutation<UserCreateResponse, { response?: { data?: { detail?: string } } }, string>({
     mutationFn: (clientId: string) =>
-      api.post<UserRead>(`/users/from-client/${clientId}`).then(r => r.data),
+      api.post<UserCreateResponse>(`/users/from-client/${clientId}`).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 }
 
 export function useCreateUserFromRep() {
   const qc = useQueryClient()
-  return useMutation<UserRead, { response?: { data?: { detail?: string } } }, string>({
+  return useMutation<UserCreateResponse, { response?: { data?: { detail?: string } } }, string>({
     mutationFn: (repId: string) =>
-      api.post<UserRead>(`/users/from-rep/${repId}`).then(r => r.data),
+      api.post<UserCreateResponse>(`/users/from-rep/${repId}`).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 }

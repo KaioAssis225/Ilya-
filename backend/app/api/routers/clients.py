@@ -20,17 +20,21 @@ def _rep_guard(client: Client, current_user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
 
 
-async def _linked_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
-    """Returns the subset of entity IDs that already have a linked user."""
+async def _user_status(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[bool, bool]]:
+    """Returns {linked_id: (has_user, user_validated)} for the given entity IDs."""
     if not ids:
-        return set()
-    result = await db.execute(select(User.linked_id).where(User.linked_id.in_(ids)))
-    return {row[0] for row in result.fetchall() if row[0] is not None}
+        return {}
+    result = await db.execute(
+        select(User.linked_id, User.must_change_password)
+        .where(User.linked_id.in_(ids), User.is_active.is_(True))
+    )
+    return {row[0]: (True, not row[1]) for row in result.fetchall() if row[0] is not None}
 
 
-def _with_has_user(client: Client, linked: set[uuid.UUID]) -> ClientRead:
+def _with_has_user(client: Client, status_map: dict[uuid.UUID, tuple[bool, bool]]) -> ClientRead:
+    has_user, user_validated = status_map.get(client.id, (False, False))
     r = ClientRead.model_validate(client)
-    return r.model_copy(update={"has_user": client.id in linked})
+    return r.model_copy(update={"has_user": has_user, "user_validated": user_validated})
 
 
 @router.get("", response_model=List[ClientRead])
@@ -49,7 +53,7 @@ async def list_clients(
     else:
         result = await db.execute(select(Client).offset(skip).limit(limit))
     clients = result.scalars().all()
-    linked = await _linked_ids(db, [c.id for c in clients])
+    linked = await _user_status(db, [c.id for c in clients])
     return [_with_has_user(c, linked) for c in clients]
 
 
@@ -79,7 +83,7 @@ async def get_client(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     _rep_guard(client, current_user)
-    linked = await _linked_ids(db, [client.id])
+    linked = await _user_status(db, [client.id])
     return _with_has_user(client, linked)
 
 
@@ -99,7 +103,7 @@ async def update_client(
         setattr(client, field, value)
     await db.commit()
     await db.refresh(client)
-    linked = await _linked_ids(db, [client.id])
+    linked = await _user_status(db, [client.id])
     return _with_has_user(client, linked)
 
 

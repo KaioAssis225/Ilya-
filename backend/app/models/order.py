@@ -14,6 +14,8 @@ class Order(Base, TimestampMixin):
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id"), nullable=True)
     total_value: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rep_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan", lazy="selectin")
 
