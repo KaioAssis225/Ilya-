@@ -52,6 +52,7 @@ export interface Client {
   address: string
   city: string
   state: string
+  rep_id: string | null
   created_at: string
   updated_at: string
   has_user?: boolean

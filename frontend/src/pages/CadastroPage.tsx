@@ -164,7 +164,7 @@ function Modal({ title, onClose, children, accentColor }: {
 }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel w-full max-w-lg mx-4 md:mx-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6]"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
           <h3 className="text-base font-semibold text-[#2c2420]">{title}</h3>
@@ -275,67 +275,110 @@ function ProductsTab({ color }: { color: string }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-[#9d8d81]">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'} cadastrados</span>
-        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
-          <Plus className="w-4 h-4" /> Novo Produto
+        <span className="text-sm text-[#9d8d81]">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
+        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
+          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
         </button>
       </div>
 
       {isLoading ? (
         <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[#e8e0d6]">
-          <table className="w-full text-sm">
-            <thead style={{ backgroundColor: `${color}12` }}>
-              <tr>
-                <Th label="Código" col="product_code" {...thProps} />
-                <Th label="Descrição" col="description" {...thProps} />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Dimensões</th>
-                <Th label="Preço Base" col="price" {...thProps} />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Opcionais</th>
-                <th className="px-4 py-3 text-xs font-semibold text-[#9d8d81] uppercase">Foto</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((p) => (
-                <tr key={p.id} className="table-row">
-                  <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
-                  <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
-                  <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
-                    {p.is_circular
-                      ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
-                      : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
-                  </td>
-                  <td className="px-4 py-3 text-[#2c2420] text-sm font-medium whitespace-nowrap">
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}
-                  </td>
-                  <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
-                    {p.optionals.length > 0
-                      ? groupOptionalsByCategory(p.optionals).map(g => g.label).join(', ')
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.photo_url
-                      ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-[#e8e0d6]" />
-                      : <ImageIcon className="w-6 h-6 text-[#c8bdb5]" />}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => openEdit(p)} className="text-[#9d8d81] transition-colors"
-                        onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => setDeleting(p)} className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+        <>
+          {/* ── Mobile cards ──────────────────────────────────── */}
+          <div className="md:hidden flex flex-col gap-3">
+            {sorted.map((p) => (
+              <div key={p.id} className="bg-[#fcfbfa] border border-[#e8e0d6] rounded-xl p-3.5 flex gap-3">
+                {p.photo_url
+                  ? <img src={p.photo_url} alt="" className="w-14 h-14 object-cover rounded-lg border border-[#e8e0d6] flex-shrink-0" />
+                  : <div className="w-14 h-14 bg-[#f0ece6] rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-[#c8bdb5]" /></div>
+                }
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="min-w-0">
+                      <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
+                      <p className="text-sm font-medium text-[#2c2420] leading-snug line-clamp-2">{p.description}</p>
                     </div>
-                  </td>
+                    <div className="flex gap-0 flex-shrink-0">
+                      <button onClick={() => openEdit(p)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setDeleting(p)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-[#9d8d81]">
+                      {p.is_circular
+                        ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
+                        : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
+                    </span>
+                    <span className="text-sm font-bold text-[#2c2420]">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}</span>
+                  </div>
+                  {p.optionals.length > 0 && (
+                    <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{groupOptionalsByCategory(p.optionals).map(g => g.label).join(' · ')}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+            {sorted.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">Nenhum produto cadastrado.</p>}
+          </div>
+
+          {/* ── Desktop table ──────────────────────────────────── */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-[#e8e0d6]">
+            <table className="w-full text-sm">
+              <thead style={{ backgroundColor: `${color}12` }}>
+                <tr>
+                  <Th label="Código" col="product_code" {...thProps} />
+                  <Th label="Descrição" col="description" {...thProps} />
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Dimensões</th>
+                  <Th label="Preço Base" col="price" {...thProps} />
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Opcionais</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#9d8d81] uppercase">Foto</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-              {sorted.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum produto cadastrado.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {sorted.map((p) => (
+                  <tr key={p.id} className="table-row">
+                    <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
+                    <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
+                    <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
+                      {p.is_circular
+                        ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
+                        : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
+                    </td>
+                    <td className="px-4 py-3 text-[#2c2420] text-sm font-medium whitespace-nowrap">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}
+                    </td>
+                    <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
+                      {p.optionals.length > 0
+                        ? groupOptionalsByCategory(p.optionals).map(g => g.label).join(', ')
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.photo_url
+                        ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-[#e8e0d6]" />
+                        : <ImageIcon className="w-6 h-6 text-[#c8bdb5]" />}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button onClick={() => openEdit(p)} className="text-[#9d8d81] transition-colors"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(p)} className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sorted.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum produto cadastrado.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {showForm && (
@@ -605,45 +648,78 @@ function PeopleTab<T extends Client | Representative>({
       {isLoading ? (
         <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[#e8e0d6]">
-          <table className="w-full text-sm">
-            <thead style={{ backgroundColor: `${color}12` }}>
-              <tr>
-                <Th label="Nome" col="name" {...thProps} />
-                <Th label="Telefone" col="phone" {...thProps} />
-                <Th label="E-mail" col="email" {...thProps} />
-                <Th label="Cidade" col="city" {...thProps} />
-                <Th label="UF" col="state" {...thProps} />
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((item) => (
-                <tr key={item.id} className="table-row">
-                  <td className="px-4 py-3 text-[#2c2420] font-medium">{item.name}</td>
-                  <td className="px-4 py-3 text-[#4a3f38]">{item.phone}</td>
-                  <td className="px-4 py-3 text-[#4a3f38]">{item.email}</td>
-                  <td className="px-4 py-3 text-[#4a3f38]">{item.city}</td>
-                  <td className="px-4 py-3 text-[#8a7a6e]">{item.state}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => openView(item)} title="Visualizar" className="text-[#9d8d81] transition-colors"
-                        onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Eye className="w-4 h-4" /></button>
-                      <button onClick={() => openEdit(item)} title="Editar" className="text-[#9d8d81] transition-colors"
-                        onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => setDeleting(item)} title="Excluir" className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </td>
+        <>
+          {/* ── Mobile cards ──────────────────────────────────── */}
+          <div className="md:hidden flex flex-col gap-3">
+            {sorted.map((item) => (
+              <div key={item.id} className="bg-[#fcfbfa] border border-[#e8e0d6] rounded-xl p-3.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#2c2420]">{item.name}</p>
+                    <p className="text-xs text-[#9d8d81] mt-0.5">{item.city} / {item.state}</p>
+                  </div>
+                  <div className="flex gap-0 flex-shrink-0">
+                    <button onClick={() => openView(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => openEdit(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setDeleting(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 space-y-0.5 text-xs text-[#4a3f38]">
+                  <p>{item.phone}</p>
+                  <p className="truncate text-[#8a7a6e]">{item.email}</p>
+                </div>
+              </div>
+            ))}
+            {sorted.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">Nenhum registro encontrado.</p>}
+          </div>
+
+          {/* ── Desktop table ──────────────────────────────────── */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-[#e8e0d6]">
+            <table className="w-full text-sm">
+              <thead style={{ backgroundColor: `${color}12` }}>
+                <tr>
+                  <Th label="Nome" col="name" {...thProps} />
+                  <Th label="Telefone" col="phone" {...thProps} />
+                  <Th label="E-mail" col="email" {...thProps} />
+                  <Th label="Cidade" col="city" {...thProps} />
+                  <Th label="UF" col="state" {...thProps} />
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-              {sorted.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum registro encontrado.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {sorted.map((item) => (
+                  <tr key={item.id} className="table-row">
+                    <td className="px-4 py-3 text-[#2c2420] font-medium">{item.name}</td>
+                    <td className="px-4 py-3 text-[#4a3f38]">{item.phone}</td>
+                    <td className="px-4 py-3 text-[#4a3f38]">{item.email}</td>
+                    <td className="px-4 py-3 text-[#4a3f38]">{item.city}</td>
+                    <td className="px-4 py-3 text-[#8a7a6e]">{item.state}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button onClick={() => openView(item)} title="Visualizar" className="text-[#9d8d81] transition-colors"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Eye className="w-4 h-4" /></button>
+                        <button onClick={() => openEdit(item)} title="Editar" className="text-[#9d8d81] transition-colors"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(item)} title="Excluir" className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sorted.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum registro encontrado.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* View / Create User modal */}
@@ -934,12 +1010,44 @@ export default function CadastroPage() {
   const activeColor = TAB_PALETTE[tab].color
 
   return (
-    <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
-      <div className="max-w-7xl mx-auto px-8 py-6">
-        <div className="grid gap-6" style={{ gridTemplateColumns: '220px 1fr' }}>
+    <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420] pb-24 md:pb-0">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6">
 
-          {/* ── Sidebar ──────────────────────────────────────────── */}
-          <aside>
+        {/* ── Mobile horizontal tab bar ──────────────────────── */}
+        <div className="md:hidden mb-3 flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
+          {visibleTabs.map(({ key, label, Icon }) => {
+            const { color } = TAB_PALETTE[key]
+            const isActive = tab === key
+            return (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold border transition-all active:scale-[0.97] active:opacity-80"
+                style={isActive
+                  ? { backgroundColor: color, color: 'white', borderColor: color, touchAction: 'manipulation' }
+                  : { backgroundColor: 'white', color: '#6b5d55', borderColor: '#e8e0d6', touchAction: 'manipulation' }
+                }
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={isActive
+                    ? { backgroundColor: 'rgba(255,255,255,0.3)', color: 'white' }
+                    : { backgroundColor: '#f0ece6', color: '#9d8d81' }
+                  }
+                >
+                  {counts[key]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-col gap-4 md:grid md:gap-6" style={{ gridTemplateColumns: '220px 1fr' }}>
+
+          {/* ── Sidebar (desktop only) ──────────────────────────── */}
+          <aside className="hidden md:block">
             <div className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
               <p className="text-[10px] font-semibold text-[#c8bdb5] uppercase tracking-widest px-3 pb-2">Cadastros</p>
               {visibleTabs.map(({ key, label, Icon }) => {

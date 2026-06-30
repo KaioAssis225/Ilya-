@@ -21,6 +21,7 @@ class UserRead(BaseModel):
     full_name: str
     role: UserRole
     rep_id: uuid.UUID | None
+    linked_id: uuid.UUID | None
     is_active: bool
     must_change_password: bool
 

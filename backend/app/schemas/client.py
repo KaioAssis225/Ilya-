@@ -32,6 +32,7 @@ class ClientUpdate(BaseModel):
 
 class ClientRead(ClientBase):
     id: uuid.UUID
+    rep_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     has_user: bool = False

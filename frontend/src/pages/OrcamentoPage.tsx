@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
 import { useClients, useCreateClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative } from '../hooks/useRepresentatives'
 import { useCreateOrder, useOrders } from '../hooks/useOrders'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
+import { useAuth } from '../hooks/useAuth'
 import type { Product, Client, Representative, ClientCreate } from '../types'
 
 // ── Category display labels ───────────────────────────────────────────────────
@@ -20,7 +21,6 @@ const CAT_LABEL: Record<string, string> = {
   corda:          'Corda',
 }
 
-// Compute stored DB fields from per-category selections
 function computeOptFields(cats: Partial<Record<string, string>>) {
   return {
     opt_aluminio: cats.aluminio ?? null,
@@ -37,8 +37,6 @@ function computeOptFields(cats: Partial<Record<string, string>>) {
   }
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
 function fmt(n: number) {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -51,7 +49,7 @@ function dimLabel(p: Product) {
     : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
 }
 
-// ── Autocomplete de 2 Etapas (mockup-style) ───────────────────────────────────
+// ── Autocomplete ──────────────────────────────────────────────────────────────
 
 function Autocomplete<T extends { id: string }>({
   searchPlaceholder, items, value, getLabel, getSearch, onChange, onClear, displayPlaceholder = "Nenhum", showQuickAdd, onQuickAdd
@@ -77,26 +75,23 @@ function Autocomplete<T extends { id: string }>({
 
   return (
     <div ref={ref} className="space-y-1 w-full">
-      {/* Parte 1: Display do valor selecionado */}
       <div className="flex gap-2">
         <div className="input flex items-center justify-between bg-[#fcfbfa] border border-[#e8e0d6] px-3 py-1.5 rounded-lg text-sm flex-1 min-w-0 h-[36px]">
           <span className={`${value ? 'text-[#2c2420] font-medium' : 'text-[#a89a8e]'} truncate flex-1 min-w-0`}>
             {value ? getLabel(value) : displayPlaceholder}
           </span>
           {value && (
-            <button type="button" onClick={onClear} className="text-[#9d8d81] hover:text-[#2c2420] transition-colors">
+            <button type="button" onClick={onClear} className="text-[#9d8d81] hover:text-[#2c2420] transition-colors w-7 h-7 flex items-center justify-center">
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
         {showQuickAdd && onQuickAdd && (
-          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 h-[36px] border border-[#e8e0d6] hover:bg-[#f8f6f2] rounded-lg transition-colors flex items-center justify-center">
+          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 h-[36px] border border-[#e8e0d6] hover:bg-[#f8f6f2] rounded-lg transition-colors flex items-center justify-center min-w-[44px]">
             <Plus className="w-4 h-4 text-[#9d8d81]" />
           </button>
         )}
       </div>
-
-      {/* Parte 2: Campo de Busca */}
       <div className="relative">
         <input
           className="input w-full text-xs placeholder:text-[#c8bdb5] border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
@@ -108,7 +103,7 @@ function Autocomplete<T extends { id: string }>({
         {open && filtered.length > 0 && (
           <ul className="absolute z-30 w-full mt-1 bg-white border border-[#e8e0d6] rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
             {filtered.slice(0, 15).map((item) => (
-              <li key={item.id} className="px-3 py-1.5 text-xs text-[#2c2420] hover:bg-[#f8f6f2] cursor-pointer transition-colors"
+              <li key={item.id} className="px-3 py-2 text-xs text-[#2c2420] hover:bg-[#f8f6f2] cursor-pointer transition-colors"
                 onMouseDown={() => { onChange(item); setQuery(''); setOpen(false) }}>
                 {getLabel(item)}
               </li>
@@ -159,10 +154,10 @@ function QuickRegisterModal({ title, onSave, onClose }: {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel w-full max-w-lg p-6 mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-[#2c2420]">{title}</h3>
-          <button onClick={onClose} className="text-[#9d8d81] hover:text-[#2c2420]"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-[#9d8d81] hover:text-[#2c2420] w-11 h-11 flex items-center justify-center"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
           <label className="col-span-2 flex flex-col gap-1">
@@ -213,8 +208,8 @@ function QuickRegisterModal({ title, onSave, onClose }: {
 interface CartItem {
   product_code: string
   qty: number
-  unit_price: number // valor final recalculado pós desconto, a ser enviado para a API
-  discount: number // desconto percentual (0 a 100)
+  unit_price: number
+  discount: number
   opt_categories: Partial<Record<string, string>>
   _product: Product
 }
@@ -227,14 +222,14 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     return () => clearTimeout(t)
   }, [onDone])
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
+    <div className="fixed bottom-24 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
       <CheckCircle className="w-5 h-5" />
       <span className="text-sm font-medium">{message}</span>
     </div>
   )
 }
 
-// ── Opcionais estáticos do produto ───────────────────────────────────────────
+// ── Opcionais estáticos ────────────────────────────────────────────────────────
 
 function StaticOptionals({ item }: { item: CartItem }) {
   const entries = Object.entries(item.opt_categories)
@@ -254,13 +249,13 @@ function StaticOptionals({ item }: { item: CartItem }) {
   )
 }
 
-// ── Lightbox de foto do produto ────────────────────────────────────────────────
+// ── Lightbox de foto ──────────────────────────────────────────────────────────
 
 function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#1a1410]/75 backdrop-blur-sm"
       onClick={onClose}>
-      <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <div className="relative mx-4" onClick={(e) => e.stopPropagation()}>
         <img src={url} alt="" className="max-w-[480px] max-h-[480px] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-[#e8e0d6]" />
         <button
           onClick={onClose}
@@ -273,9 +268,217 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
+// ── Mobile cart card ──────────────────────────────────────────────────────────
+
+function MobileCartCard({
+  item, onQtyChange, onRemove, onPhotoClick
+}: {
+  item: CartItem
+  onQtyChange: (code: string, qty: number) => void
+  onRemove: (code: string) => void
+  onPhotoClick: (url: string) => void
+}) {
+  const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
+  const hasDiscount = item.discount > 0
+
+  return (
+    <div className="bg-white border border-[#e8e0d6] rounded-xl p-3.5 shadow-sm">
+      {/* Top: thumbnail + info + trash */}
+      <div className="flex gap-3">
+        {item._product.photo_url
+          ? <img
+              src={item._product.photo_url} alt=""
+              onClick={() => onPhotoClick(item._product.photo_url!)}
+              className="w-14 h-14 object-cover rounded-lg border border-[#e8e0d6] flex-shrink-0 cursor-pointer active:opacity-70 transition-opacity"
+              style={{ minWidth: '56px', minHeight: '56px' }}
+            />
+          : <div className="w-14 h-14 bg-[#f0ece6] rounded-lg flex items-center justify-center flex-shrink-0">
+              <ImageIcon className="w-5 h-5 text-[#c8bdb5]" />
+            </div>
+        }
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[11px] text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
+              <p className="text-xs font-semibold text-[#2c2420] leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
+            </div>
+            <button
+              onClick={() => onRemove(item.product_code)}
+              className="text-[#c8bdb5] active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
+              style={{ touchAction: 'manipulation' }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+          <StaticOptionals item={item} />
+        </div>
+      </div>
+
+      {/* Bottom: qty +/- | price / discount / subtotal */}
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#f0ece6]">
+        {/* Qty stepper */}
+        <div className="flex items-center gap-0 border border-[#e8e0d6] rounded-lg overflow-hidden">
+          <button
+            onClick={() => onQtyChange(item.product_code, Math.max(1, item.qty - 1))}
+            className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:bg-[#f0ece6] transition-colors"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <span className="w-9 text-center text-sm font-semibold text-[#2c2420]">{item.qty}</span>
+          <button
+            onClick={() => onQtyChange(item.product_code, item.qty + 1)}
+            className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:bg-[#f0ece6] transition-colors"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Pricing */}
+        <div className="text-right">
+          {hasDiscount && (
+            <p className="text-[10px] text-[#c8bdb5] line-through">R$ {fmt(item._product.price * item.qty)}</p>
+          )}
+          {hasDiscount && (
+            <span className="text-[10px] bg-[#8b6914]/10 text-[#8b6914] font-semibold px-1.5 py-0.5 rounded-full">
+              -{item.discount}%
+            </span>
+          )}
+          <p className="text-sm font-bold text-[#2c2420] mt-0.5">R$ {fmt(subtotal)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Formulário de configuração (usado no aside e no drawer) ───────────────────
+
+function LockedField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">{label}</span>
+      <div className="flex items-center gap-2 bg-[#f8f6f2] border border-[#e8e0d6] rounded-lg px-3 py-2 h-[36px]">
+        <Lock className="w-3 h-3 text-[#c8bdb5] flex-shrink-0" />
+        <span className="text-sm font-medium text-[#2c2420] truncate flex-1">{value}</span>
+      </div>
+    </div>
+  )
+}
+
+function OrderForm({
+  reps, clients, selectedRep, selectedClient, notes,
+  onRepChange, onClientChange, onNotesChange,
+  onQuickAddRep, onQuickAddClient,
+  budgetCode, cart, total, onSubmit, isGenerating,
+  repLocked, clientLocked,
+}: {
+  reps: Representative[]; clients: Client[]
+  selectedRep: Representative | null; selectedClient: Client | null; notes: string
+  onRepChange: (r: Representative | null) => void
+  onClientChange: (c: Client | null) => void
+  onNotesChange: (n: string) => void
+  onQuickAddRep: () => void; onQuickAddClient: () => void
+  budgetCode: string; cart: CartItem[]; total: number
+  onSubmit: () => void; isGenerating: boolean
+  repLocked?: boolean; clientLocked?: boolean
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between pb-3 border-b border-[#f3ede6]">
+        <h2 className="text-base font-semibold text-[#2c2420]">Novo Orçamento</h2>
+        <span className="bg-[#648261]/10 text-[#648261] px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider">
+          {budgetCode}
+        </span>
+      </div>
+
+      {repLocked && selectedRep ? (
+        <LockedField label="Representante" value={`${selectedRep.name} — ${selectedRep.city}/${selectedRep.state}`} />
+      ) : (
+        <div className="space-y-1">
+          <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Representante</span>
+          <Autocomplete
+            searchPlaceholder="Buscar representante..."
+            items={reps}
+            value={selectedRep}
+            getLabel={(r) => `${r.name} — ${r.city}/${r.state}`}
+            getSearch={(r) => `${r.name} ${r.email} ${r.city}`}
+            onChange={onRepChange}
+            onClear={() => onRepChange(null)}
+            displayPlaceholder="Nenhum"
+            showQuickAdd
+            onQuickAdd={onQuickAddRep}
+          />
+        </div>
+      )}
+
+      {clientLocked && selectedClient ? (
+        <LockedField label="Cliente" value={`${selectedClient.name} — ${selectedClient.city}/${selectedClient.state}`} />
+      ) : (
+        <div className="space-y-1">
+          <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Cliente</span>
+          <Autocomplete
+            searchPlaceholder="Buscar cliente..."
+            items={clients}
+            value={selectedClient}
+            getLabel={(c) => `${c.name} — ${c.city}/${c.state}`}
+            getSearch={(c) => `${c.name} ${c.email} ${c.city}`}
+            onChange={onClientChange}
+            onClear={() => onClientChange(null)}
+            displayPlaceholder="Selecione o cliente..."
+            showQuickAdd
+            onQuickAdd={onQuickAddClient}
+          />
+        </div>
+      )}
+
+      <div className="space-y-1">
+        <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Observações</span>
+        <textarea
+          className="input resize-none text-xs"
+          rows={3}
+          placeholder="Observações do orçamento..."
+          value={notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+        />
+      </div>
+
+      <button
+        onClick={onSubmit}
+        disabled={!selectedClient || cart.length === 0 || isGenerating}
+        style={{ touchAction: 'manipulation' }}
+        className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
+      >
+        Finalizar Orçamento
+      </button>
+    </div>
+  )
+}
+
+// ── Bottom Drawer (mobile) ────────────────────────────────────────────────────
+
+function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end md:hidden">
+      <div className="fixed inset-0 bg-[#1a1410]/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#e8e0d6]">
+          <span className="text-sm font-semibold text-[#2c2420]">Configurar Orçamento</span>
+          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[#9d8d81]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-5 pb-32">{children}</div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function OrcamentoPage() {
+  const { user } = useAuth()
   const { data: products = [] } = useProducts()
   const { data: clients = [] } = useClients()
   const { data: reps = [] } = useRepresentatives()
@@ -283,6 +486,13 @@ export default function OrcamentoPage() {
   const createOrderM = useCreateOrder()
   const createClientM = useCreateClient()
   const createRepM = useCreateRepresentative()
+
+  // Locking flags
+  const isRep = user?.role === 'representante'
+  // vendedor criado de um cliente tem linked_id preenchido
+  const isClientUser = user?.role === 'vendedor' && !!user?.linked_id
+  const repLocked = isRep || isClientUser
+  const clientLocked = isClientUser
 
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
@@ -299,21 +509,42 @@ export default function OrcamentoPage() {
       }))
     } catch { return [] }
   })
-  
+
   useEffect(() => {
     localStorage.setItem('carrinho_orcamento', JSON.stringify(cart))
   }, [cart])
 
-  // Estados para busca e inserção de produtos no card lateral
+  // Pré-preenche e trava campos conforme papel do usuário logado
+  useEffect(() => {
+    if (!user) return
+
+    if (isRep && user.rep_id && reps.length > 0) {
+      const myRep = reps.find(r => r.id === user.rep_id)
+      if (myRep) setSelectedRep(myRep)
+    }
+
+    if (isClientUser && user.linked_id && clients.length > 0) {
+      const myClient = clients.find(c => c.id === user.linked_id)
+      if (myClient) {
+        setSelectedClient(myClient)
+        if (myClient.rep_id && reps.length > 0) {
+          const myRep = reps.find(r => r.id === myClient.rep_id)
+          if (myRep) setSelectedRep(myRep)
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, reps, clients])
+
   const [productQuery, setProductQuery] = useState('')
   const [productOpen, setProductOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [cartFilter, setCartFilter] = useState('')
-  
   const [toast, setToast] = useState<string | null>(null)
   const [quickModal, setQuickModal] = useState<'client' | 'rep' | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const productRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -328,10 +559,8 @@ export default function OrcamentoPage() {
     `${p.product_code} ${p.description}`.toLowerCase().includes(productQuery.toLowerCase())
   )
 
-  // Adiciona ao carrinho o produto que foi selecionado no card lateral
   function handleAddProductToCart() {
     if (!selectedProduct) return
-    // Auto-preenche opcionais: primeira cor de cada categoria do produto
     const auto_categories: Partial<Record<string, string>> = {}
     for (const opt of selectedProduct.optionals) {
       if (!(opt.category in auto_categories)) {
@@ -365,18 +594,14 @@ export default function OrcamentoPage() {
     setCart((prev) => prev.filter((i) => i.product_code !== code))
   }
 
-  // Filtragem local de itens adicionados ao carrinho
   const filteredCart = cart.filter((item) =>
     `${item.product_code} ${item._product.description}`.toLowerCase().includes(cartFilter.toLowerCase())
   )
 
-  // Cálculo total considerando o preço de catálogo fixo e o desconto de cada item
   const total = cart.reduce((sum, i) => {
-    const subtotal = i.qty * i._product.price * (1 - (i.discount || 0) / 100)
-    return sum + subtotal
+    return sum + i.qty * i._product.price * (1 - (i.discount || 0) / 100)
   }, 0)
 
-  // Cálculo do próximo número de orçamento (ORC-XXXX)
   const nextOrderNumber = orders.length + 1
   const budgetCode = `ORC-${String(nextOrderNumber).padStart(4, '0')}`
 
@@ -389,16 +614,12 @@ export default function OrcamentoPage() {
           client_id: selectedClient.id,
           rep_id: selectedRep?.id ?? null,
           notes: notes || null,
-          items: cart.map(({ product_code, qty, discount, opt_categories, _product }) => {
-            const basePrice = _product.price ?? 0
-            const finalUnitPrice = basePrice * (1 - (discount || 0) / 100)
-            return {
-              product_code,
-              qty,
-              unit_price: finalUnitPrice,
-              ...computeOptFields(opt_categories),
-            }
-          }),
+          items: cart.map(({ product_code, qty, discount, opt_categories, _product }) => ({
+            product_code,
+            qty,
+            unit_price: (_product.price ?? 0) * (1 - (discount || 0) / 100),
+            ...computeOptFields(opt_categories),
+          })),
         }),
         new Promise<void>((r) => setTimeout(r, 3000)),
       ])
@@ -408,180 +629,120 @@ export default function OrcamentoPage() {
       setSelectedRep(null)
       setNotes('')
       setToast('Orçamento finalizado com sucesso!')
+      setDrawerOpen(false)
     } finally {
       setIsGenerating(false)
     }
   }
 
+  // Product search card (shared between desktop and a potential mobile add section)
+  const productSearchCard = (
+    <div className="bg-[#f5ede3] border border-[#e8dccb] rounded-xl p-4 space-y-3.5">
+      <span className="text-[10px] font-bold text-[#8b6914] uppercase tracking-wider block">Adicionar Produto</span>
+      <div ref={productRef} className="relative">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
+          <input
+            className="input pl-8 w-full text-xs bg-white border border-[#e8e0d6] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#8b6914]"
+            placeholder="Buscar produto por codigo ou desc"
+            value={productQuery}
+            onChange={(e) => { setProductQuery(e.target.value); setProductOpen(true) }}
+            onFocus={() => setProductOpen(true)}
+          />
+        </div>
+        {productOpen && filteredProducts.length > 0 && (
+          <ul className="absolute left-0 right-0 z-30 mt-1 bg-white border border-[#e8e0d6] rounded-xl overflow-hidden shadow-xl max-h-52 overflow-y-auto">
+            {filteredProducts.slice(0, 15).map((p) => (
+              <li
+                key={p.id}
+                className="px-3 py-2 text-xs hover:bg-[#f8f6f2] cursor-pointer flex items-center gap-2 transition-colors border-b border-[#fbfaf9]"
+                onMouseDown={() => { setSelectedProduct(p); setProductQuery(''); setProductOpen(false) }}
+              >
+                {p.photo_url
+                  ? <img src={p.photo_url} alt="" className="w-8 h-8 rounded object-cover border border-[#e8e0d6] flex-shrink-0" />
+                  : <ImageIcon className="w-8 h-8 text-[#c8bdb5] flex-shrink-0" />}
+                <div className="truncate">
+                  <span className="text-[#8b6914] font-mono font-medium">{p.product_code}</span>
+                  <span className="text-[#2c2420] ml-1.5 font-medium">{p.description}</span>
+                  <div className="text-[9px] text-[#9d8d81]">{dimLabel(p)}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {selectedProduct && (
+        <div className="bg-white border border-[#e8dccb] rounded-lg p-2.5 flex gap-2.5 shadow-sm relative">
+          <button type="button" onClick={() => setSelectedProduct(null)}
+            className="absolute top-1.5 right-1.5 text-[#9d8d81] hover:text-red-500 transition-colors w-7 h-7 flex items-center justify-center">
+            <X className="w-3.5 h-3.5" />
+          </button>
+          {selectedProduct.photo_url
+            ? <img src={selectedProduct.photo_url} alt="" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)}
+                className="w-12 h-12 object-cover rounded border border-[#e8e0d6] flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity" />
+            : <div className="w-12 h-12 bg-[#f0ece6] rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-[#c8bdb5]" /></div>
+          }
+          <div className="text-[11px] pr-5 flex-1 min-w-0">
+            <p className="text-[#8b6914] font-mono font-semibold">{selectedProduct.product_code}</p>
+            <p className="text-[#2c2420] font-medium truncate">{selectedProduct.description}</p>
+            <p className="text-[#8b6914] font-bold mt-0.5">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedProduct.price)}
+            </p>
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={handleAddProductToCart}
+        disabled={!selectedProduct}
+        style={{ touchAction: 'manipulation' }}
+        className="w-full py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
+      >
+        ADICIONAR AO ORÇAMENTO
+      </button>
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
-      <div className="max-w-7xl mx-auto px-8 py-6 grid grid-cols-12 gap-6">
-        
-        {/* ── Coluna Esquerda: Sidebar (col-span-4) ────────────────────────── */}
-        <aside className="col-span-4 space-y-5">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6 grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 pb-36 md:pb-6">
+
+        {/* ── Desktop Sidebar (hidden on mobile) ───────────────────────── */}
+        <aside className="hidden md:block md:col-span-4 space-y-5">
           <div className="bg-white border border-[#e8e0d6] rounded-xl p-5 shadow-sm space-y-4">
-            
-            {/* Header com Código do Orçamento */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#f3ede6]">
-              <h2 className="text-base font-semibold text-[#2c2420]">Novo Orçamento</h2>
-              <span className="bg-[#648261]15 text-[#648261] px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider">
-                {budgetCode}
-              </span>
-            </div>
-
-            {/* Representante */}
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Representante</span>
-              <Autocomplete
-                searchPlaceholder="Buscar representante..."
-                items={reps}
-                value={selectedRep}
-                getLabel={(r) => `${r.name} — ${r.city}/${r.state}`}
-                getSearch={(r) => `${r.name} ${r.email} ${r.city}`}
-                onChange={setSelectedRep}
-                onClear={() => setSelectedRep(null)}
-                displayPlaceholder="Nenhum"
-                showQuickAdd
-                onQuickAdd={() => setQuickModal('rep')}
-              />
-            </div>
-
-            {/* Cliente */}
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Cliente</span>
-              <Autocomplete
-                searchPlaceholder="Buscar cliente..."
-                items={clients}
-                value={selectedClient}
-                getLabel={(c) => `${c.name} — ${c.city}/${c.state}`}
-                getSearch={(c) => `${c.name} ${c.email} ${c.city}`}
-                onChange={setSelectedClient}
-                onClear={() => setSelectedClient(null)}
-                displayPlaceholder="Selecione o cliente..."
-                showQuickAdd
-                onQuickAdd={() => setQuickModal('client')}
-              />
-            </div>
-
-            {/* Card de Adição de Produto */}
-            <div className="bg-[#f5ede3] border border-[#e8dccb] rounded-xl p-4 space-y-3.5">
-              <span className="text-[10px] font-bold text-[#8b6914] uppercase tracking-wider block">Adicionar Produto</span>
-              
-              <div ref={productRef} className="relative">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
-                  <input
-                    className="input pl-8 w-full text-xs bg-white border border-[#e8e0d6] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#8b6914]"
-                    placeholder="Buscar produto por codigo ou desc"
-                    value={productQuery}
-                    onChange={(e) => { setProductQuery(e.target.value); setProductOpen(true) }}
-                    onFocus={() => setProductOpen(true)}
-                  />
-                </div>
-                {productOpen && filteredProducts.length > 0 && (
-                  <ul className="absolute left-0 right-0 z-30 mt-1 bg-white border border-[#e8e0d6] rounded-xl overflow-hidden shadow-xl max-h-52 overflow-y-auto">
-                    {filteredProducts.slice(0, 15).map((p) => (
-                      <li
-                        key={p.id}
-                        className="px-3 py-2 text-xs hover:bg-[#f8f6f2] cursor-pointer flex items-center gap-2 transition-colors border-b border-[#fbfaf9]"
-                        onMouseDown={() => {
-                          setSelectedProduct(p)
-                          setProductQuery('')
-                          setProductOpen(false)
-                        }}
-                      >
-                        {p.photo_url
-                          ? <img src={p.photo_url} alt="" className="w-8 h-8 rounded object-cover border border-[#e8e0d6] flex-shrink-0" />
-                          : <ImageIcon className="w-8 h-8 text-[#c8bdb5] flex-shrink-0" />}
-                        <div className="truncate">
-                          <span className="text-[#8b6914] font-mono font-medium">{p.product_code}</span>
-                          <span className="text-[#2c2420] ml-1.5 font-medium">{p.description}</span>
-                          <div className="text-[9px] text-[#9d8d81]">{dimLabel(p)}</div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              {/* Box de produto que está selecionado mas ainda não adicionado */}
-              {selectedProduct && (
-                <div className="bg-white border border-[#e8dccb] rounded-lg p-2.5 flex gap-2.5 shadow-sm relative animate-fadeIn">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProduct(null)}
-                    className="absolute top-1.5 right-1.5 text-[#9d8d81] hover:text-red-500 transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                  {selectedProduct.photo_url
-                    ? <img src={selectedProduct.photo_url} alt="" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)}
-                        className="w-12 h-12 object-cover rounded border border-[#e8e0d6] flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity" />
-                    : <div className="w-12 h-12 bg-[#f0ece6] rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-[#c8bdb5]" /></div>
-                  }
-                  <div className="text-[11px] pr-5 flex-1 min-w-0">
-                    <p className="text-[#8b6914] font-mono font-semibold">{selectedProduct.product_code}</p>
-                    <p className="text-[#2c2420] font-medium truncate">{selectedProduct.description}</p>
-                    <p className="text-[#8b6914] font-bold mt-0.5">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedProduct.price)}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleAddProductToCart}
-                disabled={!selectedProduct}
-                className="w-full py-2 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                ADICIONAR AO ORÇAMENTO
-              </button>
-            </div>
-
-            {/* Observações */}
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Observações</span>
-              <textarea
-                className="input resize-none text-xs"
-                rows={3}
-                placeholder="Observações do orçamento..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-
-            {/* Botão de Finalizar */}
-            <button
-              onClick={handleSubmit}
-              disabled={!selectedClient || cart.length === 0 || isGenerating}
-              className="w-full py-3 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed uppercase shadow-sm"
-            >
-              Finalizar Orçamento
-            </button>
+            <OrderForm
+              reps={reps} clients={clients}
+              selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
+              onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
+              onQuickAddRep={() => setQuickModal('rep')} onQuickAddClient={() => setQuickModal('client')}
+              budgetCode={budgetCode} cart={cart} total={total}
+              onSubmit={handleSubmit} isGenerating={isGenerating}
+              repLocked={repLocked} clientLocked={clientLocked}
+            />
+            {productSearchCard}
           </div>
         </aside>
 
-        {/* ── Coluna Direita: Painel de Itens (col-span-8) ────────────────── */}
-        <main className="col-span-8 bg-white border border-[#e8e0d6] rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[550px]">
-          
-          {/* Cabeçalho do Painel */}
-          <div className="px-6 py-4 border-b border-[#e8e0d6] flex items-center justify-between bg-white flex-shrink-0">
+        {/* ── Mobile: product search card ────────────────────────────────── */}
+        <div className="md:hidden">{productSearchCard}</div>
+
+        {/* ── Items Panel ──────────────────────────────────────────────────── */}
+        <main className="md:col-span-8 bg-white border border-[#e8e0d6] rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] md:min-h-[550px]">
+          <div className="px-4 md:px-6 py-3.5 md:py-4 border-b border-[#e8e0d6] flex items-center justify-between bg-white flex-shrink-0">
             <h2 className="text-sm font-semibold text-[#8b6914] uppercase tracking-wider flex items-center gap-2">
               <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
             </h2>
-
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
                   onClick={() => { setCart([]); localStorage.removeItem('carrinho_orcamento') }}
-                  className="text-xs text-[#b25e50] hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-[#b25e50] px-3 py-1.5 rounded-lg transition-colors"
+                  className="text-xs text-[#b25e50] hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-[#b25e50] px-2.5 py-1.5 rounded-lg transition-colors"
+                  style={{ touchAction: 'manipulation' }}
                 >
-                  Limpar Orçamento
+                  Limpar
                 </button>
               )}
-              {/* Filtro Local */}
-              <div className="relative w-52">
+              <div className="relative w-36 md:w-52">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
                 <input
                   className="input pl-8 w-full text-xs border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
@@ -593,105 +754,114 @@ export default function OrcamentoPage() {
             </div>
           </div>
 
-          {/* Lista de Itens */}
           <div className="flex-1 overflow-y-auto">
             {filteredCart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-[#9d8d81] space-y-3">
-                <Clipboard className="w-12 h-12 text-[#c8bdb5] stroke-[1.2]" />
-                <p className="text-sm font-medium text-[#6b5d55]">Nenhum item adicionado ao orçamento.</p>
+              <div className="flex flex-col items-center justify-center py-20 text-[#9d8d81] space-y-3">
+                <Clipboard className="w-10 h-10 text-[#c8bdb5] stroke-[1.2]" />
+                <p className="text-sm font-medium text-[#6b5d55]">Nenhum item adicionado.</p>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-[#fbfaf8] text-xs text-[#9d8d81] uppercase font-semibold border-b border-[#e8e0d6] sticky top-0 z-10">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Produto</th>
-                    <th className="px-4 py-3 text-left w-16">Qtd</th>
-                    <th className="px-4 py-3 text-left w-28">Preço Base</th>
-                    <th className="px-4 py-3 text-left w-24">Desconto (%)</th>
-                    <th className="px-4 py-3 text-right w-28">Subtotal</th>
-                    <th className="px-4 py-3 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#e8e0d6]">
-                  {filteredCart.map((item) => {
-                    const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
-                    return (
-                      <tr key={item.product_code} className="hover:bg-[#fcfbf9] align-top transition-colors">
-                        <td className="px-4 py-3.5">
-                          <div className="flex gap-3">
-                            {item._product.photo_url
-                              ? <img src={item._product.photo_url} alt="" onClick={() => setActivePhotoModal(item._product.photo_url!)}
-                                  className="object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity"
-                                  style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }} />
-                              : <div className="bg-[#f0ece6] rounded-lg flex items-center justify-center"
-                                  style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
-                                  <ImageIcon className="w-5 h-5 text-[#c8bdb5]" />
-                                </div>
-                            }
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
-                              <span className="text-[#2c2420] ml-2 text-xs font-semibold">{item._product.description}</span>
-                              <div className="text-[10px] text-[#9d8d81] mt-0.5">{dimLabel(item._product)}</div>
-                              <StaticOptionals item={item} />
+              <>
+                {/* ── Mobile cards ─────────────────────────────── */}
+                <div className="flex flex-col gap-3 p-3 md:hidden">
+                  {filteredCart.map((item) => (
+                    <MobileCartCard
+                      key={item.product_code}
+                      item={item}
+                      onQtyChange={updateQty}
+                      onRemove={removeItem}
+                      onPhotoClick={setActivePhotoModal}
+                    />
+                  ))}
+                </div>
+
+                {/* ── Desktop table ────────────────────────────── */}
+                <table className="hidden md:table w-full text-sm">
+                  <thead className="bg-[#fbfaf8] text-xs text-[#9d8d81] uppercase font-semibold border-b border-[#e8e0d6] sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Produto</th>
+                      <th className="px-4 py-3 text-left w-16">Qtd</th>
+                      <th className="px-4 py-3 text-left w-28">Preço Base</th>
+                      <th className="px-4 py-3 text-left w-24">Desconto (%)</th>
+                      <th className="px-4 py-3 text-right w-28">Subtotal</th>
+                      <th className="px-4 py-3 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#e8e0d6]">
+                    {filteredCart.map((item) => {
+                      const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
+                      return (
+                        <tr key={item.product_code} className="hover:bg-[#fcfbf9] align-top transition-colors">
+                          <td className="px-4 py-3.5">
+                            <div className="flex gap-3">
+                              {item._product.photo_url
+                                ? <img src={item._product.photo_url} alt="" onClick={() => setActivePhotoModal(item._product.photo_url!)}
+                                    className="object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity"
+                                    style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }} />
+                                : <div className="bg-[#f0ece6] rounded-lg flex items-center justify-center"
+                                    style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
+                                    <ImageIcon className="w-5 h-5 text-[#c8bdb5]" />
+                                  </div>
+                              }
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
+                                <span className="text-[#2c2420] ml-2 text-xs font-semibold">{item._product.description}</span>
+                                <div className="text-[10px] text-[#9d8d81] mt-0.5">{dimLabel(item._product)}</div>
+                                <StaticOptionals item={item} />
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <input
-                            type="number" min={1}
-                            className="input w-12 text-center text-xs border border-[#e8e0d6] rounded-lg py-1 bg-white text-[#2c2420]"
-                            value={item.qty}
-                            onChange={(e) => updateQty(item.product_code, Number(e.target.value))}
-                          />
-                        </td>
-                        <td className="px-4 py-3.5 text-[#4a3f38] text-xs font-semibold whitespace-nowrap align-middle">
-                          R$ {fmt(item._product.price)}
-                        </td>
-                        <td className="px-4 py-3.5 align-middle">
-                          <input
-                            type="number" min={0} max={100}
-                            className="input w-16 text-center text-xs border border-[#e8e0d6] rounded-lg px-1.5 py-1 bg-white text-[#2c2420]"
-                            value={item.discount === 0 ? '' : item.discount}
-                            placeholder="0"
-                            onChange={(e) => {
-                              const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
-                              setCart((prev) => prev.map((i) => i.product_code === item.product_code ? { ...i, discount: val } : i))
-                            }}
-                          />
-                          {item.discount > 0 && (
-                            <p className="text-[9px] text-[#9d8d81] mt-0.5 text-center whitespace-nowrap">
-                              − R$ {fmt(item._product.price * item.discount / 100)}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-right text-xs font-bold text-[#2c2420] align-middle whitespace-nowrap">
-                          R$ {fmt(subtotal)}
-                        </td>
-                        <td className="px-4 py-3.5 align-middle text-center">
-                          <button onClick={() => removeItem(item.product_code)} className="text-[#c8bdb5] hover:text-red-500 transition-colors">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                          </td>
+                          <td className="px-4 py-3.5 align-middle">
+                            <input
+                              type="number" min={1}
+                              className="input w-16 text-center text-xs border border-[#e8e0d6] rounded-lg py-1 bg-white text-[#2c2420]"
+                              value={item.qty}
+                              onChange={(e) => updateQty(item.product_code, Number(e.target.value))}
+                            />
+                          </td>
+                          <td className="px-4 py-3.5 text-[#4a3f38] text-xs font-semibold whitespace-nowrap align-middle">
+                            R$ {fmt(item._product.price)}
+                          </td>
+                          <td className="px-4 py-3.5 align-middle">
+                            <input
+                              type="number" min={0} max={100}
+                              className="input w-16 text-center text-xs border border-[#e8e0d6] rounded-lg px-1.5 py-1 bg-white text-[#2c2420]"
+                              value={item.discount === 0 ? '' : item.discount}
+                              placeholder="0"
+                              onChange={(e) => {
+                                const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                                setCart((prev) => prev.map((i) => i.product_code === item.product_code ? { ...i, discount: val } : i))
+                              }}
+                            />
+                            {item.discount > 0 && (
+                              <p className="text-[9px] text-[#9d8d81] mt-0.5 text-center whitespace-nowrap">
+                                − R$ {fmt(item._product.price * item.discount / 100)}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-right text-xs font-bold text-[#2c2420] align-middle whitespace-nowrap">
+                            R$ {fmt(subtotal)}
+                          </td>
+                          <td className="px-4 py-3.5 align-middle text-center">
+                            <button onClick={() => removeItem(item.product_code)} className="text-[#c8bdb5] hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center mx-auto">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </>
             )}
           </div>
 
-          {/* Rodapé de Resumo Geral */}
+          {/* Desktop summary footer */}
           {cart.length > 0 && (
-            <div className="bg-[#fbfaf8] border-t border-[#e8e0d6] px-6 py-4 flex justify-between items-center flex-shrink-0">
+            <div className="hidden md:flex bg-[#fbfaf8] border-t border-[#e8e0d6] px-6 py-4 justify-between items-center flex-shrink-0">
               <div className="flex gap-4 text-xs text-[#8a7a6e]">
-                <div>
-                  <span>Itens: </span>
-                  <span className="font-semibold text-[#2c2420]">{cart.reduce((s, i) => s + i.qty, 0)}</span>
-                </div>
-                <div>
-                  <span>Produtos: </span>
-                  <span className="font-semibold text-[#2c2420]">{cart.length}</span>
-                </div>
+                <div><span>Itens: </span><span className="font-semibold text-[#2c2420]">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
+                <div><span>Produtos: </span><span className="font-semibold text-[#2c2420]">{cart.length}</span></div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[#2c2420] font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
@@ -701,6 +871,40 @@ export default function OrcamentoPage() {
           )}
         </main>
       </div>
+
+      {/* ── Mobile fixed bottom bar ────────────────────────────────────────── */}
+      <div className="md:hidden fixed bottom-16 inset-x-0 z-30 px-4 pb-2">
+        <button
+          onClick={() => setDrawerOpen(true)}
+          style={{ touchAction: 'manipulation' }}
+          className="w-full flex items-center justify-between bg-[#8b6914] text-white px-5 py-3.5 rounded-xl shadow-xl active:scale-[0.98] active:opacity-90 transition-all"
+        >
+          <div className="flex items-center gap-2">
+            <ChevronUp className="w-4 h-4" />
+            <span className="text-sm font-semibold">
+              {cart.length > 0
+                ? `Ver Resumo (${cart.reduce((s, i) => s + i.qty, 0)} ${cart.reduce((s, i) => s + i.qty, 0) === 1 ? 'item' : 'itens'})`
+                : 'Configurar Orçamento'}
+            </span>
+          </div>
+          {cart.length > 0 && (
+            <span className="text-sm font-bold">R$ {fmt(total)}</span>
+          )}
+        </button>
+      </div>
+
+      {/* ── Mobile bottom drawer ───────────────────────────────────────────── */}
+      <BottomDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+        <OrderForm
+          reps={reps} clients={clients}
+          selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
+          onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
+          onQuickAddRep={() => { setDrawerOpen(false); setQuickModal('rep') }}
+          onQuickAddClient={() => { setDrawerOpen(false); setQuickModal('client') }}
+          budgetCode={budgetCode} cart={cart} total={total}
+          onSubmit={handleSubmit} isGenerating={isGenerating}
+        />
+      </BottomDrawer>
 
       {quickModal === 'client' && (
         <QuickRegisterModal
@@ -718,13 +922,11 @@ export default function OrcamentoPage() {
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
-
       {activePhotoModal && <PhotoLightbox url={activePhotoModal} onClose={() => setActivePhotoModal(null)} />}
 
       {/* ── Overlay de Geração Premium ─────────────────────────────── */}
       {isGenerating && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#1a1410]/88 backdrop-blur-sm">
-          {/* Pulso radial dourado */}
           <div
             className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
             style={{
@@ -732,14 +934,11 @@ export default function OrcamentoPage() {
               animation: 'pulseRadial 2.2s ease-in-out infinite',
             }}
           />
-
-          {/* Logotipo ILYA com varredura de luz dourada */}
           <p
             className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none"
             style={{
               fontFamily: "'Cormorant Garamond', Georgia, serif",
-              backgroundImage:
-                'linear-gradient(90deg, #7a5a10 0%, #c8952e 25%, #f5d78e 50%, #c8952e 75%, #7a5a10 100%)',
+              backgroundImage: 'linear-gradient(90deg, #7a5a10 0%, #c8952e 25%, #f5d78e 50%, #c8952e 75%, #7a5a10 100%)',
               backgroundSize: '200% auto',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -749,16 +948,12 @@ export default function OrcamentoPage() {
           >
             ILYA
           </p>
-
-          {/* Subtítulo pulsante */}
           <p
             className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-[#c8952e]"
             style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}
           >
             Gerando Orçamento
           </p>
-
-          {/* Barra de progresso */}
           <div className="mt-9 w-52 h-[1px] bg-[#8b6914]/25 overflow-hidden rounded-full">
             <div
               className="h-full rounded-full"

@@ -12,6 +12,7 @@ export interface AuthUser {
   full_name: string
   role: UserRole
   rep_id: string | null
+  linked_id: string | null
   is_active: boolean
   must_change_password: boolean
 }
