@@ -6,7 +6,7 @@ export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
 
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -16,10 +16,10 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
+      await login(identifier, password)
       navigate('/', { replace: true })
     } catch {
-      setError('E-mail ou senha incorretos.')
+      setError('Usuário ou senha incorretos.')
     } finally {
       setLoading(false)
     }
@@ -44,16 +44,16 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-xs font-medium text-[#8a7e72] uppercase tracking-widest mb-1">
-                E-mail
+                E-mail ou Usuário
               </label>
               <input
-                type="email"
+                type="text"
                 required
                 autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full border border-[#e8e0d6] rounded-md px-3 py-2.5 text-sm text-[#2c2420] bg-[#faf8f5] focus:outline-none focus:border-[#8b6914] focus:ring-1 focus:ring-[#8b6914] transition"
-                placeholder="seu@email.com"
+                placeholder="seu@email.com ou nome de usuário"
               />
             </div>
 

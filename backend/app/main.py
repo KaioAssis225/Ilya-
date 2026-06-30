@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router
+from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, users_router
 from app.api.routers.auth import router as auth_router
 
 # ── Logging estruturado ───────────────────────────────────────────────────────
@@ -76,6 +76,7 @@ async def add_security_headers(request: Request, call_next):
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(products_router)
 app.include_router(clients_router)
 app.include_router(reps_router)

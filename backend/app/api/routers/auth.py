@@ -2,12 +2,13 @@ import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
-from app.api.deps import get_db_session, get_current_user
+from app.api.deps import get_db_session, get_authenticated_user
 from app.core.limiter import limiter
 from app.core.security import (
     verify_password,
+    hash_password,
     create_access_token,
     generate_refresh_token,
     hash_refresh_token,
@@ -16,7 +17,7 @@ from app.core.security import (
 from app.core.config import settings
 from app.models.user import User
 from app.models.refresh_token import RefreshToken
-from app.schemas.auth import LoginRequest, AccessTokenResponse, UserRead
+from app.schemas.auth import LoginRequest, AccessTokenResponse, UserRead, ChangePasswordRequest
 
 logger = logging.getLogger("ilya.auth")
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -31,7 +32,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         samesite="strict",
-        secure=not settings.DEBUG,  # True em produção (HTTPS), False em dev
+        secure=not settings.DEBUG,
         max_age=_COOKIE_MAX_AGE,
         path="/api/v1/auth",
     )
@@ -50,7 +51,10 @@ async def login(
     db: AsyncSession = Depends(get_db_session),
 ):
     result = await db.execute(
-        select(User).where(User.email == payload.email, User.is_active.is_(True))
+        select(User).where(
+            or_(User.email == payload.identifier, User.username == payload.identifier),
+            User.is_active.is_(True),
+        )
     )
     user = result.scalar_one_or_none()
 
@@ -59,7 +63,7 @@ async def login(
         logger.warning("Falha de login: ip=%s", client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="E-mail ou senha incorretos.",
+            detail="Usuário ou senha incorretos.",
         )
 
     logger.info("Login: user_id=%s role=%s", user.id, user.role.value)
@@ -146,5 +150,20 @@ async def logout(
 
 
 @router.get("/me", response_model=UserRead)
-async def me(current_user: User = Depends(get_current_user)):
+async def me(current_user: User = Depends(get_authenticated_user)):
     return current_user
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_authenticated_user),
+):
+    if len(body.new_password) < 8:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A senha deve ter pelo menos 8 caracteres.")
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one()
+    user.hashed_password = hash_password(body.new_password)
+    user.must_change_password = False
+    await db.commit()

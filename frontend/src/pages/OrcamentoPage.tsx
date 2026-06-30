@@ -287,8 +287,23 @@ export default function OrcamentoPage() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
   const [notes, setNotes] = useState('')
-  const [cart, setCart] = useState<CartItem[]>([])
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('carrinho_orcamento')
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as CartItem[]
+      const productMap = new Map(products.map(p => [p.product_code, p]))
+      return parsed.filter(i => productMap.has(i.product_code)).map(i => ({
+        ...i,
+        _product: productMap.get(i.product_code)!,
+      }))
+    } catch { return [] }
+  })
   
+  useEffect(() => {
+    localStorage.setItem('carrinho_orcamento', JSON.stringify(cart))
+  }, [cart])
+
   // Estados para busca e inserção de produtos no card lateral
   const [productQuery, setProductQuery] = useState('')
   const [productOpen, setProductOpen] = useState(false)
@@ -388,6 +403,7 @@ export default function OrcamentoPage() {
         new Promise<void>((r) => setTimeout(r, 3000)),
       ])
       setCart([])
+      localStorage.removeItem('carrinho_orcamento')
       setSelectedClient(null)
       setSelectedRep(null)
       setNotes('')
@@ -554,16 +570,26 @@ export default function OrcamentoPage() {
             <h2 className="text-sm font-semibold text-[#8b6914] uppercase tracking-wider flex items-center gap-2">
               <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
             </h2>
-            
-            {/* Filtro Local */}
-            <div className="relative w-60">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
-              <input
-                className="input pl-8 w-full text-xs border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
-                placeholder="Buscar..."
-                value={cartFilter}
-                onChange={(e) => setCartFilter(e.target.value)}
-              />
+
+            <div className="flex items-center gap-2">
+              {cart.length > 0 && (
+                <button
+                  onClick={() => { setCart([]); localStorage.removeItem('carrinho_orcamento') }}
+                  className="text-xs text-[#b25e50] hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-[#b25e50] px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Limpar Orçamento
+                </button>
+              )}
+              {/* Filtro Local */}
+              <div className="relative w-52">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
+                <input
+                  className="input pl-8 w-full text-xs border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
+                  placeholder="Buscar..."
+                  value={cartFilter}
+                  onChange={(e) => setCartFilter(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -595,8 +621,12 @@ export default function OrcamentoPage() {
                           <div className="flex gap-3">
                             {item._product.photo_url
                               ? <img src={item._product.photo_url} alt="" onClick={() => setActivePhotoModal(item._product.photo_url!)}
-                                  className="w-12 h-12 object-cover rounded-lg border border-[#e8e0d6] flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity" />
-                              : <div className="w-12 h-12 bg-[#f0ece6] rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-[#c8bdb5]" /></div>
+                                  className="object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity"
+                                  style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }} />
+                              : <div className="bg-[#f0ece6] rounded-lg flex items-center justify-center"
+                                  style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
+                                  <ImageIcon className="w-5 h-5 text-[#c8bdb5]" />
+                                </div>
                             }
                             <div className="flex-1 min-w-0">
                               <span className="text-[#8b6914] font-mono font-semibold">{item.product_code}</span>

@@ -7,6 +7,9 @@ import LoginPage from './pages/LoginPage'
 import CadastroPage from './pages/CadastroPage'
 import OrcamentoPage from './pages/OrcamentoPage'
 import PedidosPage from './pages/PedidosPage'
+import ProdutosPage from './pages/ProdutosPage'
+import AdminPage from './pages/AdminPage'
+import TrocarSenhaPage from './pages/TrocarSenhaPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,9 +34,15 @@ function Nav() {
         >
           ILYA <span className="text-[#8b6914] text-sm font-normal tracking-normal">— Sistema</span>
         </h1>
-        <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>
-        <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>
-        <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>
+        {!user.must_change_password && (<>
+          <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>
+          <NavLink to="/produtos" className={linkClass}>Produtos</NavLink>
+          <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>
+          <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>
+          {user.role === 'admin' && (
+            <NavLink to="/admin" className={linkClass}>Admin</NavLink>
+          )}
+        </>)}
       </div>
       <div className="flex items-center gap-4 text-xs">
         <div className="text-[#8a7a6e] text-right">
@@ -60,10 +69,13 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
+              <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
               <Route path="/" element={<Navigate to="/cadastros" replace />} />
               <Route path="/cadastros" element={<CadastroPage />} />
+              <Route path="/produtos" element={<ProdutosPage />} />
               <Route path="/orcamentos" element={<OrcamentoPage />} />
               <Route path="/pedidos" element={<PedidosPage />} />
+              <Route path="/admin" element={<AdminPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

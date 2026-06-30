@@ -1,0 +1,208 @@
+import { useState } from 'react'
+import { X, ShoppingCart, Check } from 'lucide-react'
+import { useProducts } from '../hooks/useProducts'
+import type { Product } from '../types'
+
+const TIPOS = ['Todos', 'Poltrona', 'Sofá', 'Cadeira', 'Mesa', 'Banqueta', 'Chaise', 'Aparador', 'Outro']
+
+const CAT_LABEL: Record<string, string> = {
+  aluminio: 'Alumínio', corda: 'Corda',
+  tecido_faixa_1: 'Tecido F1', tecido_faixa_2: 'Tecido F2',
+  madeira_teka: 'Madeira Teka', madeira_freijo: 'Madeira Freijó',
+  couro_soleta: 'Couro Soleta', couro_pele: 'Couro Pele',
+}
+
+function fmtM(v: number) {
+  return Number(v).toFixed(2).replace('.', ',')
+}
+
+function dimLabel(p: Product) {
+  return p.is_circular
+    ? `Ø ${fmtM(p.largura)} × A ${fmtM(p.altura)} m`
+    : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
+}
+
+function addToCart(product: Product) {
+  const raw = localStorage.getItem('carrinho_orcamento')
+  const cart = raw ? JSON.parse(raw) : []
+  const existing = cart.find((i: { product_code: string }) => i.product_code === product.product_code)
+  if (existing) {
+    existing.qty += 1
+  } else {
+    const opt_categories: Record<string, string> = {}
+    for (const opt of product.optionals) {
+      if (!(opt.category in opt_categories)) {
+        opt_categories[opt.category] = opt.color_name
+      }
+    }
+    cart.push({
+      product_code: product.product_code,
+      qty: 1,
+      unit_price: product.price,
+      discount: 0,
+      opt_categories,
+      _product: product,
+    })
+  }
+  localStorage.setItem('carrinho_orcamento', JSON.stringify(cart))
+}
+
+function SlideOver({ product, onClose }: { product: Product; onClose: () => void }) {
+  const [added, setAdded] = useState(false)
+
+  function handleAdd() {
+    addToCart(product)
+    setAdded(true)
+    setTimeout(() => setAdded(false), 2000)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="fixed inset-0 bg-[#1a1410]/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm bg-white h-full shadow-2xl flex flex-col overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6]">
+          <span className="font-mono text-sm font-semibold text-[#8b6914]">{product.product_code}</span>
+          <button onClick={onClose} className="text-[#9d8d81] hover:text-[#2c2420] transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {product.photo_url
+          ? <img src={product.photo_url} alt={product.description}
+              className="w-full aspect-square object-cover" />
+          : <div className="w-full aspect-square bg-[#f0ece6] flex items-center justify-center">
+              <span className="text-[#c8bdb5] text-sm">Sem foto</span>
+            </div>
+        }
+
+        <div className="px-6 py-5 flex-1 space-y-4">
+          <div>
+            <p className="text-xs text-[#9d8d81] uppercase tracking-wider font-semibold mb-1">{product.type}</p>
+            <h3 className="text-lg font-semibold text-[#2c2420]">{product.description}</h3>
+          </div>
+
+          <div className="bg-[#f8f6f2] border border-[#e8e0d6] rounded-xl p-3">
+            <p className="text-xs text-[#9d8d81] font-semibold mb-1">Dimensões</p>
+            <p className="text-sm text-[#4a3f38]">{dimLabel(product)}</p>
+          </div>
+
+          {product.optionals.length > 0 && (
+            <div>
+              <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Opcionais</p>
+              <div className="flex flex-wrap gap-4">
+                {Array.from(new Set(product.optionals.map(o => o.category))).map(cat => {
+                  const opt = product.optionals.find(o => o.category === cat)!
+                  return (
+                    <div key={cat} className="flex flex-col items-center gap-1.5">
+                      <div className="relative group">
+                        {opt.photo_url ? (
+                          <>
+                            <img
+                              src={opt.photo_url}
+                              alt={opt.color_name}
+                              className="w-10 h-10 rounded-lg object-cover border border-[#e8e0d6] cursor-zoom-in"
+                            />
+                            <div className="hidden group-hover:block absolute z-50 bottom-12 left-1/2 -translate-x-1/2 w-40 h-40 rounded-xl overflow-hidden shadow-2xl border border-[#e8e0d6] pointer-events-none">
+                              <img src={opt.photo_url} alt={opt.color_name} className="w-full h-full object-cover" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-[#f0ece6] border border-[#e8e0d6]" />
+                        )}
+                      </div>
+                      <div className="text-center">
+                        <span className="block text-[9px] text-[#9d8d81] uppercase tracking-wide">{CAT_LABEL[cat] ?? cat}</span>
+                        <span className="text-[10px] text-[#4a3f38] font-medium">{opt.color_name}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-[#e8e0d6]">
+          <button
+            onClick={handleAdd}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-all"
+            style={{ backgroundColor: added ? '#648261' : '#8b6914', color: 'white' }}
+          >
+            {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
+            {added ? 'Adicionado ao Orçamento!' : 'Adicionar ao Orçamento'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function ProdutosPage() {
+  const { data: products = [], isLoading } = useProducts()
+  const [activeTipo, setActiveTipo] = useState('Todos')
+  const [selected, setSelected] = useState<Product | null>(null)
+
+  const filtered = activeTipo === 'Todos'
+    ? products
+    : products.filter(p => p.type === activeTipo)
+
+  return (
+    <div className="min-h-screen bg-[#f8f6f2]">
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="mb-7">
+          <h2 className="text-2xl font-semibold text-[#2c2420]" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
+            Catálogo de Produtos
+          </h2>
+          <p className="text-sm text-[#9d8d81] mt-1">Selecione um produto para adicionar ao orçamento</p>
+        </div>
+
+        {/* Chips de filtro */}
+        <div className="flex flex-wrap gap-2 mb-7">
+          {TIPOS.map(tipo => (
+            <button
+              key={tipo}
+              onClick={() => setActiveTipo(tipo)}
+              className="px-3.5 py-1.5 rounded-full text-sm font-medium border transition-all"
+              style={activeTipo === tipo
+                ? { backgroundColor: '#8b6914', color: 'white', borderColor: '#8b6914' }
+                : { backgroundColor: 'white', color: '#4a3f38', borderColor: '#e8e0d6' }
+              }
+            >
+              {tipo}
+            </button>
+          ))}
+        </div>
+
+        {isLoading ? (
+          <div className="text-center text-[#9d8d81] py-20">Carregando catálogo…</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center text-[#9d8d81] py-20">Nenhum produto encontrado.</div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            {filtered.map(product => (
+              <button
+                key={product.id}
+                onClick={() => setSelected(product)}
+                className="bg-white border border-[#e8e0d6] rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+              >
+                {product.photo_url
+                  ? <img src={product.photo_url} alt={product.description}
+                      className="w-full aspect-square object-cover group-hover:opacity-95 transition-opacity" />
+                  : <div className="w-full aspect-square bg-[#f0ece6] flex items-center justify-center">
+                      <span className="text-[#c8bdb5] text-xs">Sem foto</span>
+                    </div>
+                }
+                <div className="p-3.5">
+                  <span className="text-[10px] font-mono font-semibold text-[#8b6914]">{product.product_code}</span>
+                  <p className="text-sm font-medium text-[#2c2420] leading-snug mt-0.5 line-clamp-2">{product.description}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selected && <SlideOver product={selected} onClose={() => setSelected(null)} />}
+    </div>
+  )
+}

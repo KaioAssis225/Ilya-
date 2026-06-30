@@ -82,6 +82,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-001",
         "description": "Poltrona Riviera Outdoor",
+        "type": "Poltrona",
         "is_circular": False,
         "largura": 0.75,
         "profundidade": 0.80,
@@ -92,6 +93,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-002",
         "description": "Sofá Modular Capri 3 Lugares",
+        "type": "Sofá",
         "is_circular": False,
         "largura": 2.25,
         "profundidade": 0.90,
@@ -102,6 +104,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-003",
         "description": "Mesa de Centro Atena — Tampo Circular em Teka",
+        "type": "Mesa",
         "is_circular": True,
         "largura": 0.90,
         "profundidade": 0.0,
@@ -112,6 +115,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-004",
         "description": "Chaise Longue Amalfi em Freijó e Couro",
+        "type": "Chaise",
         "is_circular": False,
         "largura": 1.80,
         "profundidade": 0.75,
@@ -122,6 +126,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-005",
         "description": "Cadeira Venezia com Corda e Couro Soleta",
+        "type": "Cadeira",
         "is_circular": False,
         "largura": 0.55,
         "profundidade": 0.60,
@@ -132,6 +137,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-006",
         "description": "Banqueta Alta Asti em Alumínio e Corda",
+        "type": "Banqueta",
         "is_circular": False,
         "largura": 0.48,
         "profundidade": 0.50,
@@ -142,6 +148,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-007",
         "description": "Mesa de Jantar Gaia — Tampo Circular em Freijó",
+        "type": "Mesa",
         "is_circular": True,
         "largura": 1.40,
         "profundidade": 0.0,
@@ -152,6 +159,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-008",
         "description": "Aparador Prisma em Teka e Couro Soleta",
+        "type": "Aparador",
         "is_circular": False,
         "largura": 1.60,
         "profundidade": 0.45,
@@ -162,6 +170,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-009",
         "description": "Poltrona Lounge Ninho em Corda e Tecido",
+        "type": "Poltrona",
         "is_circular": False,
         "largura": 0.85,
         "profundidade": 0.82,
@@ -172,6 +181,7 @@ PRODUCTS_DATA = [
     {
         "product_code": "ILY-010",
         "description": "Sofá Curvo Verano Outdoor em Tecido",
+        "type": "Sofá",
         "is_circular": False,
         "largura": 2.40,
         "profundidade": 1.10,

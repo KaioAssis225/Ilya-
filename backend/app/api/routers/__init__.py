@@ -4,5 +4,6 @@ from app.api.routers.reps import router as reps_router
 from app.api.routers.orders import router as orders_router
 from app.api.routers.optionals import router as optionals_router
 from app.api.routers.auth import router as auth_router
+from app.api.routers.users import router as users_router
 
-__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "auth_router"]
+__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "auth_router", "users_router"]

@@ -10,6 +10,7 @@ from app.schemas.optional import OptionalColorRead
 class ProductBase(BaseModel):
     product_code: str = Field(..., max_length=100)
     description: str
+    type: str = Field(default="Outro", max_length=50)
     is_circular: bool = False
     altura: Decimal = Field(..., ge=0, decimal_places=2)
     largura: Decimal = Field(..., ge=0, decimal_places=2)
@@ -24,6 +25,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     product_code: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    type: Optional[str] = Field(None, max_length=50)
     is_circular: Optional[bool] = None
     altura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     largura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)

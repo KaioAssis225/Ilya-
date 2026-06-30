@@ -320,6 +320,41 @@ export async function generateOrderPDF(
     doc.text(obsLines, 24, y)
   }
 
+  // ── Bloco de assinaturas ──────────────────────────────────────────────────
+  const sigB64 = localStorage.getItem(`signature_${order.code}`)
+  if (sigB64) {
+    if (y + 40 > 265) { doc.addPage(); y = 20 }
+    y += 6
+    doc.setDrawColor(...LINE)
+    doc.setLineWidth(0.3)
+    doc.line(20, y, w - 20, y)
+    y += 8
+
+    const colW = (w - 50) / 2
+    // Coluna esquerda: linha manual + legenda
+    doc.setDrawColor(...DARK)
+    doc.setLineWidth(0.3)
+    doc.line(20, y + 18, 20 + colW, y + 18)
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Representante / Ilya', 20 + colW / 2, y + 23, { align: 'center' })
+
+    // Coluna direita: assinatura eletrônica + legenda
+    const sx = 20 + colW + 10
+    try {
+      doc.addImage(sigB64, 'PNG', sx, y, colW, 20, undefined, 'FAST')
+    } catch { /* assinatura inválida — ignora */ }
+    doc.setDrawColor(...DARK)
+    doc.setLineWidth(0.3)
+    doc.line(sx, y + 20, sx + colW, y + 20)
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.text('Cliente / Contratado', sx + colW / 2, y + 25, { align: 'center' })
+
+    y += 30
+  }
+
   // ── Rodapé da página ───────────────────────────────────────────────────────
   y = 285
   doc.setDrawColor(...GOLD)

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Search, Eye, Trash2, FileText, X, ImageIcon } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine } from 'lucide-react'
 import { useOrders, useDeleteOrder } from '../hooks/useOrders'
 import { useClients } from '../hooks/useClients'
 import { useRepresentatives } from '../hooks/useRepresentatives'
@@ -39,6 +39,71 @@ function OrderDetailModal({
   onClose: () => void
 }) {
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
+  const [sigModalOpen, setSigModalOpen] = useState(false)
+  const [sigData, setSigData] = useState<string | null>(() => localStorage.getItem(`signature_${order.code}`))
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const isDrawingRef = useRef(false)
+
+  useEffect(() => {
+    if (!sigModalOpen || !canvasRef.current) return
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')!
+    ctx.strokeStyle = '#2c2420'
+    ctx.lineWidth = 2
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    function getXY(e: TouchEvent | MouseEvent) {
+      const rect = canvas.getBoundingClientRect()
+      if ('touches' in e) {
+        return { x: (e as TouchEvent).touches[0].clientX - rect.left, y: (e as TouchEvent).touches[0].clientY - rect.top }
+      }
+      return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
+    }
+    function onStart(e: TouchEvent | MouseEvent) {
+      e.preventDefault()
+      isDrawingRef.current = true
+      const { x, y } = getXY(e)
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+    }
+    function onMove(e: TouchEvent | MouseEvent) {
+      e.preventDefault()
+      if (!isDrawingRef.current) return
+      const { x, y } = getXY(e)
+      ctx.lineTo(x, y)
+      ctx.stroke()
+    }
+    function onEnd() { isDrawingRef.current = false }
+
+    canvas.addEventListener('mousedown', onStart)
+    canvas.addEventListener('mousemove', onMove)
+    canvas.addEventListener('mouseup', onEnd)
+    canvas.addEventListener('touchstart', onStart, { passive: false })
+    canvas.addEventListener('touchmove', onMove, { passive: false })
+    canvas.addEventListener('touchend', onEnd)
+    return () => {
+      canvas.removeEventListener('mousedown', onStart)
+      canvas.removeEventListener('mousemove', onMove)
+      canvas.removeEventListener('mouseup', onEnd)
+      canvas.removeEventListener('touchstart', onStart)
+      canvas.removeEventListener('touchmove', onMove)
+      canvas.removeEventListener('touchend', onEnd)
+    }
+  }, [sigModalOpen])
+
+  function clearCanvas() {
+    const canvas = canvasRef.current!
+    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  function confirmSig() {
+    const data = canvasRef.current!.toDataURL('image/png')
+    localStorage.setItem(`signature_${order.code}`, data)
+    setSigData(data)
+    setSigModalOpen(false)
+  }
+
   // Values may be "category/color" (qualified) or plain color names
   function parseOptValue(value: string | null): { label: string; swatch: string | null } | null {
     if (!value) return null
@@ -118,11 +183,13 @@ function OrderDetailModal({
                 const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
                 return (
                 <tr key={item.id} className="border-t border-[#e8e0d6]">
-                  <td className="px-2 py-2 w-10">
+                  <td className="px-2 py-2" style={{ width: '40px', minWidth: '40px' }}>
                     {photoUrl
                       ? <img src={photoUrl} alt="" onClick={() => setActivePhotoModal(photoUrl)}
-                          className="w-9 h-9 object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity" />
-                      : <div className="w-9 h-9 bg-[#f0ece6] rounded-lg flex items-center justify-center">
+                          className="object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity"
+                          style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px' }} />
+                      : <div className="bg-[#f0ece6] rounded-lg flex items-center justify-center"
+                          style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px' }}>
                           <ImageIcon className="w-4 h-4 text-[#c8bdb5]" />
                         </div>
                     }
@@ -163,6 +230,69 @@ function OrderDetailModal({
             </tfoot>
           </table>
         </div>
+
+        {/* Seção de assinatura */}
+        <div className="mt-5 pt-4 border-t border-[#e8e0d6]">
+          {sigData ? (
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-xs text-[#9d8d81] uppercase tracking-wider font-semibold">Assinatura do Cliente / Contratado</p>
+              <img src={sigData} alt="Assinatura" className="max-h-20 max-w-xs border-b border-[#c8bdb5] pb-1" />
+              <button
+                onClick={() => { setSigModalOpen(true) }}
+                className="text-xs text-[#9d8d81] hover:text-[#8b6914] underline transition-colors"
+              >
+                Reasinar
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setSigModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-[#c8a84b] text-[#8b6914] rounded-xl hover:bg-[#fdf9f0] transition-colors text-sm font-medium"
+            >
+              <PenLine className="w-4 h-4" />
+              Assinar Pedido
+            </button>
+          )}
+        </div>
+
+        {/* Modal de captura de assinatura */}
+        {sigModalOpen && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[#1a1410]/80 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-base font-semibold text-[#2c2420]">Assinatura do Cliente</h4>
+                <button onClick={() => setSigModalOpen(false)} className="text-[#9d8d81] hover:text-[#2c2420]"><X className="w-5 h-5" /></button>
+              </div>
+              <p className="text-xs text-[#9d8d81] mb-3">Assine no campo abaixo com o mouse ou dedo.</p>
+              <canvas
+                ref={canvasRef}
+                width={420}
+                height={160}
+                className="w-full border border-[#e8e0d6] rounded-xl bg-[#fafaf9] cursor-crosshair touch-none"
+              />
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={clearCanvas}
+                  className="flex-1 py-2 border border-[#e8e0d6] text-[#9d8d81] rounded-lg text-sm hover:bg-[#f8f6f2] transition-colors"
+                >
+                  Limpar
+                </button>
+                <button
+                  onClick={() => setSigModalOpen(false)}
+                  className="flex-1 py-2 border border-[#e8e0d6] text-[#9d8d81] rounded-lg text-sm hover:bg-[#f8f6f2] transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmSig}
+                  className="flex-1 py-2 bg-[#8b6914] text-white rounded-lg text-sm font-medium hover:bg-[#7a5c10] transition-colors"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activePhotoModal && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#1a1410]/75 backdrop-blur-sm"

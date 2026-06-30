@@ -14,16 +14,16 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 
-# Re-export get_db for routers
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_db():
         yield session
 
 
-async def get_current_user(
+async def get_authenticated_user(
     token: str = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db_session)
 ) -> User:
+    """Validates token and returns the user. Does NOT enforce must_change_password."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Credenciais inválidas ou token expirado.",
@@ -49,10 +49,22 @@ async def get_current_user(
     return user
 
 
+async def get_current_user(
+    user: User = Depends(get_authenticated_user),
+) -> User:
+    """Returns the current user, raising 403 if a password change is required."""
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="must_change_password",
+        )
+    return user
+
+
 def require_roles(*allowed_roles: UserRole):
     def dependency(current_user: User = Depends(get_current_user)):
         if current_user.role == UserRole.admin:
-            return current_user  # Admin possui bypass total
+            return current_user
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

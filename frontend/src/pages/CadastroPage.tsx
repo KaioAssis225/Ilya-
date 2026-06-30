@@ -1,9 +1,12 @@
 import { useState, useRef } from 'react'
-import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag } from 'lucide-react'
+import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
+import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
+import type { UserRead } from '../hooks/useUsers'
+import { useAuth } from '../hooks/useAuth'
 import type { Product, ProductCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais'
@@ -188,7 +191,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 // ── PRODUTOS ──────────────────────────────────────────────────────────────────
 
 const EMPTY_PRODUCT: ProductCreate = {
-  product_code: '', description: '', is_circular: false,
+  product_code: '', description: '', type: 'Outro', is_circular: false,
   altura: 0, largura: 0, profundidade: 0, price: 0, optional_ids: [],
 }
 
@@ -233,6 +236,7 @@ function ProductsTab({ color }: { color: string }) {
     setForm({
       product_code: p.product_code,
       description: p.description,
+      type: p.type ?? 'Outro',
       is_circular: p.is_circular,
       altura: p.altura,
       largura: p.largura,
@@ -349,6 +353,14 @@ function ProductsTab({ color }: { color: string }) {
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-[#9d8d81]">Descrição *</span>
                 <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-[#9d8d81]">Tipo</span>
+                <select className="input" value={form.type ?? 'Outro'} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                  {['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -524,22 +536,36 @@ function ProductsTab({ color }: { color: string }) {
 const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '' }
 
 function PeopleTab<T extends Client | Representative>({
-  label, items, isLoading, onCreate, onUpdate, onDelete, isPending, color,
+  label, entityType, items, isLoading, onCreate, onUpdate, onDelete, isPending, color,
 }: {
-  label: string; items: T[] | undefined; isLoading: boolean
+  label: string; entityType: 'client' | 'rep'
+  items: T[] | undefined; isLoading: boolean
   onCreate: (data: ClientCreate) => Promise<void>; onUpdate: (id: string, data: Partial<ClientCreate>) => Promise<void>
   onDelete: (id: string) => Promise<void>; isPending: boolean; color: string
 }) {
+  const { user: authUser } = useAuth()
+  const isAdmin = authUser?.role === 'admin'
+  const isRep = authUser?.role === 'representante'
+
   const { sorted, sortKey, sortDir, toggle } = useSortedList<T>(items, 'name' as keyof T)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<T | null>(null)
   const [deleting, setDeleting] = useState<T | null>(null)
+  const [viewing, setViewing] = useState<T | null>(null)
+  const [createdUser, setCreatedUser] = useState<UserRead | null>(null)
+  const [createUserError, setCreateUserError] = useState<string | null>(null)
   const [form, setForm] = useState<ClientCreate>(EMPTY_ADDRESS)
+
+  const createFromClient = useCreateUserFromClient()
+  const createFromRep = useCreateUserFromRep()
 
   function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setShowForm(true) }
   function openEdit(item: T) {
     setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state })
     setEditing(item); setShowForm(true)
+  }
+  function openView(item: T) {
+    setViewing(item); setCreatedUser(null); setCreateUserError(null)
   }
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -547,7 +573,25 @@ function PeopleTab<T extends Client | Representative>({
     setShowForm(false)
   }
 
+  async function handleCreateUser() {
+    if (!viewing) return
+    setCreateUserError(null)
+    try {
+      let user: UserRead
+      if (entityType === 'client') {
+        user = await createFromClient.mutateAsync(viewing.id)
+      } else {
+        user = await createFromRep.mutateAsync(viewing.id)
+      }
+      setCreatedUser(user)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setCreateUserError(detail ?? 'Erro ao criar usuário.')
+    }
+  }
+
   const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof T), color }
+  const createUserPending = entityType === 'client' ? createFromClient.isPending : createFromRep.isPending
 
   return (
     <div>
@@ -583,10 +627,13 @@ function PeopleTab<T extends Client | Representative>({
                   <td className="px-4 py-3 text-[#8a7a6e]">{item.state}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => openEdit(item)} className="text-[#9d8d81] transition-colors"
+                      <button onClick={() => openView(item)} title="Visualizar" className="text-[#9d8d81] transition-colors"
+                        onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => openEdit(item)} title="Editar" className="text-[#9d8d81] transition-colors"
                         onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                         onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => setDeleting(item)} className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleting(item)} title="Excluir" className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -597,6 +644,75 @@ function PeopleTab<T extends Client | Representative>({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* View / Create User modal */}
+      {viewing && (
+        <Modal title={`Detalhes — ${viewing.name}`} onClose={() => setViewing(null)} accentColor={color}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div><span className="text-xs text-[#9d8d81] block">Nome</span><span className="text-[#2c2420] font-medium">{viewing.name}</span></div>
+              <div><span className="text-xs text-[#9d8d81] block">Telefone</span><span className="text-[#4a3f38]">{viewing.phone}</span></div>
+              <div className="col-span-2"><span className="text-xs text-[#9d8d81] block">E-mail</span><span className="text-[#4a3f38]">{viewing.email}</span></div>
+              <div><span className="text-xs text-[#9d8d81] block">Cidade</span><span className="text-[#4a3f38]">{viewing.city}</span></div>
+              <div><span className="text-xs text-[#9d8d81] block">Estado</span><span className="text-[#4a3f38]">{viewing.state}</span></div>
+              <div className="col-span-2"><span className="text-xs text-[#9d8d81] block">Endereço</span><span className="text-[#4a3f38]">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — CEP {viewing.cep}</span></div>
+            </div>
+
+            {(isAdmin || (isRep && entityType === 'client')) && <div className="border-t border-[#e8e0d6] pt-4">
+              <p className="text-xs font-semibold text-[#8a7a6e] uppercase tracking-wider mb-3">Acesso ao Sistema</p>
+
+              {createdUser ? (
+                <div className="bg-[#f0f7f0] border border-[#c5dfc4] rounded-xl p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-[#4a7a47]">
+                    <CheckCircle className="w-5 h-5 flex-shrink-0" />
+                    <span className="text-sm font-semibold">Usuário criado com sucesso!</span>
+                  </div>
+                  <div className="text-sm text-[#4a3f38] space-y-1">
+                    <p><span className="text-[#9d8d81]">Usuário:</span> <strong>{createdUser.username}</strong></p>
+                    <p><span className="text-[#9d8d81]">Senha inicial:</span> <strong>senhailya</strong></p>
+                    <p><span className="text-[#9d8d81]">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Vendedor'}</p>
+                  </div>
+                  <p className="text-xs text-[#8a7a6e] mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
+                </div>
+              ) : viewing?.has_user ? (
+                <div className="flex items-center gap-3">
+                  <button
+                    disabled
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white opacity-50 cursor-not-allowed"
+                    style={{ backgroundColor: color }}
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Usuário já criado
+                  </button>
+                  <span className="text-xs text-[#9d8d81]">Gerencie pela tela Admin.</span>
+                </div>
+              ) : (
+                <>
+                  {createUserError && (
+                    <p className="text-xs text-[#b25e50] mb-2">{createUserError}</p>
+                  )}
+                  <button
+                    onClick={handleCreateUser}
+                    disabled={createUserPending}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white transition-colors disabled:opacity-60"
+                    style={{ backgroundColor: color }}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    {createUserPending ? 'Criando…' : 'Criar Usuário'}
+                  </button>
+                  <p className="text-xs text-[#9d8d81] mt-2">
+                    Cria acesso com usuário gerado pelo nome e senha padrão <em>"senhailya"</em>.
+                  </p>
+                </>
+              )}
+            </div>}
+
+            <div className="flex justify-end pt-1">
+              <button className="btn-secondary" onClick={() => setViewing(null)}>Fechar</button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {showForm && (
@@ -792,7 +908,10 @@ const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
 ]
 
 export default function CadastroPage() {
+  const { user } = useAuth()
+  const isRep = user?.role === 'representante'
   const [tab, setTab] = useState<Tab>('produtos')
+  const visibleTabs = TAB_CONFIG.filter(t => !(isRep && t.key === 'representantes'))
 
   const { data: products } = useProducts()
   const { data: clients }  = useClients()
@@ -823,7 +942,7 @@ export default function CadastroPage() {
           <aside>
             <div className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
               <p className="text-[10px] font-semibold text-[#c8bdb5] uppercase tracking-widest px-3 pb-2">Cadastros</p>
-              {TAB_CONFIG.map(({ key, label, Icon }) => {
+              {visibleTabs.map(({ key, label, Icon }) => {
                 const { color } = TAB_PALETTE[key]
                 const isActive = tab === key
                 const count = counts[key]
@@ -863,6 +982,7 @@ export default function CadastroPage() {
             {tab === 'clientes' && (
               <PeopleTab
                 label="Clientes"
+                entityType="client"
                 items={clientsData}
                 isLoading={clientsLoading}
                 isPending={createClient.isPending || updateClient.isPending}
@@ -876,6 +996,7 @@ export default function CadastroPage() {
             {tab === 'representantes' && (
               <PeopleTab
                 label="Representantes"
+                entityType="rep"
                 items={repsData}
                 isLoading={repsLoading}
                 isPending={createRep.isPending || updateRep.isPending}

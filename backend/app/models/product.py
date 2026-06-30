@@ -11,6 +11,7 @@ class Product(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     product_code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)

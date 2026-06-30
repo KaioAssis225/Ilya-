@@ -16,6 +16,7 @@ export interface Product {
   id: string
   product_code: string
   description: string
+  type: string
   is_circular: boolean
   altura: number
   largura: number
@@ -30,6 +31,7 @@ export interface Product {
 export interface ProductCreate {
   product_code: string
   description: string
+  type?: string
   is_circular: boolean
   altura: number
   largura: number
@@ -52,6 +54,7 @@ export interface Client {
   state: string
   created_at: string
   updated_at: string
+  has_user?: boolean
 }
 
 export interface ClientCreate {
@@ -71,6 +74,7 @@ export interface Representative extends Omit<Client, 'id' | 'created_at' | 'upda
   id: string
   created_at: string
   updated_at: string
+  has_user?: boolean
 }
 
 export interface RepresentativeCreate extends ClientCreate {}
