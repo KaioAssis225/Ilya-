@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 
 interface OrderInfo {
@@ -15,12 +14,11 @@ function fmt(n: number) {
 }
 
 export default function SignContractPage() {
-  const [params] = useSearchParams()
   const [token] = useState<string>(() => {
-    const t = params.get('token') ?? ''
+    // Token vem via fragment (#) para não vazar em logs de servidor nem Referer (V-04)
+    const t = window.location.hash.slice(1)
     if (t) {
-      const clean = window.location.pathname
-      window.history.replaceState(null, '', clean)
+      window.history.replaceState(null, '', window.location.pathname)
     }
     return t
   })
@@ -155,7 +153,7 @@ export default function SignContractPage() {
 
         {stage === 'error' && (
           <div className="bg-white rounded-2xl border border-[#e8e0d6] shadow-sm p-6 text-center">
-            <p className="text-[#c0392b] text-sm font-medium mb-1">Erro</p>
+            <p className="text-red-700 text-sm font-medium mb-1">Erro</p>
             <p className="text-[#4a3f38] text-sm">{errorMsg}</p>
           </div>
         )}

@@ -1,13 +1,41 @@
 @import "tailwindcss";
 
+/* ── Design tokens ────────────────────────────────────────────────────────────
+   Single source of truth for the Ilya palette. Each value powers a Tailwind v4
+   utility (e.g. --color-gold → text-gold / bg-gold / border-gold).            */
+@theme {
+  --color-bg:          #f8f6f2;
+  --color-surface:     #ffffff;
+  --color-surface-2:   #fbfaf8;
+  --color-line:        #e8e0d6;
+
+  --color-ink:         #2c2420;
+  --color-ink-2:       #4a3f38;
+  --color-muted:       #9d8d81;
+  --color-muted-2:     #8a7a6e;
+  --color-faint:       #c8bdb5;
+
+  --color-gold:        #8b6914;
+  --color-gold-600:    #7a5c10;
+  --color-gold-700:    #6a4f0d;
+  --color-gold-soft:   #c8a84b;
+
+  --color-terracotta:  #b25e50;
+  --color-mineral:     #507a9b;
+  --color-olive:       #648261;
+
+  --radius-control:    0.5rem;   /* inputs, buttons — the one true control radius */
+  --radius-card:       0.75rem;  /* cards, panels, tables */
+}
+
 @layer base {
   * {
     box-sizing: border-box;
   }
 
   body {
-    background-color: #f8f6f2;
-    color: #2c2420;
+    background-color: var(--color-bg);
+    color: var(--color-ink);
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
@@ -17,69 +45,84 @@
     font-weight: 500;
     letter-spacing: 0.02em;
   }
+
+  /* Consistent, on-brand keyboard focus across every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
 @layer components {
   /* ── Inputs ─────────────────────────────────────────────────────── */
   .input {
-    @apply w-full bg-white border border-[#e8e0d6] rounded-lg px-3 py-2 text-[#2c2420] text-sm
+    @apply w-full bg-white border border-[--color-line] rounded-[--radius-control] px-3 py-2 text-[--color-ink] text-sm
       placeholder:text-[#a89a8e] focus:outline-none focus:ring-2 focus:ring-[#8b6914]/25 focus:border-[#8b6914]/60
       transition-all duration-200;
   }
 
   /* ── Buttons ─────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-[#8b6914] hover:bg-[#7a5c10] active:bg-[#6a4f0d] text-white font-semibold text-sm
-      px-4 py-2 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed
-      uppercase tracking-wide shadow-sm hover:shadow-[#8b6914]/20 hover:shadow-md;
+    @apply inline-flex items-center justify-center gap-2 bg-[--color-gold] hover:bg-[--color-gold-600] active:bg-[--color-gold-700]
+      text-white font-semibold text-sm px-4 py-2 rounded-[--radius-control] transition-all duration-150
+      disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide
+      shadow-sm hover:shadow-md hover:shadow-[#8b6914]/20;
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-[#f8f6f2] active:bg-[#f0ece6] text-[#2c2420] font-medium text-sm
-      border border-[#e8e0d6] px-4 py-2 rounded-lg transition-all duration-150;
+    @apply inline-flex items-center justify-center gap-2 bg-white hover:bg-[--color-bg] active:bg-[#f0ece6]
+      text-[--color-ink] font-medium text-sm border border-[--color-line] px-4 py-2 rounded-[--radius-control]
+      transition-all duration-150;
   }
 
   .btn-danger {
-    @apply bg-red-700 hover:bg-red-600 active:bg-red-800 text-white font-semibold text-sm
-      px-4 py-2 rounded-lg transition-all duration-150;
+    @apply inline-flex items-center justify-center gap-2 bg-red-700 hover:bg-red-600 active:bg-red-800
+      text-white font-semibold text-sm px-4 py-2 rounded-[--radius-control] transition-all duration-150;
+  }
+
+  /* Icon-only action button — replaces the ad-hoc muted icon buttons in tables. */
+  .btn-icon {
+    @apply text-[--color-muted] hover:text-[--color-gold] transition-colors w-8 h-8 inline-flex items-center justify-center rounded-lg
+      hover:bg-[--color-bg];
   }
 
   /* ── Modal overlay + panel ───────────────────────────────────────── */
   .modal-overlay {
     @apply fixed inset-0 z-50 flex items-center justify-center p-4
-      bg-[#2c2420]/30 backdrop-blur-sm;
+      bg-[#1a1410]/45 backdrop-blur-sm;
     animation: fadeIn 0.15s ease-out;
   }
 
   .modal-panel {
-    @apply bg-white border border-[#e8e0d6] rounded-xl shadow-2xl shadow-[#2c2420]/10;
+    @apply bg-white border border-[--color-line] rounded-2xl shadow-2xl shadow-[#1a1410]/15;
     animation: slideUp 0.18s ease-out;
   }
 
   /* ── Nav link ────────────────────────────────────────────────────── */
   .nav-link {
-    @apply px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150
-      text-[#8a7a6e] hover:text-[#2c2420] hover:bg-[#f0ece6];
+    @apply px-4 py-2 rounded-[--radius-control] text-sm font-medium transition-all duration-150
+      text-[--color-muted-2] hover:text-[--color-ink] hover:bg-[#f0ece6];
   }
 
   .nav-link-active {
-    @apply bg-[#f5f0e8] text-[#8b6914];
+    @apply bg-[#f5f0e8] text-[--color-gold] hover:text-[--color-gold];
   }
 
   /* ── Table rows ──────────────────────────────────────────────────── */
   .table-row {
-    @apply border-t border-[#e8e0d6] transition-colors duration-100 hover:bg-[#f8f6f2];
+    @apply border-t border-[--color-line] transition-colors duration-100 hover:bg-[--color-bg];
   }
 
   /* ── Sidebar tab button ──────────────────────────────────────────── */
   .tab-btn {
     @apply relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-      text-[#8a7a6e] hover:text-[#2c2420];
+      text-[--color-muted-2] hover:text-[--color-ink];
   }
 
   .tab-btn-active {
-    @apply text-[#8b6914] after:absolute after:bottom-0 after:left-0 after:right-0
-      after:h-0.5 after:bg-[#8b6914] after:rounded-full;
+    @apply text-[--color-gold] after:absolute after:bottom-0 after:left-0 after:right-0
+      after:h-0.5 after:bg-[--color-gold] after:rounded-full;
   }
 
   /* ── Badge ───────────────────────────────────────────────────────── */
@@ -88,11 +131,11 @@
   }
 
   .badge-active {
-    @apply bg-[#8b6914]/15 text-[#8b6914];
+    @apply bg-[#8b6914]/15 text-[--color-gold];
   }
 
   .badge-inactive {
-    @apply bg-[#f0ece6] text-[#9d8d81];
+    @apply bg-[#f0ece6] text-[--color-muted];
   }
 
   /* ── Toast ───────────────────────────────────────────────────────── */
@@ -102,14 +145,19 @@
 
   /* ── Section card ────────────────────────────────────────────────── */
   .card-section {
-    @apply bg-white border border-[#e8e0d6] rounded-xl p-5
+    @apply bg-white border border-[--color-line] rounded-[--radius-card] p-5
       shadow-sm transition-shadow duration-200 hover:shadow-md hover:shadow-[#2c2420]/5;
   }
 
   /* ── Sortable table header ───────────────────────────────────────── */
   .th-sort {
-    @apply px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase tracking-wider
-      cursor-pointer select-none hover:text-[#8b6914] transition-colors duration-100;
+    @apply px-4 py-3 text-left text-xs font-semibold text-[--color-muted] uppercase tracking-wider
+      cursor-pointer select-none hover:text-[--color-gold] transition-colors duration-100;
+  }
+
+  /* Thin gold rule used as a brand divider (auth headers, etc.). */
+  .gold-rule {
+    @apply mx-auto h-px w-12 bg-[--color-gold];
   }
 }
 
@@ -152,6 +200,20 @@
 @keyframes pulseRadial {
   0%, 100% { opacity: 0.12; transform: scale(1); }
   50%       { opacity: 0.32; transform: scale(1.1); }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   Honour the user's OS preference. Brand loading flourishes collapse to a
+   static, legible state instead of looping animation.                        */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */

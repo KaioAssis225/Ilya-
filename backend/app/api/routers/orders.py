@@ -2,9 +2,9 @@ import logging
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, text
 
 from app.api.deps import get_db_session, get_current_user, require_roles
 from app.core.limiter import limiter
@@ -26,8 +26,8 @@ _ADMIN = Depends(require_roles(UserRole.admin))
 
 
 async def _next_code(db: AsyncSession) -> tuple[str, str]:
-    result = await db.execute(select(func.count()).select_from(Order))
-    n = (result.scalar() or 0) + 1
+    # nextval é atômico no PostgreSQL — elimina race condition de COUNT(*) (V-01)
+    n = (await db.execute(text("SELECT nextval('order_seq')"))).scalar()
     return f"PED-{n:04d}", f"ORC-{n:04d}"
 
 
@@ -195,7 +195,8 @@ async def generate_sign_token(
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
     token = create_sign_token(str(order.id), str(order.client_id))
-    url = f"/sign-contract?token={token}"
+    # Fragment (#) não é enviado ao servidor nem aparece em logs/Referer (V-04)
+    url = f"/sign-contract#{token}"
 
     client_user = (await db.execute(
         select(User).where(User.linked_id == order.client_id, User.is_active.is_(True))
@@ -238,8 +239,20 @@ async def verify_sign_token(
     }
 
 
+_MAX_SIG_SIZE = 500_000  # ~375 KB PNG descomprimida
+
+
 class SignPayload(BaseModel):
     signature: str
+
+    @field_validator("signature")
+    @classmethod
+    def validate_signature(cls, v: str) -> str:
+        if len(v) > _MAX_SIG_SIZE:
+            raise ValueError("Assinatura excede o tamanho máximo permitido.")
+        if not v.startswith("data:image/"):
+            raise ValueError("Formato de assinatura inválido.")
+        return v
 
 
 @router.post("/{order_id}/sign-representative")
@@ -319,6 +332,15 @@ async def notify_client(
 class SignWithTokenPayload(BaseModel):
     token: str
     signature: str
+
+    @field_validator("signature")
+    @classmethod
+    def validate_signature(cls, v: str) -> str:
+        if len(v) > _MAX_SIG_SIZE:
+            raise ValueError("Assinatura excede o tamanho máximo permitido.")
+        if not v.startswith("data:image/"):
+            raise ValueError("Formato de assinatura inválido.")
+        return v
 
 
 @router.post("/sign-with-token")

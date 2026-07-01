@@ -26,66 +26,71 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f5f0eb]">
+    <div className="min-h-screen flex items-center justify-center bg-bg px-4">
       <div className="w-full max-w-sm">
-        {/* Logotipo / Cabeçalho */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-medium text-[#2c2420] tracking-wide" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
-            Projeto Ilya
+        {/* Wordmark */}
+        <div className="text-center mb-9">
+          <h1
+            className="text-5xl font-light text-ink"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", letterSpacing: '0.28em' }}
+          >
+            ILYA
           </h1>
-          <p className="mt-1 text-sm text-[#8a7e72] tracking-widest uppercase">
+          <p className="mt-3 text-[11px] text-muted-2 tracking-[0.4em] uppercase">
             Sistema de Orçamentos
           </p>
-          <div className="mt-4 mx-auto w-12 h-[2px] bg-[#8b6914]" />
+          <div className="gold-rule mt-5" />
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-lg shadow-md border border-[#e8e0d6] px-8 py-8">
+        <div className="bg-surface rounded-2xl shadow-sm border border-line px-8 py-9">
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-xs font-medium text-[#8a7e72] uppercase tracking-widest mb-1">
+            <div className="space-y-1.5">
+              <label htmlFor="login-id" className="block text-[11px] font-semibold text-muted uppercase tracking-wider">
                 E-mail ou Usuário
               </label>
               <input
+                id="login-id"
                 type="text"
                 required
                 autoFocus
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                className="w-full border border-[#e8e0d6] rounded-md px-3 py-2.5 text-sm text-[#2c2420] bg-[#faf8f5] focus:outline-none focus:border-[#8b6914] focus:ring-1 focus:ring-[#8b6914] transition"
-                placeholder="seu@email.com ou nome de usuário"
+                className="input"
+                placeholder="seu@email.com ou usuário"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-[#8a7e72] uppercase tracking-widest mb-1">
+            <div className="space-y-1.5">
+              <label htmlFor="login-pw" className="block text-[11px] font-semibold text-muted uppercase tracking-wider">
                 Senha
               </label>
               <input
+                id="login-pw"
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-[#e8e0d6] rounded-md px-3 py-2.5 text-sm text-[#2c2420] bg-[#faf8f5] focus:outline-none focus:border-[#8b6914] focus:ring-1 focus:ring-[#8b6914] transition"
+                className="input"
                 placeholder="••••••••"
               />
             </div>
 
             {error && (
-              <p className="text-sm text-red-600 text-center">{error}</p>
+              <p className="text-sm text-red-700 text-center" role="alert">{error}</p>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#8b6914] hover:bg-[#7a5c10] text-white text-sm font-medium uppercase tracking-widest py-2.5 rounded-md transition disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+              className="btn-primary w-full tracking-widest py-2.5 mt-1"
             >
               {loading ? 'Entrando…' : 'Entrar'}
             </button>
           </form>
         </div>
 
-        <p className="text-center text-xs text-[#8a7e72] mt-6">
+        <p className="text-center text-xs text-muted mt-6">
           © {new Date().getFullYear()} Ilya — Uso interno
         </p>
       </div>

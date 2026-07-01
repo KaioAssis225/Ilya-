@@ -56,7 +56,6 @@ export async function generateOrderPDF(
   client: Client,
   rep: Representative | null,
   products: Product[],
-  userId?: string,
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
   const w = doc.internal.pageSize.getWidth()

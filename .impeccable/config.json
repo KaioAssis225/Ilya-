@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "reason": "Inter é a fonte de UI comprometida na identidade existente do Ilya (DESIGN.md), pareada com Cormorant Garamond. Usuário pediu preservar a identidade.",
+        "createdAt": "2026-06-30T19:39:10.150Z"
+      }
+    ]
+  }
+}

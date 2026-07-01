@@ -79,12 +79,6 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
     opt: product.optionals.find(o => o.category === cat)!,
   }))
 
-  const btnStyle: React.CSSProperties = {
-    backgroundColor: added ? '#648261' : '#8b6914',
-    color: 'white',
-    touchAction: 'manipulation',
-  }
-
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-end md:items-stretch md:justify-end">
@@ -167,8 +161,8 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
           <div className="px-6 py-4 border-t border-[#e8e0d6] flex-shrink-0">
             <button
               onClick={handleAdd}
-              style={btnStyle}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-[0.98] active:opacity-85"
+              style={{ touchAction: 'manipulation' }}
+              className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-sm text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
             >
               {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
               {added ? 'Adicionado ao Orçamento!' : 'Adicionar ao Orçamento'}
@@ -216,13 +210,12 @@ export default function ProdutosPage() {
             <button
               key={tipo}
               onClick={() => setActiveTipo(tipo)}
-              className="flex-shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border transition-all active:scale-[0.97] active:opacity-80"
-              style={Object.assign(
-                { touchAction: 'manipulation' },
+              style={{ touchAction: 'manipulation' }}
+              className={`flex-shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border transition-all active:scale-[0.97] active:opacity-80 ${
                 activeTipo === tipo
-                  ? { backgroundColor: '#8b6914', color: 'white', borderColor: '#8b6914' }
-                  : { backgroundColor: 'white', color: '#4a3f38', borderColor: '#e8e0d6' }
-              )}
+                  ? 'bg-gold text-white border-gold'
+                  : 'bg-white text-[#4a3f38] border-[#e8e0d6] hover:border-[#c8bdb5]'
+              }`}
             >
               {tipo}
             </button>

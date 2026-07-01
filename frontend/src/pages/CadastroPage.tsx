@@ -948,7 +948,6 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   }
 
   function openNewGroup() { setEditingGroup(null); setGroupForm({ name: '', code: '' }); setGroupErr(''); setShowGroupForm(true) }
-  function openEditGroup(g: { id: string; name: string; code: string }) { setEditingGroup(g); setGroupForm({ name: g.name, code: g.code }); setGroupErr(''); setShowGroupForm(true) }
   async function handleGroupSubmit(e: React.FormEvent) {
     e.preventDefault(); setGroupErr('')
     try {

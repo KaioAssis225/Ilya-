@@ -39,10 +39,6 @@ function computeOptFields(cats: Partial<Record<string, string>>) {
   }
 }
 
-function fmt(n: number) {
-  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
 
 function dimLabel(p: Product) {
@@ -220,7 +216,7 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     return () => clearTimeout(t)
   }, [onDone])
   return (
-    <div className="fixed bottom-24 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
+    <div className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
       <CheckCircle className="w-5 h-5" />
       <span className="text-sm font-medium">{message}</span>
     </div>
@@ -461,7 +457,7 @@ function OrderForm({
 function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[60] flex items-end md:hidden">
+    <div className="fixed inset-0 z-[60] flex items-end lg:hidden">
       <div className="fixed inset-0 bg-[#1a1410]/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#e8e0d6]">
@@ -702,30 +698,14 @@ export default function OrcamentoPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
-      <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6 grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 pb-36 md:pb-6">
-
-        {/* ── Desktop Sidebar (hidden on mobile) ───────────────────────── */}
-        <aside className="hidden md:block md:col-span-4 space-y-5">
-          <div className="bg-white border border-[#e8e0d6] rounded-xl p-5 shadow-sm space-y-4">
-            <OrderForm
-              reps={reps} clients={clients}
-              selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
-              onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
-              onQuickAddRep={() => setQuickModal('rep')} onQuickAddClient={() => setQuickModal('client')}
-              budgetCode={budgetCode} cart={cart}
-              onSubmit={handleSubmit} isGenerating={isGenerating}
-              repLocked={repLocked} clientLocked={clientLocked}
-            />
-            {productSearchCard}
-          </div>
-        </aside>
+      <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 pb-28 lg:pb-6">
 
         {/* ── Mobile: product search card ────────────────────────────────── */}
-        <div className="md:hidden">{productSearchCard}</div>
+        <div className="lg:hidden">{productSearchCard}</div>
 
         {/* ── Items Panel ──────────────────────────────────────────────────── */}
-        <main className="md:col-span-8 bg-white border border-[#e8e0d6] rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] md:min-h-[550px]">
-          <div className="px-4 md:px-6 py-3.5 md:py-4 border-b border-[#e8e0d6] flex items-center justify-between bg-white flex-shrink-0">
+        <main className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
+          <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-[#e8e0d6] flex items-center justify-between bg-white flex-shrink-0">
             <h2 className="text-sm font-semibold text-[#8b6914] uppercase tracking-wider flex items-center gap-2">
               <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
             </h2>
@@ -739,7 +719,7 @@ export default function OrcamentoPage() {
                   Limpar
                 </button>
               )}
-              <div className="relative w-36 md:w-52">
+              <div className="relative w-36 lg:w-52">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
                 <input
                   className="input pl-8 w-full text-xs border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
@@ -760,7 +740,7 @@ export default function OrcamentoPage() {
             ) : (
               <>
                 {/* ── Mobile cards ─────────────────────────────── */}
-                <div className="flex flex-col gap-3 p-3 md:hidden">
+                <div className="flex flex-col gap-3 p-3 lg:hidden">
                   {filteredCart.map((item) => (
                     <MobileCartCard
                       key={item.product_code}
@@ -773,7 +753,7 @@ export default function OrcamentoPage() {
                 </div>
 
                 {/* ── Desktop table ────────────────────────────── */}
-                <table className="hidden md:table w-full text-sm">
+                <table className="hidden lg:table w-full text-sm">
                   <thead className="bg-[#fbfaf8] text-xs text-[#9d8d81] uppercase font-semibold border-b border-[#e8e0d6] sticky top-0 z-10">
                     <tr>
                       <th className="px-4 py-3 text-left">Produto</th>
@@ -855,7 +835,7 @@ export default function OrcamentoPage() {
 
           {/* Desktop summary footer */}
           {cart.length > 0 && (
-            <div className="hidden md:flex bg-[#fbfaf8] border-t border-[#e8e0d6] px-6 py-4 justify-between items-center flex-shrink-0">
+            <div className="hidden lg:flex bg-[#fbfaf8] border-t border-[#e8e0d6] px-6 py-4 justify-between items-center flex-shrink-0">
               <div className="flex gap-4 text-xs text-[#8a7a6e]">
                 <div><span>Itens: </span><span className="font-semibold text-[#2c2420]">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
                 <div><span>Produtos: </span><span className="font-semibold text-[#2c2420]">{cart.length}</span></div>
@@ -867,10 +847,26 @@ export default function OrcamentoPage() {
             </div>
           )}
         </main>
+
+        {/* ── Desktop Sidebar (hidden on mobile) ───────────────────────── */}
+        <aside className="hidden lg:block space-y-5">
+          <div className="bg-white border border-[#e8e0d6] rounded-xl p-5 shadow-sm space-y-4">
+            <OrderForm
+              reps={reps} clients={clients}
+              selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
+              onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
+              onQuickAddRep={() => setQuickModal('rep')} onQuickAddClient={() => setQuickModal('client')}
+              budgetCode={budgetCode} cart={cart}
+              onSubmit={handleSubmit} isGenerating={isGenerating}
+              repLocked={repLocked} clientLocked={clientLocked}
+            />
+            {productSearchCard}
+          </div>
+        </aside>
       </div>
 
       {/* ── Mobile fixed bottom bar ────────────────────────────────────────── */}
-      <div className="md:hidden fixed bottom-16 inset-x-0 z-30 px-4 pb-2">
+      <div className="lg:hidden fixed bottom-16 inset-x-0 z-30 px-4 pb-2">
         <button
           onClick={() => setDrawerOpen(true)}
           style={{ touchAction: 'manipulation' }}

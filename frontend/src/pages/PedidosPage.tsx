@@ -13,10 +13,6 @@ import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
 import type { Order, OptionalColor, Product, Client } from '../types'
 
-function fmt(n: number) {
-  return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
 }
@@ -545,6 +541,76 @@ function OrderDetailModal({
   )
 }
 
+// ── Mobile order card ───────────────────────────────────────────────────────
+
+function SigDot({ signed, label }: { signed: boolean; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className={`w-2.5 h-2.5 rounded-full inline-block ${signed ? 'bg-green-500' : 'bg-red-400'}`} />
+      <span className="text-[10px] text-[#9d8d81] font-medium">{label}</span>
+    </span>
+  )
+}
+
+function MobileOrderCard({
+  order, clientName, repName, onView, onPDF, onDelete,
+}: {
+  order: Order
+  clientName: string
+  repName: string
+  onView: () => void
+  onPDF: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm overflow-hidden">
+      <div className="p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="font-mono font-semibold text-[#8b6914] text-sm">{order.code}</span>
+            <span className="font-mono text-[10px] text-[#a89a8e] ml-2">{order.orc_id}</span>
+            <p className="text-sm font-medium text-[#2c2420] truncate mt-1">{clientName}</p>
+            <p className="text-xs text-[#8a7a6e] truncate">{repName}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-sm font-bold text-[#2c2420]"><SafePrice value={Number(order.total_value)} /></p>
+            <p className="text-[10px] text-[#a89a8e] mt-0.5">{fmtDate(order.created_at)}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 mt-3">
+          <SigDot signed={!!order.rep_signature} label="REP" />
+          <SigDot signed={!!order.client_signature} label="CLI" />
+        </div>
+      </div>
+
+      <div className="flex border-t border-[#f0ece6] divide-x divide-[#f0ece6]">
+        <button
+          onClick={onView}
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-[#4a3f38] active:bg-[#f8f6f2] transition-colors"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <Eye className="w-4 h-4 text-[#8b6914]" /> Ver
+        </button>
+        <button
+          onClick={onPDF}
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-[#4a3f38] active:bg-[#f8f6f2] transition-colors"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <FileText className="w-4 h-4 text-[#8b6914]" /> PDF
+        </button>
+        <button
+          onClick={onDelete}
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-[#b25e50] active:bg-[#fbf2f0] transition-colors"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <Trash2 className="w-4 h-4" /> Excluir
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function PedidosPage() {
@@ -562,7 +628,7 @@ export default function PedidosPage() {
     const client = clients.find((c) => c.id === order.client_id)
     if (!client) return
     const rep = order.rep_id ? (reps.find((r) => r.id === order.rep_id) ?? null) : null
-    await generateOrderPDF(order, client, rep, products, user?.id)
+    await generateOrderPDF(order, client, rep, products)
   }
 
   const [filter, setFilter] = useState('')
@@ -585,13 +651,13 @@ export default function PedidosPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
-      <div className="max-w-7xl mx-auto px-8 py-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 py-5 md:py-6 space-y-4 pb-24 md:pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h2 className="text-[#2c2420] font-medium">
             Pedidos Finalizados
             <span className="ml-2 text-xs bg-[#f0ece6] text-[#8b6914] px-2 py-0.5 rounded-full">{orders.length}</span>
           </h2>
-          <div className="relative w-72">
+          <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#a89a8e]" />
             <input
               className="input pl-9"
@@ -605,7 +671,29 @@ export default function PedidosPage() {
         {isLoading ? (
           <p className="text-[#9d8d81] text-sm">Carregando...</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-[#e8e0d6]">
+          <>
+          {/* ── Mobile: card list ───────────────────────────────────── */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {filtered.map((order) => (
+              <MobileOrderCard
+                key={order.id}
+                order={order}
+                clientName={clientMap[order.client_id] ?? order.client_id.slice(0, 8)}
+                repName={order.rep_id ? (repMap[order.rep_id] ?? '—') : '—'}
+                onView={() => setViewing(order)}
+                onPDF={() => handlePDF(order)}
+                onDelete={() => setDeleting(order)}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <div className="rounded-xl border border-[#e8e0d6] bg-white px-4 py-12 text-center text-[#9d8d81] text-sm">
+                {filter ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum pedido finalizado ainda.'}
+              </div>
+            )}
+          </div>
+
+          {/* ── Desktop: table ──────────────────────────────────────── */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-[#e8e0d6]">
             <table className="w-full text-sm">
               <thead className="bg-[#f0ece6]">
                 <tr>
@@ -663,6 +751,7 @@ export default function PedidosPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
