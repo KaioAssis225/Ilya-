@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, ShoppingCart, Check } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import type { Product } from '../types'
@@ -115,7 +115,29 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
               <p className="text-sm text-[#4a3f38]">{dimLabel(product)}</p>
             </div>
 
-            {optCategories.length > 0 && (
+            {product.is_set ? (
+              <div>
+                <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Componentes deste Conjunto</p>
+                <div className="space-y-2">
+                  {product.set_items.map((item) => (
+                    <div key={item.product_code} className="flex items-center gap-3 p-3 rounded-xl border border-[#e8e0d6] bg-[#f8f6f2]">
+                      {item.photo_url
+                        ? <img src={item.photo_url} alt={item.description} className="w-10 h-10 rounded-lg object-cover border border-[#e8e0d6] flex-shrink-0" />
+                        : <div className="w-10 h-10 rounded-lg bg-[#f0ece6] flex items-center justify-center flex-shrink-0"><ImageIcon className="w-4 h-4 text-[#c8bdb5]" /></div>
+                      }
+                      <div className="flex-1 min-w-0">
+                        <span className="block text-[10px] font-mono font-semibold text-[#8b6914]">{item.product_code}</span>
+                        <span className="block text-xs text-[#2c2420] font-medium leading-snug truncate">{item.description}</span>
+                      </div>
+                      <span className="text-xs font-semibold text-[#4a3f38] whitespace-nowrap flex-shrink-0">×{item.qty}</span>
+                    </div>
+                  ))}
+                  {product.set_items.length === 0 && (
+                    <p className="text-xs text-[#9d8d81] italic">Nenhum componente registrado.</p>
+                  )}
+                </div>
+              </div>
+            ) : optCategories.length > 0 ? (
               <div>
                 <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Opcionais</p>
                 <div className="flex flex-wrap gap-4">
@@ -124,7 +146,6 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
                       <div className="relative group">
                         {opt.photo_url ? (
                           <>
-                            {/* Desktop: CSS hover zoom */}
                             <img
                               src={opt.photo_url}
                               alt={opt.color_name}
@@ -133,8 +154,6 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
                             <div className="hidden group-hover:block absolute z-50 bottom-12 left-1/2 -translate-x-1/2 w-40 h-40 rounded-xl overflow-hidden shadow-2xl border border-[#e8e0d6] pointer-events-none">
                               <img src={opt.photo_url} alt={opt.color_name} className="w-full h-full object-cover" />
                             </div>
-
-                            {/* Mobile: tap to open modal */}
                             <button
                               className="md:hidden w-10 h-10 rounded-lg overflow-hidden border border-[#e8e0d6] active:opacity-70 transition-opacity"
                               style={{ touchAction: 'manipulation' }}
@@ -155,7 +174,7 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="px-6 py-4 border-t border-[#e8e0d6] flex-shrink-0">

@@ -196,8 +196,8 @@ function OrderDetailModal({
         </div>
 
         <h4 className="text-xs font-semibold text-[#9d8d81] uppercase tracking-wider mb-2">Itens</h4>
-        <div className="border border-[#e8e0d6] rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="border border-[#e8e0d6] rounded-xl overflow-x-auto">
+          <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-[#f0ece6]">
               <tr>
                 <th className="px-3 py-2 w-10"></th>

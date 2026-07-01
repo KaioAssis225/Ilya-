@@ -12,17 +12,31 @@ export interface OptionalColorCreate {
 
 export interface OptionalColorUpdate extends Partial<OptionalColorCreate> {}
 
+export interface ProductSetItem {
+  product_code: string
+  qty: number
+  description: string
+  photo_url: string | null
+}
+
+export interface ProductSetItemCreate {
+  product_code: string
+  qty: number
+}
+
 export interface Product {
   id: string
   product_code: string
   description: string
   type: string
   is_circular: boolean
+  is_set: boolean
   altura: number
   largura: number
   profundidade: number
   price: number
   optionals: OptionalColor[]
+  set_items: ProductSetItem[]
   photo_url: string | null
   created_at: string
   updated_at: string
@@ -33,11 +47,13 @@ export interface ProductCreate {
   description: string
   type?: string
   is_circular: boolean
+  is_set?: boolean
   altura: number
   largura: number
   profundidade: number
   price: number
   optional_ids?: string[]
+  set_items?: ProductSetItemCreate[]
 }
 
 export interface ProductUpdate extends Partial<ProductCreate> {}

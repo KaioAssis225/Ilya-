@@ -213,6 +213,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 
 const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', type: 'Outro', is_circular: false,
+  is_set: false, set_items: [],
   altura: 0, largura: 0, profundidade: 0, price: 0, optional_ids: [],
 }
 
@@ -261,13 +262,16 @@ function ProductsTab({ color }: { color: string }) {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [addItemCode, setAddItemCode] = useState('')
+  const [addItemQty, setAddItemQty] = useState(1)
   const [showNewTypeModal, setShowNewTypeModal] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
-    setActiveCategories([]); setPhotoPreview(null); setPendingFile(null); setShowForm(true)
+    setActiveCategories([]); setPhotoPreview(null); setPendingFile(null)
+    setAddItemCode(''); setAddItemQty(1); setShowForm(true)
   }
   function openEdit(p: Product) {
     const cats = Array.from(new Set(p.optionals.map((o) => o.category)))
@@ -277,13 +281,35 @@ function ProductsTab({ color }: { color: string }) {
       description: p.description,
       type: p.type ?? 'Outro',
       is_circular: p.is_circular,
+      is_set: p.is_set,
       altura: p.altura,
       largura: p.largura,
       profundidade: p.profundidade,
       price: p.price ?? 0,
       optional_ids: p.optionals.map((o) => o.id),
+      set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
     })
-    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p); setShowForm(true)
+    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
+    setAddItemCode(''); setAddItemQty(1); setShowForm(true)
+  }
+
+  function addSetItem() {
+    const code = addItemCode.trim().toUpperCase()
+    if (!code) return
+    setForm(prev => {
+      const existing = (prev.set_items ?? []).findIndex(i => i.product_code === code)
+      if (existing >= 0) {
+        return {
+          ...prev,
+          set_items: (prev.set_items ?? []).map((item, i) =>
+            i === existing ? { ...item, qty: item.qty + addItemQty } : item
+          ),
+        }
+      }
+      return { ...prev, set_items: [...(prev.set_items ?? []), { product_code: code, qty: addItemQty }] }
+    })
+    setAddItemCode('')
+    setAddItemQty(1)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -488,6 +514,17 @@ function ProductsTab({ color }: { color: string }) {
               <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø — circular)</span>
             </label>
 
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.is_set ?? false}
+                onChange={(e) => setForm({ ...form, is_set: e.target.checked, set_items: [], optional_ids: [] })}
+                style={{ accentColor: color }}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-[#4a3f38]">Este produto é um Conjunto (composto por outros produtos)</span>
+            </label>
+
             <div className="grid grid-cols-3 gap-3">
               {form.is_circular ? (
                 <>
@@ -523,88 +560,140 @@ function ProductsTab({ color }: { color: string }) {
               )}
             </div>
 
-            <div>
-              <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                {CATEGORY_OPTIONS.map(({ value, label }) => {
-                  const isActive = activeCategories.includes(value)
-                  return (
-                    <label key={value} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={isActive}
-                        style={{ accentColor: color }}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setActiveCategories([...activeCategories, value])
-                          } else {
-                            setActiveCategories(activeCategories.filter(c => c !== value))
-                            const catOptionalIds = allOptionals.filter(o => o.category === value).map(o => o.id)
-                            setForm(prev => ({
-                              ...prev,
-                              optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id))
-                            }))
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-xs text-[#4a3f38] select-none">{label}</span>
-                    </label>
-                  )
-                })}
-              </div>
-
-              {activeCategories.length > 0 && (
-                <div className="space-y-3">
-                  <span className="text-xs text-[#9d8d81] block font-medium">Escolha as Cores para cada Opcional</span>
-                  {activeCategories.map((catValue) => {
-                    const catLabel = CATEGORY_LABEL[catValue] || catValue
-                    const catItems = allOptionals.filter(o => o.category === catValue)
-                    return (
-                      <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2 bg-[#fdfdfd] shadow-sm">
-                        <div className="text-xs font-semibold text-[#2c2420] pb-1 border-b border-[#f3ede6]" style={{ color }}>
-                          {catLabel.toUpperCase()}
-                        </div>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {catItems.map(opt => {
-                            const isSelected = (form.optional_ids ?? []).includes(opt.id)
-                            return (
-                              <button
-                                type="button"
-                                key={opt.id}
-                                onClick={() => {
-                                  setForm(prev => {
-                                    const ids = prev.optional_ids ?? []
-                                    const has = ids.includes(opt.id)
-                                    return {
-                                      ...prev,
-                                      optional_ids: has ? ids.filter(id => id !== opt.id) : [...ids, opt.id]
-                                    }
-                                  })
-                                }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all"
-                                style={isSelected
-                                  ? { backgroundColor: `${color}20`, borderColor: color, color }
-                                  : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
-                              >
-                                {opt.photo_url && (
-                                  <img src={opt.photo_url} alt={opt.color_name}
-                                    className="w-4 h-4 rounded-md object-cover flex-shrink-0" />
-                                )}
-                                <span className="font-medium">{opt.color_name}</span>
-                              </button>
-                            )
-                          })}
-                          {catItems.length === 0 && (
-                            <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
-                          )}
-                        </div>
+            {form.is_set ? (
+              <div>
+                <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Componentes do Conjunto</span>
+                {(form.set_items ?? []).length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    {(form.set_items ?? []).map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] bg-[#fcfbfa]">
+                        <span className="font-mono text-xs font-semibold text-[#8b6914] flex-1">{item.product_code}</span>
+                        <span className="text-xs text-[#9d8d81]">×{item.qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({
+                            ...prev,
+                            set_items: (prev.set_items ?? []).filter((_, i) => i !== idx),
+                          }))}
+                          className="text-[#9d8d81] hover:text-red-500 transition-colors ml-1"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1 font-mono text-sm"
+                    placeholder="Código do produto"
+                    value={addItemCode}
+                    onChange={(e) => setAddItemCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSetItem() } }}
+                  />
+                  <input
+                    className="input w-16 text-center"
+                    type="number"
+                    min="1"
+                    value={addItemQty}
+                    onChange={(e) => setAddItemQty(Math.max(1, Number(e.target.value)))}
+                  />
+                  <button
+                    type="button"
+                    className="px-3 rounded-lg text-white text-sm font-medium transition-colors flex-shrink-0 flex items-center gap-1"
+                    style={{ backgroundColor: color }}
+                    onClick={addSetItem}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="hidden sm:inline">Add</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-[#c8bdb5] mt-1.5">Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.</p>
+              </div>
+            ) : (
+              <div>
+                <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                  {CATEGORY_OPTIONS.map(({ value, label }) => {
+                    const isActive = activeCategories.includes(value)
+                    return (
+                      <label key={value} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={isActive}
+                          style={{ accentColor: color }}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setActiveCategories([...activeCategories, value])
+                            } else {
+                              setActiveCategories(activeCategories.filter(c => c !== value))
+                              const catOptionalIds = allOptionals.filter(o => o.category === value).map(o => o.id)
+                              setForm(prev => ({
+                                ...prev,
+                                optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id))
+                              }))
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-xs text-[#4a3f38] select-none">{label}</span>
+                      </label>
                     )
                   })}
                 </div>
-              )}
-            </div>
+
+                {activeCategories.length > 0 && (
+                  <div className="space-y-3">
+                    <span className="text-xs text-[#9d8d81] block font-medium">Escolha as Cores para cada Opcional</span>
+                    {activeCategories.map((catValue) => {
+                      const catLabel = CATEGORY_LABEL[catValue] || catValue
+                      const catItems = allOptionals.filter(o => o.category === catValue)
+                      return (
+                        <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2 bg-[#fdfdfd] shadow-sm">
+                          <div className="text-xs font-semibold text-[#2c2420] pb-1 border-b border-[#f3ede6]" style={{ color }}>
+                            {catLabel.toUpperCase()}
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {catItems.map(opt => {
+                              const isSelected = (form.optional_ids ?? []).includes(opt.id)
+                              return (
+                                <button
+                                  type="button"
+                                  key={opt.id}
+                                  onClick={() => {
+                                    setForm(prev => {
+                                      const ids = prev.optional_ids ?? []
+                                      const has = ids.includes(opt.id)
+                                      return {
+                                        ...prev,
+                                        optional_ids: has ? ids.filter(id => id !== opt.id) : [...ids, opt.id]
+                                      }
+                                    })
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all"
+                                  style={isSelected
+                                    ? { backgroundColor: `${color}20`, borderColor: color, color }
+                                    : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                                >
+                                  {opt.photo_url && (
+                                    <img src={opt.photo_url} alt={opt.color_name}
+                                      className="w-4 h-4 rounded-md object-cover flex-shrink-0" />
+                                  )}
+                                  <span className="font-medium">{opt.color_name}</span>
+                                </button>
+                              )
+                            })}
+                            {catItems.length === 0 && (
+                              <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <span className="text-xs text-[#9d8d81] block mb-1">Foto</span>

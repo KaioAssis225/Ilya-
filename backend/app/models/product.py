@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Numeric, Boolean, Index
+from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 from app.models.optional_color import product_optionals, OptionalColor
@@ -13,6 +13,7 @@ class Product(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
@@ -22,7 +23,26 @@ class Product(Base, TimestampMixin):
     optionals: Mapped[list["OptionalColor"]] = relationship(
         "OptionalColor", secondary=product_optionals, lazy="selectin"
     )
+    set_items: Mapped[list["ProductSetItem"]] = relationship(
+        "ProductSetItem", foreign_keys="ProductSetItem.set_id",
+        cascade="all, delete-orphan", lazy="selectin",
+    )
 
     __table_args__ = (
         Index("ix_products_product_code", "product_code"),
+    )
+
+
+class ProductSetItem(Base, TimestampMixin):
+    __tablename__ = "product_set_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    set_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"), nullable=False)
+    qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    product: Mapped["Product"] = relationship("Product", foreign_keys=[product_id], lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_product_set_items_set_id", "set_id"),
     )

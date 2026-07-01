@@ -9,7 +9,8 @@ from app.api.deps import get_db_session, get_current_user, require_roles
 from app.models.product import Product
 from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
-from app.schemas.product import ProductCreate, ProductUpdate, ProductRead
+from app.models.product import ProductSetItem
+from app.schemas.product import ProductCreate, ProductUpdate, ProductRead, ProductSetItemRead
 from app.core.config import settings
 
 _MAGIC: dict[bytes, str] = {
@@ -54,7 +55,34 @@ def _to_read(product: Product) -> ProductRead:
     data.photo_url = _build_photo_url(product.photo_path)
     for opt_read, opt_orm in zip(data.optionals, product.optionals):
         opt_read.photo_url = _build_photo_url(opt_orm.photo_path)
+    data.set_items = [
+        ProductSetItemRead(
+            product_code=si.product.product_code,
+            qty=si.qty,
+            description=si.product.description,
+            photo_url=_build_photo_url(si.product.photo_path),
+        )
+        for si in product.set_items
+    ]
     return data
+
+
+async def _resolve_set_items(
+    db: AsyncSession, items: list, parent_code: str
+) -> list[ProductSetItem]:
+    result = []
+    for item in items:
+        p = (await db.execute(
+            select(Product).where(Product.product_code == item.product_code)
+        )).scalar_one_or_none()
+        if not p:
+            raise HTTPException(400, f"Produto '{item.product_code}' não encontrado.")
+        if p.is_set:
+            raise HTTPException(400, f"Produto '{item.product_code}' é um conjunto — conjuntos não podem conter outros conjuntos.")
+        if p.product_code == parent_code:
+            raise HTTPException(400, "Um conjunto não pode conter a si mesmo.")
+        result.append(ProductSetItem(id=uuid.uuid4(), product_id=p.id, qty=item.qty))
+    return result
 
 
 async def _resolve_optionals(db: AsyncSession, ids: list[uuid.UUID]) -> list[OptionalColor]:
@@ -86,9 +114,11 @@ async def create_product(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Código '{payload.product_code}' já existe.")
-    product_data = payload.model_dump(exclude={"optional_ids"})
+    product_data = payload.model_dump(exclude={"optional_ids", "set_items"})
     product = Product(**product_data)
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
+    if payload.is_set:
+        product.set_items = await _resolve_set_items(db, payload.set_items, payload.product_code)
     db.add(product)
     await db.commit()
     await db.refresh(product)
@@ -121,10 +151,16 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
     data = payload.model_dump(exclude_unset=True)
     optional_ids = data.pop("optional_ids", None)
+    set_items_in = data.pop("set_items", None)
     for field, value in data.items():
         setattr(product, field, value)
     if optional_ids is not None:
         product.optionals = await _resolve_optionals(db, optional_ids)
+    if set_items_in is not None:
+        if product.is_set:
+            product.set_items = await _resolve_set_items(db, set_items_in, product.product_code)
+        else:
+            product.set_items = []
     await db.commit()
     await db.refresh(product)
     return _to_read(product)
