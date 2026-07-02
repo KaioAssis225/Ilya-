@@ -232,7 +232,7 @@ function OrderDetailModal({
                 : <span className="text-[10px] font-bold bg-yellow-50 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded-full">Em andamento</span>
               }
             </div>
-            <p className="text-sm text-[#8a7a6e]">Orçamento: <span className="text-[#8b6914]">{order.orc_id}</span>
+            <p className="text-sm text-[#6b5d52]">Orçamento: <span className="text-[#8b6914]">{order.orc_id}</span>
               {order.external_code && <span className="ml-2 font-mono text-xs text-[#4a3f38]">· {order.external_code}</span>}
             </p>
           </div>
@@ -279,7 +279,7 @@ function OrderDetailModal({
               )}
             </div>
 
-            <h4 className="text-xs font-semibold text-[#9d8d81] uppercase tracking-wider mb-2">Itens</h4>
+            <h4 className="text-xs font-semibold text-[#6b5d52] uppercase tracking-wider mb-2">Itens</h4>
             <div className="border border-[#e8e0d6] rounded-xl overflow-x-auto">
               <table className="w-full min-w-[700px] text-sm">
                 <thead className="bg-[#f0ece6]">
@@ -312,10 +312,10 @@ function OrderDetailModal({
                           <div className="text-[#4a3f38] text-xs mt-0.5 max-w-[150px] truncate">{item.description}</div>
                           {item.observacao && <div className="text-[10px] text-[#8b6914] italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
-                        <td className="px-3 py-2 text-[#8a7a6e] text-xs whitespace-nowrap">
+                        <td className="px-3 py-2 text-[#6b5d52] text-xs whitespace-nowrap">
                           {item.is_circular ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m` : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`}
                         </td>
-                        <td className="px-3 py-2 text-[#8a7a6e] text-xs">
+                        <td className="px-3 py-2 text-[#6b5d52] text-xs">
                           {(() => {
                             const parsed = [item.opt_aluminio, item.opt_madeira, item.opt_tecido, item.opt_couro, item.opt_corda].map(parseOptValue).filter(Boolean) as { label: string; swatch: string | null }[]
                             if (parsed.length === 0) return '—'
@@ -359,8 +359,8 @@ function OrderDetailModal({
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-[#9d8d81] uppercase tracking-wider font-semibold">Assinaturas</span>
-                  <span className="flex items-center gap-1 text-xs"><span className={`w-2.5 h-2.5 rounded-full inline-block ${isContractSigned ? 'bg-green-500' : 'bg-yellow-400'}`} /><span className="text-[#9d8d81]">REP</span></span>
-                  <span className="flex items-center gap-1 text-xs"><span className={`w-2.5 h-2.5 rounded-full inline-block ${isClientSigned ? 'bg-green-500' : 'bg-yellow-400'}`} /><span className="text-[#9d8d81]">CLI</span></span>
+                  <span className="flex items-center gap-1 text-xs">{isContractSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-[#6b5d52]">REP {isContractSigned ? 'assinado' : 'pendente'}</span></span>
+                  <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-[#6b5d52]">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
                 </div>
                 {!isClientUser && (
                   <button disabled={signLinkLoading} onClick={async () => { setSignLinkLoading(true); try { const res = await api.post<{ token: string; url: string }>(`/orders/${order.id}/generate-sign-token`); setSignLink(window.location.origin + res.data.url) } catch { /* ignore */ } finally { setSignLinkLoading(false) } }} className="flex items-center gap-1.5 px-3 py-1.5 border border-[#c8a84b] text-[#8b6914] rounded-lg text-xs font-medium hover:bg-[#fdf9f0] transition-colors disabled:opacity-50">
@@ -409,7 +409,7 @@ function OrderDetailModal({
 
             {(order.rep_signature || order.client_signature) && (
               <div className="mt-5 pt-4 border-t border-[#e8e0d6]">
-                <p className="text-xs font-semibold text-[#9d8d81] uppercase tracking-wider mb-3">Assinaturas do Contrato</p>
+                <p className="text-xs font-semibold text-[#6b5d52] uppercase tracking-wider mb-3">Assinaturas do Contrato</p>
                 <div className="flex gap-4">
                   <div className="flex-1 text-center">
                     {order.rep_signature ? <img src={order.rep_signature} alt="Assinatura Representante" className="max-h-16 w-full object-contain pb-1" /> : <div className="h-16" />}
@@ -505,7 +505,7 @@ function MobileOrderCard({
             <span className="font-mono font-semibold text-[#8b6914] text-sm">{order.code}</span>
             <span className="font-mono text-[10px] text-[#a89a8e] ml-2">{order.orc_id}</span>
             <p className="text-sm font-medium text-[#2c2420] truncate mt-1">{clientName}</p>
-            <p className="text-xs text-[#8a7a6e] truncate">{repName}</p>
+            <p className="text-xs text-[#6b5d52] truncate">{repName}</p>
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-sm font-bold text-[#2c2420]"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></p>
@@ -659,27 +659,50 @@ export default function PedidosPage() {
 
         {/* Orders tab */}
         {activeTab === 'orders' && (
-          isLoading ? <p className="text-[#9d8d81] text-sm">Carregando...</p> : (
+          isLoading ? (
+            <div className="rounded-xl border border-[#e8e0d6] overflow-hidden" aria-busy="true" aria-label="Carregando pedidos">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-[#f0ece6] last:border-0">
+                  <div className="h-4 w-20 rounded bg-[#efe9e1] animate-pulse" />
+                  <div className="h-4 w-24 rounded bg-[#efe9e1] animate-pulse hidden sm:block" />
+                  <div className="h-4 flex-1 rounded bg-[#efe9e1] animate-pulse" />
+                  <div className="h-4 w-16 rounded bg-[#efe9e1] animate-pulse hidden md:block" />
+                  <div className="h-5 w-24 rounded-full bg-[#efe9e1] animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : (
             <>
               <div className="flex flex-col gap-3 md:hidden">
                 {filtered.map((order) => (
                   <MobileOrderCard key={order.id} order={order} clientName={clientMap[order.client_id] ?? order.client_id.slice(0, 8)} repName={order.rep_id ? (repMap[order.rep_id] ?? '—') : '—'} onView={() => setViewing(order)} onPDF={() => handlePDF(order)} onDelete={() => setDeleting(order)} />
                 ))}
-                {filtered.length === 0 && <div className="rounded-xl border border-[#e8e0d6] bg-white px-4 py-12 text-center text-[#9d8d81] text-sm">{filter || hasFilters ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum pedido ainda.'}</div>}
+                {filtered.length === 0 && (
+                  <div className="rounded-xl border border-[#e8e0d6] bg-white px-4 py-12 text-center">
+                    {filter || hasFilters ? (
+                      <p className="text-[#6b5d52] text-sm">Nenhum pedido encontrado com este filtro.</p>
+                    ) : (
+                      <>
+                        <p className="text-[#6b5d52] text-sm">Nenhum pedido ainda.</p>
+                        {canManage && <button onClick={() => navigate('/orcamentos')} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-[#8b6914] text-white rounded-lg text-sm font-semibold hover:bg-[#7a5c10] transition-colors">Criar primeiro pedido</button>}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="hidden md:block overflow-x-auto rounded-xl border border-[#e8e0d6]">
                 <table className="w-full text-sm">
                   <thead className="bg-[#f0ece6]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Pedido</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Orçamento</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Representante</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Itens</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-[#9d8d81] uppercase">Total</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Data</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-[#9d8d81] uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#6b5d52] uppercase">Pedido</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#6b5d52] uppercase">Orçamento</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#6b5d52] uppercase">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#6b5d52] uppercase">Representante</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#6b5d52] uppercase">Itens</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-[#6b5d52] uppercase">Total</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-[#6b5d52] uppercase">Data</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-[#6b5d52] uppercase">Status</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
@@ -687,12 +710,12 @@ export default function PedidosPage() {
                     {filtered.map((order) => (
                       <tr key={order.id} className="table-row">
                         <td className="px-4 py-3 font-mono text-[#8b6914]">{order.code}</td>
-                        <td className="px-4 py-3 font-mono text-[#8a7a6e] text-xs">{order.orc_id}</td>
+                        <td className="px-4 py-3 font-mono text-[#6b5d52] text-xs">{order.orc_id}</td>
                         <td className="px-4 py-3 text-[#2c2420]">{clientMap[order.client_id] ?? order.client_id.slice(0, 8)}</td>
-                        <td className="px-4 py-3 text-[#8a7a6e]">{order.rep_id ? (repMap[order.rep_id] ?? '—') : '—'}</td>
-                        <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
+                        <td className="px-4 py-3 text-[#6b5d52]">{order.rep_id ? (repMap[order.rep_id] ?? '—') : '—'}</td>
+                        <td className="px-4 py-3 text-[#6b5d52] text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
                         <td className="px-4 py-3 text-right font-semibold text-[#2c2420]"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></td>
-                        <td className="px-4 py-3 text-[#8a7a6e] text-xs">{fmtDate(order.created_at)}</td>
+                        <td className="px-4 py-3 text-[#6b5d52] text-xs">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-center">
                           <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
                             {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
@@ -712,7 +735,16 @@ export default function PedidosPage() {
                       </tr>
                     ))}
                     {filtered.length === 0 && (
-                      <tr><td colSpan={9} className="px-4 py-10 text-center text-[#9d8d81]">{filter || hasFilters ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum pedido ainda.'}</td></tr>
+                      <tr><td colSpan={9} className="px-4 py-12 text-center">
+                        {filter || hasFilters ? (
+                          <span className="text-[#6b5d52]">Nenhum pedido encontrado com este filtro.</span>
+                        ) : (
+                          <div className="flex flex-col items-center gap-3">
+                            <span className="text-[#6b5d52]">Nenhum pedido ainda.</span>
+                            {canManage && <button onClick={() => navigate('/orcamentos')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#8b6914] text-white rounded-lg text-sm font-semibold hover:bg-[#7a5c10] transition-colors">Criar primeiro pedido</button>}
+                          </div>
+                        )}
+                      </td></tr>
                     )}
                   </tbody>
                 </table>
