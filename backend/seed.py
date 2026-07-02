@@ -28,7 +28,7 @@ def _slugify(text: str) -> str:
 from sqlalchemy import text
 from app.db.session import AsyncSessionLocal
 from app.models.optional_color import OptionalColor
-from app.models.product import Product
+from app.models.product import Product, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_category import OptionalCategory
 from app.models.client import Client
@@ -275,6 +275,9 @@ async def seed() -> None:
         print("Limpando dados existentes...")
         await db.execute(text("DELETE FROM order_items"))
         await db.execute(text("DELETE FROM orders"))
+        await db.execute(text("DELETE FROM product_set_component_optionals"))
+        await db.execute(text("DELETE FROM product_set_components"))
+        await db.execute(text("DELETE FROM product_set_items"))
         await db.execute(text("DELETE FROM product_optionals"))
         await db.execute(text("DELETE FROM products"))
         await db.execute(text("DELETE FROM optionals"))
@@ -287,7 +290,7 @@ async def seed() -> None:
 
         # ── Tipos de Móveis ───────────────────────────────────────────────
         print("Criando tipos de móveis...")
-        for name in ['Poltrona', 'Sofá', 'Mesa', 'Cadeira', 'Banqueta', 'Chaise', 'Aparador', 'Outro']:
+        for name in ['Poltrona', 'Sofá', 'Mesa', 'Cadeira', 'Banqueta', 'Chaise', 'Aparador', 'Conjunto', 'Outro']:
             db.add(ProductType(name=name))
         await db.flush()
 
@@ -345,6 +348,116 @@ async def seed() -> None:
             product.optionals = [o for cat in cats for o in optionals_map.get(cat, [])]
             db.add(product)
             products_map[code] = product
+        await db.flush()
+
+        # ── Conjuntos com componentes livres (Bloco 53) ───────────────────
+        print("Criando conjuntos com componentes inline...")
+
+        def find_opt(cat: str, color: str) -> OptionalColor:
+            for o in optionals_map.get(cat, []):
+                if o.color_name == color:
+                    return o
+            raise ValueError(f"Opcional {cat}/{color} não encontrado")
+
+        p_caracas = Product(
+            product_code="ILY-011",
+            description="Conjunto Caracas — Living Room Collection",
+            type="Conjunto",
+            is_circular=False,
+            largura=3.50,
+            profundidade=2.20,
+            altura=0.85,
+            price=38500.0,
+            photo_path=None,
+        )
+        p_caracas.optionals = []
+        p_caracas.components = [
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Sofá 3 Lugares em Tecido Premium",
+                is_circular=False, largura=2.40, profundidade=0.92, altura=0.82, qty=1,
+                optionals=[find_opt("tecido_faixa_2", "Camomila")],
+            ),
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Poltrona Lounge Riviera",
+                is_circular=False, largura=0.80, profundidade=0.85, altura=0.78, qty=2,
+                optionals=[find_opt("corda", "Natural"), find_opt("tecido_faixa_2", "Camomila")],
+            ),
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Mesa de Centro Circular em Teka",
+                is_circular=True, largura=0.80, profundidade=0.0, altura=0.38, qty=1,
+                optionals=[find_opt("madeira_teka", "Óleo Natural")],
+            ),
+        ]
+        db.add(p_caracas)
+        products_map["ILY-011"] = p_caracas
+
+        p_ipanema = Product(
+            product_code="ILY-012",
+            description="Conjunto Ipanema — Outdoor Dining Collection",
+            type="Conjunto",
+            is_circular=False,
+            largura=2.20,
+            profundidade=1.00,
+            altura=0.76,
+            price=52000.0,
+            photo_path=None,
+        )
+        p_ipanema.optionals = []
+        p_ipanema.components = [
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Mesa de Jantar em Freijó",
+                is_circular=False, largura=2.20, profundidade=1.00, altura=0.76, qty=1,
+                optionals=[find_opt("madeira_freijo", "Pátina")],
+            ),
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Cadeira Jantar Venezia",
+                is_circular=False, largura=0.55, profundidade=0.58, altura=0.88, qty=8,
+                optionals=[find_opt("aluminio", "Natural"), find_opt("corda", "Areia")],
+            ),
+        ]
+        db.add(p_ipanema)
+        products_map["ILY-012"] = p_ipanema
+
+        p_leblon = Product(
+            product_code="ILY-013",
+            description="Conjunto Leblon — Suite Collection",
+            type="Conjunto",
+            is_circular=False,
+            largura=1.80,
+            profundidade=0.80,
+            altura=0.82,
+            price=45800.0,
+            photo_path=None,
+        )
+        p_leblon.optionals = []
+        p_leblon.components = [
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Poltrona com Couro Pele Premium",
+                is_circular=False, largura=0.78, profundidade=0.80, altura=0.75, qty=2,
+                optionals=[find_opt("couro_pele", "Palha"), find_opt("madeira_freijo", "Pátina")],
+            ),
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Aparador em Freijó",
+                is_circular=False, largura=1.80, profundidade=0.48, altura=0.82, qty=1,
+                optionals=[find_opt("madeira_freijo", "Pátina")],
+            ),
+            ProductSetComponent(
+                id=uuid.uuid4(),
+                description="Banqueta Velvet",
+                is_circular=False, largura=0.45, profundidade=0.48, altura=0.48, qty=2,
+                optionals=[find_opt("aluminio", "Escovado"), find_opt("corda", "Areia")],
+            ),
+        ]
+        db.add(p_leblon)
+        products_map["ILY-013"] = p_leblon
+
         await db.flush()
 
         # ── Clientes ───────────────────────────────────────────────────────
@@ -453,7 +566,7 @@ async def seed() -> None:
         await db.commit()
 
         print("\nSeed concluído com sucesso!")
-        print(f"  {len(OPTIONALS_DATA)} opcionais | {len(PRODUCTS_DATA)} produtos | {len(CLIENTS_DATA)} clientes | {len(REPS_DATA)} representantes | 10 pedidos")
+        print(f"  {len(OPTIONALS_DATA)} opcionais | {len(PRODUCTS_DATA) + 3} produtos (inc. 3 conjuntos) | {len(CLIENTS_DATA)} clientes | {len(REPS_DATA)} representantes | 10 pedidos")
 
 
 if __name__ == "__main__":

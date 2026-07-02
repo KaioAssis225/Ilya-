@@ -168,8 +168,9 @@ export async function generateOrderPDF(
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
   doc.text('PRODUTO', 22, y)
-  doc.text('QTD', 140, y, { align: 'right' })
-  doc.text('VALOR UN.', 164, y, { align: 'right' })
+  doc.text('QTD', 125, y, { align: 'right' })
+  doc.text('VALOR UN.', 150, y, { align: 'right' })
+  doc.text('IPI', 167, y, { align: 'right' })
   doc.text('TOTAL', 186, y, { align: 'right' })
 
   y += 4
@@ -216,14 +217,23 @@ export async function generateOrderPDF(
     doc.setTextColor(...MUTED)
     doc.text(item.product_code, 40, y + 4.5)
 
-    // Dimensões
+    // Dimensões (omitido para conjuntos, onde largura e altura ficam em 0)
     const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
-    const dimRaw = item.is_circular
-      ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
-      : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`
-    doc.setFontSize(7)
-    doc.setTextColor(...MUTED)
-    doc.text(`Dimensões: ${dimRaw}`, 40, y + 8.5)
+    if (item.largura !== 0 || item.altura !== 0) {
+      const dimRaw = item.is_circular
+        ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
+        : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`
+      doc.setFontSize(7)
+      doc.setTextColor(...MUTED)
+      doc.text(`Dimensões: ${dimRaw}`, 40, y + 8.5)
+    }
+
+    // Observação técnica do produto
+    if (item.observacao) {
+      doc.setFontSize(6)
+      doc.setTextColor(...MUTED)
+      doc.text(`Obs.: ${item.observacao}`, 40, y + 12.5)
+    }
 
     // Opcionais — linha horizontal com swatches
     const optSlots: { prefix: string; value: string }[] = []
@@ -255,18 +265,51 @@ export async function generateOrderPDF(
       doc.text(optText, 40, y + 12.5)
     }
 
-    // Colunas numéricas (alinhadas ao y do nome do produto)
+    // Colunas numéricas
     const unitPrice = Number(item.unit_price)
-    const subtotal = unitPrice * item.qty
+    const discount = Number(item.discount || 0)
+    const ipiRate = Number(item.ipi_rate || 0)
+    const effectivePrice = unitPrice * (1 - discount / 100)
+    const subtotalWithIpi = effectivePrice * item.qty * (1 + ipiRate / 100)
 
     doc.setTextColor(...DARK)
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
-    doc.text(String(item.qty), 140, y, { align: 'right' })
-    doc.text(formatBRL(unitPrice), 164, y, { align: 'right' })
+    doc.text(String(item.qty), 125, y, { align: 'right' })
 
+    // Valor unitário (com desconto se houver)
+    if (discount > 0) {
+      doc.setFontSize(6)
+      doc.setTextColor(...MUTED)
+      doc.text(formatBRL(unitPrice), 150, y - 2, { align: 'right' })
+      doc.setFontSize(7.5)
+      doc.setTextColor(...DARK)
+      doc.text(formatBRL(effectivePrice), 150, y + 2.5, { align: 'right' })
+      doc.setFontSize(5.5)
+      doc.setTextColor(...MUTED)
+      doc.text(`-${discount}%`, 150, y + 6.5, { align: 'right' })
+    } else {
+      doc.text(formatBRL(unitPrice), 150, y, { align: 'right' })
+    }
+
+    // IPI %
+    if (ipiRate > 0) {
+      doc.setFontSize(7.5)
+      doc.setTextColor(...GOLD)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`${ipiRate}%`, 167, y, { align: 'right' })
+    } else {
+      doc.setFontSize(7.5)
+      doc.setTextColor(...MUTED)
+      doc.setFont('helvetica', 'normal')
+      doc.text('—', 167, y, { align: 'right' })
+    }
+
+    // Total com IPI
     doc.setFont('helvetica', 'bold')
-    doc.text(formatBRL(subtotal), 186, y, { align: 'right' })
+    doc.setFontSize(8)
+    doc.setTextColor(...DARK)
+    doc.text(formatBRL(subtotalWithIpi), 186, y, { align: 'right' })
 
     // Linha separadora leve
     doc.setFont('helvetica', 'normal')
@@ -293,14 +336,16 @@ export async function generateOrderPDF(
   doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
 
+  const finalTotal = Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)
+
   doc.setFontSize(12)
   doc.setTextColor(...GOLD)
   doc.setFont('helvetica', 'normal')
   doc.text('VALOR TOTAL:', 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
-  doc.text(formatBRL(Number(order.total_value)), 186, y, { align: 'right' })
-  y += 12
+  doc.text(formatBRL(finalTotal), 186, y, { align: 'right' })
+  y += 10
 
   // ── Observações ────────────────────────────────────────────────────────────
   if (order.notes) {

@@ -54,6 +54,7 @@ async def update_product_type(
     if not pt:
         raise HTTPException(status_code=404, detail="Tipo não encontrado.")
     pt.name = payload.name
+    pt.group_id = payload.group_id
     try:
         await db.commit()
         await db.refresh(pt)

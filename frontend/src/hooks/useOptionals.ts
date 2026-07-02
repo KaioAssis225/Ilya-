@@ -6,7 +6,7 @@ const KEY = 'optionals'
 
 export function useOptionals(category?: string) {
   return useQuery<OptionalColor[]>({
-    queryKey: [KEY, category],
+    queryKey: category ? [KEY, category] : [KEY],
     queryFn: async () => {
       const params = category ? { category } : {}
       return (await api.get('/optionals', { params })).data

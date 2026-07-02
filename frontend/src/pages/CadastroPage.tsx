@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import api from '../lib/api'
 import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
@@ -6,11 +6,14 @@ import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '.
 import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
 import { useProductTypes, useCreateProductType, useUpdateProductType, useDeleteProductType } from '../hooks/useProductTypes'
+import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup } from '../hooks/useProductGroups'
+import type { ProductGroup } from '../hooks/useProductGroups'
+import type { ProductType } from '../hooks/useProductTypes'
 import { useOptionalCategories, useCreateOptionalCategory, useUpdateOptionalCategory, useDeleteOptionalCategory } from '../hooks/useOptionalCategories'
 import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
 import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
-import type { Product, ProductCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
+import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos'
 type SortDir = 'asc' | 'desc'
@@ -19,6 +22,29 @@ const ESTADOS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
   'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ]
+
+// Traduz erros de validação da API (422 do FastAPI vem como array em `detail`)
+// para uma mensagem única e amigável em português.
+const FIELD_LABEL: Record<string, string> = {
+  name: 'Nome', phone: 'Telefone', email: 'E-mail', cep: 'CEP',
+  numero: 'Número', address: 'Endereço', city: 'Cidade', state: 'Estado (UF)',
+}
+
+function parseApiError(err: unknown): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    const msgs = detail.map((d: { loc?: (string | number)[]; msg?: string }) => {
+      const field = d.loc?.[d.loc.length - 1]
+      const label = typeof field === 'string' ? (FIELD_LABEL[field] ?? field) : ''
+      if (field === 'email') return 'E-mail inválido. Informe um e-mail válido (ex: nome@dominio.com).'
+      if (field === 'state') return 'Selecione o estado (UF).'
+      return label ? `${label}: ${d.msg ?? 'valor inválido'}` : (d.msg ?? 'Dados inválidos.')
+    })
+    return Array.from(new Set(msgs)).join(' ')
+  }
+  return 'Não foi possível salvar. Verifique os dados e tente novamente.'
+}
 
 const CATEGORY_OPTIONS = [
   { value: 'aluminio',       label: 'Alumínio' },
@@ -88,11 +114,11 @@ function Th({ label, col, sortKey, sortDir, onSort, color }: {
   )
 }
 
-async function fetchCep(cep: string): Promise<ViaCepResponse | null> {
+async function fetchCep(cep: string, signal?: AbortSignal): Promise<ViaCepResponse | null> {
   const clean = cep.replace(/\D/g, '')
   if (clean.length !== 8) return null
   try {
-    const r = await api.get<ViaCepResponse>(`/utils/cep/${clean}`)
+    const r = await api.get<ViaCepResponse>(`/utils/cep/${clean}`, { signal })
     return r.data
   } catch {
     return null
@@ -121,10 +147,16 @@ function formatOnlyNumbers(value: string): string {
 
 function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: ClientCreate) => void }) {
   const [cepLoading, setCepLoading] = useState(false)
+  const cepAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => cepAbortRef.current?.abort(), [])
 
   async function handleCepBlur() {
+    cepAbortRef.current?.abort()
+    const controller = new AbortController()
+    cepAbortRef.current = controller
     setCepLoading(true)
-    const data = await fetchCep(form.cep)
+    const data = await fetchCep(form.cep, controller.signal)
+    if (controller.signal.aborted) return
     if (data) {
       setForm({
         ...form,
@@ -213,8 +245,13 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 
 const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', type: 'Outro', is_circular: false,
-  is_set: false, set_items: [],
-  altura: 0, largura: 0, profundidade: 0, price: 0, optional_ids: [],
+  is_set: false, set_items: [], components: [],
+  altura: 0, largura: 0, profundidade: 0, price: 0, observacao: null,
+  all_optionals_categories: null, optional_ids: [],
+}
+
+const EMPTY_COMP: ProductSetComponentCreate = {
+  description: '', is_circular: false, altura: 0, largura: 0, profundidade: 0, qty: 1, optional_ids: [],
 }
 
 function groupOptionalsByCategory(optionals: OptionalColor[]): { category: string; label: string; items: OptionalColor[] }[] {
@@ -259,23 +296,33 @@ function ProductsTab({ color }: { color: string }) {
   const [deleting, setDeleting] = useState<Product | null>(null)
   const [form, setForm] = useState<ProductCreate>(EMPTY_PRODUCT)
   const [activeCategories, setActiveCategories] = useState<string[]>([])
+  const [allOptCats, setAllOptCats] = useState<Set<string>>(new Set())
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [addItemCode, setAddItemCode] = useState('')
   const [addItemQty, setAddItemQty] = useState(1)
+  const [compForm, setCompForm] = useState<ProductSetComponentCreate>(EMPTY_COMP)
+  const [compActiveCategories, setCompActiveCategories] = useState<string[]>([])
   const [showNewTypeModal, setShowNewTypeModal] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
-    setActiveCategories([]); setPhotoPreview(null); setPendingFile(null)
-    setAddItemCode(''); setAddItemQty(1); setShowForm(true)
+    setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null)
+    setAddItemCode(''); setAddItemQty(1)
+    setCompForm(EMPTY_COMP); setCompActiveCategories([])
+    setShowForm(true)
   }
   function openEdit(p: Product) {
-    const cats = Array.from(new Set(p.optionals.map((o) => o.category)))
-    setActiveCategories(cats)
+    const isConjunto = p.type === 'Conjunto'
+    const cats = isConjunto ? [] : Array.from(new Set(p.optionals.map((o) => o.category)))
+    const allCats = isConjunto ? new Set<string>() : new Set<string>(
+      (p.all_optionals_categories ?? '').split(',').filter(Boolean)
+    )
+    setActiveCategories(cats); setAllOptCats(allCats)
     setForm({
       product_code: p.product_code,
       description: p.description,
@@ -286,11 +333,23 @@ function ProductsTab({ color }: { color: string }) {
       largura: p.largura,
       profundidade: p.profundidade,
       price: p.price ?? 0,
-      optional_ids: p.optionals.map((o) => o.id),
+      observacao: p.observacao ?? null,
+      optional_ids: isConjunto ? [] : p.optionals.map((o) => o.id),
       set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
+      components: p.components.map(comp => ({
+        description: comp.description,
+        is_circular: comp.is_circular,
+        altura: comp.altura,
+        largura: comp.largura,
+        profundidade: comp.profundidade,
+        qty: comp.qty,
+        optional_ids: comp.optionals.map(o => o.id),
+      })),
     })
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
-    setAddItemCode(''); setAddItemQty(1); setShowForm(true)
+    setAddItemCode(''); setAddItemQty(1)
+    setCompForm(EMPTY_COMP); setCompActiveCategories([])
+    setShowForm(true)
   }
 
   function addSetItem() {
@@ -314,25 +373,36 @@ function ProductsTab({ color }: { color: string }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setFormError(null)
+    const isConjunto = form.type === 'Conjunto'
     const activeCatsSet = new Set(activeCategories)
-    const filteredOptionalIds = (form.optional_ids ?? []).filter((optId) => {
+    // Exclude optionals from "all" categories — those are selected freely in the cart
+    const filteredOptionalIds = isConjunto ? [] : (form.optional_ids ?? []).filter((optId) => {
       const opt = allOptionals.find((o) => o.id === optId)
-      return opt ? activeCatsSet.has(opt.category) : false
+      return opt ? (activeCatsSet.has(opt.category) && !allOptCats.has(opt.category)) : false
     })
 
     const payload = {
       ...form,
       optional_ids: filteredOptionalIds,
+      all_optionals_categories: isConjunto ? null : (allOptCats.size > 0 ? Array.from(allOptCats).join(',') : null),
+      set_items: isConjunto ? [] : (form.set_items ?? []),
+      components: isConjunto ? (form.components ?? []) : [],
       profundidade: form.is_circular ? 0 : form.profundidade,
     }
-    if (editing) {
-      const updated = await updateM.mutateAsync({ id: editing.id, data: payload })
-      if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
-    } else {
-      const created = await createM.mutateAsync(payload)
-      if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
+    try {
+      if (editing) {
+        const updated = await updateM.mutateAsync({ id: editing.id, data: payload })
+        if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
+      } else {
+        const created = await createM.mutateAsync(payload)
+        if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
+      }
+      setShowForm(false)
+    } catch (err) {
+      // Não fecha o modal em falha; mostra o erro ao usuário (V-M5).
+      setFormError(parseApiError(err))
     }
-    setShowForm(false)
   }
 
   const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof Product), color }
@@ -375,7 +445,7 @@ function ProductsTab({ color }: { color: string }) {
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] text-[#9d8d81]">
-                      {p.is_circular
+                      {p.type === 'Conjunto' ? '' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
                         : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </span>
@@ -410,7 +480,7 @@ function ProductsTab({ color }: { color: string }) {
                     <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
                     <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
                     <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
-                      {p.is_circular
+                      {p.type === 'Conjunto' ? '—' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
@@ -474,8 +544,13 @@ function ProductsTab({ color }: { color: string }) {
       )}
 
       {showForm && (
-        <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => setShowForm(false)} accentColor={color}>
+        <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {formError && (
+              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <span className="text-xs text-red-700 leading-snug">{formError}</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-[#9d8d81]">Código *</span>
@@ -488,6 +563,16 @@ function ProductsTab({ color }: { color: string }) {
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-[#9d8d81]">Descrição *</span>
                 <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
+              </label>
+              <label className="flex flex-col gap-1 col-span-2">
+                <span className="text-xs text-[#9d8d81]">Observação</span>
+                <textarea
+                  className="input resize-none"
+                  rows={2}
+                  placeholder="Informações técnicas, restrições, montagem..."
+                  value={form.observacao ?? ''}
+                  onChange={(e) => setForm({ ...form, observacao: e.target.value || null })}
+                />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-[#9d8d81]">Tipo</span>
@@ -503,64 +588,199 @@ function ProductsTab({ color }: { color: string }) {
               </label>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.is_circular}
-                onChange={(e) => setForm({ ...form, is_circular: e.target.checked, profundidade: e.target.checked ? 0 : form.profundidade })}
-                style={{ accentColor: color }}
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø — circular)</span>
-            </label>
+            {form.type !== 'Conjunto' && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.is_circular}
+                  onChange={(e) => setForm({ ...form, is_circular: e.target.checked, profundidade: e.target.checked ? 0 : form.profundidade })}
+                  style={{ accentColor: color }}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø — circular)</span>
+              </label>
+            )}
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.is_set ?? false}
-                onChange={(e) => setForm({ ...form, is_set: e.target.checked, set_items: [], optional_ids: [] })}
-                style={{ accentColor: color }}
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-[#4a3f38]">Este produto é um Conjunto (composto por outros produtos)</span>
-            </label>
 
-            <div className="grid grid-cols-3 gap-3">
-              {form.is_circular ? (
-                <>
-                  <label className="flex flex-col gap-1 col-span-2">
-                    <span className="text-xs text-[#9d8d81]">Diâmetro Ø (m) *</span>
-                    <input className="input" type="number" min="0" step="0.01" value={form.largura}
-                      onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
-                    <input className="input" type="number" min="0" step="0.01" value={form.altura}
-                      onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
-                  </label>
-                </>
-              ) : (
-                <>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Largura L (m) *</span>
-                    <input className="input" type="number" min="0" step="0.01" value={form.largura}
-                      onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Prof. P (m) *</span>
-                    <input className="input" type="number" min="0" step="0.01" value={form.profundidade}
-                      onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
-                    <input className="input" type="number" min="0" step="0.01" value={form.altura}
-                      onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
-                  </label>
-                </>
-              )}
-            </div>
+            {form.type !== 'Conjunto' && (
+              <div className="grid grid-cols-3 gap-3">
+                {form.is_circular ? (
+                  <>
+                    <label className="flex flex-col gap-1 col-span-2">
+                      <span className="text-xs text-[#9d8d81]">Diâmetro Ø (m) *</span>
+                      <input className="input" type="number" min="0" step="0.01" value={form.largura}
+                        onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
+                      <input className="input" type="number" min="0" step="0.01" value={form.altura}
+                        onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-[#9d8d81]">Largura L (m) *</span>
+                      <input className="input" type="number" min="0" step="0.01" value={form.largura}
+                        onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-[#9d8d81]">Prof. P (m) *</span>
+                      <input className="input" type="number" min="0" step="0.01" value={form.profundidade}
+                        onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
+                      <input className="input" type="number" min="0" step="0.01" value={form.altura}
+                        onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
 
-            {form.is_set ? (
+            {form.type === 'Conjunto' ? (
+              <div>
+                <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Componentes do Conjunto</span>
+                {(form.components ?? []).length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    {(form.components ?? []).map((comp, idx) => (
+                      <div key={idx} className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[#e8e0d6] bg-[#fcfbfa]">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[#2c2420] leading-snug">{comp.description}</p>
+                          <p className="text-[10px] text-[#9d8d81] mt-0.5">
+                            {comp.is_circular
+                              ? `Ø ${Number(comp.largura).toFixed(2).replace('.', ',')} × A ${Number(comp.altura).toFixed(2).replace('.', ',')} m`
+                              : `L ${Number(comp.largura).toFixed(2).replace('.', ',')} × P ${Number(comp.profundidade).toFixed(2).replace('.', ',')} × A ${Number(comp.altura).toFixed(2).replace('.', ',')} m`
+                            } — qty: {comp.qty}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({ ...prev, components: (prev.components ?? []).filter((_, i) => i !== idx) }))}
+                          className="text-[#9d8d81] hover:text-red-500 transition-colors mt-0.5 flex-shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="border border-[#e8dccb] rounded-xl p-4 bg-[#fdf8f2] space-y-3">
+                  <span className="text-xs font-semibold text-[#4a3f38]">Novo Componente</span>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-[#9d8d81]">Descrição *</span>
+                    <input className="input" placeholder="ex: Sofá 3 lugares, Poltrona, Mesa..." value={compForm.description}
+                      onChange={e => setCompForm(f => ({ ...f, description: e.target.value }))} />
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={compForm.is_circular}
+                      onChange={e => setCompForm(f => ({ ...f, is_circular: e.target.checked, profundidade: e.target.checked ? 0 : f.profundidade }))}
+                      style={{ accentColor: color }} className="w-4 h-4" />
+                    <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø)</span>
+                  </label>
+                  {compForm.is_circular ? (
+                    <div className="grid grid-cols-3 gap-3">
+                      <label className="flex flex-col gap-1 col-span-2">
+                        <span className="text-xs text-[#9d8d81]">Diâmetro Ø (m)</span>
+                        <input className="input" type="number" min="0" step="0.01" value={compForm.largura}
+                          onChange={e => setCompForm(f => ({ ...f, largura: Number(e.target.value) }))} />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-[#9d8d81]">Altura A (m)</span>
+                        <input className="input" type="number" min="0" step="0.01" value={compForm.altura}
+                          onChange={e => setCompForm(f => ({ ...f, altura: Number(e.target.value) }))} />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-[#9d8d81]">L (m)</span>
+                        <input className="input" type="number" min="0" step="0.01" value={compForm.largura}
+                          onChange={e => setCompForm(f => ({ ...f, largura: Number(e.target.value) }))} />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-[#9d8d81]">P (m)</span>
+                        <input className="input" type="number" min="0" step="0.01" value={compForm.profundidade}
+                          onChange={e => setCompForm(f => ({ ...f, profundidade: Number(e.target.value) }))} />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-xs text-[#9d8d81]">A (m)</span>
+                        <input className="input" type="number" min="0" step="0.01" value={compForm.altura}
+                          onChange={e => setCompForm(f => ({ ...f, altura: Number(e.target.value) }))} />
+                      </label>
+                    </div>
+                  )}
+                  <label className="flex flex-col gap-1 w-24">
+                    <span className="text-xs text-[#9d8d81]">Quantidade</span>
+                    <input className="input text-center" type="number" min="1" value={compForm.qty}
+                      onChange={e => setCompForm(f => ({ ...f, qty: Math.max(1, Number(e.target.value)) }))} />
+                  </label>
+
+                  <div>
+                    <span className="text-xs text-[#9d8d81] block mb-2">Opcionais do Componente</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                      {CATEGORY_OPTIONS.map(({ value, label }) => {
+                        const isActive = compActiveCategories.includes(value)
+                        return (
+                          <label key={value} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
+                            <input type="checkbox" checked={isActive} style={{ accentColor: color }}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setCompActiveCategories(prev => [...prev, value])
+                                } else {
+                                  setCompActiveCategories(prev => prev.filter(c => c !== value))
+                                  const catIds = allOptionals.filter(o => o.category === value).map(o => o.id)
+                                  setCompForm(f => ({ ...f, optional_ids: f.optional_ids.filter(id => !catIds.includes(id)) }))
+                                }
+                              }}
+                              className="w-3.5 h-3.5" />
+                            <span className="text-xs text-[#4a3f38] select-none">{label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    {compActiveCategories.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {compActiveCategories.flatMap(cat =>
+                          allOptionals.filter(o => o.category === cat).map(opt => {
+                            const isSel = compForm.optional_ids.includes(opt.id)
+                            return (
+                              <button type="button" key={opt.id}
+                                onClick={() => setCompForm(f => {
+                                  const ids = f.optional_ids
+                                  return { ...f, optional_ids: ids.includes(opt.id) ? ids.filter(id => id !== opt.id) : [...ids, opt.id] }
+                                })}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all"
+                                style={isSel ? { backgroundColor: `${color}20`, borderColor: color, color } : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                              >
+                                {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
+                                <span>{opt.color_name}</span>
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <button type="button"
+                    onClick={() => {
+                      if (!compForm.description.trim()) return
+                      setForm(prev => ({ ...prev, components: [...(prev.components ?? []), compForm] }))
+                      setCompForm(EMPTY_COMP)
+                      setCompActiveCategories([])
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
+                    style={{ backgroundColor: color }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar Componente
+                  </button>
+                </div>
+              </div>
+            ) : form.is_set ? (
               <div>
                 <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Componentes do Conjunto</span>
                 {(form.set_items ?? []).length > 0 && (
@@ -644,49 +864,68 @@ function ProductsTab({ color }: { color: string }) {
 
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
-                    <span className="text-xs text-[#9d8d81] block font-medium">Escolha as Cores para cada Opcional</span>
+                    <span className="text-xs text-[#9d8d81] block font-medium">Cores e Permissões por Categoria</span>
                     {activeCategories.map((catValue) => {
                       const catLabel = CATEGORY_LABEL[catValue] || catValue
                       const catItems = allOptionals.filter(o => o.category === catValue)
+                      const isAllowed = allOptCats.has(catValue)
+                      const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
-                        <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2 bg-[#fdfdfd] shadow-sm">
-                          <div className="text-xs font-semibold text-[#2c2420] pb-1 border-b border-[#f3ede6]" style={{ color }}>
-                            {catLabel.toUpperCase()}
+                        <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2.5 bg-[#fdfdfd] shadow-sm">
+                          <div className="flex items-center justify-between pb-1 border-b border-[#f3ede6]">
+                            <span className="text-xs font-semibold" style={{ color }}>{catLabel.toUpperCase()}</span>
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={isAllowed}
+                                style={{ accentColor: color }}
+                                onChange={(e) => {
+                                  setAllOptCats(prev => {
+                                    const next = new Set(prev)
+                                    if (e.target.checked) {
+                                      next.add(catValue)
+                                      // Clear individual selections for this category
+                                      const catIds = catItems.map(o => o.id)
+                                      setForm(f => ({ ...f, optional_ids: (f.optional_ids ?? []).filter(id => !catIds.includes(id)) }))
+                                    } else {
+                                      next.delete(catValue)
+                                    }
+                                    return next
+                                  })
+                                }}
+                                className="w-3.5 h-3.5"
+                              />
+                              <span className="text-[11px] text-[#6b5d55]">Permitir todos</span>
+                            </label>
                           </div>
-                          <div className="flex flex-wrap gap-2 pt-1">
-                            {catItems.map(opt => {
-                              const isSelected = (form.optional_ids ?? []).includes(opt.id)
-                              return (
-                                <button
-                                  type="button"
-                                  key={opt.id}
-                                  onClick={() => {
-                                    setForm(prev => {
-                                      const ids = prev.optional_ids ?? []
-                                      const has = ids.includes(opt.id)
-                                      return {
-                                        ...prev,
-                                        optional_ids: has ? ids.filter(id => id !== opt.id) : [...ids, opt.id]
-                                      }
-                                    })
+                          {isAllowed ? (
+                            <p className="text-[11px] text-[#9d8d81] italic">
+                              Todos os opcionais desta categoria estarão disponíveis no carrinho.
+                            </p>
+                          ) : (
+                            <div>
+                              {catItems.length === 0 ? (
+                                <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
+                              ) : (
+                                <select
+                                  multiple
+                                  size={Math.min(catItems.length, 5)}
+                                  value={selectedIds}
+                                  onChange={(e) => {
+                                    const chosen = Array.from(e.target.selectedOptions).map(o => o.value)
+                                    const otherIds = (form.optional_ids ?? []).filter(id => !catItems.some(o => o.id === id))
+                                    setForm(prev => ({ ...prev, optional_ids: [...otherIds, ...chosen] }))
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all"
-                                  style={isSelected
-                                    ? { backgroundColor: `${color}20`, borderColor: color, color }
-                                    : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                                  className="w-full border border-[#e8e0d6] rounded-lg text-xs text-[#2c2420] bg-white focus:outline-none focus:ring-2 focus:ring-[#8b6914]/20 focus:border-[#8b6914]/60 px-2 py-1"
                                 >
-                                  {opt.photo_url && (
-                                    <img src={opt.photo_url} alt={opt.color_name}
-                                      className="w-4 h-4 rounded-md object-cover flex-shrink-0" />
-                                  )}
-                                  <span className="font-medium">{opt.color_name}</span>
-                                </button>
-                              )
-                            })}
-                            {catItems.length === 0 && (
-                              <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
-                            )}
-                          </div>
+                                  {catItems.map(opt => (
+                                    <option key={opt.id} value={opt.id}>{opt.color_name}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <p className="text-[10px] text-[#c8bdb5] mt-1">Ctrl+clique para selecionar múltiplas cores.</p>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -756,23 +995,47 @@ function PeopleTab<T extends Client | Representative>({
   const [viewing, setViewing] = useState<T | null>(null)
   const [createdUser, setCreatedUser] = useState<UserCreateResponse | null>(null)
   const [createUserError, setCreateUserError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState<ClientCreate>(EMPTY_ADDRESS)
 
   const createFromClient = useCreateUserFromClient()
   const createFromRep = useCreateUserFromRep()
 
-  function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setShowForm(true) }
+  function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
     setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state })
-    setEditing(item); setShowForm(true)
+    setEditing(item); setFormError(null); setShowForm(true)
   }
   function openView(item: T) {
     setViewing(item); setCreatedUser(null); setCreateUserError(null)
   }
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (editing) await onUpdate(editing.id, form); else await onCreate(form)
-    setShowForm(false)
+    setFormError(null)
+    // Normaliza campos antes de enviar — evita 422 por espaços ou UF vazia/minúscula
+    const cleaned: ClientCreate = {
+      ...form,
+      name: form.name.trim(),
+      email: form.email.trim(),
+      city: form.city.trim(),
+      address: form.address.trim(),
+      state: form.state.trim().toUpperCase(),
+      numero: form.numero?.trim() || null,
+    }
+    if (cleaned.state.length !== 2) {
+      setFormError('Selecione o estado (UF).')
+      return
+    }
+    setSubmitting(true)
+    try {
+      if (editing) await onUpdate(editing.id, cleaned); else await onCreate(cleaned)
+      setShowForm(false)
+    } catch (err) {
+      setFormError(parseApiError(err))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   async function handleCreateUser() {
@@ -958,12 +1221,20 @@ function PeopleTab<T extends Client | Representative>({
         <Modal title={editing ? `Editar ${label.slice(0, -1)}` : `Novo ${label.slice(0, -1)}`} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <AddressFields form={form} setForm={setForm} />
+            {formError && (
+              <div className="flex items-start gap-2 bg-[#fef3f2] border border-red-200 rounded-lg px-3 py-2.5">
+                <X className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                <span className="text-xs text-red-700 leading-snug">{formError}</span>
+              </div>
+            )}
             <p className="text-[10px] text-[#b8b0a6] leading-relaxed pt-1">
               Os dados coletados neste formulário são processados estritamente para a elaboração de orçamentos e gestão do pedido, conforme a nossa Política de Privacidade.
             </p>
             <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-              <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={isPending}>{editing ? 'Salvar' : 'Criar'}</button>
+              <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={isPending || submitting}>
+                {submitting ? 'Salvando...' : editing ? 'Salvar' : 'Criar'}
+              </button>
             </div>
           </form>
         </Modal>
@@ -1232,93 +1503,243 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   )
 }
 
-// ── TypesTab ──────────────────────────────────────────────────────────────────
+// ── GroupsTab ─────────────────────────────────────────────────────────────────
 
-function TypesTab({ color }: { color: string }) {
-  const { data: items = [], isLoading } = useProductTypes()
-  const createM = useCreateProductType()
-  const updateM = useUpdateProductType()
-  const deleteM = useDeleteProductType()
+type GroupModal =
+  | { kind: 'new-group' }
+  | { kind: 'edit-group'; group: ProductGroup }
+  | { kind: 'new-type'; groupId: string }
+  | { kind: 'edit-type'; type: ProductType }
 
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
-  const [name, setName] = useState('')
-  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
+function GroupsTab({ color }: { color: string }) {
+  const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
+  const { data: types = [], isLoading: typesLoading } = useProductTypes()
+
+  const createGroupM = useCreateProductGroup()
+  const updateGroupM = useUpdateProductGroup()
+  const deleteGroupM = useDeleteProductGroup()
+  const createTypeM = useCreateProductType()
+  const updateTypeM = useUpdateProductType()
+  const deleteTypeM = useDeleteProductType()
+
+  const [modal, setModal] = useState<GroupModal | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<ProductGroup | null>(null)
+  const [deletingType, setDeletingType] = useState<ProductType | null>(null)
   const [err, setErr] = useState('')
 
-  function openNew() { setEditing(null); setName(''); setErr(''); setShowForm(true) }
-  function openEdit(item: { id: string; name: string }) { setEditing(item); setName(item.name); setErr(''); setShowForm(true) }
+  // Group form state
+  const [gName, setGName] = useState('')
+  const [gIpi, setGIpi] = useState('0.00')
+  // Type form state
+  const [tName, setTName] = useState('')
+  const [tGroupId, setTGroupId] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setErr('')
+  function openNewGroup() { setGName(''); setGIpi('0.00'); setErr(''); setModal({ kind: 'new-group' }) }
+  function openEditGroup(g: ProductGroup) { setGName(g.name); setGIpi(Number(g.ipi).toFixed(2)); setErr(''); setModal({ kind: 'edit-group', group: g }) }
+  function openNewType(groupId: string) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
+  function openEditType(t: ProductType) { setTName(t.name); setTGroupId(t.group_id); setErr(''); setModal({ kind: 'edit-type', type: t }) }
+
+  async function handleGroupSubmit(e: React.FormEvent) {
+    e.preventDefault(); setErr('')
+    const ipiNum = parseFloat(gIpi.replace(',', '.')) || 0
     try {
-      if (editing) {
-        await updateM.mutateAsync({ id: editing.id, name: name.trim() })
+      if (modal?.kind === 'edit-group') {
+        await updateGroupM.mutateAsync({ id: modal.group.id, name: gName.trim(), ipi: ipiNum })
       } else {
-        await createM.mutateAsync({ name: name.trim() })
+        await createGroupM.mutateAsync({ name: gName.trim(), ipi: ipiNum })
       }
-      setShowForm(false)
+      setModal(null)
     } catch (ex: unknown) {
-      const detail = (ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setErr(detail ?? 'Erro ao salvar tipo.')
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao salvar grupo.')
     }
   }
 
-  const isPending = createM.isPending || updateM.isPending
+  async function handleTypeSubmit(e: React.FormEvent) {
+    e.preventDefault(); setErr('')
+    try {
+      if (modal?.kind === 'edit-type') {
+        await updateTypeM.mutateAsync({ id: modal.type.id, name: tName.trim(), group_id: tGroupId })
+      } else {
+        await createTypeM.mutateAsync({ name: tName.trim(), group_id: tGroupId })
+      }
+      setModal(null)
+    } catch (ex: unknown) {
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao salvar subgrupo.')
+    }
+  }
+
+  const isGroupPending = createGroupM.isPending || updateGroupM.isPending
+  const isTypePending = createTypeM.isPending || updateTypeM.isPending
+  const isLoading = groupsLoading || typesLoading
+
+  const orphanTypes = types.filter(t => !t.group_id)
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-[#2c2420]">Tipos de Móveis</h2>
-        <button onClick={openNew} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+        <h2 className="text-base font-semibold text-[#2c2420]">Grupos & Subgrupos</h2>
+        <button onClick={openNewGroup}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
           style={{ backgroundColor: color }}>
-          <Plus className="w-3.5 h-3.5" /> Novo Tipo
+          <Plus className="w-3.5 h-3.5" /> Novo Grupo
         </button>
       </div>
 
-      {showForm && (
-        <Modal title={editing ? 'Editar Tipo' : 'Novo Tipo'} onClose={() => setShowForm(false)} accentColor={color}>
-          <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Group form modal */}
+      {(modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
+        <Modal
+          title={modal.kind === 'edit-group' ? 'Editar Grupo' : 'Novo Grupo'}
+          onClose={() => setModal(null)}
+          accentColor={color}
+        >
+          <form onSubmit={handleGroupSubmit} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Nome do Tipo *</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+              <span className="text-xs text-[#9d8d81]">Nome do Grupo *</span>
+              <input className="input" value={gName} onChange={(e) => setGName(e.target.value)} required autoFocus />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Alíquota IPI (%)</span>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={gIpi}
+                onChange={(e) => setGIpi(e.target.value)}
+              />
             </label>
             {err && <p className="text-xs text-red-500">{err}</p>}
             <div className="flex gap-2 pt-1">
-              <button type="submit" disabled={isPending} className="btn-primary flex-1">
-                {isPending ? 'Salvando...' : editing ? 'Salvar Alterações' : 'Criar Tipo'}
+              <button type="submit" disabled={isGroupPending} className="btn-primary flex-1">
+                {isGroupPending ? 'Salvando...' : modal.kind === 'edit-group' ? 'Salvar Alterações' : 'Criar Grupo'}
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary px-4">Cancelar</button>
+              <button type="button" onClick={() => setModal(null)} className="btn-secondary px-4">Cancelar</button>
             </div>
           </form>
         </Modal>
       )}
 
-      {deleting && (
-        <ConfirmDelete name={deleting.name}
-          onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
-          onCancel={() => setDeleting(null)} />
+      {/* Type form modal */}
+      {(modal?.kind === 'new-type' || modal?.kind === 'edit-type') && (
+        <Modal
+          title={modal.kind === 'edit-type' ? 'Editar Subgrupo' : 'Novo Subgrupo'}
+          onClose={() => setModal(null)}
+          accentColor={color}
+        >
+          <form onSubmit={handleTypeSubmit} className="space-y-4">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Nome do Subgrupo *</span>
+              <input className="input" value={tName} onChange={(e) => setTName(e.target.value)} required autoFocus />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-[#9d8d81]">Grupo</span>
+              <select className="input" value={tGroupId ?? ''} onChange={(e) => setTGroupId(e.target.value || null)}>
+                <option value="">Sem grupo</option>
+                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+            {err && <p className="text-xs text-red-500">{err}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={isTypePending} className="btn-primary flex-1">
+                {isTypePending ? 'Salvando...' : modal.kind === 'edit-type' ? 'Salvar Alterações' : 'Criar Subgrupo'}
+              </button>
+              <button type="button" onClick={() => setModal(null)} className="btn-secondary px-4">Cancelar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Delete confirmations */}
+      {deletingGroup && (
+        <ConfirmDelete name={deletingGroup.name}
+          onConfirm={async () => { await deleteGroupM.mutateAsync(deletingGroup.id); setDeletingGroup(null) }}
+          onCancel={() => setDeletingGroup(null)} />
+      )}
+      {deletingType && (
+        <ConfirmDelete name={deletingType.name}
+          onConfirm={async () => { await deleteTypeM.mutateAsync(deletingType.id); setDeletingType(null) }}
+          onCancel={() => setDeletingType(null)} />
       )}
 
       {isLoading ? (
         <p className="text-sm text-[#9d8d81]">Carregando...</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-[#9d8d81]">Nenhum tipo cadastrado.</p>
       ) : (
-        <div className="flex flex-wrap gap-2 pt-1">
-          {items.map(item => (
-            <div key={item.id}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e8e0d6] bg-white text-sm text-[#2c2420]">
-              <span>{item.name}</span>
-              <button onClick={() => openEdit(item)} className="text-[#9d8d81] hover:text-[#8b6914] transition-colors">
-                <Pencil className="w-3 h-3" />
-              </button>
-              <button onClick={() => setDeleting(item)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
-                <Trash2 className="w-3 h-3" />
-              </button>
+        <div className="space-y-3">
+          {groups.map(group => {
+            const groupTypes = types.filter(t => t.group_id === group.id)
+            return (
+              <div key={group.id} className="border border-[#e8e0d6] rounded-xl p-4 bg-white space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-semibold text-sm text-[#2c2420]">{group.name}</span>
+                    {Number(group.ipi) > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#fdf6ec] text-[#8b6914] border border-[#e8d8b8]">
+                        IPI {Number(group.ipi).toFixed(2).replace('.', ',')}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEditGroup(group)} className="p-1 text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setDeletingGroup(group)} className="p-1 text-[#9d8d81] hover:text-red-500 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {groupTypes.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {groupTypes.map(t => (
+                      <div key={t.id}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e8e0d6] bg-[#f8f6f2] text-xs text-[#2c2420]">
+                        <span>{t.name}</span>
+                        <button onClick={() => openEditType(t)} className="text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                          <Pencil className="w-2.5 h-2.5" />
+                        </button>
+                        <button onClick={() => setDeletingType(t)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => openNewType(group.id)}
+                  className="flex items-center gap-1 text-xs font-medium transition-colors"
+                  style={{ color }}
+                >
+                  <Plus className="w-3 h-3" /> Novo Subgrupo
+                </button>
+              </div>
+            )
+          })}
+
+          {groups.length === 0 && orphanTypes.length === 0 && (
+            <p className="text-sm text-[#9d8d81]">Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.</p>
+          )}
+
+          {orphanTypes.length > 0 && (
+            <div className="border border-dashed border-[#e8e0d6] rounded-xl p-4 space-y-3">
+              <span className="text-xs font-semibold text-[#9d8d81] uppercase tracking-wider">Sem grupo</span>
+              <div className="flex flex-wrap gap-1.5">
+                {orphanTypes.map(t => (
+                  <div key={t.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e8e0d6] bg-white text-xs text-[#2c2420]">
+                    <span>{t.name}</span>
+                    <button onClick={() => openEditType(t)} className="text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                      <Pencil className="w-2.5 h-2.5" />
+                    </button>
+                    <button onClick={() => setDeletingType(t)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
@@ -1332,7 +1753,7 @@ const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
   { key: 'clientes',       label: 'Clientes',        Icon: Users       },
   { key: 'representantes', label: 'Representantes',  Icon: UserCheck   },
   { key: 'opcionais',      label: 'Opcionais',       Icon: Tag         },
-  { key: 'tipos',          label: 'Tipos',           Icon: LayoutGrid  },
+  { key: 'tipos',          label: 'Grupos & Subgrupos', Icon: LayoutGrid  },
 ]
 
 export default function CadastroPage() {
@@ -1354,7 +1775,7 @@ export default function CadastroPage() {
   const { data: clients }  = useClients()
   const { data: reps }     = useRepresentatives()
   const { data: optionals } = useOptionals()
-  const { data: tipos }    = useProductTypes()
+  const { data: productGroups } = useProductGroups()
 
   const { data: clientsData, isLoading: clientsLoading } = useClients()
   const createClient = useCreateClient(); const updateClient = useUpdateClient(); const deleteClient = useDeleteClient()
@@ -1367,7 +1788,7 @@ export default function CadastroPage() {
     clientes:       clients?.length  ?? 0,
     representantes: reps?.length     ?? 0,
     opcionais:      optionals?.length ?? 0,
-    tipos:          tipos?.length    ?? 0,
+    tipos:          productGroups?.length ?? 0,
   }
 
   const activeColor = TAB_PALETTE[tab].color
@@ -1480,7 +1901,7 @@ export default function CadastroPage() {
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <TypesTab color={TAB_PALETTE.tipos.color} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} />}
           </main>
         </div>
       </div>

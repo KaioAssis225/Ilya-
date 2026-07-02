@@ -1,3 +1,14 @@
+export interface ProductGroup {
+  id: string
+  name: string
+  ipi: number
+}
+
+export interface ProductGroupCreate {
+  name: string
+  ipi: number
+}
+
 export interface OptionalColor {
   id: string
   category: string
@@ -24,6 +35,27 @@ export interface ProductSetItemCreate {
   qty: number
 }
 
+export interface ProductSetComponent {
+  id: string
+  description: string
+  is_circular: boolean
+  altura: number
+  largura: number
+  profundidade: number
+  qty: number
+  optionals: OptionalColor[]
+}
+
+export interface ProductSetComponentCreate {
+  description: string
+  is_circular: boolean
+  altura: number
+  largura: number
+  profundidade: number
+  qty: number
+  optional_ids: string[]
+}
+
 export interface Product {
   id: string
   product_code: string
@@ -35,8 +67,11 @@ export interface Product {
   largura: number
   profundidade: number
   price: number
+  observacao: string | null
+  all_optionals_categories: string | null
   optionals: OptionalColor[]
   set_items: ProductSetItem[]
+  components: ProductSetComponent[]
   photo_url: string | null
   created_at: string
   updated_at: string
@@ -52,8 +87,11 @@ export interface ProductCreate {
   largura: number
   profundidade: number
   price: number
+  observacao?: string | null
+  all_optionals_categories?: string | null
   optional_ids?: string[]
   set_items?: ProductSetItemCreate[]
+  components?: ProductSetComponentCreate[]
 }
 
 export interface ProductUpdate extends Partial<ProductCreate> {}
@@ -101,6 +139,7 @@ export interface RepresentativeUpdate extends Partial<RepresentativeCreate> {}
 export interface OrderItemCreate {
   product_code: string
   qty: number
+  discount?: number
   opt_aluminio?: string | null
   opt_madeira?: string | null
   opt_tecido?: string | null
@@ -113,6 +152,12 @@ export interface OrderCreate {
   rep_id?: string | null
   notes?: string | null
   items: OrderItemCreate[]
+}
+
+export interface OrderUpdate {
+  rep_id?: string | null
+  notes?: string | null
+  items?: OrderItemCreate[]
 }
 
 export interface OrderItem {
@@ -131,8 +176,22 @@ export interface OrderItem {
   opt_corda: string | null
   qty: number
   unit_price: number
+  discount: number
+  ipi_rate: number
+  ipi_value: number
+  observacao: string | null
   created_at: string
   updated_at: string
+}
+
+export interface OrderHistory {
+  id: string
+  order_id: string
+  user_id: string | null
+  user: { id: string; full_name: string } | null
+  action: string
+  details: string | null
+  created_at: string
 }
 
 export interface Order {
@@ -142,10 +201,17 @@ export interface Order {
   client_id: string
   rep_id: string | null
   total_value: number
+  total_ipi: number
+  total_with_ipi: number
+  is_finalized: boolean
+  external_code: string | null
   notes: string | null
-  rep_signature: string | null
-  client_signature: string | null
+  rep_signed?: boolean
+  client_signed?: boolean
+  rep_signature?: string | null
+  client_signature?: string | null
   items: OrderItem[]
+  history: OrderHistory[]
   created_at: string
   updated_at: string
 }

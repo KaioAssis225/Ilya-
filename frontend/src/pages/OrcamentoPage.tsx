@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
+import { useProductTypes } from '../hooks/useProductTypes'
 import { useClients, useCreateClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative } from '../hooks/useRepresentatives'
-import { useCreateOrder, useOrders } from '../hooks/useOrders'
-import { OptionalWithPreview } from '../components/OptionalWithPreview'
+import { useCreateOrder, useOrders, useUpdateOrder, useOrder } from '../hooks/useOrders'
+import { useOptionals } from '../hooks/useOptionals'
 import { SafePrice } from '../components/SafePrice'
 import { useAuth } from '../hooks/useAuth'
-import type { Product, Client, Representative, ClientCreate } from '../types'
+import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
 
 // ── Category display labels ───────────────────────────────────────────────────
 
@@ -37,6 +39,25 @@ function computeOptFields(cats: Partial<Record<string, string>>) {
                 : null,
     opt_corda:    cats.corda ?? null,
   }
+}
+
+function parseOptFields(item: { opt_aluminio: string | null; opt_madeira: string | null; opt_tecido: string | null; opt_couro: string | null; opt_corda: string | null }): Partial<Record<string, string>> {
+  const cats: Partial<Record<string, string>> = {}
+  if (item.opt_aluminio) cats.aluminio = item.opt_aluminio
+  if (item.opt_corda) cats.corda = item.opt_corda
+  if (item.opt_madeira) {
+    const [cat, color] = item.opt_madeira.split('/')
+    if (cat && color) cats[cat] = color
+  }
+  if (item.opt_tecido) {
+    const [cat, color] = item.opt_tecido.split('/')
+    if (cat && color) cats[cat] = color
+  }
+  if (item.opt_couro) {
+    const [cat, color] = item.opt_couro.split('/')
+    if (cat && color) cats[cat] = color
+  }
+  return cats
 }
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
@@ -126,20 +147,31 @@ function QuickRegisterModal({ title, onSave, onClose }: {
   const [form, setForm] = useState<ClientCreate>(EMPTY_PERSON)
   const [saving, setSaving] = useState(false)
   const [cepLoading, setCepLoading] = useState(false)
+  const [cepError, setCepError] = useState(false)
+  const cepAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => cepAbortRef.current?.abort(), [])
 
   async function handleCepBlur() {
     const clean = form.cep.replace(/\D/g, '')
     if (clean.length !== 8) return
-    setCepLoading(true)
+    cepAbortRef.current?.abort()
+    const controller = new AbortController()
+    cepAbortRef.current = controller
+    setCepLoading(true); setCepError(false)
     try {
-      const { data } = await api.get(`/utils/cep/${clean}`)
+      const { data } = await api.get(`/utils/cep/${clean}`, { signal: controller.signal })
       setForm((f) => ({
         ...f,
         address: `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}`,
         city: data.localidade,
         state: data.uf,
       }))
-    } finally { setCepLoading(false) }
+    } catch {
+      // Requisição abortada (unmount / novo CEP) não é erro real (V-F2/M4).
+      if (!controller.signal.aborted) setCepError(true)
+    } finally {
+      if (!controller.signal.aborted) setCepLoading(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -171,6 +203,7 @@ function QuickRegisterModal({ title, onSave, onClose }: {
             <span className="text-xs text-[#9d8d81]">CEP *</span>
             <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={9} required />
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-[#8b6914] animate-pulse">...</span>}
+            {cepError && <span className="text-[10px] text-red-500">CEP não encontrado ou serviço indisponível.</span>}
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-[#9d8d81]">Número</span>
@@ -210,12 +243,17 @@ interface CartItem {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+function Toast({ message, onDone, variant = 'success' }: { message: string; onDone: () => void; variant?: 'success' | 'error' }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 3000)
+    const t = setTimeout(onDone, 4000)
     return () => clearTimeout(t)
   }, [onDone])
-  return (
+  return variant === 'error' ? (
+    <div className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-red-200 text-red-700 px-5 py-3 rounded-xl shadow-xl toast max-w-sm">
+      <X className="w-5 h-5 flex-shrink-0" />
+      <span className="text-sm font-medium">{message}</span>
+    </div>
+  ) : (
     <div className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
       <CheckCircle className="w-5 h-5" />
       <span className="text-sm font-medium">{message}</span>
@@ -223,19 +261,43 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   )
 }
 
-// ── Opcionais estáticos ────────────────────────────────────────────────────────
+// ── Opcionais interativos no carrinho ─────────────────────────────────────────
 
-function StaticOptionals({ item }: { item: CartItem }) {
-  const entries = (Object.entries(item.opt_categories) as [string, string | undefined][]).filter((e): e is [string, string] => e[1] !== undefined)
-  if (entries.length === 0) return null
+function OptionalSelectors({ item, allOptionals, onChange }: {
+  item: CartItem
+  allOptionals: OptionalColor[]
+  onChange: (cat: string, value: string | null) => void
+}) {
+  const freeCats = new Set((item._product.all_optionals_categories ?? '').split(',').filter(Boolean))
+  const productCats = Array.from(new Set(item._product.optionals.map(o => o.category)))
+  const allCats = Array.from(new Set([...productCats, ...Array.from(freeCats)]))
+  if (allCats.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-1.5 mt-1.5">
-      {entries.map(([cat, color]) => {
-        const opt = item._product.optionals.find(o => o.category === cat && o.color_name === color)
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {allCats.map(cat => {
+        const isFree = freeCats.has(cat)
+        const available = isFree
+          ? allOptionals.filter(o => o.category === cat)
+          : item._product.optionals.filter(o => o.category === cat)
+        const currentValue = item.opt_categories[cat] ?? ''
+        const currentOpt = available.find(o => o.color_name === currentValue)
         return (
           <div key={cat} className="flex items-center gap-1 bg-[#fcfbfa] border border-[#f0ece6] rounded-md px-1.5 py-0.5">
             <span className="text-[10px] text-[#9d8d81] font-medium whitespace-nowrap">{CAT_LABEL[cat] ?? cat}:</span>
-            <OptionalWithPreview label={color} swatch={opt?.photo_url ?? null} />
+            {currentOpt?.photo_url && (
+              <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
+            )}
+            <select
+              value={currentValue}
+              onChange={(e) => onChange(cat, e.target.value || null)}
+              className="text-[10px] text-[#2c2420] bg-transparent border-none outline-none cursor-pointer"
+              style={{ maxWidth: '100px' }}
+            >
+              <option value="">—</option>
+              {available.map(opt => (
+                <option key={opt.id} value={opt.color_name}>{opt.color_name}</option>
+              ))}
+            </select>
           </div>
         )
       })}
@@ -265,12 +327,14 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onRemove, onPhotoClick
+  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
   onRemove: (code: string) => void
   onPhotoClick: (url: string) => void
+  allOptionals: OptionalColor[]
+  onOptChange: (cat: string, value: string | null) => void
 }) {
   const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
@@ -295,6 +359,9 @@ function MobileCartCard({
             <div className="min-w-0">
               <span className="text-[11px] text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
               <p className="text-xs font-semibold text-[#2c2420] leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
+              {item._product.observacao && (
+                <p className="text-[10px] text-[#8b6914] italic mt-0.5 line-clamp-2">{item._product.observacao}</p>
+              )}
             </div>
             <button
               onClick={() => onRemove(item.product_code)}
@@ -304,7 +371,7 @@ function MobileCartCard({
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          <StaticOptionals item={item} />
+          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} />
         </div>
       </div>
 
@@ -366,6 +433,7 @@ function OrderForm({
   onQuickAddRep, onQuickAddClient,
   budgetCode, cart, onSubmit, isGenerating,
   repLocked, clientLocked,
+  editMode, editCode,
 }: {
   reps: Representative[]; clients: Client[]
   selectedRep: Representative | null; selectedClient: Client | null; notes: string
@@ -376,13 +444,14 @@ function OrderForm({
   budgetCode: string; cart: CartItem[]
   onSubmit: () => void; isGenerating: boolean
   repLocked?: boolean; clientLocked?: boolean
+  editMode?: boolean; editCode?: string
 }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between pb-3 border-b border-[#f3ede6]">
-        <h2 className="text-base font-semibold text-[#2c2420]">Novo Orçamento</h2>
-        <span className="bg-[#648261]/10 text-[#648261] px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider">
-          {budgetCode}
+        <h2 className="text-base font-semibold text-[#2c2420]">{editMode ? 'Editar Pedido' : 'Novo Orçamento'}</h2>
+        <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider ${editMode ? 'bg-[#8b6914]/10 text-[#8b6914]' : 'bg-[#648261]/10 text-[#648261]'}`}>
+          {editMode ? editCode : budgetCode}
         </span>
       </div>
 
@@ -414,18 +483,24 @@ function OrderForm({
       ) : (
         <div className="space-y-1">
           <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Cliente</span>
-          <Autocomplete
-            searchPlaceholder="Buscar cliente..."
-            items={clients}
-            value={selectedClient}
-            getLabel={(c) => `${c.name} — ${c.city}/${c.state}`}
-            getSearch={(c) => `${c.name} ${c.email} ${c.city}`}
-            onChange={onClientChange}
-            onClear={() => onClientChange(null)}
-            displayPlaceholder="Selecione o cliente..."
-            showQuickAdd
-            onQuickAdd={onQuickAddClient}
-          />
+          {repLocked && clients.length === 0 ? (
+            <div className="flex items-start gap-2 bg-[#fef3f2] border border-red-200 rounded-lg px-3 py-2.5">
+              <span className="text-[11px] text-red-700 leading-snug">Nenhum cliente vinculado à sua conta. Solicite ao administrador para associar clientes ao seu perfil.</span>
+            </div>
+          ) : (
+            <Autocomplete
+              searchPlaceholder="Buscar cliente..."
+              items={clients}
+              value={selectedClient}
+              getLabel={(c) => `${c.name} — ${c.city}/${c.state}`}
+              getSearch={(c) => `${c.name} ${c.email} ${c.city}`}
+              onChange={onClientChange}
+              onClear={() => onClientChange(null)}
+              displayPlaceholder="Selecione o cliente..."
+              showQuickAdd
+              onQuickAdd={onQuickAddClient}
+            />
+          )}
         </div>
       )}
 
@@ -440,13 +515,19 @@ function OrderForm({
         />
       </div>
 
+
+      {(!selectedClient || cart.length === 0) && !isGenerating && (
+        <p className="text-[10px] text-[#9d8d81] text-center -mt-1">
+          {cart.length === 0 ? 'Adicione ao menos um produto ao orçamento.' : 'Selecione um cliente para continuar.'}
+        </p>
+      )}
       <button
         onClick={onSubmit}
         disabled={!selectedClient || cart.length === 0 || isGenerating}
         style={{ touchAction: 'manipulation' }}
         className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
       >
-        Finalizar Orçamento
+        {editMode ? 'Salvar Alterações' : 'Finalizar Orçamento'}
       </button>
     </div>
   )
@@ -476,11 +557,16 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 
 export default function OrcamentoPage() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editId = searchParams.get('edit')
   const { data: products = [] } = useProducts()
+  const { data: allOptionals = [] } = useOptionals()
   const { data: clients = [] } = useClients()
   const { data: reps = [] } = useRepresentatives()
   const { data: orders = [] } = useOrders()
+  const { data: editOrder } = useOrder(editId ?? '')
   const createOrderM = useCreateOrder()
+  const updateOrderM = useUpdateOrder()
   const createClientM = useCreateClient()
   const createRepM = useCreateRepresentative()
 
@@ -508,8 +594,22 @@ export default function OrcamentoPage() {
   })
 
   useEffect(() => {
-    localStorage.setItem('carrinho_orcamento', JSON.stringify(cart))
+    // Persiste apenas os dados próprios do carrinho; _product é derivado de products
+    // e re-hidratado no load — não deve ser a fonte da verdade persistida (V-M8).
+    const serializable = cart.map(({ _product, ...rest }) => rest)
+    localStorage.setItem('carrinho_orcamento', JSON.stringify(serializable))
   }, [cart])
+
+  // Sincroniza _product com dados frescos da API (garante observacao e preço atualizados)
+  useEffect(() => {
+    if (products.length === 0) return
+    const productMap = new Map(products.map(p => [p.product_code, p]))
+    setCart(prev => prev.map(item => ({
+      ...item,
+      _product: productMap.get(item.product_code) ?? item._product,
+    })))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products])
 
   // Pré-preenche e trava campos conforme papel do usuário logado
   useEffect(() => {
@@ -533,11 +633,39 @@ export default function OrcamentoPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, reps, clients])
 
+  // Pre-populate cart + client + rep when editing an existing order
+  useEffect(() => {
+    if (!editOrder || products.length === 0 || clients.length === 0) return
+    const productMap = new Map(products.map(p => [p.product_code, p]))
+    const cartItems: CartItem[] = editOrder.items
+      .map(item => {
+        const product = productMap.get(item.product_code)
+        if (!product) return null
+        return {
+          product_code: item.product_code,
+          qty: item.qty,
+          discount: Number(item.discount),
+          opt_categories: parseOptFields(item),
+          _product: product,
+        }
+      })
+      .filter(Boolean) as CartItem[]
+    setCart(cartItems)
+    const client = clients.find(c => c.id === editOrder.client_id)
+    if (client) setSelectedClient(client)
+    if (editOrder.rep_id) {
+      const rep = reps.find(r => r.id === editOrder.rep_id)
+      if (rep) setSelectedRep(rep)
+    }
+    setNotes(editOrder.notes ?? '')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editOrder, products, clients, reps])
+
   const [productQuery, setProductQuery] = useState('')
   const [productOpen, setProductOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [cartFilter, setCartFilter] = useState('')
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
   const [quickModal, setQuickModal] = useState<'client' | 'rep' | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
@@ -556,11 +684,23 @@ export default function OrcamentoPage() {
     `${p.product_code} ${p.description}`.toLowerCase().includes(productQuery.toLowerCase())
   )
 
+  function updateOptCategory(code: string, cat: string, value: string | null) {
+    setCart(prev => prev.map(i => {
+      if (i.product_code !== code) return i
+      const updated = { ...i.opt_categories }
+      if (!value) delete updated[cat]
+      else updated[cat] = value
+      return { ...i, opt_categories: updated }
+    }))
+  }
+
   function handleAddProductToCart() {
     if (!selectedProduct) return
+    const freeCats = new Set((selectedProduct.all_optionals_categories ?? '').split(',').filter(Boolean))
     const auto_categories: Partial<Record<string, string>> = {}
     for (const opt of selectedProduct.optionals) {
-      if (!(opt.category in auto_categories)) {
+      // Don't pre-select for "all" categories — user picks freely in the cart
+      if (!(opt.category in auto_categories) && !freeCats.has(opt.category)) {
         auto_categories[opt.category] = opt.color_name
       }
     }
@@ -594,37 +734,70 @@ export default function OrcamentoPage() {
     `${item.product_code} ${item._product.description}`.toLowerCase().includes(cartFilter.toLowerCase())
   )
 
+  const { data: productTypes = [] } = useProductTypes()
+
   const total = cart.reduce((sum, i) => {
     return sum + i.qty * i._product.price * (1 - (i.discount || 0) / 100)
   }, 0)
 
+  const ipiTotal = cart.reduce((sum, i) => {
+    const pt = productTypes.find(t => t.name === i._product.type)
+    const rate = Number(pt?.group?.ipi ?? 0)
+    const subtotal = i.qty * i._product.price * (1 - (i.discount || 0) / 100)
+    return sum + subtotal * rate / 100
+  }, 0)
+
+  const totalWithIpi = total + ipiTotal
+
   const nextOrderNumber = orders.length + 1
   const budgetCode = `ORC-${String(nextOrderNumber).padStart(4, '0')}`
+
+  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories }) => ({
+    product_code,
+    qty,
+    discount: discount || 0,
+    ...computeOptFields(opt_categories),
+  }))
 
   async function handleSubmit() {
     if (!selectedClient || cart.length === 0) return
     setIsGenerating(true)
     try {
-      await Promise.all([
-        createOrderM.mutateAsync({
-          client_id: selectedClient.id,
-          rep_id: selectedRep?.id ?? null,
-          notes: notes || null,
-          items: cart.map(({ product_code, qty, opt_categories }) => ({
-            product_code,
-            qty,
-            ...computeOptFields(opt_categories),
-          })),
-        }),
-        new Promise<void>((r) => setTimeout(r, 3000)),
-      ])
+      if (editId) {
+        await Promise.all([
+          updateOrderM.mutateAsync({
+            id: editId,
+            data: {
+              rep_id: selectedRep?.id ?? null,
+              notes: notes || null,
+              items: itemsPayload,
+            },
+          }),
+          new Promise<void>((r) => setTimeout(r, 1500)),
+        ])
+        setToast({ message: 'Pedido atualizado com sucesso!', variant: 'success' })
+        setSearchParams({})
+      } else {
+        await Promise.all([
+          createOrderM.mutateAsync({
+            client_id: selectedClient.id,
+            rep_id: selectedRep?.id ?? null,
+            notes: notes || null,
+            items: itemsPayload,
+          }),
+          new Promise<void>((r) => setTimeout(r, 3000)),
+        ])
+        setToast({ message: 'Orçamento finalizado com sucesso!', variant: 'success' })
+      }
       setCart([])
       localStorage.removeItem('carrinho_orcamento')
       setSelectedClient(null)
       setSelectedRep(null)
       setNotes('')
-      setToast('Orçamento finalizado com sucesso!')
       setDrawerOpen(false)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setToast({ message: detail ?? 'Erro ao processar o pedido. Tente novamente.', variant: 'error' })
     } finally {
       setIsGenerating(false)
     }
@@ -698,6 +871,20 @@ export default function OrcamentoPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
+      {editId && editOrder && (
+        <div className="bg-[#8b6914] text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
+          <PenLine className="w-4 h-4 flex-shrink-0" />
+          <span className="text-xs font-semibold tracking-wide">
+            Editando Pedido: <span className="font-mono">{editOrder.code}</span>
+          </span>
+          <button
+            onClick={() => { setSearchParams({}); setCart([]); localStorage.removeItem('carrinho_orcamento') }}
+            className="ml-auto text-white/70 hover:text-white text-xs underline"
+          >
+            Cancelar edição
+          </button>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 pb-28 lg:pb-6">
 
         {/* ── Mobile: product search card ────────────────────────────────── */}
@@ -748,6 +935,8 @@ export default function OrcamentoPage() {
                       onQtyChange={updateQty}
                       onRemove={removeItem}
                       onPhotoClick={setActivePhotoModal}
+                      allOptionals={allOptionals}
+                      onOptChange={(cat, val) => updateOptCategory(item.product_code, cat, val)}
                     />
                   ))}
                 </div>
@@ -760,13 +949,17 @@ export default function OrcamentoPage() {
                       <th className="px-4 py-3 text-left w-16">Qtd</th>
                       <th className="px-4 py-3 text-left w-28">Preço Base</th>
                       <th className="px-4 py-3 text-left w-24">Desconto (%)</th>
+                      <th className="px-4 py-3 text-right w-28">IPI</th>
                       <th className="px-4 py-3 text-right w-28">Subtotal</th>
                       <th className="px-4 py-3 w-8"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e0d6]">
                     {filteredCart.map((item) => {
+                      const pt = productTypes.find(t => t.name === item._product.type)
+                      const ipiRate = Number(pt?.group?.ipi ?? 0)
                       const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
+                      const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
                       return (
                         <tr key={item.product_code} className="hover:bg-[#fcfbf9] align-top transition-colors">
                           <td className="px-4 py-3.5">
@@ -783,8 +976,11 @@ export default function OrcamentoPage() {
                               <div className="flex-1 min-w-0">
                                 <span className="text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
                                 <span className="text-[#2c2420] ml-2 text-xs font-semibold">{item._product.description}</span>
+                                {item._product.observacao && (
+                                  <div className="text-[10px] text-[#8b6914] italic mt-0.5">{item._product.observacao}</div>
+                                )}
                                 <div className="text-[10px] text-[#9d8d81] mt-0.5">{dimLabel(item._product)}</div>
-                                <StaticOptionals item={item} />
+                                <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} />
                               </div>
                             </div>
                           </td>
@@ -816,8 +1012,14 @@ export default function OrcamentoPage() {
                               </p>
                             )}
                           </td>
+                          <td className="px-4 py-3.5 text-right align-middle whitespace-nowrap">
+                            {ipiRate > 0
+                              ? <span className="text-xs font-semibold text-[#8b6914]">{ipiRate}%</span>
+                              : <span className="text-xs text-[#c8bdb5]">—</span>
+                            }
+                          </td>
                           <td className="px-4 py-3.5 text-right text-xs font-bold text-[#2c2420] align-middle whitespace-nowrap">
-                            <SafePrice value={subtotal} />
+                            <SafePrice value={subtotalWithIpi} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
                             <button onClick={() => removeItem(item.product_code)} className="text-[#c8bdb5] hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center mx-auto">
@@ -842,7 +1044,7 @@ export default function OrcamentoPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[#2c2420] font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
-                <span className="text-[#8b6914] font-bold text-base"><SafePrice value={total} /></span>
+                <span className="text-[#8b6914] font-bold text-base"><SafePrice value={totalWithIpi} /></span>
               </div>
             </div>
           )}
@@ -859,6 +1061,7 @@ export default function OrcamentoPage() {
               budgetCode={budgetCode} cart={cart}
               onSubmit={handleSubmit} isGenerating={isGenerating}
               repLocked={repLocked} clientLocked={clientLocked}
+              editMode={!!editId} editCode={editOrder?.code}
             />
             {productSearchCard}
           </div>
@@ -897,6 +1100,7 @@ export default function OrcamentoPage() {
           budgetCode={budgetCode} cart={cart}
           onSubmit={handleSubmit} isGenerating={isGenerating}
           repLocked={repLocked} clientLocked={clientLocked}
+          editMode={!!editId} editCode={editOrder?.code}
         />
       </BottomDrawer>
 
@@ -915,7 +1119,7 @@ export default function OrcamentoPage() {
         />
       )}
 
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {toast && <Toast message={toast.message} variant={toast.variant} onDone={() => setToast(null)} />}
       {activePhotoModal && <PhotoLightbox url={activePhotoModal} onClose={() => setActivePhotoModal(null)} />}
 
       {/* ── Overlay de Geração Premium ─────────────────────────────── */}

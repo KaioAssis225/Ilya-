@@ -86,10 +86,14 @@ def refresh_token_expiry() -> datetime:
     return (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS)).replace(tzinfo=None)
 
 
-# ── Sign Token (60-min, for contract signing) ─────────────────────────────────
+# ── Sign Token (10-min, for contract signing) ─────────────────────────────────
+# Janela curta reduz o risco de replay caso o link seja interceptado (V-S3).
+# A assinatura em si é single-use: sign_with_token rejeita (409) se já assinado.
+SIGN_TOKEN_TTL_MINUTES = 10
+
 
 def create_sign_token(order_id: str, client_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=60)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=SIGN_TOKEN_TTL_MINUTES)
     payload = {"order_id": order_id, "client_id": client_id, "exp": expire, "type": "sign"}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 

@@ -1,9 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 
+export interface ProductGroup {
+  id: string
+  name: string
+  ipi: number
+}
+
 export interface ProductType {
   id: string
   name: string
+  group_id: string | null
+  group: ProductGroup | null
 }
 
 const KEY = ['product-types']
@@ -17,7 +25,7 @@ export function useProductTypes() {
 
 export function useCreateProductType() {
   const qc = useQueryClient()
-  return useMutation<ProductType, { response?: { data?: { detail?: string } } }, { name: string }>({
+  return useMutation<ProductType, { response?: { data?: { detail?: string } } }, { name: string; group_id?: string | null }>({
     mutationFn: (payload) => api.post<ProductType>('/product-types', payload).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   })
@@ -25,8 +33,8 @@ export function useCreateProductType() {
 
 export function useUpdateProductType() {
   const qc = useQueryClient()
-  return useMutation<ProductType, { response?: { data?: { detail?: string } } }, { id: string; name: string }>({
-    mutationFn: ({ id, name }) => api.put<ProductType>(`/product-types/${id}`, { name }).then(r => r.data),
+  return useMutation<ProductType, { response?: { data?: { detail?: string } } }, { id: string; name: string; group_id?: string | null }>({
+    mutationFn: ({ id, name, group_id }) => api.put<ProductType>(`/product-types/${id}`, { name, group_id }).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   })
 }

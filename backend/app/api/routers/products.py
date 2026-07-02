@@ -6,21 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.api.deps import get_db_session, get_current_user, require_roles
-from app.models.product import Product
+from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
-from app.models.product import ProductSetItem
-from app.schemas.product import ProductCreate, ProductUpdate, ProductRead, ProductSetItemRead
+from app.schemas.product import (
+    ProductCreate, ProductUpdate, ProductRead,
+    ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
+)
 from app.core.config import settings
-
-_MAGIC: dict[bytes, str] = {
-    b"\xff\xd8\xff": "jpg",
-    b"\x89PNG\r\n\x1a\n": "png",
-    b"GIF87a": "gif",
-    b"GIF89a": "gif",
-    b"RIFF": "webp",
-}
-
 
 def _detect_mime(data: bytes) -> Optional[str]:
     if data[:3] == b"\xff\xd8\xff":
@@ -64,6 +57,12 @@ def _to_read(product: Product) -> ProductRead:
         )
         for si in product.set_items
     ]
+    data.components = []
+    for comp in product.components:
+        comp_read = ProductSetComponentRead.model_validate(comp)
+        for opt_read, opt_orm in zip(comp_read.optionals, comp.optionals):
+            opt_read.photo_url = _build_photo_url(opt_orm.photo_path)
+        data.components.append(comp_read)
     return data
 
 
@@ -82,6 +81,26 @@ async def _resolve_set_items(
         if p.product_code == parent_code:
             raise HTTPException(400, "Um conjunto não pode conter a si mesmo.")
         result.append(ProductSetItem(id=uuid.uuid4(), product_id=p.id, qty=item.qty))
+    return result
+
+
+async def _resolve_components(
+    db: AsyncSession, items: list[ProductSetComponentCreate]
+) -> list[ProductSetComponent]:
+    result = []
+    for item in items:
+        optionals = await _resolve_optionals(db, item.optional_ids)
+        comp = ProductSetComponent(
+            id=uuid.uuid4(),
+            description=item.description,
+            is_circular=item.is_circular,
+            altura=item.altura,
+            largura=item.largura,
+            profundidade=item.profundidade,
+            qty=item.qty,
+        )
+        comp.optionals = optionals
+        result.append(comp)
     return result
 
 
@@ -114,11 +133,13 @@ async def create_product(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Código '{payload.product_code}' já existe.")
-    product_data = payload.model_dump(exclude={"optional_ids", "set_items"})
+    product_data = payload.model_dump(exclude={"optional_ids", "set_items", "components"})
     product = Product(**product_data)
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
     if payload.is_set:
         product.set_items = await _resolve_set_items(db, payload.set_items, payload.product_code)
+    if payload.type == "Conjunto" and payload.components:
+        product.components = await _resolve_components(db, payload.components)
     db.add(product)
     await db.commit()
     await db.refresh(product)
@@ -152,6 +173,7 @@ async def update_product(
     data = payload.model_dump(exclude_unset=True)
     optional_ids = data.pop("optional_ids", None)
     set_items_in = data.pop("set_items", None)
+    components_in = data.pop("components", None)
     for field, value in data.items():
         setattr(product, field, value)
     if optional_ids is not None:
@@ -161,6 +183,11 @@ async def update_product(
             product.set_items = await _resolve_set_items(db, set_items_in, product.product_code)
         else:
             product.set_items = []
+    if components_in is not None:
+        if product.type == "Conjunto":
+            product.components = await _resolve_components(db, components_in)
+        else:
+            product.components = []
     await db.commit()
     await db.refresh(product)
     return _to_read(product)

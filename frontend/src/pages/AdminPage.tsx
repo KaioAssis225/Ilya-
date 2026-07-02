@@ -8,12 +8,16 @@ const ROLE_LABEL: Record<string, string> = {
   admin: 'Administrador',
   vendedor: 'Vendedor',
   representante: 'Representante',
+  cadastros: 'Cadastros',
+  produtos: 'Produtos',
 }
 
 const ROLE_COLOR: Record<string, string> = {
   admin: '#8b6914',
   vendedor: '#507a9b',
   representante: '#648261',
+  cadastros: '#7a5a9b',
+  produtos: '#9b5a50',
 }
 
 type ModalMode = 'create' | 'edit' | 'password' | 'delete'
@@ -206,6 +210,8 @@ export default function AdminPage() {
                   <select className="input" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as UserCreate['role'] })}>
                     <option value="vendedor">Vendedor</option>
                     <option value="representante">Representante</option>
+                    <option value="cadastros">Cadastros</option>
+                    <option value="produtos">Produtos</option>
                     <option value="admin">Administrador</option>
                   </select>
                 </label>
@@ -248,6 +254,8 @@ export default function AdminPage() {
                   <select className="input" value={editForm.role ?? 'vendedor'} onChange={e => setEditForm({ ...editForm, role: e.target.value as UserUpdate['role'] })}>
                     <option value="vendedor">Vendedor</option>
                     <option value="representante">Representante</option>
+                    <option value="cadastros">Cadastros</option>
+                    <option value="produtos">Produtos</option>
                     <option value="admin">Administrador</option>
                   </select>
                 </label>

@@ -39,6 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, accessToken: null })
   const [isLoading, setIsLoading] = useState(true)
   const refreshingRef = useRef<Promise<string | null> | null>(null)
+  // Mantém o token atual acessível de forma síncrona aos interceptores Axios,
+  // evitando stale closure em bindAuthHandlers (V-F1).
+  const accessTokenRef = useRef<string | null>(null)
 
   const setSession = useCallback((accessToken: string, user: AuthUser) => {
     setState({ user, accessToken })
@@ -61,8 +64,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(access_token, me.data)
         return access_token
       })
-      .catch(() => {
-        clearSession()
+      .catch((err) => {
+        // Só encerra a sessão em falha de autenticação real (401). Erros de rede /
+        // 5xx são transitórios e não devem deslogar o usuário (V-M3).
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          clearSession()
+        } else {
+          console.error('Falha ao renovar sessão (sessão preservada):', err)
+        }
         return null
       })
       .finally(() => {
@@ -72,13 +81,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return refreshingRef.current
   }, [setSession, clearSession])
 
-  // Conecta interceptores Axios
+  // Mantém o ref sincronizado com o token corrente.
+  useEffect(() => {
+    accessTokenRef.current = state.accessToken
+  }, [state.accessToken])
+
+  // Conecta interceptores Axios uma única vez — o getter lê sempre o token atual via ref.
   useEffect(() => {
     bindAuthHandlers(
-      () => state.accessToken,
+      () => accessTokenRef.current,
       refreshSession
     )
-  }, [state.accessToken, refreshSession])
+  }, [refreshSession])
 
   // Tenta restaurar sessão ao montar via cookie HttpOnly
   useEffect(() => {
@@ -88,10 +102,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshMe = useCallback(async () => {
     const token = state.accessToken
     if (!token) return
-    const me = await axios.get<AuthUser>('/api/v1/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    setState((s) => ({ ...s, user: me.data }))
+    try {
+      const me = await axios.get<AuthUser>('/api/v1/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      setState((s) => ({ ...s, user: me.data }))
+    } catch (err) {
+      // Não propaga: callers (ex.: troca de senha) não devem exibir erro falso (V-M6).
+      console.error('Falha ao atualizar dados do usuário:', err)
+    }
   }, [state.accessToken])
 
   const login = useCallback(

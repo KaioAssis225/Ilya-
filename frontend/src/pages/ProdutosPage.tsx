@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { X, ShoppingCart, Check, ImageIcon } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
+import { useProductGroups } from '../hooks/useProductGroups'
 import type { Product } from '../types'
 
 const CAT_LABEL: Record<string, string> = {
@@ -110,12 +111,58 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
               <h3 className="text-lg font-semibold text-[#2c2420]">{product.description}</h3>
             </div>
 
-            <div className="bg-[#f8f6f2] border border-[#e8e0d6] rounded-xl p-3">
-              <p className="text-xs text-[#9d8d81] font-semibold mb-1">Dimensões</p>
-              <p className="text-sm text-[#4a3f38]">{dimLabel(product)}</p>
-            </div>
+            {product.type !== 'Conjunto' && (
+              <div className="bg-[#f8f6f2] border border-[#e8e0d6] rounded-xl p-3">
+                <p className="text-xs text-[#9d8d81] font-semibold mb-1">Dimensões</p>
+                <p className="text-sm text-[#4a3f38]">{dimLabel(product)}</p>
+              </div>
+            )}
 
-            {product.is_set ? (
+            {product.observacao && (
+              <div className="bg-[#fdf6ec] border border-[#e8d8b8] rounded-xl p-3">
+                <p className="text-xs text-[#8b6914] font-semibold mb-1 uppercase tracking-wide">Observação</p>
+                <p className="text-sm text-[#5a4a2c] italic leading-snug">{product.observacao}</p>
+              </div>
+            )}
+
+            {product.type === 'Conjunto' ? (
+              <div>
+                <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Componentes deste Conjunto</p>
+                <div className="space-y-2">
+                  {product.components.map((comp, idx) => {
+                    const dimStr = comp.is_circular
+                      ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
+                      : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
+                    const catGroups = Array.from(new Set(comp.optionals.map(o => o.category)))
+                    return (
+                      <div key={idx} className="p-3 rounded-xl border border-[#e8e0d6] bg-[#f8f6f2]">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-[#2c2420]">{comp.description}</p>
+                          <span className="text-xs font-semibold text-[#4a3f38] whitespace-nowrap flex-shrink-0">×{comp.qty}</span>
+                        </div>
+                        <p className="text-[10px] text-[#9d8d81] mt-0.5">{dimStr}</p>
+                        {catGroups.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {catGroups.map(cat => {
+                              const opt = comp.optionals.find(o => o.category === cat)!
+                              return (
+                                <div key={cat} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#e8e0d6] bg-white">
+                                  {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3 h-3 rounded object-cover" />}
+                                  <span className="text-[9px] text-[#4a3f38]">{CAT_LABEL[cat] ?? cat}: {opt.color_name}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {product.components.length === 0 && (
+                    <p className="text-xs text-[#9d8d81] italic">Nenhum componente registrado.</p>
+                  )}
+                </div>
+              </div>
+            ) : product.is_set ? (
               <div>
                 <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Componentes deste Conjunto</p>
                 <div className="space-y-2">
@@ -204,47 +251,131 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
 export default function ProdutosPage() {
   const { data: products = [], isLoading } = useProducts()
   const { data: productTypes = [] } = useProductTypes()
-  const [activeTipo, setActiveTipo] = useState('Todos')
+  const { data: productGroups = [] } = useProductGroups()
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('')
+  const [selectedTypeName, setSelectedTypeName] = useState<string>('')
   const [selected, setSelected] = useState<Product | null>(null)
 
-  const tipos = ['Todos', ...productTypes.map(t => t.name)]
+  function handleGroupChange(groupId: string) {
+    setSelectedGroupId(groupId)
+    setSelectedTypeName('')
+  }
 
-  const filtered = activeTipo === 'Todos'
-    ? products
-    : products.filter(p => p.type === activeTipo)
+  // Types shown in subgroup dropdown cascade from selected group
+  const availableTypes = selectedGroupId
+    ? productTypes.filter(t => t.group_id === selectedGroupId)
+    : productTypes
+
+  // Build a fast lookup: type name → group_id
+  const typeGroupMap = new Map(productTypes.map(t => [t.name, t.group_id ?? '']))
+
+  const filtered = products.filter(p => {
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase()
+      if (!p.product_code.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false
+    }
+    if (selectedGroupId) {
+      if (typeGroupMap.get(p.type) !== selectedGroupId) return false
+    }
+    if (selectedTypeName) {
+      if (p.type !== selectedTypeName) return false
+    }
+    return true
+  })
+
+  const hasFilters = searchTerm || selectedGroupId || selectedTypeName
+
+  function clearFilters() {
+    setSearchTerm('')
+    setSelectedGroupId('')
+    setSelectedTypeName('')
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f6f2] pb-24 md:pb-8">
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
-        <div className="mb-5 md:mb-7">
+        <div className="mb-5 md:mb-6">
           <h2 className="text-xl md:text-2xl font-semibold text-[#2c2420]" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
             Catálogo de Produtos
           </h2>
           <p className="text-sm text-[#9d8d81] mt-1">Selecione um produto para adicionar ao orçamento</p>
         </div>
 
-        {/* Chips de filtro — scroll horizontal no mobile */}
-        <div className="flex gap-2 mb-5 md:mb-7 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
-          {tipos.map(tipo => (
+        {/* ── Barra de Filtros ─────────────────────────────────────────────── */}
+        <div className="bg-white border border-[#e8e0d6] rounded-xl px-3 py-3 mb-5 md:mb-6 shadow-sm space-y-2 md:space-y-0 md:flex md:items-center md:gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
+            <input
+              type="text"
+              placeholder="Buscar por código ou descrição..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-sm bg-[#f8f6f2] border border-[#e8e0d6] rounded-lg text-[#2c2420] placeholder-[#c8bdb5] focus:outline-none focus:ring-1 focus:ring-[#8b6914] transition-all"
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9d8d81] hover:text-[#2c2420]">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Group dropdown */}
+          <select
+            value={selectedGroupId}
+            onChange={(e) => handleGroupChange(e.target.value)}
+            className="w-full md:w-44 py-2 px-3 text-sm bg-[#f8f6f2] border border-[#e8e0d6] rounded-lg text-[#4a3f38] focus:outline-none focus:ring-1 focus:ring-[#8b6914] transition-all"
+          >
+            <option value="">Todos os Grupos</option>
+            {productGroups.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+
+          {/* Subgroup dropdown — cascades from group */}
+          <select
+            value={selectedTypeName}
+            onChange={(e) => setSelectedTypeName(e.target.value)}
+            className="w-full md:w-48 py-2 px-3 text-sm bg-[#f8f6f2] border border-[#e8e0d6] rounded-lg text-[#4a3f38] focus:outline-none focus:ring-1 focus:ring-[#8b6914] transition-all disabled:opacity-50"
+            disabled={availableTypes.length === 0}
+          >
+            <option value="">Todos os Subgrupos</option>
+            {availableTypes.map(t => (
+              <option key={t.id} value={t.name}>{t.name}</option>
+            ))}
+          </select>
+
+          {hasFilters && (
             <button
-              key={tipo}
-              onClick={() => setActiveTipo(tipo)}
+              onClick={clearFilters}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#8b6914] border border-[#c8a84b] rounded-lg hover:bg-[#fdf9f0] transition-colors"
               style={{ touchAction: 'manipulation' }}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-full text-sm font-medium border transition-all active:scale-[0.97] active:opacity-80 ${
-                activeTipo === tipo
-                  ? 'bg-gold text-white border-gold'
-                  : 'bg-white text-[#4a3f38] border-[#e8e0d6] hover:border-[#c8bdb5]'
-              }`}
             >
-              {tipo}
+              <X className="w-3 h-3" /> Limpar
             </button>
-          ))}
+          )}
         </div>
+
+        {/* Result count */}
+        {hasFilters && !isLoading && (
+          <p className="text-xs text-[#9d8d81] mb-3">
+            {filtered.length === 0
+              ? 'Nenhum produto encontrado.'
+              : `${filtered.length} produto${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
+          </p>
+        )}
 
         {isLoading ? (
           <div className="text-center text-[#9d8d81] py-20">Carregando catálogo…</div>
         ) : filtered.length === 0 ? (
-          <div className="text-center text-[#9d8d81] py-20">Nenhum produto encontrado.</div>
+          <div className="flex flex-col items-center py-20 gap-3">
+            <p className="text-[#9d8d81]">Nenhum produto encontrado.</p>
+            {hasFilters && (
+              <button onClick={clearFilters} className="text-xs text-[#8b6914] underline">Limpar filtros</button>
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
             {filtered.map(product => (
@@ -263,6 +394,9 @@ export default function ProdutosPage() {
                 <div className="p-3 md:p-3.5">
                   <span className="text-[10px] font-mono font-semibold text-[#8b6914]">{product.product_code}</span>
                   <p className="text-xs md:text-sm font-medium text-[#2c2420] leading-snug mt-0.5 line-clamp-2">{product.description}</p>
+                  {selectedGroupId === '' && product.type && (
+                    <span className="text-[9px] text-[#9d8d81] mt-1 block">{product.type}</span>
+                  )}
                 </div>
               </button>
             ))}

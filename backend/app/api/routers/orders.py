@@ -9,12 +9,14 @@ from sqlalchemy import select, text
 from app.api.deps import get_db_session, get_current_user, require_roles
 from app.core.limiter import limiter
 from app.models.order import Order, OrderItem
+from app.models.order_history import OrderHistory
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.product import Product
+from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
-from app.schemas.order import OrderCreate, OrderRead
+from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.core.security import create_sign_token, decode_sign_token
 
 logger = logging.getLogger("ilya.orders")
@@ -29,6 +31,23 @@ async def _next_code(db: AsyncSession) -> tuple[str, str]:
     # nextval é atômico no PostgreSQL — elimina race condition de COUNT(*) (V-01)
     n = (await db.execute(text("SELECT nextval('order_seq')"))).scalar()
     return f"PED-{n:04d}", f"ORC-{n:04d}"
+
+
+async def _load_products_and_types(
+    db: AsyncSession, codes: list[str]
+) -> tuple[dict[str, Product], dict[str, ProductType]]:
+    """Carrega produtos e seus tipos em 2 queries (evita N+1 por item — V-B1)."""
+    products = (await db.execute(
+        select(Product).where(Product.product_code.in_(codes))
+    )).scalars().all()
+    product_map = {p.product_code: p for p in products}
+
+    type_names = {p.type for p in products}
+    types = (await db.execute(
+        select(ProductType).where(ProductType.name.in_(type_names))
+    )).scalars().all() if type_names else []
+    type_map = {t.name: t for t in types}
+    return product_map, type_map
 
 
 async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
@@ -77,17 +96,27 @@ async def create_order(
         if not rep:
             raise HTTPException(status_code=404, detail="Representante não encontrado.")
 
+    # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
+    product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
+
     total = 0.0
+    total_ipi = 0.0
     order_items: list[OrderItem] = []
     for item_in in payload.items:
-        product = (await db.execute(
-            select(Product).where(Product.product_code == item_in.product_code)
-        )).scalar_one_or_none()
+        product = product_map.get(item_in.product_code)
         if not product:
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
         unit_price = float(product.price)
-        subtotal = float(item_in.qty) * unit_price
+        discount = float(item_in.discount or 0)
+        effective_price = unit_price * (1 - discount / 100)
+        subtotal = float(item_in.qty) * effective_price
         total += subtotal
+
+        product_type = type_map.get(product.type)
+        ipi_rate = float(product_type.group.ipi) if product_type and product_type.group else 0.0
+        ipi_value = round(subtotal * ipi_rate / 100, 2)
+        total_ipi += ipi_value
+
         order_items.append(OrderItem(
             id=uuid.uuid4(),
             product_code=product.product_code,
@@ -103,6 +132,10 @@ async def create_order(
             opt_corda=item_in.opt_corda,
             qty=item_in.qty,
             unit_price=unit_price,
+            discount=discount,
+            ipi_rate=ipi_rate,
+            ipi_value=ipi_value,
+            observacao=product.observacao,
         ))
 
     code, orc_id = await _next_code(db)
@@ -113,17 +146,27 @@ async def create_order(
         client_id=payload.client_id,
         rep_id=payload.rep_id,
         total_value=round(total, 2),
+        total_ipi=round(total_ipi, 2),
+        total_with_ipi=round(total + total_ipi, 2),
         notes=payload.notes,
         items=order_items,
     )
-    db.add(order)
-    await db.commit()
+    try:
+        db.add(order)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.error(
+            "Falha ao criar pedido: code=%s client_id=%s user_id=%s",
+            code, payload.client_id, current_user.id, exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Falha ao criar o pedido. Tente novamente.")
     await db.refresh(order)
     logger.info("Pedido criado: code=%s orc=%s total=%.2f user_id=%s", code, orc_id, order.total_value, current_user.id)
     return order
 
 
-@router.get("", response_model=List[OrderRead])
+@router.get("", response_model=List[OrderListRead])
 async def list_orders(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=500),
@@ -145,6 +188,195 @@ async def list_orders(
             select(Order).order_by(Order.created_at.desc()).offset(skip).limit(limit)
         )
     return result.scalars().all()
+
+
+@router.get("/history", response_model=List[OrderHistoryRead])
+async def list_global_history(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, le=500),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in {UserRole.admin, UserRole.vendedor}:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    result = await db.execute(
+        select(OrderHistory).order_by(OrderHistory.created_at.desc()).offset(skip).limit(limit)
+    )
+    return result.scalars().all()
+
+
+@router.put("/{order_id}", response_model=OrderRead)
+async def update_order(
+    order_id: uuid.UUID,
+    payload: OrderUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    _allowed = {UserRole.admin, UserRole.vendedor, UserRole.representante}
+    if current_user.role not in _allowed:
+        raise HTTPException(status_code=403, detail="Operação não permitida.")
+
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if order.is_finalized:
+        raise HTTPException(status_code=409, detail="Pedido já finalizado e não pode ser editado.")
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
+
+    changes: list[str] = []
+
+    if payload.notes is not None and payload.notes != order.notes:
+        changes.append(f"observações alteradas")
+        order.notes = payload.notes
+
+    if payload.rep_id is not None and payload.rep_id != order.rep_id:
+        order.rep_id = payload.rep_id
+        changes.append("representante alterado")
+
+    if payload.items is not None:
+        old_codes = {i.product_code for i in order.items}
+        new_codes = {i.product_code for i in payload.items}
+        removed = old_codes - new_codes
+        added = new_codes - old_codes
+        if removed:
+            changes.append(f"removidos: {', '.join(removed)}")
+        if added:
+            changes.append(f"adicionados: {', '.join(added)}")
+
+        # Valida e calcula TODOS os itens novos ANTES de deletar os antigos (V-B2).
+        # Batch-fetch de produtos/tipos elimina N+1 (V-B1).
+        product_map, type_map = await _load_products_and_types(
+            db, [i.product_code for i in payload.items]
+        )
+
+        total = 0.0
+        total_ipi = 0.0
+        new_items: list[OrderItem] = []
+        for item_in in payload.items:
+            product = product_map.get(item_in.product_code)
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
+            unit_price = float(product.price)
+            discount = float(item_in.discount or 0)
+            effective_price = unit_price * (1 - discount / 100)
+            subtotal = float(item_in.qty) * effective_price
+            total += subtotal
+
+            product_type = type_map.get(product.type)
+            ipi_rate = float(product_type.group.ipi) if product_type and product_type.group else 0.0
+            ipi_value = round(subtotal * ipi_rate / 100, 2)
+            total_ipi += ipi_value
+
+            new_items.append(OrderItem(
+                id=uuid.uuid4(),
+                order_id=order.id,
+                product_code=product.product_code,
+                description=product.description,
+                is_circular=product.is_circular,
+                altura=product.altura,
+                largura=product.largura,
+                profundidade=product.profundidade,
+                opt_aluminio=item_in.opt_aluminio,
+                opt_madeira=item_in.opt_madeira,
+                opt_tecido=item_in.opt_tecido,
+                opt_couro=item_in.opt_couro,
+                opt_corda=item_in.opt_corda,
+                qty=item_in.qty,
+                unit_price=unit_price,
+                discount=discount,
+                ipi_rate=ipi_rate,
+                ipi_value=ipi_value,
+                observacao=product.observacao,
+            ))
+
+        # Tudo validado: agora sim remove os antigos e insere os novos.
+        for item in order.items:
+            await db.delete(item)
+        await db.flush()
+
+        old_total = float(order.total_value)
+        order.total_value = round(total, 2)
+        order.total_ipi = round(total_ipi, 2)
+        order.total_with_ipi = round(total + total_ipi, 2)
+        if abs(old_total - round(total, 2)) > 0.01:
+            changes.append(f"total: R$ {old_total:.2f} → R$ {round(total, 2):.2f}")
+        for item in new_items:
+            db.add(item)
+
+    detail = "; ".join(changes) if changes else "sem alterações"
+    db.add(OrderHistory(
+        id=uuid.uuid4(),
+        order_id=order.id,
+        user_id=current_user.id,
+        action="edited",
+        details=detail,
+    ))
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.error("Falha ao editar pedido: id=%s user=%s", order_id, current_user.id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Falha ao salvar as alterações do pedido. Tente novamente.")
+    await db.refresh(order)
+    logger.info("Pedido editado: id=%s user=%s changes=%s", order_id, current_user.id, detail)
+    return order
+
+
+class FinalizePayload(BaseModel):
+    external_code: str | None = None
+
+
+@router.post("/{order_id}/finalize", response_model=OrderRead)
+async def finalize_order(
+    order_id: uuid.UUID,
+    payload: FinalizePayload,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in {UserRole.admin, UserRole.vendedor}:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if order.is_finalized:
+        raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
+    order.is_finalized = True
+    if payload.external_code:
+        order.external_code = payload.external_code
+    db.add(OrderHistory(
+        id=uuid.uuid4(),
+        order_id=order.id,
+        user_id=current_user.id,
+        action="finalized",
+        details=f"código externo: {payload.external_code}" if payload.external_code else None,
+    ))
+    await db.commit()
+    await db.refresh(order)
+    logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
+    return order
+
+
+@router.get("/{order_id}/history", response_model=List[OrderHistoryRead])
+async def get_order_history(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    if current_user.role == UserRole.vendedor and current_user.linked_id and order.client_id != current_user.linked_id:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    hist = await db.execute(
+        select(OrderHistory).where(OrderHistory.order_id == order_id).order_by(OrderHistory.created_at.asc())
+    )
+    return hist.scalars().all()
 
 
 @router.get("/{id_or_code}", response_model=OrderRead)
@@ -214,7 +446,9 @@ async def generate_sign_token(
 
 
 @router.get("/verify-sign-token")
+@limiter.limit("20/minute")
 async def verify_sign_token(
+    request: Request,
     token: str = Query(...),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -344,7 +578,9 @@ class SignWithTokenPayload(BaseModel):
 
 
 @router.post("/sign-with-token")
+@limiter.limit("10/minute")
 async def sign_with_token(
+    request: Request,
     payload: SignWithTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):

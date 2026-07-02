@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, optional_categories_router, users_router, notifications_router, utils_router
+from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, optional_categories_router, users_router, notifications_router, utils_router
 from app.api.routers.auth import router as auth_router
 
 # ── Logging estruturado ───────────────────────────────────────────────────────
@@ -85,6 +85,7 @@ app.include_router(reps_router)
 app.include_router(orders_router)
 app.include_router(optionals_router)
 app.include_router(product_types_router)
+app.include_router(product_groups_router)
 app.include_router(optional_categories_router)
 app.include_router(notifications_router)
 app.include_router(utils_router)
