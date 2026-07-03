@@ -40,7 +40,7 @@ def _with_has_user(client: Client, status_map: dict[uuid.UUID, tuple[bool, bool]
 @router.get("", response_model=List[ClientRead])
 async def list_clients(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=1000, le=5000),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):

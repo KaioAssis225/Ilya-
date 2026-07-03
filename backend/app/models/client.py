@@ -16,4 +16,5 @@ class Client(Base, TimestampMixin):
     address: Mapped[str] = mapped_column(String(255), nullable=False)
     city: Mapped[str] = mapped_column(String(255), nullable=False)
     state: Mapped[str] = mapped_column(String(2), nullable=False)
+    price_profile: Mapped[str] = mapped_column(String(20), nullable=False, default="lojista")
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id", ondelete="SET NULL"), nullable=True)

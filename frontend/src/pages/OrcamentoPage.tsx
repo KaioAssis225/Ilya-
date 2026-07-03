@@ -324,10 +324,16 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
+// Preço efetivo conforme o perfil de faturamento do cliente (Bloco 62).
+// Sem cliente selecionado, usa o preço de lojista por padrão.
+function effectivePrice(product: Product, profile: string | undefined): number {
+  return profile === 'corporativo' ? product.price_corporativo : product.price_lojista
+}
+
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange
+  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -335,8 +341,9 @@ function MobileCartCard({
   onPhotoClick: (url: string) => void
   allOptionals: OptionalColor[]
   onOptChange: (cat: string, value: string | null) => void
+  priceProfile: string
 }) {
-  const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
+  const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
 
   return (
@@ -399,7 +406,7 @@ function MobileCartCard({
         {/* Pricing */}
         <div className="text-right">
           {hasDiscount && (
-            <p className="text-[10px] text-[#c8bdb5] line-through"><SafePrice value={item._product.price * item.qty} /></p>
+            <p className="text-[10px] text-[#c8bdb5] line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} /></p>
           )}
           {hasDiscount && (
             <span className="text-[10px] bg-[#8b6914]/10 text-[#8b6914] font-semibold px-1.5 py-0.5 rounded-full">
@@ -578,6 +585,8 @@ export default function OrcamentoPage() {
   const clientLocked = isClientUser
 
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62)
+  const priceProfile = selectedClient?.price_profile ?? 'lojista'
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -737,13 +746,13 @@ export default function OrcamentoPage() {
   const { data: productTypes = [] } = useProductTypes()
 
   const total = cart.reduce((sum, i) => {
-    return sum + i.qty * i._product.price * (1 - (i.discount || 0) / 100)
+    return sum + i.qty * effectivePrice(i._product, priceProfile) * (1 - (i.discount || 0) / 100)
   }, 0)
 
   const ipiTotal = cart.reduce((sum, i) => {
     const pt = productTypes.find(t => t.name === i._product.type)
     const rate = Number(pt?.group?.ipi ?? 0)
-    const subtotal = i.qty * i._product.price * (1 - (i.discount || 0) / 100)
+    const subtotal = i.qty * effectivePrice(i._product, priceProfile) * (1 - (i.discount || 0) / 100)
     return sum + subtotal * rate / 100
   }, 0)
 
@@ -937,6 +946,7 @@ export default function OrcamentoPage() {
                       onPhotoClick={setActivePhotoModal}
                       allOptionals={allOptionals}
                       onOptChange={(cat, val) => updateOptCategory(item.product_code, cat, val)}
+                      priceProfile={priceProfile}
                     />
                   ))}
                 </div>
@@ -958,7 +968,7 @@ export default function OrcamentoPage() {
                     {filteredCart.map((item) => {
                       const pt = productTypes.find(t => t.name === item._product.type)
                       const ipiRate = Number(pt?.group?.ipi ?? 0)
-                      const subtotal = item.qty * item._product.price * (1 - (item.discount || 0) / 100)
+                      const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                       const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
                       return (
                         <tr key={item.product_code} className="hover:bg-[#fcfbf9] align-top transition-colors">
@@ -993,7 +1003,7 @@ export default function OrcamentoPage() {
                             />
                           </td>
                           <td className="px-4 py-3.5 text-[#4a3f38] text-xs font-semibold whitespace-nowrap align-middle">
-                            <SafePrice value={item._product.price} />
+                            <SafePrice value={effectivePrice(item._product, priceProfile)} />
                           </td>
                           <td className="px-4 py-3.5 align-middle">
                             <input
@@ -1008,7 +1018,7 @@ export default function OrcamentoPage() {
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-[#9d8d81] mt-0.5 text-center whitespace-nowrap">
-                                <SafePrice value={item._product.price * item.discount / 100} prefix="− R$ " />
+                                <SafePrice value={effectivePrice(item._product, priceProfile) * item.discount / 100} prefix="− R$ " />
                               </p>
                             )}
                           </td>

@@ -47,7 +47,7 @@ def _to_read(opt: OptionalColor) -> OptionalColorRead:
 async def list_optionals(
     category: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=500, le=500),
+    limit: int = Query(default=1000, le=5000),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ANY,
 ):

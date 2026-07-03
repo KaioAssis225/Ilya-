@@ -52,6 +52,8 @@ class ProductBase(BaseModel):
     largura: Decimal = Field(..., ge=0, decimal_places=2)
     profundidade: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
     price: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
+    price_lojista: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
+    price_corporativo: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
     observacao: Optional[str] = None
     all_optionals_categories: Optional[str] = None
 
@@ -72,6 +74,8 @@ class ProductUpdate(BaseModel):
     largura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     profundidade: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     price: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    price_lojista: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    price_corporativo: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     observacao: Optional[str] = None
     all_optionals_categories: Optional[str] = None
     optional_ids: Optional[List[uuid.UUID]] = None

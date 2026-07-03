@@ -29,7 +29,7 @@ def _with_has_user(rep: Representative, linked: set[uuid.UUID]) -> Representativ
 @router.get("", response_model=List[RepresentativeRead])
 async def list_representatives(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=1000, le=5000),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):

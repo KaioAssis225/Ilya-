@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
@@ -15,7 +16,7 @@ import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
-type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos'
+type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
 type SortDir = 'asc' | 'desc'
 
 const ESTADOS = [
@@ -67,6 +68,7 @@ const TAB_PALETTE = {
   representantes:  { color: '#507a9b', label: 'Azul Mineral' },
   opcionais:       { color: '#c47e4a', label: 'Âmbar' },
   tipos:           { color: '#7a5c9b', label: 'Violeta' },
+  importacao:      { color: '#3f6f6f', label: 'Petróleo' },
 } as const
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -246,7 +248,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', type: 'Outro', is_circular: false,
   is_set: false, set_items: [], components: [],
-  altura: 0, largura: 0, profundidade: 0, price: 0, observacao: null,
+  altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, observacao: null,
   all_optionals_categories: null, optional_ids: [],
 }
 
@@ -384,6 +386,7 @@ function ProductsTab({ color }: { color: string }) {
 
     const payload = {
       ...form,
+      price: form.price_lojista ?? 0, // mantém a coluna legada coerente com o preço lojista
       optional_ids: filteredOptionalIds,
       all_optionals_categories: isConjunto ? null : (allOptCats.size > 0 ? Array.from(allOptCats).join(',') : null),
       set_items: isConjunto ? [] : (form.set_items ?? []),
@@ -468,7 +471,7 @@ function ProductsTab({ color }: { color: string }) {
                   <Th label="Código" col="product_code" {...thProps} />
                   <Th label="Descrição" col="description" {...thProps} />
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Dimensões</th>
-                  <Th label="Preço Base" col="price" {...thProps} />
+                  <Th label="Preço" col="price_lojista" {...thProps} />
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Opcionais</th>
                   <th className="px-4 py-3 text-xs font-semibold text-[#9d8d81] uppercase">Foto</th>
                   <th className="px-4 py-3"></th>
@@ -484,8 +487,9 @@ function ProductsTab({ color }: { color: string }) {
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
-                    <td className="px-4 py-3 text-[#2c2420] text-sm font-medium whitespace-nowrap">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}
+                    <td className="px-4 py-3 text-sm whitespace-nowrap">
+                      <div className="text-[#2c2420] font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</div>
+                      <div className="text-[10px] text-[#6b5d52]">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</div>
                     </td>
                     <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
                       {p.optionals.length > 0
@@ -557,8 +561,12 @@ function ProductsTab({ color }: { color: string }) {
                 <input className="input" value={form.product_code} onChange={(e) => setForm({ ...form, product_code: e.target.value })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-[#9d8d81]">Preço Base (R$) *</span>
-                <input className="input" type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} required />
+                <span className="text-xs text-[#9d8d81]">Preço Lojista (R$) *</span>
+                <input className="input" type="number" min="0" step="0.01" value={form.price_lojista ?? 0} onChange={(e) => setForm({ ...form, price_lojista: Number(e.target.value) })} required />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-[#9d8d81]">Preço Corporativo (R$) *</span>
+                <input className="input" type="number" min="0" step="0.01" value={form.price_corporativo ?? 0} onChange={(e) => setForm({ ...form, price_corporativo: Number(e.target.value) })} required />
               </label>
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-[#9d8d81]">Descrição *</span>
@@ -974,7 +982,7 @@ function ProductsTab({ color }: { color: string }) {
 
 // ── CLIENTES / REPRESENTANTES ─────────────────────────────────────────────────
 
-const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '' }
+const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '', price_profile: 'lojista' }
 
 function PeopleTab<T extends Client | Representative>({
   label, entityType, items, isLoading, onCreate, onUpdate, onDelete, isPending, color,
@@ -1004,7 +1012,7 @@ function PeopleTab<T extends Client | Representative>({
 
   function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
-    setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state })
+    setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista' })
     setEditing(item); setFormError(null); setShowForm(true)
   }
   function openView(item: T) {
@@ -1221,6 +1229,24 @@ function PeopleTab<T extends Client | Representative>({
         <Modal title={editing ? `Editar ${label.slice(0, -1)}` : `Novo ${label.slice(0, -1)}`} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <AddressFields form={form} setForm={setForm} />
+            {entityType === 'client' && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-[#9d8d81]">Perfil de faturamento *</span>
+                <div className="flex gap-2">
+                  {(['lojista', 'corporativo'] as const).map((profile) => (
+                    <button
+                      key={profile}
+                      type="button"
+                      onClick={() => setForm({ ...form, price_profile: profile })}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${(form.price_profile ?? 'lojista') === profile ? 'text-white' : 'border-[#e8e0d6] text-[#6b5d52] hover:border-[#c8bdb5]'}`}
+                      style={(form.price_profile ?? 'lojista') === profile ? { backgroundColor: color, borderColor: color } : undefined}
+                    >
+                      {profile}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {formError && (
               <div className="flex items-start gap-2 bg-[#fef3f2] border border-red-200 rounded-lg px-3 py-2.5">
                 <X className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
@@ -1748,12 +1774,126 @@ function GroupsTab({ color }: { color: string }) {
 
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 
+// ── IMPORTAÇÃO CSV (Bloco 63) ──────────────────────────────────────────────────
+
+type ImportResult = { table: string; processed: number; created: number; updated: number; errors: { row: number; message: string }[]; committed: boolean }
+
+const SUPPORT_TABLES: { value: string; label: string; columns: string }[] = [
+  { value: 'product-groups',  label: 'Grupos de Produto',  columns: 'name, ipi' },
+  { value: 'product-types',   label: 'Tipos de Produto',   columns: 'name, group' },
+  { value: 'optionals',       label: 'Opcionais',          columns: 'category, color_name' },
+  { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email, cep, numero, address, city, state' },
+  { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email, cep, numero, address, city, state, price_profile, rep_email' },
+]
+
+function ImportUploader({ endpoint, label, hint, columns, color }: {
+  endpoint: string; label: string; hint?: string; columns: string; color: string
+}) {
+  const queryClient = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<ImportResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleUpload() {
+    if (!file) return
+    setLoading(true); setError(null); setResult(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const { data } = await api.post<ImportResult>(`/import/${endpoint}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setResult(data)
+      queryClient.invalidateQueries() // atualiza contadores e tabelas dos cadastros
+    } catch (e) {
+      setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Falha ao processar o arquivo. Verifique o formato do CSV.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[#e8e0d6] bg-[#fcfbfa] p-4">
+      <p className="text-sm font-semibold text-[#2c2420]">{label}</p>
+      {hint && <p className="text-xs text-[#6b5d52] mt-0.5">{hint}</p>}
+      <p className="text-[11px] text-[#9d8d81] mt-1">Colunas: <span className="font-mono text-[#6b5d52]">{columns}</span></p>
+      <div className="flex items-center gap-2 mt-3 flex-wrap">
+        <input
+          type="file" accept=".csv,text/csv"
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); setError(null) }}
+          className="text-xs text-[#4a3f38] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#f0ece6] file:text-[#4a3f38] file:cursor-pointer"
+        />
+        <button
+          onClick={handleUpload} disabled={!file || loading}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50"
+          style={{ backgroundColor: color }}
+        >
+          <Upload className="w-3.5 h-3.5" /> {loading ? 'Enviando...' : 'Importar'}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
+      {result && (
+        <div className={`mt-3 rounded-lg border p-3 ${result.committed ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40'}`}>
+          {result.committed ? (
+            <p className="text-xs text-[#2c2420]">
+              ✓ <span className="font-semibold">{result.processed}</span> linhas processadas ·{' '}
+              <span className="text-green-700 font-semibold">{result.created}</span> criadas ·{' '}
+              <span className="text-[#8b6914] font-semibold">{result.updated}</span> atualizadas
+            </p>
+          ) : (
+            <p className="text-xs text-red-700 font-semibold">
+              Arquivo rejeitado — nada foi importado. Corrija {result.errors.length} {result.errors.length === 1 ? 'erro' : 'erros'} em {result.processed} linhas e reenvie.
+            </p>
+          )}
+          {result.errors.length > 0 && (
+            <ul className="mt-2 max-h-40 overflow-y-auto space-y-1">
+              {result.errors.map((err, i) => (
+                <li key={i} className="text-[11px] text-red-600">Linha {err.row}: {err.message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ImportTab({ color }: { color: string }) {
+  const [supportTable, setSupportTable] = useState('product-groups')
+  const current = SUPPORT_TABLES.find((t) => t.value === supportTable)!
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold text-[#2c2420]">Importação CSV</h2>
+        <p className="text-sm text-[#6b5d52] mt-0.5">Importe cadastros em massa via arquivos .csv (UTF-8; separador vírgula ou ponto-e-vírgula). Reimportações atualizam registros existentes pela chave (nome, SKU ou e-mail).</p>
+      </div>
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> Cadastros de apoio</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[#9d8d81]">Tabela:</span>
+          <select value={supportTable} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
+            {SUPPORT_TABLES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        <ImportUploader key={supportTable} endpoint={supportTable} label={current.label} columns={current.columns} color={color} />
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> Catálogo de produtos — 2 etapas</h3>
+        <ImportUploader endpoint="products" label="Etapa 1: Subir Tabela de Produtos" hint="Cria/atualiza produtos pelo SKU (product_code)." columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
+        <ImportUploader endpoint="product-optionals" label="Etapa 2: Subir Tabela de Opcionais do Produto" hint="Vincula opcionais a cada SKU — rode após a Etapa 1." columns="product_code, category, color_name" color={color} />
+      </section>
+    </div>
+  )
+}
+
 const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
   { key: 'produtos',       label: 'Produtos',       Icon: Package     },
   { key: 'clientes',       label: 'Clientes',        Icon: Users       },
   { key: 'representantes', label: 'Representantes',  Icon: UserCheck   },
   { key: 'opcionais',      label: 'Opcionais',       Icon: Tag         },
   { key: 'tipos',          label: 'Grupos & Subgrupos', Icon: LayoutGrid  },
+  { key: 'importacao',     label: 'Importação CSV', Icon: Upload      },
 ]
 
 export default function CadastroPage() {
@@ -1789,6 +1929,7 @@ export default function CadastroPage() {
     representantes: reps?.length     ?? 0,
     opcionais:      optionals?.length ?? 0,
     tipos:          productGroups?.length ?? 0,
+    importacao:     0,
   }
 
   const activeColor = TAB_PALETTE[tab].color
@@ -1902,6 +2043,8 @@ export default function CadastroPage() {
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
             {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} />}
+
+            {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} />}
           </main>
         </div>
       </div>

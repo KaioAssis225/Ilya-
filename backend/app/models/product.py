@@ -26,6 +26,8 @@ class Product(Base, TimestampMixin):
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    price_lojista: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    price_corporativo: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     all_optionals_categories: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)

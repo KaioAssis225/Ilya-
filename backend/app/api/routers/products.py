@@ -114,7 +114,7 @@ async def _resolve_optionals(db: AsyncSession, ids: list[uuid.UUID]) -> list[Opt
 @router.get("", response_model=List[ProductRead])
 async def list_products(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=1000, le=5000),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ANY,
 ):

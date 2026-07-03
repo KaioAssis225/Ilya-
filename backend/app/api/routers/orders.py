@@ -50,6 +50,13 @@ async def _load_products_and_types(
     return product_map, type_map
 
 
+def _price_for_profile(product: Product, profile: str) -> float:
+    """Preço faturado conforme o perfil do cliente (V-Bloco62)."""
+    if profile == "corporativo":
+        return float(product.price_corporativo)
+    return float(product.price_lojista)
+
+
 async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
     try:
         oid = uuid.UUID(id_or_code)
@@ -98,6 +105,7 @@ async def create_order(
 
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
     product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
+    profile = client.price_profile  # faturamento pelo perfil do cliente (V-Bloco62)
 
     total = 0.0
     total_ipi = 0.0
@@ -106,7 +114,7 @@ async def create_order(
         product = product_map.get(item_in.product_code)
         if not product:
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-        unit_price = float(product.price)
+        unit_price = _price_for_profile(product, profile)
         discount = float(item_in.discount or 0)
         effective_price = unit_price * (1 - discount / 100)
         subtotal = float(item_in.qty) * effective_price
@@ -169,7 +177,7 @@ async def create_order(
 @router.get("", response_model=List[OrderListRead])
 async def list_orders(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=1000, le=5000),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -250,6 +258,8 @@ async def update_order(
         product_map, type_map = await _load_products_and_types(
             db, [i.product_code for i in payload.items]
         )
+        client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
+        profile = client.price_profile if client else "lojista"  # faturamento pelo perfil (V-Bloco62)
 
         total = 0.0
         total_ipi = 0.0
@@ -258,7 +268,7 @@ async def update_order(
             product = product_map.get(item_in.product_code)
             if not product:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-            unit_price = float(product.price)
+            unit_price = _price_for_profile(product, profile)
             discount = float(item_in.discount or 0)
             effective_price = unit_price * (1 - discount / 100)
             subtotal = float(item_in.qty) * effective_price

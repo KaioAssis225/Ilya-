@@ -213,6 +213,7 @@ CLIENTS_DATA = [
         "address": "Rua Visconde de Pirajá, Ipanema",
         "city": "Rio de Janeiro",
         "state": "RJ",
+        "price_profile": "corporativo",
     },
     {
         "name": "Ricardo Vasconcelos",
@@ -233,6 +234,7 @@ CLIENTS_DATA = [
         "address": "Av. Afonso Pena, Centro",
         "city": "Belo Horizonte",
         "state": "MG",
+        "price_profile": "corporativo",
     },
 ]
 
@@ -343,6 +345,9 @@ async def seed() -> None:
         for data in PRODUCTS_DATA:
             code = data["product_code"]
             cats = data.pop("optional_categories")
+            base_price = data["price"]
+            data.setdefault("price_lojista", base_price)
+            data.setdefault("price_corporativo", round(base_price * 1.15, 2))
             photo_path = PRODUCT_PHOTOS.get(code)
             product = Product(**data, photo_path=photo_path)
             product.optionals = [o for cat in cats for o in optionals_map.get(cat, [])]
@@ -367,7 +372,7 @@ async def seed() -> None:
             largura=3.50,
             profundidade=2.20,
             altura=0.85,
-            price=38500.0,
+            price=38500.0, price_lojista=38500.0, price_corporativo=round(38500.0 * 1.15, 2),
             photo_path=None,
         )
         p_caracas.optionals = []
@@ -402,7 +407,7 @@ async def seed() -> None:
             largura=2.20,
             profundidade=1.00,
             altura=0.76,
-            price=52000.0,
+            price=52000.0, price_lojista=52000.0, price_corporativo=round(52000.0 * 1.15, 2),
             photo_path=None,
         )
         p_ipanema.optionals = []
@@ -431,7 +436,7 @@ async def seed() -> None:
             largura=1.80,
             profundidade=0.80,
             altura=0.82,
-            price=45800.0,
+            price=45800.0, price_lojista=45800.0, price_corporativo=round(45800.0 * 1.15, 2),
             photo_path=None,
         )
         p_leblon.optionals = []

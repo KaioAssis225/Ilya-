@@ -67,6 +67,8 @@ export interface Product {
   largura: number
   profundidade: number
   price: number
+  price_lojista: number
+  price_corporativo: number
   observacao: string | null
   all_optionals_categories: string | null
   optionals: OptionalColor[]
@@ -87,6 +89,8 @@ export interface ProductCreate {
   largura: number
   profundidade: number
   price: number
+  price_lojista?: number
+  price_corporativo?: number
   observacao?: string | null
   all_optionals_categories?: string | null
   optional_ids?: string[]
@@ -106,6 +110,7 @@ export interface Client {
   address: string
   city: string
   state: string
+  price_profile: 'lojista' | 'corporativo'
   rep_id: string | null
   created_at: string
   updated_at: string
@@ -122,6 +127,7 @@ export interface ClientCreate {
   address: string
   city: string
   state: string
+  price_profile?: 'lojista' | 'corporativo'
 }
 
 export interface ClientUpdate extends Partial<ClientCreate> {}
