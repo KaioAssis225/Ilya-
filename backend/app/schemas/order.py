@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -9,11 +9,7 @@ class OrderItemCreate(BaseModel):
     product_code: str
     qty: int = Field(..., ge=1)
     discount: Decimal = Field(Decimal("0"), ge=0, le=100, decimal_places=2)
-    opt_aluminio: Optional[str] = None
-    opt_madeira: Optional[str] = None
-    opt_tecido: Optional[str] = None
-    opt_couro: Optional[str] = None
-    opt_corda: Optional[str] = None
+    opt_categories: Dict[str, str] = {}
 
 
 class OrderCreate(BaseModel):
@@ -38,11 +34,7 @@ class OrderItemRead(BaseModel):
     altura: Decimal
     largura: Decimal
     profundidade: Decimal
-    opt_aluminio: Optional[str]
-    opt_madeira: Optional[str]
-    opt_tecido: Optional[str]
-    opt_couro: Optional[str]
-    opt_corda: Optional[str]
+    opt_categories: Dict[str, str] = {}
     qty: int
     unit_price: Decimal
     discount: Decimal = Decimal("0")

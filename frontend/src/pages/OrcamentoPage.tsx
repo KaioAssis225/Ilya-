@@ -8,57 +8,10 @@ import { useClients, useCreateClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative } from '../hooks/useRepresentatives'
 import { useCreateOrder, useOrders, useUpdateOrder, useOrder } from '../hooks/useOrders'
 import { useOptionals } from '../hooks/useOptionals'
+import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
 import { useAuth } from '../hooks/useAuth'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
-
-// ── Category display labels ───────────────────────────────────────────────────
-
-const CAT_LABEL: Record<string, string> = {
-  aluminio:       'Alumínio',
-  madeira_teka:   'Madeira Teka',
-  madeira_freijo: 'Madeira Freijó',
-  tecido_faixa_1: 'Tecido Faixa 1',
-  tecido_faixa_2: 'Tecido Faixa 2',
-  couro_soleta:   'Couro Soleta',
-  couro_pele:     'Couro Pele',
-  corda:          'Corda',
-}
-
-function computeOptFields(cats: Partial<Record<string, string>>) {
-  return {
-    opt_aluminio: cats.aluminio ?? null,
-    opt_madeira:  cats.madeira_teka   ? `madeira_teka/${cats.madeira_teka}`
-                : cats.madeira_freijo ? `madeira_freijo/${cats.madeira_freijo}`
-                : null,
-    opt_tecido:   cats.tecido_faixa_1 ? `tecido_faixa_1/${cats.tecido_faixa_1}`
-                : cats.tecido_faixa_2 ? `tecido_faixa_2/${cats.tecido_faixa_2}`
-                : null,
-    opt_couro:    cats.couro_soleta   ? `couro_soleta/${cats.couro_soleta}`
-                : cats.couro_pele     ? `couro_pele/${cats.couro_pele}`
-                : null,
-    opt_corda:    cats.corda ?? null,
-  }
-}
-
-function parseOptFields(item: { opt_aluminio: string | null; opt_madeira: string | null; opt_tecido: string | null; opt_couro: string | null; opt_corda: string | null }): Partial<Record<string, string>> {
-  const cats: Partial<Record<string, string>> = {}
-  if (item.opt_aluminio) cats.aluminio = item.opt_aluminio
-  if (item.opt_corda) cats.corda = item.opt_corda
-  if (item.opt_madeira) {
-    const [cat, color] = item.opt_madeira.split('/')
-    if (cat && color) cats[cat] = color
-  }
-  if (item.opt_tecido) {
-    const [cat, color] = item.opt_tecido.split('/')
-    if (cat && color) cats[cat] = color
-  }
-  if (item.opt_couro) {
-    const [cat, color] = item.opt_couro.split('/')
-    if (cat && color) cats[cat] = color
-  }
-  return cats
-}
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
 
@@ -263,10 +216,11 @@ function Toast({ message, onDone, variant = 'success' }: { message: string; onDo
 
 // ── Opcionais interativos no carrinho ─────────────────────────────────────────
 
-function OptionalSelectors({ item, allOptionals, onChange }: {
+function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
   item: CartItem
   allOptionals: OptionalColor[]
   onChange: (cat: string, value: string | null) => void
+  catLabel: (code: string) => string
 }) {
   const freeCats = new Set((item._product.all_optionals_categories ?? '').split(',').filter(Boolean))
   const productCats = Array.from(new Set(item._product.optionals.map(o => o.category)))
@@ -283,7 +237,7 @@ function OptionalSelectors({ item, allOptionals, onChange }: {
         const currentOpt = available.find(o => o.color_name === currentValue)
         return (
           <div key={cat} className="flex items-center gap-1 bg-[#fcfbfa] border border-[#f0ece6] rounded-md px-1.5 py-0.5">
-            <span className="text-[10px] text-[#9d8d81] font-medium whitespace-nowrap">{CAT_LABEL[cat] ?? cat}:</span>
+            <span className="text-[10px] text-[#9d8d81] font-medium whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt?.photo_url && (
               <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
             )}
@@ -333,7 +287,7 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile
+  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile, catLabel
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -342,6 +296,7 @@ function MobileCartCard({
   allOptionals: OptionalColor[]
   onOptChange: (cat: string, value: string | null) => void
   priceProfile: string
+  catLabel: (code: string) => string
 }) {
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
@@ -378,7 +333,7 @@ function MobileCartCard({
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} />
+          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} catLabel={catLabel} />
         </div>
       </div>
 
@@ -568,6 +523,8 @@ export default function OrcamentoPage() {
   const editId = searchParams.get('edit')
   const { data: products = [] } = useProducts()
   const { data: allOptionals = [] } = useOptionals()
+  const { data: optCategories = [] } = useOptionalCategories()
+  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
   const { data: clients = [] } = useClients()
   const { data: reps = [] } = useRepresentatives()
   const { data: orders = [] } = useOrders()
@@ -654,7 +611,7 @@ export default function OrcamentoPage() {
           product_code: item.product_code,
           qty: item.qty,
           discount: Number(item.discount),
-          opt_categories: parseOptFields(item),
+          opt_categories: item.opt_categories,
           _product: product,
         }
       })
@@ -765,7 +722,7 @@ export default function OrcamentoPage() {
     product_code,
     qty,
     discount: discount || 0,
-    ...computeOptFields(opt_categories),
+    opt_categories: opt_categories as Record<string, string>,
   }))
 
   async function handleSubmit() {
@@ -862,7 +819,7 @@ export default function OrcamentoPage() {
           <div className="text-[11px] pr-5 flex-1 min-w-0">
             <p className="text-[#8b6914] font-mono font-semibold">{selectedProduct.product_code}</p>
             <p className="text-[#2c2420] font-medium truncate">{selectedProduct.description}</p>
-            <p className="text-[#8b6914] font-bold mt-0.5"><SafePrice value={selectedProduct.price} /></p>
+            <p className="text-[#8b6914] font-bold mt-0.5"><SafePrice value={effectivePrice(selectedProduct, priceProfile)} /></p>
           </div>
         </div>
       )}
@@ -947,6 +904,7 @@ export default function OrcamentoPage() {
                       allOptionals={allOptionals}
                       onOptChange={(cat, val) => updateOptCategory(item.product_code, cat, val)}
                       priceProfile={priceProfile}
+                      catLabel={catLabel}
                     />
                   ))}
                 </div>
@@ -990,7 +948,7 @@ export default function OrcamentoPage() {
                                   <div className="text-[10px] text-[#8b6914] italic mt-0.5">{item._product.observacao}</div>
                                 )}
                                 <div className="text-[10px] text-[#9d8d81] mt-0.5">{dimLabel(item._product)}</div>
-                                <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} />
+                                <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} catLabel={catLabel} />
                               </div>
                             </div>
                           </td>

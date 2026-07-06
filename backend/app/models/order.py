@@ -1,6 +1,6 @@
 import uuid
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Text, Numeric, Integer, Boolean, ForeignKey, Index
+from sqlalchemy import String, Text, Numeric, Integer, Boolean, ForeignKey, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -57,11 +57,10 @@ class OrderItem(Base, TimestampMixin):
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
-    opt_aluminio: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    opt_madeira: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    opt_tecido: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    opt_couro: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    opt_corda: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Categoria -> cor escolhida, dinâmico (código de categoria vem de OptionalCategory.code).
+    # Substitui as antigas colunas fixas opt_aluminio/madeira/tecido/couro/corda,
+    # que só suportavam os 8 códigos originais de teste (V-Bloco65-cats).
+    opt_categories: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

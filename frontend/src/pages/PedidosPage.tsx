@@ -7,6 +7,7 @@ import { useClients } from '../hooks/useClients'
 import { useRepresentatives } from '../hooks/useRepresentatives'
 import { useProducts } from '../hooks/useProducts'
 import { useOptionals } from '../hooks/useOptionals'
+import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { useAuth } from '../hooks/useAuth'
 import { generateOrderPDF } from '../lib/generatePDF'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
@@ -139,6 +140,8 @@ function OrderDetailModal({
   // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo.
   const { data: orderDetail } = useOrder(orderLight.id)
   const order = orderDetail ?? orderLight
+  const { data: optCategories = [] } = useOptionalCategories()
+  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
   const isClientUser = userRole === 'vendedor'
   const sigKey = isClientUser ? `signature_cli_${order.code}` : `signature_rep_${order.code}`
   const [tab, setTab] = useState<'details' | 'history'>('details')
@@ -208,15 +211,11 @@ function OrderDetailModal({
     setNotifyLoading(false)
   }
 
-  function parseOptValue(value: string | null): { label: string; swatch: string | null } | null {
-    if (!value) return null
-    const slash = value.indexOf('/')
-    if (slash !== -1) {
-      const cat = value.slice(0, slash); const color = value.slice(slash + 1)
-      const catLabels: Record<string, string> = { madeira_teka: 'Madeira Teka', madeira_freijo: 'Madeira Freijó', tecido_faixa_1: 'Faixa 1', tecido_faixa_2: 'Faixa 2', couro_soleta: 'Couro Soleta', couro_pele: 'Couro Pele' }
-      return { label: `${catLabels[cat] ?? cat} — ${color}`, swatch: allOptionals.find(o => o.category === cat && o.color_name === color)?.photo_url ?? null }
-    }
-    return { label: value, swatch: allOptionals.find(o => o.color_name === value)?.photo_url ?? null }
+  function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null }[] {
+    return Object.entries(cats).map(([cat, color]) => ({
+      label: `${catLabel(cat)} — ${color}`,
+      swatch: allOptionals.find(o => o.category === cat && o.color_name === color)?.photo_url ?? null,
+    }))
   }
 
   return (
@@ -317,7 +316,7 @@ function OrderDetailModal({
                         </td>
                         <td className="px-3 py-2 text-[#6b5d52] text-xs">
                           {(() => {
-                            const parsed = [item.opt_aluminio, item.opt_madeira, item.opt_tecido, item.opt_couro, item.opt_corda].map(parseOptValue).filter(Boolean) as { label: string; swatch: string | null }[]
+                            const parsed = parseOptCategories(item.opt_categories)
                             if (parsed.length === 0) return '—'
                             return parsed.map((p, i) => <span key={p.label}>{i > 0 && <span className="mx-1 text-[#c8bdb5]">·</span>}<OptionalWithPreview label={p.label} swatch={p.swatch} /></span>)
                           })()}
@@ -539,6 +538,8 @@ export default function PedidosPage() {
   const { data: reps = [] } = useRepresentatives()
   const { data: products = [] } = useProducts()
   const { data: allOptionals = [] } = useOptionals()
+  const { data: optCategoriesList = [] } = useOptionalCategories()
+  const pdfCatLabel = (code: string) => optCategoriesList.find(c => c.code === code)?.name ?? code
   const { data: globalHistory = [] } = useGlobalOrderHistory(canManage)
   const deleteM = useDeleteOrder()
   const canSignContract = user?.role === 'representante' || (user?.role === 'vendedor' && !!user?.linked_id)
@@ -549,7 +550,7 @@ export default function PedidosPage() {
     const rep = orderLight.rep_id ? (reps.find((r) => r.id === orderLight.rep_id) ?? null) : null
     // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo p/ o PDF.
     const order = (await api.get<Order>(`/orders/${orderLight.id}`)).data
-    await generateOrderPDF(order, client, rep, products)
+    await generateOrderPDF(order, client, rep, products, pdfCatLabel)
   }
 
   const [activeTab, setActiveTab] = useState<'orders' | 'audit'>('orders')

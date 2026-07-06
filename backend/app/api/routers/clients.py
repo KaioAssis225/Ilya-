@@ -18,6 +18,8 @@ _ADMIN = Depends(require_roles(UserRole.admin))
 def _rep_guard(client: Client, current_user: User) -> None:
     if current_user.role == UserRole.representante and client.rep_id != current_user.rep_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
+    if current_user.role == UserRole.vendedor and client.id != current_user.linked_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
 
 
 async def _user_status(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[bool, bool]]:
@@ -49,6 +51,11 @@ async def list_clients(
             select(Client)
             .where(Client.rep_id == current_user.rep_id)
             .offset(skip).limit(limit)
+        )
+    elif current_user.role == UserRole.vendedor:
+        # Cliente logado (V-Bloco66-RBAC): só o próprio registro, nunca a listagem completa.
+        result = await db.execute(
+            select(Client).where(Client.id == current_user.linked_id)
         )
     else:
         result = await db.execute(select(Client).offset(skip).limit(limit))

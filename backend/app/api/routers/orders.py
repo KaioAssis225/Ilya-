@@ -94,6 +94,10 @@ async def create_order(
             )
         payload.rep_id = current_user.rep_id
 
+    if current_user.role == UserRole.vendedor and payload.client_id != current_user.linked_id:
+        # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para este cliente.")
+
     client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
@@ -133,11 +137,7 @@ async def create_order(
             altura=product.altura,
             largura=product.largura,
             profundidade=product.profundidade,
-            opt_aluminio=item_in.opt_aluminio,
-            opt_madeira=item_in.opt_madeira,
-            opt_tecido=item_in.opt_tecido,
-            opt_couro=item_in.opt_couro,
-            opt_corda=item_in.opt_corda,
+            opt_categories=item_in.opt_categories,
             qty=item_in.qty,
             unit_price=unit_price,
             discount=discount,
@@ -288,11 +288,7 @@ async def update_order(
                 altura=product.altura,
                 largura=product.largura,
                 profundidade=product.profundidade,
-                opt_aluminio=item_in.opt_aluminio,
-                opt_madeira=item_in.opt_madeira,
-                opt_tecido=item_in.opt_tecido,
-                opt_couro=item_in.opt_couro,
-                opt_corda=item_in.opt_corda,
+                opt_categories=item_in.opt_categories,
                 qty=item_in.qty,
                 unit_price=unit_price,
                 discount=discount,

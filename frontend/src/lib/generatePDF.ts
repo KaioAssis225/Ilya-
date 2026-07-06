@@ -56,6 +56,7 @@ export async function generateOrderPDF(
   client: Client,
   rep: Representative | null,
   products: Product[],
+  catLabel: (code: string) => string = (c) => c,
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
   const w = doc.internal.pageSize.getWidth()
@@ -235,31 +236,14 @@ export async function generateOrderPDF(
       doc.text(`Obs.: ${item.observacao}`, 40, y + 12.5)
     }
 
-    // Opcionais — linha horizontal com swatches
-    const optSlots: { prefix: string; value: string }[] = []
-    if (item.opt_aluminio) optSlots.push({ prefix: 'Al', value: item.opt_aluminio })
-    if (item.opt_madeira) {
-      const slash = item.opt_madeira.indexOf('/')
-      const color = slash !== -1 ? item.opt_madeira.slice(slash + 1) : item.opt_madeira
-      const prefix = item.opt_madeira.startsWith('madeira_teka') ? 'Tk' : 'Fr'
-      optSlots.push({ prefix, value: color })
-    }
-    if (item.opt_tecido) {
-      const slash = item.opt_tecido.indexOf('/')
-      const color = slash !== -1 ? item.opt_tecido.slice(slash + 1) : item.opt_tecido
-      const prefix = item.opt_tecido.startsWith('tecido_faixa_1') ? 'F1' : item.opt_tecido.startsWith('tecido_faixa_2') ? 'F2' : 'Tc'
-      optSlots.push({ prefix, value: color })
-    }
-    if (item.opt_couro) {
-      const slash = item.opt_couro.indexOf('/')
-      const color = slash !== -1 ? item.opt_couro.slice(slash + 1) : item.opt_couro
-      const prefix = item.opt_couro.startsWith('couro_pele') ? 'Cp' : 'Cs'
-      optSlots.push({ prefix, value: color })
-    }
-    if (item.opt_corda) optSlots.push({ prefix: 'Co', value: item.opt_corda })
+    // Opcionais — linha horizontal, uma entrada por categoria dinâmica do pedido
+    const optSlots = Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
+      label: catLabel(cat),
+      value,
+    }))
 
     if (optSlots.length > 0) {
-      const optText = 'Opcionais: ' + optSlots.map((s) => `${s.prefix}: ${s.value}`).join(', ')
+      const optText = 'Opcionais: ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ')
       doc.setFontSize(6.5)
       doc.setTextColor(...MUTED)
       doc.text(optText, 40, y + 12.5)

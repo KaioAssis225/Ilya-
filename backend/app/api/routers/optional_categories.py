@@ -2,11 +2,12 @@ import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_db_session, require_roles
 from app.models.optional_category import OptionalCategory
+from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
 from app.schemas.optional_category import OptionalCategoryCreate, OptionalCategoryUpdate, OptionalCategoryRead
 
@@ -53,9 +54,18 @@ async def update_optional_category(
     cat = await db.get(OptionalCategory, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Categoria não encontrada.")
+    old_code = cat.code
     cat.name = payload.name
     cat.code = payload.code
     try:
+        if old_code != payload.code:
+            # Mantém os opcionais já cadastrados vinculados ao grupo renomeado,
+            # evitando que fiquem "órfãos" com o código antigo (V-Bloco65-cats).
+            await db.execute(
+                update(OptionalColor)
+                .where(OptionalColor.category == old_code)
+                .values(category=payload.code)
+            )
         await db.commit()
         await db.refresh(cat)
     except IntegrityError:

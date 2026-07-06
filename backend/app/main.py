@@ -44,9 +44,19 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+_cors_origins = settings.get_cors_origins()
+if "*" in _cors_origins:
+    # Wildcard nunca é seguro com allow_credentials=True (V-Bloco66-CORS).
+    raise RuntimeError("BACKEND_CORS_ORIGINS não pode conter '*' — configure as origens explícitas no .env.")
+if not settings.DEBUG and all("localhost" in o or "127.0.0.1" in o for o in _cors_origins):
+    logger.warning(
+        "BACKEND_CORS_ORIGINS aponta só para localhost em ambiente não-DEBUG (%s). "
+        "Confirme se isso é intencional antes do deploy.", _cors_origins,
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_cors_origins(),
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],

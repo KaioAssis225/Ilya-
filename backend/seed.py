@@ -493,6 +493,13 @@ async def seed() -> None:
                 p = products_map[d["product_code"]]
                 subtotal = d["qty"] * d["unit_price"]
                 total += subtotal
+                # Categoria -> cor, dinâmico (V-Bloco65-cats): qualquer chave opt_* vira
+                # uma entrada em opt_categories, sem enumeração fixa de categorias.
+                opt_categories = {
+                    k[len("opt_"):]: v
+                    for k, v in d.items()
+                    if k.startswith("opt_") and v
+                }
                 items.append(OrderItem(
                     id=uuid.uuid4(),
                     product_code=p.product_code,
@@ -501,9 +508,7 @@ async def seed() -> None:
                     altura=p.altura,
                     largura=p.largura,
                     profundidade=p.profundidade,
-                    opt_aluminio=d.get("opt_aluminio"),
-                    opt_tecido=d.get("opt_tecido"),
-                    opt_corda=d.get("opt_corda"),
+                    opt_categories=opt_categories,
                     qty=d["qty"],
                     unit_price=d["unit_price"],
                 ))

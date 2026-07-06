@@ -146,11 +146,7 @@ export interface OrderItemCreate {
   product_code: string
   qty: number
   discount?: number
-  opt_aluminio?: string | null
-  opt_madeira?: string | null
-  opt_tecido?: string | null
-  opt_couro?: string | null
-  opt_corda?: string | null
+  opt_categories?: Record<string, string>
 }
 
 export interface OrderCreate {
@@ -175,11 +171,7 @@ export interface OrderItem {
   altura: number
   largura: number
   profundidade: number
-  opt_aluminio: string | null
-  opt_madeira: string | null
-  opt_tecido: string | null
-  opt_couro: string | null
-  opt_corda: string | null
+  opt_categories: Record<string, string>
   qty: number
   unit_price: number
   discount: number

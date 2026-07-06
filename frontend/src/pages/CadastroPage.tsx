@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import { ChevronUp, ChevronDown, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
@@ -11,6 +11,7 @@ import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDele
 import type { ProductGroup } from '../hooks/useProductGroups'
 import type { ProductType } from '../hooks/useProductTypes'
 import { useOptionalCategories, useCreateOptionalCategory, useUpdateOptionalCategory, useDeleteOptionalCategory } from '../hooks/useOptionalCategories'
+import type { OptionalCategory } from '../hooks/useOptionalCategories'
 import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
 import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
@@ -46,21 +47,6 @@ function parseApiError(err: unknown): string {
   }
   return 'Não foi possível salvar. Verifique os dados e tente novamente.'
 }
-
-const CATEGORY_OPTIONS = [
-  { value: 'aluminio',       label: 'Alumínio' },
-  { value: 'tecido_faixa_1', label: 'Tecido Faixa 1' },
-  { value: 'tecido_faixa_2', label: 'Tecido Faixa 2' },
-  { value: 'corda',          label: 'Corda' },
-  { value: 'madeira_teka',   label: 'Madeira Teka' },
-  { value: 'madeira_freijo', label: 'Madeira Freijó' },
-  { value: 'couro_soleta',   label: 'Couro Soleta' },
-  { value: 'couro_pele',     label: 'Couro Pele' },
-]
-
-const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
-  CATEGORY_OPTIONS.map(({ value, label }) => [value, label])
-)
 
 const TAB_PALETTE = {
   produtos:        { color: '#b25e50', label: 'Terracota' },
@@ -256,20 +242,10 @@ const EMPTY_COMP: ProductSetComponentCreate = {
   description: '', is_circular: false, altura: 0, largura: 0, profundidade: 0, qty: 1, optional_ids: [],
 }
 
-function groupOptionalsByCategory(optionals: OptionalColor[]): { category: string; label: string; items: OptionalColor[] }[] {
-  const map = new Map<string, OptionalColor[]>()
-  for (const opt of optionals) {
-    if (!map.has(opt.category)) map.set(opt.category, [])
-    map.get(opt.category)!.push(opt)
-  }
-  return Array.from(map.entries()).map(([category, items]) => ({
-    category,
-    label: CATEGORY_LABEL[category] || category,
-    items,
-  }))
-}
-
-function groupOptionalsByCategoryDynamic(optionals: OptionalColor[], catLabel: (code: string) => string): { category: string; label: string; items: OptionalColor[] }[] {
+/** Agrupa opcionais pelo código de categoria (exato, sem normalização) — o
+ * resolver de label vem sempre do que está cadastrado no banco (V-Bloco65-cats),
+ * nunca de uma lista fixa no código, para não mascarar categorias divergentes. */
+function groupOptionalsByCategory(optionals: OptionalColor[], catLabel: (code: string) => string = (c) => c): { category: string; label: string; items: OptionalColor[] }[] {
   const map = new Map<string, OptionalColor[]>()
   for (const opt of optionals) {
     if (!map.has(opt.category)) map.set(opt.category, [])
@@ -282,17 +258,62 @@ function groupOptionalsByCategoryDynamic(optionals: OptionalColor[], catLabel: (
   }))
 }
 
-function ProductsTab({ color }: { color: string }) {
+// ── Paginação ergonômica (Bloco 64) ───────────────────────────────────────────
+const ITEMS_PER_PAGE = 10
+
+/** Fatia a lista para a página atual, corrigindo páginas fora do intervalo. */
+function paginate<T>(items: T[], page: number): { pageItems: T[]; totalPages: number; safePage: number } {
+  const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+  const start = (safePage - 1) * ITEMS_PER_PAGE
+  return { pageItems: items.slice(start, start + ITEMS_PER_PAGE), totalPages, safePage }
+}
+
+function Pagination({ page, totalPages, onPage, color }: {
+  page: number; totalPages: number; onPage: (p: number) => void; color: string
+}) {
+  if (totalPages <= 1) return null
+  const canPrev = page > 1
+  const canNext = page < totalPages
+  const base = "flex items-center gap-1 px-3.5 py-2 rounded-lg border text-sm font-medium transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+  const ring = (e: React.FocusEvent<HTMLButtonElement>, on: boolean) => { e.currentTarget.style.boxShadow = on ? `0 0 0 3px ${color}33` : '' }
+  return (
+    <div className="flex items-center justify-center gap-3 mt-4">
+      <button type="button" disabled={!canPrev} onClick={() => onPage(page - 1)}
+        className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canPrev ? '#4a3f38' : '#c8bdb5' }}
+        onFocus={(e) => ring(e, canPrev)} onBlur={(e) => ring(e, false)}>
+        <ChevronLeft className="w-4 h-4" /> Anterior
+      </button>
+      <span className="text-sm text-[#6b5d52] tabular-nums select-none">Página <span className="font-semibold text-[#2c2420]">{page}</span> de {totalPages}</span>
+      <button type="button" disabled={!canNext} onClick={() => onPage(page + 1)}
+        className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canNext ? '#4a3f38' : '#c8bdb5' }}
+        onFocus={(e) => ring(e, canNext)} onBlur={(e) => ring(e, false)}>
+        Próximo <ChevronRight className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const { data: products, isLoading } = useProducts()
   const { data: allOptionals = [] } = useOptionals()
   const { data: allTypes = [] } = useProductTypes()
+  const { data: optCategories = [] } = useOptionalCategories()
   const createM = useCreateProduct()
   const updateM = useUpdateProduct()
   const deleteM = useDeleteProduct()
   const uploadM = useUploadProductPhoto()
   const createTypeM = useCreateProductType()
 
+  // Categorias de opcionais sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
+  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
+
   const { sorted, sortKey, sortDir, toggle } = useSortedList<Product>(products, 'product_code')
+  const [search, setSearch] = useState('')
+  const filtered = sorted.filter((p) =>
+    `${p.product_code} ${p.description}`.toLowerCase().includes(search.toLowerCase())
+  )
+  const { pageItems, totalPages, safePage } = paginate(filtered, page)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
@@ -412,11 +433,17 @@ function ProductsTab({ color }: { color: string }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-[#9d8d81]">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
-        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
-          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
-        </button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <span className="text-sm text-[#9d8d81] whitespace-nowrap">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
+        <div className="flex items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#a89a8e]" />
+            <input className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
+          </div>
+          <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -425,7 +452,7 @@ function ProductsTab({ color }: { color: string }) {
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
           <div className="md:hidden flex flex-col gap-3">
-            {sorted.map((p) => (
+            {pageItems.map((p) => (
               <div key={p.id} className="bg-[#fcfbfa] border border-[#e8e0d6] rounded-xl p-3.5 flex gap-3">
                 {p.photo_url
                   ? <img src={p.photo_url} alt="" className="w-14 h-14 object-cover rounded-lg border border-[#e8e0d6] flex-shrink-0" />
@@ -455,12 +482,12 @@ function ProductsTab({ color }: { color: string }) {
                     <span className="text-sm font-bold text-[#2c2420]">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}</span>
                   </div>
                   {p.optionals.length > 0 && (
-                    <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{groupOptionalsByCategory(p.optionals).map(g => g.label).join(' · ')}</p>
+                    <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{groupOptionalsByCategory(p.optionals, catLabel).map(g => g.label).join(' · ')}</p>
                   )}
                 </div>
               </div>
             ))}
-            {sorted.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">Nenhum produto cadastrado.</p>}
+            {filtered.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
@@ -478,7 +505,7 @@ function ProductsTab({ color }: { color: string }) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((p) => (
+                {pageItems.map((p) => (
                   <tr key={p.id} className="table-row">
                     <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
                     <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
@@ -493,7 +520,7 @@ function ProductsTab({ color }: { color: string }) {
                     </td>
                     <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
                       {p.optionals.length > 0
-                        ? groupOptionalsByCategory(p.optionals).map(g => g.label).join(', ')
+                        ? groupOptionalsByCategory(p.optionals, catLabel).map(g => g.label).join(', ')
                         : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -511,12 +538,14 @@ function ProductsTab({ color }: { color: string }) {
                     </td>
                   </tr>
                 ))}
-                {sorted.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum produto cadastrado.</td></tr>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          <Pagination page={safePage} totalPages={totalPages} onPage={onPage} color={color} />
         </>
       )}
 
@@ -729,7 +758,7 @@ function ProductsTab({ color }: { color: string }) {
                   <div>
                     <span className="text-xs text-[#9d8d81] block mb-2">Opcionais do Componente</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
-                      {CATEGORY_OPTIONS.map(({ value, label }) => {
+                      {optCategories.map(({ code: value, name: label }) => {
                         const isActive = compActiveCategories.includes(value)
                         return (
                           <label key={value} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
@@ -748,6 +777,9 @@ function ProductsTab({ color }: { color: string }) {
                           </label>
                         )
                       })}
+                      {optCategories.length === 0 && (
+                        <p className="col-span-full text-xs text-[#c8bdb5]">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                      )}
                     </div>
                     {compActiveCategories.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
@@ -842,7 +874,7 @@ function ProductsTab({ color }: { color: string }) {
               <div>
                 <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                  {CATEGORY_OPTIONS.map(({ value, label }) => {
+                  {optCategories.map(({ code: value, name: label }) => {
                     const isActive = activeCategories.includes(value)
                     return (
                       <label key={value} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
@@ -868,20 +900,23 @@ function ProductsTab({ color }: { color: string }) {
                       </label>
                     )
                   })}
+                  {optCategories.length === 0 && (
+                    <p className="col-span-full text-xs text-[#c8bdb5]">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                  )}
                 </div>
 
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
                     <span className="text-xs text-[#9d8d81] block font-medium">Cores e Permissões por Categoria</span>
                     {activeCategories.map((catValue) => {
-                      const catLabel = CATEGORY_LABEL[catValue] || catValue
+                      const catValueLabel = catLabel(catValue)
                       const catItems = allOptionals.filter(o => o.category === catValue)
                       const isAllowed = allOptCats.has(catValue)
                       const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
                         <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2.5 bg-[#fdfdfd] shadow-sm">
                           <div className="flex items-center justify-between pb-1 border-b border-[#f3ede6]">
-                            <span className="text-xs font-semibold" style={{ color }}>{catLabel.toUpperCase()}</span>
+                            <span className="text-xs font-semibold" style={{ color }}>{catValueLabel.toUpperCase()}</span>
                             <label className="flex items-center gap-1.5 cursor-pointer select-none">
                               <input
                                 type="checkbox"
@@ -985,18 +1020,24 @@ function ProductsTab({ color }: { color: string }) {
 const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '', price_profile: 'lojista' }
 
 function PeopleTab<T extends Client | Representative>({
-  label, entityType, items, isLoading, onCreate, onUpdate, onDelete, isPending, color,
+  label, entityType, items, isLoading, onCreate, onUpdate, onDelete, isPending, color, page, onPage,
 }: {
   label: string; entityType: 'client' | 'rep'
   items: T[] | undefined; isLoading: boolean
   onCreate: (data: ClientCreate) => Promise<void>; onUpdate: (id: string, data: Partial<ClientCreate>) => Promise<void>
   onDelete: (id: string) => Promise<void>; isPending: boolean; color: string
+  page: number; onPage: (p: number) => void
 }) {
   const { user: authUser } = useAuth()
   const isAdmin = authUser?.role === 'admin'
   const isRep = authUser?.role === 'representante'
 
   const { sorted, sortKey, sortDir, toggle } = useSortedList<T>(items, 'name' as keyof T)
+  const [search, setSearch] = useState('')
+  const filtered = sorted.filter((item) =>
+    `${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(search.toLowerCase())
+  )
+  const { pageItems, totalPages, safePage } = paginate(filtered, page)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<T | null>(null)
   const [deleting, setDeleting] = useState<T | null>(null)
@@ -1068,11 +1109,17 @@ function PeopleTab<T extends Client | Representative>({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-[#9d8d81]">{items?.length ?? 0} {label.toLowerCase()} cadastrados</span>
-        <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
-          <Plus className="w-4 h-4" /> Novo {label.slice(0, -1)}
-        </button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <span className="text-sm text-[#9d8d81] whitespace-nowrap">{items?.length ?? 0} {label.toLowerCase()} cadastrados</span>
+        <div className="flex items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#a89a8e]" />
+            <input className="input pl-9" placeholder="Buscar por nome, e-mail ou telefone..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
+          </div>
+          <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color }} onClick={openCreate}>
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>{label.slice(0, -1)}
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -1081,7 +1128,7 @@ function PeopleTab<T extends Client | Representative>({
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
           <div className="md:hidden flex flex-col gap-3">
-            {sorted.map((item) => (
+            {pageItems.map((item) => (
               <div key={item.id} className="bg-[#fcfbfa] border border-[#e8e0d6] rounded-xl p-3.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -1108,7 +1155,7 @@ function PeopleTab<T extends Client | Representative>({
                 </div>
               </div>
             ))}
-            {sorted.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">Nenhum registro encontrado.</p>}
+            {filtered.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
@@ -1125,7 +1172,7 @@ function PeopleTab<T extends Client | Representative>({
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((item) => (
+                {pageItems.map((item) => (
                   <tr key={item.id} className="table-row">
                     <td className="px-4 py-3 text-[#2c2420] font-medium">{item.name}</td>
                     <td className="px-4 py-3 text-[#4a3f38]">{item.phone}</td>
@@ -1147,12 +1194,14 @@ function PeopleTab<T extends Client | Representative>({
                     </td>
                   </tr>
                 ))}
-                {sorted.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">Nenhum registro encontrado.</td></tr>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          <Pagination page={safePage} totalPages={totalPages} onPage={onPage} color={color} />
         </>
       )}
 
@@ -1277,7 +1326,7 @@ function PeopleTab<T extends Client | Representative>({
 
 // ── OPCIONAIS ─────────────────────────────────────────────────────────────────
 
-const EMPTY_OPT: OptionalColorCreate = { category: 'aluminio', color_name: '' }
+const EMPTY_OPT: OptionalColorCreate = { category: '', color_name: '' }
 
 function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: boolean }) {
   const { data: optionals, isLoading } = useOptionals()
@@ -1300,8 +1349,8 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 
   // Group modal
   const [showGroupForm, setShowGroupForm] = useState(false)
-  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; code: string } | null>(null)
-  const [deletingGroup, setDeletingGroup] = useState<{ id: string; name: string } | null>(null)
+  const [editingGroup, setEditingGroup] = useState<OptionalCategory | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<{ id: string; name: string; count: number } | null>(null)
   const [groupForm, setGroupForm] = useState({ name: '', code: '' })
   const [groupErr, setGroupErr] = useState('')
 
@@ -1309,7 +1358,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   function openCreate() {
-    const defaultCat = categories[0]?.code ?? CATEGORY_OPTIONS[0]?.value ?? 'aluminio'
+    const defaultCat = categories[0]?.code ?? ''
     setForm({ category: defaultCat, color_name: '' }); setEditing(null)
     setPendingOptFile(null); setOptPhotoPreview(null); setShowForm(true)
   }
@@ -1334,6 +1383,9 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   }
 
   function openNewGroup() { setEditingGroup(null); setGroupForm({ name: '', code: '' }); setGroupErr(''); setShowGroupForm(true) }
+  function openEditGroup(cat: OptionalCategory) {
+    setEditingGroup(cat); setGroupForm({ name: cat.name, code: cat.code }); setGroupErr(''); setShowGroupForm(true)
+  }
   async function handleGroupSubmit(e: React.FormEvent) {
     e.preventDefault(); setGroupErr('')
     try {
@@ -1345,30 +1397,40 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
     }
   }
 
-  // Dynamic category list: prefer API, fall back to static
-  const catOptions = categories.length > 0
-    ? categories.map(c => ({ value: c.code, label: c.name }))
-    : CATEGORY_OPTIONS
+  // Categorias sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
+  const catOptions = categories.map(c => ({ value: c.code, label: c.name }))
+  const catLabel = (code: string) => categories.find(c => c.code === code)?.name ?? code
 
-  const catLabel = (code: string) => {
-    const found = categories.find(c => c.code === code)
-    return found?.name ?? CATEGORY_LABEL[code] ?? code
+  // Agrupa por TODA categoria cadastrada (mesmo sem cores ainda, contador 0),
+  // mais qualquer código "órfão" achado nos opcionais sem categoria correspondente
+  // — isso torna visível (em vez de mascarar) uma futura divergência de código.
+  const optionalsByCode = new Map<string, OptionalColor[]>()
+  for (const opt of optionals ?? []) {
+    if (!optionalsByCode.has(opt.category)) optionalsByCode.set(opt.category, [])
+    optionalsByCode.get(opt.category)!.push(opt)
   }
-
-  const grouped = optionals
-    ? groupOptionalsByCategoryDynamic(optionals, catLabel)
-    : []
+  const knownCodes = new Set(categories.map(c => c.code))
+  const grouped = [
+    ...categories.map((c) => ({
+      category: c.code, label: c.name, items: optionalsByCode.get(c.code) ?? [], cat: c as OptionalCategory | null,
+    })),
+    ...Array.from(optionalsByCode.keys())
+      .filter((code) => !knownCodes.has(code))
+      .map((code) => ({ category: code, label: code, items: optionalsByCode.get(code)!, cat: null })),
+  ]
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4 gap-2">
         <span className="text-sm text-[#9d8d81]">{optionals?.length ?? 0} opcionais cadastrados</span>
         {!readOnly && (
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button className="btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={openNewGroup}>
               <Plus className="w-3.5 h-3.5" /> Adicionar Grupos
             </button>
-            <button className="btn-primary flex items-center gap-2" style={{ backgroundColor: color }} onClick={openCreate}>
+            <button className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: color }} onClick={openCreate} disabled={categories.length === 0}
+              title={categories.length === 0 ? 'Crie um grupo primeiro' : undefined}>
               <Plus className="w-4 h-4" /> Novo Opcional
             </button>
           </div>
@@ -1379,12 +1441,48 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
         <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
       ) : (
         <div className="space-y-4">
-          {grouped.map(({ category, label, items }) => (
-            <div key={category} className="rounded-xl border border-[#e8e0d6] overflow-hidden">
-              <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider"
-                style={{ backgroundColor: `${color}12`, color }}>
-                {label}
+          {grouped.map(({ category, label, items, cat }) => (
+            <div key={category} className={`rounded-xl border overflow-hidden ${cat ? 'border-[#e8e0d6]' : 'border-dashed border-[#e0b88a]'}`}>
+              <div className="px-4 py-2 flex items-center justify-between gap-2"
+                style={{ backgroundColor: cat ? `${color}12` : '#fdf6ec' }}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold uppercase tracking-wider truncate" style={{ color: cat ? color : '#a3690f' }}>
+                    {label}
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: cat ? `${color}20` : '#f3ddb8', color: cat ? color : '#a3690f' }}>
+                    {items.length}
+                  </span>
+                  {!cat && <span className="text-[10px] text-[#a3690f] italic truncate">grupo não cadastrado</span>}
+                </div>
+                {!readOnly && (
+                  <div className="flex gap-2 flex-shrink-0">
+                    {cat ? (
+                      <>
+                        <button onClick={() => openEditGroup(cat)} className="text-[#9d8d81] transition-colors"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '')} title="Editar grupo">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => setDeletingGroup({ id: cat.id, name: cat.name, count: items.length })}
+                          className="text-[#9d8d81] hover:text-red-500 transition-colors" title="Excluir grupo">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => { setEditingGroup(null); setGroupForm({ name: label, code: category }); setGroupErr(''); setShowGroupForm(true) }}
+                        className="text-[10px] font-semibold px-2 py-1 rounded-lg border border-[#e0b88a] text-[#a3690f] hover:bg-[#fdf6ec] transition-colors"
+                      >
+                        Cadastrar grupo
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
+              {items.length === 0 ? (
+                <p className="px-4 py-3 text-xs text-[#c8bdb5]">Nenhuma cor cadastrada.</p>
+              ) : (
               <table className="w-full text-sm">
                 <tbody>
                   {items.map((opt) => (
@@ -1416,10 +1514,11 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
           ))}
           {grouped.length === 0 && (
-            <p className="text-[#9d8d81] text-sm py-8 text-center">Nenhum opcional cadastrado.</p>
+            <p className="text-[#9d8d81] text-sm py-8 text-center">Nenhum grupo cadastrado. Clique em "Adicionar Grupos" para começar.</p>
           )}
         </div>
       )}
@@ -1521,7 +1620,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       )}
 
       {deletingGroup && (
-        <ConfirmDelete name={deletingGroup.name}
+        <ConfirmDelete name={deletingGroup.count > 0 ? `${deletingGroup.name} (${deletingGroup.count} ${deletingGroup.count === 1 ? 'cor' : 'cores'})` : deletingGroup.name}
           onConfirm={async () => { await deleteCatM.mutateAsync(deletingGroup.id); setDeletingGroup(null) }}
           onCancel={() => setDeletingGroup(null)} />
       )}
@@ -1537,7 +1636,7 @@ type GroupModal =
   | { kind: 'new-type'; groupId: string }
   | { kind: 'edit-type'; type: ProductType }
 
-function GroupsTab({ color }: { color: string }) {
+function GroupsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
 
@@ -1599,6 +1698,7 @@ function GroupsTab({ color }: { color: string }) {
   const isLoading = groupsLoading || typesLoading
 
   const orphanTypes = types.filter(t => !t.group_id)
+  const { pageItems: pagedGroups, totalPages, safePage } = paginate(groups, page)
 
   return (
     <div className="space-y-4">
@@ -1692,7 +1792,7 @@ function GroupsTab({ color }: { color: string }) {
         <p className="text-sm text-[#9d8d81]">Carregando...</p>
       ) : (
         <div className="space-y-3">
-          {groups.map(group => {
+          {pagedGroups.map(group => {
             const groupTypes = types.filter(t => t.group_id === group.id)
             return (
               <div key={group.id} className="border border-[#e8e0d6] rounded-xl p-4 bg-white space-y-3">
@@ -1766,6 +1866,8 @@ function GroupsTab({ color }: { color: string }) {
               </div>
             </div>
           )}
+
+          <Pagination page={safePage} totalPages={totalPages} onPage={onPage} color={color} />
         </div>
       )}
     </div>
@@ -1911,6 +2013,12 @@ export default function CadastroPage() {
   const defaultTab: Tab = isCliente ? 'opcionais' : isRep ? 'clientes' : 'produtos'
   const [tab, setTab] = useState<Tab>(defaultTab)
 
+  // Estados de página isolados por tabela (Bloco 64) — persistem entre trocas de aba
+  const [productPage, setProductPage] = useState(1)
+  const [clientPage, setClientPage] = useState(1)
+  const [repPage, setRepPage] = useState(1)
+  const [groupPage, setGroupPage] = useState(1)
+
   const { data: products } = useProducts()
   const { data: clients }  = useClients()
   const { data: reps }     = useRepresentatives()
@@ -2010,7 +2118,7 @@ export default function CadastroPage() {
           {/* ── Painel de Dados ───────────────────────────────────── */}
           <main className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-6"
             style={{ borderTop: `3px solid ${activeColor}` }}>
-            {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} />}
+            {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} page={productPage} onPage={setProductPage} />}
 
             {tab === 'clientes' && (
               <PeopleTab
@@ -2023,6 +2131,7 @@ export default function CadastroPage() {
                 onCreate={async (data) => { await createClient.mutateAsync(data) }}
                 onUpdate={async (id, data) => { await updateClient.mutateAsync({ id, data }) }}
                 onDelete={async (id) => { await deleteClient.mutateAsync(id) }}
+                page={clientPage} onPage={setClientPage}
               />
             )}
 
@@ -2037,12 +2146,13 @@ export default function CadastroPage() {
                 onCreate={async (data) => { await createRep.mutateAsync(data) }}
                 onUpdate={async (id, data) => { await updateRep.mutateAsync({ id, data }) }}
                 onDelete={async (id) => { await deleteRep.mutateAsync(id) }}
+                page={repPage} onPage={setRepPage}
               />
             )}
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} />}
 
             {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} />}
           </main>
