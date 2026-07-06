@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     SECRET_KEY: str
-    PASSWORD_PEPPER: str
+    PASSWORD_PEPPER: str = ""
 
     ACCESS_TOKEN_TTL_MINUTES: int = 30
     REFRESH_TOKEN_TTL_DAYS: int = 7
@@ -22,7 +22,11 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     def get_cors_origins(self) -> List[str]:
-        return json.loads(self.BACKEND_CORS_ORIGINS)
+        try:
+            return json.loads(self.BACKEND_CORS_ORIGINS)
+        except json.JSONDecodeError:
+            # Fallback seguro caso o usuario coloque uma URL direta separada por virgulas em vez de JSON
+            return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS.split(",") if origin.strip()]
 
     def get_allowed_extensions(self) -> List[str]:
         return [ext.strip() for ext in self.ALLOWED_EXTENSIONS.split(",")]
