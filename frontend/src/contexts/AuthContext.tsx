@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import axios from 'axios'
-import { bindAuthHandlers } from '../lib/api'
+import api, { bindAuthHandlers } from '../lib/api'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
 
@@ -54,11 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshSession = useCallback((): Promise<string | null> => {
     if (refreshingRef.current) return refreshingRef.current
 
-    refreshingRef.current = axios
-      .post<{ access_token: string }>('/api/v1/auth/refresh', null, { withCredentials: true })
+    refreshingRef.current = api
+      .post<{ access_token: string }>('/auth/refresh')
       .then(async (res) => {
         const { access_token } = res.data
-        const me = await axios.get<AuthUser>('/api/v1/auth/me', {
+        const me = await api.get<AuthUser>('/auth/me', {
           headers: { Authorization: `Bearer ${access_token}` },
         })
         setSession(access_token, me.data)
@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = state.accessToken
     if (!token) return
     try {
-      const me = await axios.get<AuthUser>('/api/v1/auth/me', {
+      const me = await api.get<AuthUser>('/auth/me', {
         headers: { Authorization: `Bearer ${token}` },
       })
       setState((s) => ({ ...s, user: me.data }))
@@ -115,13 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (identifier: string, password: string) => {
-      const res = await axios.post<{ access_token: string }>(
-        '/api/v1/auth/login',
-        { identifier, password },
-        { withCredentials: true }
+      const res = await api.post<{ access_token: string }>(
+        '/auth/login',
+        { identifier, password }
       )
       const { access_token } = res.data
-      const me = await axios.get<AuthUser>('/api/v1/auth/me', {
+      const me = await api.get<AuthUser>('/auth/me', {
         headers: { Authorization: `Bearer ${access_token}` },
       })
       setSession(access_token, me.data)
@@ -131,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await axios.post('/api/v1/auth/logout', null, { withCredentials: true })
+      await api.post('/auth/logout')
     } catch {
       // ignora falha de rede no logout
     }
