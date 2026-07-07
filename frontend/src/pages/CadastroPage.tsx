@@ -294,6 +294,208 @@ function Pagination({ page, totalPages, onPage, color }: {
   )
 }
 
+// ── Bloco 71: Upload de Fotos em Lote (dropzone + fila concorrente) ───────────
+
+type BatchStatus = 'pending' | 'uploading' | 'success' | 'error'
+interface BatchItem { file: File; sku: string; product: Product; status: BatchStatus; error?: string }
+
+async function traverseFileTree(entry: FileSystemEntryLike): Promise<File[]> {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file!((file: File) => resolve([file]))
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader!()
+      const collected: File[] = []
+      const readBatch = () => {
+        reader.readEntries(async (entries: FileSystemEntryLike[]) => {
+          if (!entries.length) { resolve(collected); return }
+          for (const child of entries) collected.push(...(await traverseFileTree(child)))
+          readBatch()
+        })
+      }
+      readBatch()
+    } else {
+      resolve([])
+    }
+  })
+}
+
+interface FileSystemEntryLike {
+  isFile: boolean
+  isDirectory: boolean
+  file?: (cb: (file: File) => void) => void
+  createReader?: () => { readEntries: (cb: (entries: FileSystemEntryLike[]) => void) => void }
+}
+
+function skuFromFilename(name: string): string {
+  return name.replace(/\.[^./\\]+$/, '').trim().toUpperCase()
+}
+
+function BatchPhotoUpload({ products, color }: { products: Product[]; color: string }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<BatchItem[]>([])
+  const [rejected, setRejected] = useState<string[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const dirInputRef = useRef<HTMLInputElement>(null)
+  const filesInputRef = useRef<HTMLInputElement>(null)
+
+  function processFiles(files: File[]) {
+    const bySku = new Map(products.map((p) => [p.product_code.toUpperCase(), p]))
+    const validated: BatchItem[] = []
+    const rejectedNames: string[] = []
+    for (const file of files) {
+      if (!/\.(jpg|jpeg|png|webp)$/i.test(file.name)) continue
+      const sku = skuFromFilename(file.name)
+      const product = bySku.get(sku)
+      if (product) validated.push({ file, sku, product, status: 'pending' })
+      else rejectedNames.push(file.name)
+    }
+    setItems(validated)
+    setRejected(rejectedNames)
+  }
+
+  async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDragOver(false)
+    const dt = e.dataTransfer
+    const dtItems = dt.items
+    if (dtItems && dtItems.length > 0 && (dtItems[0] as unknown as { webkitGetAsEntry?: unknown }).webkitGetAsEntry) {
+      const entries: FileSystemEntryLike[] = []
+      for (let i = 0; i < dtItems.length; i++) {
+        const entry = (dtItems[i] as unknown as { webkitGetAsEntry: () => FileSystemEntryLike | null }).webkitGetAsEntry()
+        if (entry) entries.push(entry)
+      }
+      const files = (await Promise.all(entries.map((entry) => traverseFileTree(entry)))).flat()
+      processFiles(files)
+    } else {
+      processFiles(Array.from(dt.files))
+    }
+  }
+
+  async function startUpload() {
+    setUploading(true)
+    const queue = [...items]
+    setItems((prev) => prev.map((i) => ({ ...i, status: 'pending' })))
+
+    async function worker() {
+      for (;;) {
+        const next = queue.shift()
+        if (!next) return
+        setItems((prev) => prev.map((i) => (i.file === next.file ? { ...i, status: 'uploading' } : i)))
+        try {
+          const form = new FormData()
+          form.append('file', next.file)
+          await api.post(`/products/${next.product.id}/upload-photo`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          setItems((prev) => prev.map((i) => (i.file === next.file ? { ...i, status: 'success' } : i)))
+        } catch (err) {
+          setItems((prev) => prev.map((i) => (i.file === next.file ? { ...i, status: 'error', error: parseApiError(err) } : i)))
+        }
+      }
+    }
+
+    await Promise.all([worker(), worker(), worker()]) // 3 requisições concorrentes (evita estouro de buffer no Railway)
+    queryClient.invalidateQueries({ queryKey: ['products'] })
+    setUploading(false)
+  }
+
+  const doneCount = items.filter((i) => i.status === 'success' || i.status === 'error').length
+  const progress = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0
+
+  return (
+    <div className="mb-4 border border-[#e8e0d6] rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-[#fcfbfa] text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-[#2c2420]">
+          <Upload className="w-4 h-4" style={{ color }} /> Upload de Fotos em Lote
+        </span>
+        {open ? <ChevronUp className="w-4 h-4 text-[#9d8d81]" /> : <ChevronDown className="w-4 h-4 text-[#9d8d81]" />}
+      </button>
+
+      {open && (
+        <div className="p-4 border-t border-[#e8e0d6] space-y-4">
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className="border-2 border-dashed rounded-xl p-6 text-center transition-colors"
+            style={{ borderColor: dragOver ? color : '#e8e0d6', backgroundColor: dragOver ? `${color}0a` : '#faf8f4' }}
+          >
+            <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: dragOver ? color : '#c8bdb5' }} />
+            <p className="text-sm text-[#6b5d52]">Arraste uma pasta ou arquivos de fotos aqui</p>
+            <p className="text-xs text-[#9d8d81] mt-1">O nome do arquivo deve ser o código do produto (ex.: IML0001.png)</p>
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <button type="button" className="btn-secondary text-xs" onClick={() => dirInputRef.current?.click()}>Selecionar pasta</button>
+              <button type="button" className="btn-secondary text-xs" onClick={() => filesInputRef.current?.click()}>Selecionar arquivos</button>
+            </div>
+            <input
+              ref={dirInputRef} type="file" multiple className="hidden"
+              {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
+              onChange={(e) => processFiles(Array.from(e.target.files ?? []))}
+            />
+            <input
+              ref={filesInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden"
+              onChange={(e) => processFiles(Array.from(e.target.files ?? []))}
+            />
+          </div>
+
+          {(items.length > 0 || rejected.length > 0) && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-4 text-xs">
+                <span className="flex items-center gap-1.5 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {items.length} validada(s)</span>
+                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-[#b25e50]"><X className="w-3.5 h-3.5" /> {rejected.length} rejeitada(s) — SKU não encontrado</span>}
+              </div>
+
+              {rejected.length > 0 && (
+                <div className="bg-[#fef3f2] border border-red-200 rounded-lg p-2.5 max-h-24 overflow-y-auto">
+                  {rejected.map((name) => <p key={name} className="text-[11px] text-[#b25e50] font-mono">{name}</p>)}
+                </div>
+              )}
+
+              {items.length > 0 && (
+                <>
+                  {uploading && (
+                    <div className="w-full h-2 bg-[#f0ece6] rounded-full overflow-hidden">
+                      <div className="h-full transition-all" style={{ width: `${progress}%`, backgroundColor: color }} />
+                    </div>
+                  )}
+                  <div className="max-h-56 overflow-y-auto border border-[#e8e0d6] rounded-lg divide-y divide-[#f0ece6]">
+                    {items.map((item) => (
+                      <div key={item.file.name} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                        <span className="font-mono text-[#4a3f38] truncate">{item.sku}</span>
+                        <span className="text-[#9d8d81] truncate flex-1 px-2">{item.file.name}</span>
+                        {item.status === 'pending' && <span className="text-[#9d8d81]">Aguardando</span>}
+                        {item.status === 'uploading' && <span style={{ color }}>Enviando…</span>}
+                        {item.status === 'success' && <span className="flex items-center gap-1 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> Enviada</span>}
+                        {item.status === 'error' && <span className="text-[#b25e50]" title={item.error}>Erro</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={uploading}
+                    onClick={startUpload}
+                    className="btn-primary w-full disabled:opacity-60"
+                    style={{ backgroundColor: color }}
+                  >
+                    {uploading ? `Enviando… ${progress}%` : `Iniciar Upload (${items.length})`}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const { data: products, isLoading } = useProducts()
   const { data: allOptionals = [] } = useOptionals()
@@ -433,6 +635,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   return (
     <div>
+      <BatchPhotoUpload products={products ?? []} color={color} />
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <span className="text-sm text-[#9d8d81] whitespace-nowrap">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
         <div className="flex items-center gap-2">

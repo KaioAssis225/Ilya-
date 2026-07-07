@@ -7,7 +7,7 @@ const KEY = 'products'
 export function useProducts() {
   return useQuery<Product[]>({
     queryKey: [KEY],
-    queryFn: async () => (await api.get('/products')).data,
+    queryFn: async () => (await api.get('/products', { params: { limit: 200 } })).data,
   })
 }
 
