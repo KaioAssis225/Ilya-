@@ -57,6 +57,23 @@ def _price_for_profile(product: Product, profile: str) -> float:
     return float(product.price_lojista)
 
 
+_MAX_DISCOUNT_BY_ROLE = {
+    UserRole.admin: 100.0,
+    UserRole.representante: 15.0,
+    UserRole.vendedor: 0.0,
+    UserRole.produtos: 0.0,
+}
+
+
+def _validate_discount(discount: float, role: UserRole, product_code: str) -> None:
+    max_discount = _MAX_DISCOUNT_BY_ROLE.get(role, 0.0)
+    if discount < 0 or discount > max_discount:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Desconto de {discount}% no item '{product_code}' excede o limite permitido ({max_discount}%) para o seu nível de acesso.",
+        )
+
+
 async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
     try:
         oid = uuid.UUID(id_or_code)
@@ -120,6 +137,7 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
         unit_price = _price_for_profile(product, profile)
         discount = float(item_in.discount or 0)
+        _validate_discount(discount, current_user.role, product.product_code)
         effective_price = unit_price * (1 - discount / 100)
         subtotal = float(item_in.qty) * effective_price
         total += subtotal
@@ -270,6 +288,7 @@ async def update_order(
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
             unit_price = _price_for_profile(product, profile)
             discount = float(item_in.discount or 0)
+            _validate_discount(discount, current_user.role, product.product_code)
             effective_price = unit_price * (1 - discount / 100)
             subtotal = float(item_in.qty) * effective_price
             total += subtotal

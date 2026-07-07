@@ -161,8 +161,8 @@ function OrderDetailModal({
 
   const canManage = userRole === 'admin' || userRole === 'vendedor'
   const profileSig = localStorage.getItem(`profile_signature_${userId}`)
-  const isContractSigned = !!(order.rep_signed || order.rep_signature || localStorage.getItem(`signature_rep_${order.code}`))
-  const isClientSigned = !!(order.client_signed || order.client_signature || localStorage.getItem(`signature_cli_${order.code}`))
+  const isContractSigned = !!(order.rep_signed || order.rep_signature)
+  const isClientSigned = !!(order.client_signed || order.client_signature)
   const canSignAsClient = (userRole === 'representante' || userRole === 'admin') && !isClientSigned
   const showNotifyBtn = userRole === 'representante' || userRole === 'admin'
   const clientHasAccount = !!clientObj?.has_user

@@ -49,6 +49,7 @@ class UserPasswordReset(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
+    current_password: Optional[str] = None
     new_password: str
 
 
