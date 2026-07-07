@@ -331,9 +331,11 @@ function skuFromFilename(name: string): string {
   return name.replace(/\.[^./\\]+$/, '').trim().toUpperCase()
 }
 
-function BatchPhotoUpload({ products, color }: { products: Product[]; color: string }) {
+function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', collapsible = true }: {
+  products: Product[]; color: string; title?: string; collapsible?: boolean
+}) {
   const queryClient = useQueryClient()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!collapsible)
   const [items, setItems] = useState<BatchItem[]>([])
   const [rejected, setRejected] = useState<string[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -406,20 +408,24 @@ function BatchPhotoUpload({ products, color }: { products: Product[]; color: str
   const progress = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0
 
   return (
-    <div className="mb-4 border border-[#e8e0d6] rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[#fcfbfa] text-left"
-      >
-        <span className="flex items-center gap-2 text-sm font-semibold text-[#2c2420]">
-          <Upload className="w-4 h-4" style={{ color }} /> Upload de Fotos em Lote
-        </span>
-        {open ? <ChevronUp className="w-4 h-4 text-[#9d8d81]" /> : <ChevronDown className="w-4 h-4 text-[#9d8d81]" />}
-      </button>
+    <div className={collapsible ? 'mb-4 border border-[#e8e0d6] rounded-xl overflow-hidden' : ''}>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-[#fcfbfa] text-left"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-[#2c2420]">
+            <Upload className="w-4 h-4" style={{ color }} /> {title}
+          </span>
+          {open ? <ChevronUp className="w-4 h-4 text-[#9d8d81]" /> : <ChevronDown className="w-4 h-4 text-[#9d8d81]" />}
+        </button>
+      ) : (
+        <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2 mb-3"><ImageIcon className="w-4 h-4" style={{ color }} /> {title}</h3>
+      )}
 
       {open && (
-        <div className="p-4 border-t border-[#e8e0d6] space-y-4">
+        <div className={collapsible ? 'p-4 border-t border-[#e8e0d6] space-y-4' : 'space-y-4'}>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
@@ -2180,6 +2186,7 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
 function ImportTab({ color }: { color: string }) {
   const [supportTable, setSupportTable] = useState('product-groups')
   const current = SUPPORT_TABLES.find((t) => t.value === supportTable)!
+  const { data: products = [] } = useProducts()
   return (
     <div className="space-y-6">
       <div>
@@ -2202,6 +2209,11 @@ function ImportTab({ color }: { color: string }) {
         <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> Catálogo de produtos — 2 etapas</h3>
         <ImportUploader endpoint="products" label="Etapa 1: Subir Tabela de Produtos" hint="Cria/atualiza produtos pelo SKU (product_code)." columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
         <ImportUploader endpoint="product-optionals" label="Etapa 2: Subir Tabela de Opcionais do Produto" hint="Vincula opcionais a cada SKU — rode após a Etapa 1." columns="product_code, category, color_name" color={color} />
+      </section>
+
+      <section className="space-y-3">
+        <p className="text-xs text-[#6b5d52] -mt-1">Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.</p>
+        <BatchPhotoUpload products={products} color={color} title="Importar Foto" collapsible={false} />
       </section>
     </div>
   )
