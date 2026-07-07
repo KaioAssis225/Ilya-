@@ -1,9 +1,21 @@
 import axios from 'axios'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : '/api/v1'
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/v1` : '/api/v1',
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,  // envia Cookie HttpOnly do refresh token automaticamente
+})
+
+// Instância "crua" para o fluxo de autenticação (login/refresh/me/logout).
+// Sem interceptors: a `api` acima chama _refreshSession() em qualquer 401,
+// o que criaria uma promise circular se o próprio refresh (chamado aqui)
+// também passasse por esse interceptor e retornasse 401.
+export const authApi = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 })
 
 // Injetado pelo AuthProvider após montar — evita dependência circular

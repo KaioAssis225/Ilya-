@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import axios from 'axios'
-import api, { bindAuthHandlers } from '../lib/api'
+import { authApi, bindAuthHandlers } from '../lib/api'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
 
@@ -54,11 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshSession = useCallback((): Promise<string | null> => {
     if (refreshingRef.current) return refreshingRef.current
 
-    refreshingRef.current = api
+    refreshingRef.current = authApi
       .post<{ access_token: string }>('/auth/refresh')
       .then(async (res) => {
         const { access_token } = res.data
-        const me = await api.get<AuthUser>('/auth/me', {
+        const me = await authApi.get<AuthUser>('/auth/me', {
           headers: { Authorization: `Bearer ${access_token}` },
         })
         setSession(access_token, me.data)
@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = state.accessToken
     if (!token) return
     try {
-      const me = await api.get<AuthUser>('/auth/me', {
+      const me = await authApi.get<AuthUser>('/auth/me', {
         headers: { Authorization: `Bearer ${token}` },
       })
       setState((s) => ({ ...s, user: me.data }))
@@ -115,12 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (identifier: string, password: string) => {
-      const res = await api.post<{ access_token: string }>(
+      const res = await authApi.post<{ access_token: string }>(
         '/auth/login',
         { identifier, password }
       )
       const { access_token } = res.data
-      const me = await api.get<AuthUser>('/auth/me', {
+      const me = await authApi.get<AuthUser>('/auth/me', {
         headers: { Authorization: `Bearer ${access_token}` },
       })
       setSession(access_token, me.data)
@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await api.post('/auth/logout')
+      await authApi.post('/auth/logout')
     } catch {
       // ignora falha de rede no logout
     }
