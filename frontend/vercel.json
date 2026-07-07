@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/static/(.*)", "destination": "https://ilya-production-7857.up.railway.app/static/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
