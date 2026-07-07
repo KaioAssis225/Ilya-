@@ -1,14 +1,14 @@
 """add username, must_change_password, linked_id to users
 
 Revision ID: 0007
-Revises: 24635a791bff
+Revises: 0006
 Create Date: 2026-06-29
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = '0007'
-down_revision = '24635a791bff'
+down_revision = '0006'
 branch_labels = None
 depends_on = None
 
