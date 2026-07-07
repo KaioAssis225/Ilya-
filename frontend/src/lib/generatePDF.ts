@@ -9,7 +9,13 @@ const LIGHT: [number, number, number] = [245, 240, 235]
 const LINE: [number, number, number] = [232, 224, 214]
 
 // ── Carrega imagem de URL para base64 via canvas ──────────────────────────────
-async function urlToBase64(url: string): Promise<string | null> {
+interface LoadedImage {
+  b64: string
+  width: number
+  height: number
+}
+
+async function urlToBase64(url: string): Promise<LoadedImage | null> {
   return new Promise((resolve) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -35,7 +41,7 @@ async function urlToBase64(url: string): Promise<string | null> {
         ctx.closePath()
         ctx.clip()
         ctx.drawImage(img, 0, 0)
-        resolve(canvas.toDataURL('image/png', 0.9))
+        resolve({ b64: canvas.toDataURL('image/png', 0.9), width: w, height: h })
       } catch {
         resolve(null)
       }
@@ -43,6 +49,14 @@ async function urlToBase64(url: string): Promise<string | null> {
     img.onerror = () => resolve(null)
     img.src = url
   })
+}
+
+// ── Calcula o retângulo proporcional (efeito object-contain) dentro de um box quadrado ──
+function containBox(width: number, height: number, box: number): { w: number; h: number; dx: number; dy: number } {
+  const ratio = width / height
+  const w = ratio >= 1 ? box : box * ratio
+  const h = ratio >= 1 ? box / ratio : box
+  return { w, h, dx: (box - w) / 2, dy: (box - h) / 2 }
 }
 
 // ── Formatação monetária pt-BR ────────────────────────────────────────────────
@@ -62,13 +76,13 @@ export async function generateOrderPDF(
   const w = doc.internal.pageSize.getWidth()
 
   // Pré-carrega fotos de todos os itens (paralelo)
-  const photoMap: Record<string, string> = {}
+  const photoMap: Record<string, LoadedImage> = {}
   await Promise.all(
     order.items.map(async (item) => {
       const product = products.find((p) => p.product_code === item.product_code)
       if (product?.photo_url) {
-        const b64 = await urlToBase64(product.photo_url)
-        if (b64) photoMap[item.product_code] = b64
+        const photo = await urlToBase64(product.photo_url)
+        if (photo) photoMap[item.product_code] = photo
       }
     }),
   )
@@ -190,11 +204,12 @@ export async function generateOrderPDF(
       y = 20
     }
 
-    // Foto (14×14mm, x=22, centrada verticalmente)
-    const b64 = photoMap[item.product_code]
-    if (b64) {
+    // Foto (box 14×14mm, x=22 — imagem proporcional e centralizada dentro do box, sem distorcer)
+    const photo = photoMap[item.product_code]
+    if (photo) {
       try {
-        doc.addImage(b64, 'PNG', 22, y - 1, 14, 14)
+        const box = containBox(photo.width, photo.height, 14)
+        doc.addImage(photo.b64, 'PNG', 22 + box.dx, y - 1 + box.dy, box.w, box.h)
       } catch { /* foto inválida — ignora */ }
     } else {
       doc.setDrawColor(...LINE)
