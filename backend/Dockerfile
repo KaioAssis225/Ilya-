@@ -15,4 +15,6 @@ RUN mkdir -p app/static/uploads && \
 USER ilya
 
 EXPOSE 8000
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# alembic upgrade + seed_admin são idempotentes — seguros de rodar a cada start
+# (seed_admin exige ADMIN_EMAIL/ADMIN_PASSWORD e não faz nada se o admin já existir).
+CMD alembic upgrade head && python seed_admin.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
