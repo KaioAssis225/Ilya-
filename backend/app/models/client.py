@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import String, ForeignKey
+from decimal import Decimal
+from sqlalchemy import String, ForeignKey, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -18,3 +19,4 @@ class Client(Base, TimestampMixin):
     state: Mapped[str] = mapped_column(String(2), nullable=False)
     price_profile: Mapped[str] = mapped_column(String(20), nullable=False, default="lojista")
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id", ondelete="SET NULL"), nullable=True)
+    max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("0.00"))

@@ -70,7 +70,10 @@ async def create_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante)),
 ):
-    client = Client(**payload.model_dump())
+    data = payload.model_dump()
+    if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
+        data["max_discount"] = ClientCreate.model_fields["max_discount"].default
+    client = Client(**data)
     if current_user.role == UserRole.representante:
         client.rep_id = current_user.rep_id
     db.add(client)
@@ -110,6 +113,8 @@ async def update_client(
     if current_user.role == UserRole.representante:
         update_data.pop("email", None)
         update_data.pop("price_profile", None)
+    if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
+        update_data.pop("max_discount", None)
     for field, value in update_data.items():
         setattr(client, field, value)
     await db.commit()

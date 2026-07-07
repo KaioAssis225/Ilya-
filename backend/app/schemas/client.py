@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Literal
 from datetime import datetime
@@ -14,6 +15,7 @@ class ClientBase(BaseModel):
     city: str = Field(..., max_length=255)
     state: str = Field(..., min_length=2, max_length=2)
     price_profile: Literal["lojista", "corporativo"] = "lojista"
+    max_discount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
 
 
 class ClientCreate(ClientBase):
@@ -30,6 +32,7 @@ class ClientUpdate(BaseModel):
     city: Optional[str] = Field(None, max_length=255)
     state: Optional[str] = Field(None, min_length=2, max_length=2)
     price_profile: Optional[Literal["lojista", "corporativo"]] = None
+    max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
 
 
 class ClientRead(ClientBase):

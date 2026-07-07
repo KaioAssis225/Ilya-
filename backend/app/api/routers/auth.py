@@ -17,9 +17,12 @@ from app.core.security import (
     hash_refresh_token,
     refresh_token_expiry,
 )
+from decimal import Decimal
+
 from app.core.config import settings
 from app.models.user import User, UserRole
 from app.models.client import Client
+from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
 from app.schemas.auth import LoginRequest, AccessTokenResponse, UserRead, ChangePasswordRequest
 
@@ -174,9 +177,26 @@ async def logout(
     _clear_refresh_cookie(response)
 
 
+async def _resolve_max_discount(db: AsyncSession, user: User) -> Decimal:
+    """Bloco 69: teto de desconto por item, dinamico conforme a role logada."""
+    if user.role == UserRole.representante and user.rep_id:
+        rep = (await db.execute(select(Representative).where(Representative.id == user.rep_id))).scalar_one_or_none()
+        return rep.max_discount if rep else Decimal("0.00")
+    if user.role == UserRole.vendedor and user.linked_id:
+        client = (await db.execute(select(Client).where(Client.id == user.linked_id))).scalar_one_or_none()
+        return client.max_discount if client else Decimal("0.00")
+    return Decimal("100.00")
+
+
 @router.get("/me", response_model=UserRead)
-async def me(current_user: User = Depends(get_authenticated_user)):
-    return current_user
+async def me(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_authenticated_user),
+):
+    max_discount = await _resolve_max_discount(db, current_user)
+    data = UserRead.model_validate(current_user).model_dump()
+    data["max_discount"] = max_discount
+    return data
 
 
 def _validate_password_strength(password: str) -> None:

@@ -92,6 +92,8 @@ async def update_representative(
     update_data = payload.model_dump(exclude_unset=True)
     if current_user.role == UserRole.representante:
         update_data.pop("email", None)
+    if current_user.role != UserRole.admin:
+        update_data.pop("max_discount", None)
     for field, value in update_data.items():
         setattr(rep, field, value)
     await db.commit()

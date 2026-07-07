@@ -1031,6 +1031,8 @@ function PeopleTab<T extends Client | Representative>({
   const { user: authUser } = useAuth()
   const isAdmin = authUser?.role === 'admin'
   const isRep = authUser?.role === 'representante'
+  const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
+  const defaultMaxDiscount = entityType === 'client' ? 0 : 15
 
   const { sorted, sortKey, sortDir, toggle } = useSortedList<T>(items, 'name' as keyof T)
   const [search, setSearch] = useState('')
@@ -1053,7 +1055,7 @@ function PeopleTab<T extends Client | Representative>({
 
   function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
-    setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista' })
+    setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
     setEditing(item); setFormError(null); setShowForm(true)
   }
   function openView(item: T) {
@@ -1168,6 +1170,7 @@ function PeopleTab<T extends Client | Representative>({
                   <Th label="E-mail" col="email" {...thProps} />
                   <Th label="Cidade" col="city" {...thProps} />
                   <Th label="UF" col="state" {...thProps} />
+                  <Th label="Desc. Máx." col="max_discount" {...thProps} />
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -1179,6 +1182,7 @@ function PeopleTab<T extends Client | Representative>({
                     <td className="px-4 py-3 text-[#4a3f38]">{item.email}</td>
                     <td className="px-4 py-3 text-[#4a3f38]">{item.city}</td>
                     <td className="px-4 py-3 text-[#8a7a6e]">{item.state}</td>
+                    <td className="px-4 py-3 text-[#8a7a6e]">{item.max_discount}%</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => openView(item)} title="Visualizar" className="text-[#9d8d81] transition-colors"
@@ -1195,7 +1199,7 @@ function PeopleTab<T extends Client | Representative>({
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center text-[#9d8d81]">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1294,6 +1298,16 @@ function PeopleTab<T extends Client | Representative>({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {canEditDiscount && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-[#9d8d81]">Desconto Máximo (%)</span>
+                <input
+                  type="number" min={0} max={100} step={0.5} className="input"
+                  value={form.max_discount ?? defaultMaxDiscount}
+                  onChange={(e) => setForm({ ...form, max_discount: e.target.value === '' ? undefined : Number(e.target.value) })}
+                />
               </div>
             )}
             {formError && (

@@ -965,12 +965,12 @@ export default function OrcamentoPage() {
                           </td>
                           <td className="px-4 py-3.5 align-middle">
                             <input
-                              type="number" min={0} max={100}
+                              type="number" min={0} max={user?.max_discount ?? 0}
                               className="input w-16 text-center text-xs border border-[#e8e0d6] rounded-lg px-1.5 py-1 bg-white text-[#2c2420]"
                               value={item.discount === 0 ? '' : item.discount}
                               placeholder="0"
                               onChange={(e) => {
-                                const val = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                                const val = Math.min(user?.max_discount ?? 0, Math.max(0, Number(e.target.value) || 0))
                                 setCart((prev) => prev.map((i) => i.product_code === item.product_code ? { ...i, discount: val } : i))
                               }}
                             />

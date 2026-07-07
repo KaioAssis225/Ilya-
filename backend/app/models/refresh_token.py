@@ -23,6 +23,7 @@ class RefreshToken(Base):
 
 async def cleanup_expired_tokens(db: AsyncSession) -> None:
     """Remove refresh tokens expirados ou já revogados (Bloco 68, item 7)."""
-    now = datetime.now(timezone.utc)
+    # Coluna expires_at é TIMESTAMP WITHOUT TIME ZONE (UTC naive) — mesmo padrao de refresh_token_expiry().
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.execute(delete(RefreshToken).where(or_(RefreshToken.expires_at < now, RefreshToken.revoked.is_(True))))
     await db.commit()

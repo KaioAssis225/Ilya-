@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel
 from app.models.user import UserRole
@@ -24,6 +25,7 @@ class UserRead(BaseModel):
     linked_id: uuid.UUID | None
     is_active: bool
     must_change_password: bool
+    max_discount: Decimal = Decimal("0.00")
 
     model_config = {"from_attributes": True}
 

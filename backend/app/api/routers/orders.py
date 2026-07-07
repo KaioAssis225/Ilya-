@@ -57,16 +57,16 @@ def _price_for_profile(product: Product, profile: str) -> float:
     return float(product.price_lojista)
 
 
-_MAX_DISCOUNT_BY_ROLE = {
-    UserRole.admin: 100.0,
-    UserRole.representante: 15.0,
-    UserRole.vendedor: 0.0,
-    UserRole.produtos: 0.0,
-}
+def _resolve_max_discount(current_user: User, client: Client, rep: Representative | None) -> float:
+    """Bloco 69: teto dinamico por Cliente/Representante em vez de limite fixo por role."""
+    if current_user.role == UserRole.representante:
+        return float(rep.max_discount) if rep else 0.0
+    if current_user.role == UserRole.vendedor:
+        return float(client.max_discount)
+    return 100.0
 
 
-def _validate_discount(discount: float, role: UserRole, product_code: str) -> None:
-    max_discount = _MAX_DISCOUNT_BY_ROLE.get(role, 0.0)
+def _validate_discount(discount: float, max_discount: float, product_code: str) -> None:
     if discount < 0 or discount > max_discount:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -119,10 +119,13 @@ async def create_order(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
 
+    rep: Representative | None = None
     if payload.rep_id:
         rep = (await db.execute(select(Representative).where(Representative.id == payload.rep_id))).scalar_one_or_none()
         if not rep:
             raise HTTPException(status_code=404, detail="Representante não encontrado.")
+
+    max_discount = _resolve_max_discount(current_user, client, rep)
 
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
     product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
@@ -137,7 +140,7 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
         unit_price = _price_for_profile(product, profile)
         discount = float(item_in.discount or 0)
-        _validate_discount(discount, current_user.role, product.product_code)
+        _validate_discount(discount, max_discount, product.product_code)
         effective_price = unit_price * (1 - discount / 100)
         subtotal = float(item_in.qty) * effective_price
         total += subtotal
@@ -278,6 +281,8 @@ async def update_order(
         )
         client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
         profile = client.price_profile if client else "lojista"  # faturamento pelo perfil (V-Bloco62)
+        rep = (await db.execute(select(Representative).where(Representative.id == order.rep_id))).scalar_one_or_none() if order.rep_id else None
+        max_discount = _resolve_max_discount(current_user, client, rep)
 
         total = 0.0
         total_ipi = 0.0
@@ -288,7 +293,7 @@ async def update_order(
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
             unit_price = _price_for_profile(product, profile)
             discount = float(item_in.discount or 0)
-            _validate_discount(discount, current_user.role, product.product_code)
+            _validate_discount(discount, max_discount, product.product_code)
             effective_price = unit_price * (1 - discount / 100)
             subtotal = float(item_in.qty) * effective_price
             total += subtotal

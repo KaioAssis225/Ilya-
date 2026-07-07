@@ -111,6 +111,7 @@ export interface Client {
   city: string
   state: string
   price_profile: 'lojista' | 'corporativo'
+  max_discount: number
   rep_id: string | null
   created_at: string
   updated_at: string
@@ -128,6 +129,7 @@ export interface ClientCreate {
   city: string
   state: string
   price_profile?: 'lojista' | 'corporativo'
+  max_discount?: number
 }
 
 export interface ClientUpdate extends Partial<ClientCreate> {}

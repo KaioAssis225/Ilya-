@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
 from datetime import datetime
@@ -13,6 +14,7 @@ class RepresentativeBase(BaseModel):
     address: str = Field(..., max_length=255)
     city: str = Field(..., max_length=255)
     state: str = Field(..., min_length=2, max_length=2)
+    max_discount: Decimal = Field(default=Decimal("15.00"), ge=0, le=100)
 
 
 class RepresentativeCreate(RepresentativeBase):
@@ -28,6 +30,7 @@ class RepresentativeUpdate(BaseModel):
     address: Optional[str] = Field(None, max_length=255)
     city: Optional[str] = Field(None, max_length=255)
     state: Optional[str] = Field(None, min_length=2, max_length=2)
+    max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
 
 
 class RepresentativeRead(RepresentativeBase):

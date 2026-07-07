@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import String
+from decimal import Decimal
+from sqlalchemy import String, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -16,3 +17,4 @@ class Representative(Base, TimestampMixin):
     address: Mapped[str] = mapped_column(String(255), nullable=False)
     city: Mapped[str] = mapped_column(String(255), nullable=False)
     state: Mapped[str] = mapped_column(String(2), nullable=False)
+    max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("15.00"))

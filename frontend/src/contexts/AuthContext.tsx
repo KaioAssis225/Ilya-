@@ -15,6 +15,7 @@ export interface AuthUser {
   linked_id: string | null
   is_active: boolean
   must_change_password: boolean
+  max_discount: number
 }
 
 interface AuthState {
