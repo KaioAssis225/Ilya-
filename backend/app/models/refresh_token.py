@@ -1,6 +1,7 @@
 import uuid
-from datetime import datetime
-from sqlalchemy import String, ForeignKey, DateTime, Boolean, func
+from datetime import datetime, timezone
+from sqlalchemy import String, ForeignKey, DateTime, Boolean, func, delete, or_
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -18,3 +19,10 @@ class RefreshToken(Base):
     )
 
     user: Mapped["User"] = relationship(lazy="selectin")
+
+
+async def cleanup_expired_tokens(db: AsyncSession) -> None:
+    """Remove refresh tokens expirados ou já revogados (Bloco 68, item 7)."""
+    now = datetime.now(timezone.utc)
+    await db.execute(delete(RefreshToken).where(or_(RefreshToken.expires_at < now, RefreshToken.revoked.is_(True))))
+    await db.commit()

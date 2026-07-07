@@ -11,7 +11,7 @@ import re
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,8 +32,19 @@ _ADMIN = Depends(require_roles(UserRole.admin))
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _read_upload(file: UploadFile) -> bytes:
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Arquivo excede o limite de 10MB.",
+        )
+    return content
 
 def _read_rows(content: bytes) -> list[dict]:
     """Decodifica o CSV (UTF-8 com/sem BOM), detecta delimitador (, ou ;) e
@@ -151,7 +162,7 @@ def _address_fields(row: dict) -> dict:
 @router.post("/product-groups")
 async def import_product_groups(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
     """Colunas: name, ipi. Upsert por name."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     existing = {g.name: g for g in (await db.execute(select(ProductGroup))).scalars().all()}
     created = updated = 0
     errors: list[dict] = []
@@ -181,7 +192,7 @@ async def import_product_groups(file: UploadFile = File(...), db: AsyncSession =
 @router.post("/product-types")
 async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
     """Colunas: name, group (nome do grupo → FK). Upsert por name."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     existing = {t.name: t for t in (await db.execute(select(ProductType))).scalars().all()}
     groups = {g.name: g for g in (await db.execute(select(ProductGroup))).scalars().all()}
     created = updated = 0
@@ -218,7 +229,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
 @router.post("/optionals")
 async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
     """Colunas: category (código), color_name. Upsert por (category, color_name)."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     existing = {
         (o.category, o.color_name): o
         for o in (await db.execute(select(OptionalColor))).scalars().all()
@@ -248,7 +259,7 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
 @router.post("/representatives")
 async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
     """Colunas: name, phone, email, cep, numero, address, city, state. Upsert por email."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     existing = {r.email.lower(): r for r in (await db.execute(select(Representative))).scalars().all()}
     created = updated = 0
     errors: list[dict] = []
@@ -279,7 +290,7 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
 async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
     """Colunas: name, phone, email, cep, numero, address, city, state, price_profile,
     rep_email (ou rep_name → FK representante). Upsert por email."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     existing = {c.email.lower(): c for c in (await db.execute(select(Client))).scalars().all()}
     reps = (await db.execute(select(Representative))).scalars().all()
     reps_by_email = {r.email.lower(): r for r in reps}
@@ -334,7 +345,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
     """Etapa 1 — Colunas: product_code, description, type, is_circular,
     altura, largura, profundidade, price_lojista, price_corporativo, observacao.
     Upsert por product_code (SKU)."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     existing = {p.product_code: p for p in (await db.execute(select(Product))).scalars().all()}
     created = updated = 0
     errors: list[dict] = []
@@ -381,7 +392,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
 async def import_product_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
     """Etapa 2 — Colunas: product_code, category, color_name. Cria os vínculos
     N:N produto↔opcional (idempotente via ON CONFLICT DO NOTHING)."""
-    rows = _read_rows(await file.read())
+    rows = _read_rows(await _read_upload(file))
     products = {p.product_code: p for p in (await db.execute(select(Product))).scalars().all()}
     optionals = {
         (o.category, o.color_name): o

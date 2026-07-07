@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     SECRET_KEY: str
-    PASSWORD_PEPPER: str = ""
+    PASSWORD_PEPPER: str
 
     ACCESS_TOKEN_TTL_MINUTES: int = 30
     REFRESH_TOKEN_TTL_DAYS: int = 7

@@ -11,6 +11,8 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.db.session import AsyncSessionLocal
+from app.models.refresh_token import cleanup_expired_tokens
 from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, optional_categories_router, users_router, notifications_router, utils_router, import_router
 from app.api.routers.auth import router as auth_router
 
@@ -26,6 +28,8 @@ logger = logging.getLogger("ilya")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    async with AsyncSessionLocal() as session:
+        await cleanup_expired_tokens(session)
     logger.info("Ilya API iniciada")
     yield
     logger.info("Ilya API encerrada")

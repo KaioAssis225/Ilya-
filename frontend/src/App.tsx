@@ -230,7 +230,14 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
               <Route path="/" element={<RootRedirect />} />
-              <Route path="/cadastros" element={<CadastroPage />} />
+              <Route
+                path="/cadastros"
+                element={
+                  <RoleGuard allowed={canSeeCadastros}>
+                    <CadastroPage />
+                  </RoleGuard>
+                }
+              />
               <Route path="/produtos" element={<ProdutosPage />} />
               <Route
                 path="/orcamentos"

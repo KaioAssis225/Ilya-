@@ -68,7 +68,7 @@ async def list_clients(
 async def create_client(
     payload: ClientCreate,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante)),
 ):
     client = Client(**payload.model_dump())
     if current_user.role == UserRole.representante:

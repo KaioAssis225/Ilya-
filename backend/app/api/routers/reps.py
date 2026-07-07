@@ -50,7 +50,7 @@ async def list_representatives(
 async def create_representative(
     payload: RepresentativeCreate,
     db: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.vendedor)),
+    _: User = Depends(require_roles(UserRole.admin)),
 ):
     rep = Representative(**payload.model_dump())
     db.add(rep)
