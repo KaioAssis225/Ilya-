@@ -34,7 +34,12 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         key=_COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="strict",
+        # SameSite=None é obrigatório para o cookie ser enviado em requisições
+        # cross-origin (frontend e backend em domínios diferentes, ex.: Vercel +
+        # Railway); exige Secure=True (só funciona em HTTPS). Em dev local, o
+        # front chama a API via proxy same-origin, então Lax basta e evita
+        # exigir HTTPS na máquina do dev.
+        samesite="none" if not settings.DEBUG else "lax",
         secure=not settings.DEBUG,
         max_age=_COOKIE_MAX_AGE,
         path="/api/v1/auth",
@@ -42,7 +47,12 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=_COOKIE_NAME, path="/api/v1/auth")
+    response.delete_cookie(
+        key=_COOKIE_NAME,
+        path="/api/v1/auth",
+        samesite="none" if not settings.DEBUG else "lax",
+        secure=not settings.DEBUG,
+    )
 
 
 @router.post("/login", response_model=AccessTokenResponse)
