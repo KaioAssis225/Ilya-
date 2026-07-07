@@ -195,7 +195,7 @@ async def create_order(
 @router.get("", response_model=List[OrderListRead])
 async def list_orders(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=1000, le=5000),
+    limit: int = Query(default=100, le=200),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -509,8 +509,8 @@ class SignPayload(BaseModel):
     def validate_signature(cls, v: str) -> str:
         if len(v) > _MAX_SIG_SIZE:
             raise ValueError("Assinatura excede o tamanho máximo permitido.")
-        if not v.startswith("data:image/"):
-            raise ValueError("Formato de assinatura inválido.")
+        if not v.startswith("data:image/png;base64,"):
+            raise ValueError("Formato de assinatura inválido. Esperado PNG em base64.")
         return v
 
 
@@ -597,8 +597,8 @@ class SignWithTokenPayload(BaseModel):
     def validate_signature(cls, v: str) -> str:
         if len(v) > _MAX_SIG_SIZE:
             raise ValueError("Assinatura excede o tamanho máximo permitido.")
-        if not v.startswith("data:image/"):
-            raise ValueError("Formato de assinatura inválido.")
+        if not v.startswith("data:image/png;base64,"):
+            raise ValueError("Formato de assinatura inválido. Esperado PNG em base64.")
         return v
 
 

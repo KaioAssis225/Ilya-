@@ -42,7 +42,7 @@ def _with_has_user(client: Client, status_map: dict[uuid.UUID, tuple[bool, bool]
 @router.get("", response_model=List[ClientRead])
 async def list_clients(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=1000, le=5000),
+    limit: int = Query(default=100, le=200),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -106,7 +106,11 @@ async def update_client(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     _rep_guard(client, current_user)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    update_data = payload.model_dump(exclude_unset=True)
+    if current_user.role == UserRole.representante:
+        update_data.pop("email", None)
+        update_data.pop("price_profile", None)
+    for field, value in update_data.items():
         setattr(client, field, value)
     await db.commit()
     await db.refresh(client)

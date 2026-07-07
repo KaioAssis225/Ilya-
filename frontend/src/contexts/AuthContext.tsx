@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (axios.isAxiosError(err) && err.response?.status === 401) {
           clearSession()
         } else {
-          console.error('Falha ao renovar sessão (sessão preservada):', err)
+          if (import.meta.env.DEV) console.error('Falha ao renovar sessão (sessão preservada):', err)
         }
         return null
       })
@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState((s) => ({ ...s, user: me.data }))
     } catch (err) {
       // Não propaga: callers (ex.: troca de senha) não devem exibir erro falso (V-M6).
-      console.error('Falha ao atualizar dados do usuário:', err)
+      if (import.meta.env.DEV) console.error('Falha ao atualizar dados do usuário:', err)
     }
   }, [state.accessToken])
 

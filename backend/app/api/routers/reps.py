@@ -29,7 +29,7 @@ def _with_has_user(rep: Representative, linked: set[uuid.UUID]) -> Representativ
 @router.get("", response_model=List[RepresentativeRead])
 async def list_representatives(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=1000, le=5000),
+    limit: int = Query(default=100, le=200),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -89,7 +89,10 @@ async def update_representative(
     rep = result.scalar_one_or_none()
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    update_data = payload.model_dump(exclude_unset=True)
+    if current_user.role == UserRole.representante:
+        update_data.pop("email", None)
+    for field, value in update_data.items():
         setattr(rep, field, value)
     await db.commit()
     await db.refresh(rep)
