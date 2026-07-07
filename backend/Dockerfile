@@ -7,12 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p app/static/uploads && \
-    addgroup --system ilya && \
-    adduser --system --ingroup ilya ilya && \
-    chown -R ilya:ilya /app
-
-USER ilya
+RUN mkdir -p app/static/uploads
 
 EXPOSE 8000
 # alembic upgrade + seed_admin são idempotentes — seguros de rodar a cada start
