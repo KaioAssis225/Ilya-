@@ -259,6 +259,25 @@ function groupOptionalsByCategory(optionals: OptionalColor[], catLabel: (code: s
   }))
 }
 
+/** Bloco 75: mescla categorias liberadas via "Permitir todos" (all_optionals_categories)
+ * com os opcionais específicos do produto (p.optionals), já que uma categoria marcada
+ * como "Permitir todos" não tem itens individuais em p.optionals e ficava invisível
+ * na listagem. Categorias globais recebem o sufixo "(Todos)". */
+function getProductOptionalsLabel(
+  p: Pick<Product, 'optionals' | 'all_optionals_categories'>,
+  catLabel: (code: string) => string = (c) => c,
+  separator: string = ', '
+): string {
+  const specificGroups = groupOptionalsByCategory(p.optionals, catLabel)
+  const specificCats = new Set(specificGroups.map(g => g.category))
+  const globalCats = (p.all_optionals_categories ?? '').split(',').filter(Boolean)
+  const labels = [
+    ...globalCats.filter(c => !specificCats.has(c)).map(c => `${catLabel(c)} (Todos)`),
+    ...specificGroups.map(g => g.label),
+  ]
+  return labels.join(separator)
+}
+
 // ── Paginação ergonômica (Bloco 64) ───────────────────────────────────────────
 const ITEMS_PER_PAGE = 10
 
@@ -697,8 +716,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <span className="block text-[10px] text-[#6b5d52]">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</span>
                     </span>
                   </div>
-                  {p.optionals.length > 0 && (
-                    <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{groupOptionalsByCategory(p.optionals, catLabel).map(g => g.label).join(' · ')}</p>
+                  {(p.optionals.length > 0 || p.all_optionals_categories) && (
+                    <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ')}</p>
                   )}
                 </div>
               </div>
@@ -735,8 +754,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <div className="text-[10px] text-[#6b5d52]">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</div>
                     </td>
                     <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
-                      {p.optionals.length > 0
-                        ? groupOptionalsByCategory(p.optionals, catLabel).map(g => g.label).join(', ')
+                      {p.optionals.length > 0 || p.all_optionals_categories
+                        ? getProductOptionalsLabel(p, catLabel, ', ')
                         : '—'}
                     </td>
                     <td className="px-4 py-3">
