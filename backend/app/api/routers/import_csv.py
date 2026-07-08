@@ -8,6 +8,7 @@ import csv
 import io
 import logging
 import re
+import unicodedata
 from decimal import Decimal
 from typing import Optional
 
@@ -46,9 +47,18 @@ async def _read_upload(file: UploadFile) -> bytes:
         )
     return content
 
+def _normalize_key(key: str) -> str:
+    """Ignora acentos, espaços, sublinhados e caixa alta nos cabeçalhos do CSV
+    (ex.: 'Preço Lojista', 'preco_lojista' e 'PRECO LOJISTA' viram a mesma chave),
+    tornando a importação tolerante a variações de formatação da planilha."""
+    key = unicodedata.normalize("NFKD", key or "")
+    key = "".join(c for c in key if not unicodedata.combining(c))
+    return re.sub(r"[\s_]+", "", key.strip().lower())
+
+
 def _read_rows(content: bytes) -> list[dict]:
     """Decodifica o CSV (UTF-8 com/sem BOM), detecta delimitador (, ou ;) e
-    normaliza os cabeçalhos para minúsculas sem espaços."""
+    normaliza os cabeçalhos (minúsculas, sem espaços/sublinhados/acentos)."""
     text = content.decode("utf-8-sig", errors="replace")
     sample = text[:4096]
     delimiter = ";" if sample.count(";") > sample.count(",") else ","
@@ -56,7 +66,7 @@ def _read_rows(content: bytes) -> list[dict]:
     rows: list[dict] = []
     for raw in reader:
         row = {
-            (k or "").strip().lower(): (v.strip() if isinstance(v, str) else v)
+            _normalize_key(k or ""): (v.strip() if isinstance(v, str) else v)
             for k, v in raw.items()
         }
         if any(v for v in row.values()):
@@ -66,7 +76,7 @@ def _read_rows(content: bytes) -> list[dict]:
 
 def _first(row: dict, *keys: str) -> Optional[str]:
     for k in keys:
-        v = row.get(k)
+        v = row.get(_normalize_key(k))
         if v not in (None, ""):
             return v
     return None
@@ -354,8 +364,8 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             code = _require(row, "product_code", "product_code", "sku", "codigo", "código")
             description = _require(row, "description", "description", "descricao", "descrição")
             is_circular = _bool(_first(row, "is_circular", "circular"))
-            price_lojista = _dec(_first(row, "price_lojista", "preco_lojista", "preço_lojista"), "price_lojista", min_value=Decimal("0"))
-            price_corporativo = _dec(_first(row, "price_corporativo", "preco_corporativo", "preço_corporativo"), "price_corporativo", min_value=Decimal("0"))
+            price_lojista = _dec(_require(row, "price_lojista", "price_lojista", "preco_lojista", "preço_lojista"), "price_lojista", min_value=Decimal("0"))
+            price_corporativo = _dec(_require(row, "price_corporativo", "price_corporativo", "preco_corporativo", "preço_corporativo"), "price_corporativo", min_value=Decimal("0"))
             fields = dict(
                 description=description,
                 type=_first(row, "type", "tipo") or "Outro",

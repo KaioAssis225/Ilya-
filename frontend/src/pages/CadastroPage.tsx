@@ -564,6 +564,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       largura: p.largura,
       profundidade: p.profundidade,
       price: p.price ?? 0,
+      price_lojista: p.price_lojista ?? 0,
+      price_corporativo: p.price_corporativo ?? 0,
       observacao: p.observacao ?? null,
       optional_ids: isConjunto ? [] : p.optionals.map((o) => o.id),
       set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
@@ -689,7 +691,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
                         : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </span>
-                    <span className="text-sm font-bold text-[#2c2420]">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price)}</span>
+                    <span className="text-right">
+                      <span className="block text-sm font-bold text-[#2c2420]">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</span>
+                      <span className="block text-[10px] text-[#6b5d52]">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</span>
+                    </span>
                   </div>
                   {p.optionals.length > 0 && (
                     <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{groupOptionalsByCategory(p.optionals, catLabel).map(g => g.label).join(' · ')}</p>
