@@ -8,7 +8,7 @@ interface SafePriceProps {
 
 export function SafePrice({ value, className, prefix = 'R$ ' }: SafePriceProps) {
   const spanRef = useRef<HTMLSpanElement>(null)
-  const formatted = `${prefix}${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const formatted = `${prefix}${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   useEffect(() => {
     const el = spanRef.current
