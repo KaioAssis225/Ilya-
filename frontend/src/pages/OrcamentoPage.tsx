@@ -321,6 +321,17 @@ function MobileCartCard({
             <div className="min-w-0">
               <span className="text-[11px] text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
               <p className="text-xs font-semibold text-[#2c2420] leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
+              {item._product.components.length > 0 && (
+                <ul className="mt-0.5 space-y-0.5">
+                  {item._product.components.map((comp) => (
+                    <li key={comp.id} className="text-[10px] text-[#6b5d52] leading-snug">
+                      • {comp.qty}x {comp.description} ({comp.is_circular
+                        ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
+                        : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
+                    </li>
+                  ))}
+                </ul>
+              )}
               {item._product.observacao && (
                 <p className="text-[10px] text-[#8b6914] italic mt-0.5 line-clamp-2">{item._product.observacao}</p>
               )}
@@ -598,6 +609,33 @@ export default function OrcamentoPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, reps, clients])
+
+  // Bloco 77: restaura cliente/representante selecionados na sessão anterior
+  // (não se aplica em modo edição, nem quando o campo já está travado pela role).
+  useEffect(() => {
+    if (editId) return
+    if (!selectedClient && !clientLocked && clients.length > 0) {
+      const savedClientId = localStorage.getItem('orcamento_client_id')
+      const c = savedClientId ? clients.find(cl => cl.id === savedClientId) : null
+      if (c) setSelectedClient(c)
+    }
+    if (!selectedRep && !repLocked && reps.length > 0) {
+      const savedRepId = localStorage.getItem('orcamento_rep_id')
+      const r = savedRepId ? reps.find(rp => rp.id === savedRepId) : null
+      if (r) setSelectedRep(r)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients, reps, editId])
+
+  useEffect(() => {
+    if (selectedClient) localStorage.setItem('orcamento_client_id', selectedClient.id)
+    else localStorage.removeItem('orcamento_client_id')
+  }, [selectedClient])
+
+  useEffect(() => {
+    if (selectedRep) localStorage.setItem('orcamento_rep_id', selectedRep.id)
+    else localStorage.removeItem('orcamento_rep_id')
+  }, [selectedRep])
 
   // Pre-populate cart + client + rep when editing an existing order
   useEffect(() => {
@@ -944,6 +982,17 @@ export default function OrcamentoPage() {
                               <div className="flex-1 min-w-0">
                                 <span className="text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
                                 <span className="text-[#2c2420] ml-2 text-xs font-semibold">{item._product.description}</span>
+                                {item._product.components.length > 0 && (
+                                  <ul className="mt-0.5 space-y-0.5">
+                                    {item._product.components.map((comp) => (
+                                      <li key={comp.id} className="text-[10px] text-[#6b5d52] leading-snug">
+                                        • {comp.qty}x {comp.description} ({comp.is_circular
+                                          ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
+                                          : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
                                 {item._product.observacao && (
                                   <div className="text-[10px] text-[#8b6914] italic mt-0.5">{item._product.observacao}</div>
                                 )}

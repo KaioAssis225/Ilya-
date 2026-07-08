@@ -197,8 +197,21 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
 
+  const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
+
   for (const item of order.items) {
-    const rowH = 20
+    // Bloco 79: localiza o produto pelo SKU para extrair os componentes do conjunto
+    // (se houver) e calcula a altura da linha dinamicamente, evitando sobreposição
+    // entre dimensões, observação, opcionais e a lista de componentes.
+    const product = products.find((p) => p.product_code === item.product_code)
+    const components = product?.components ?? []
+    const hasDims = item.largura !== 0 || item.altura !== 0
+    const optSlots = Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
+      label: catLabel(cat),
+      value,
+    }))
+    const extraLines = (hasDims ? 1 : 0) + (item.observacao ? 1 : 0) + (optSlots.length > 0 ? 1 : 0) + components.length
+    const rowH = Math.max(20, 13 + extraLines * 4)
     if (y + rowH > 265) {
       doc.addPage()
       y = 20
@@ -233,35 +246,48 @@ export async function generateOrderPDF(
     doc.setTextColor(...MUTED)
     doc.text(item.product_code, 40, y + 4.5)
 
-    // Dimensões (omitido para conjuntos, onde largura e altura ficam em 0)
-    const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
-    if (item.largura !== 0 || item.altura !== 0) {
+    // Linhas empilhadas abaixo do código: dimensões, observação, opcionais e
+    // componentes do conjunto — cada uma reserva seu próprio espaço vertical.
+    let lineY = y + 8.5
+
+    if (hasDims) {
       const dimRaw = item.is_circular
         ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
         : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`
       doc.setFontSize(7)
       doc.setTextColor(...MUTED)
-      doc.text(`Dimensões: ${dimRaw}`, 40, y + 8.5)
+      doc.text(`Dimensões: ${dimRaw}`, 40, lineY)
+      lineY += 4
     }
 
     // Observação técnica do produto
     if (item.observacao) {
       doc.setFontSize(6)
       doc.setTextColor(...MUTED)
-      doc.text(`Obs.: ${item.observacao}`, 40, y + 12.5)
+      doc.text(`Obs.: ${item.observacao}`, 40, lineY)
+      lineY += 4
     }
 
     // Opcionais — linha horizontal, uma entrada por categoria dinâmica do pedido
-    const optSlots = Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
-      label: catLabel(cat),
-      value,
-    }))
-
     if (optSlots.length > 0) {
       const optText = 'Opcionais: ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ')
       doc.setFontSize(6.5)
       doc.setTextColor(...MUTED)
-      doc.text(optText, 40, y + 12.5)
+      doc.text(optText, 40, lineY)
+      lineY += 4
+    }
+
+    // Componentes do conjunto — um marcador por item, com quantidade e dimensões
+    if (components.length > 0) {
+      doc.setFontSize(6.5)
+      doc.setTextColor(...MUTED)
+      for (const comp of components) {
+        const compDim = comp.is_circular
+          ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
+          : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
+        doc.text(`• ${comp.qty}x ${comp.description} (${compDim})`, 40, lineY)
+        lineY += 4
+      }
     }
 
     // Colunas numéricas

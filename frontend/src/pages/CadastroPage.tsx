@@ -556,6 +556,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [addItemQty, setAddItemQty] = useState(1)
   const [compForm, setCompForm] = useState<ProductSetComponentCreate>(EMPTY_COMP)
   const [compActiveCategories, setCompActiveCategories] = useState<string[]>([])
+  const [editingCompIndex, setEditingCompIndex] = useState<number | null>(null)
   const [showNewTypeModal, setShowNewTypeModal] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
@@ -564,7 +565,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     setForm(EMPTY_PRODUCT); setEditing(null)
     setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null)
     setAddItemCode(''); setAddItemQty(1)
-    setCompForm(EMPTY_COMP); setCompActiveCategories([])
+    setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setShowForm(true)
   }
   function openEdit(p: Product) {
@@ -601,7 +602,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     })
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
     setAddItemCode(''); setAddItemQty(1)
-    setCompForm(EMPTY_COMP); setCompActiveCategories([])
+    setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setShowForm(true)
   }
 
@@ -927,20 +928,38 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                             } — qty: {comp.qty}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setForm(prev => ({ ...prev, components: (prev.components ?? []).filter((_, i) => i !== idx) }))}
-                          className="text-[#9d8d81] hover:text-red-500 transition-colors mt-0.5 flex-shrink-0"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCompForm(comp)
+                              setCompActiveCategories(Array.from(new Set(
+                                comp.optional_ids
+                                  .map(id => allOptionals.find(o => o.id === id)?.category)
+                                  .filter((c): c is string => !!c)
+                              )))
+                              setEditingCompIndex(idx)
+                            }}
+                            className="text-[#9d8d81] hover:opacity-70 transition-colors mt-0.5"
+                            style={{ color: editingCompIndex === idx ? color : undefined }}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setForm(prev => ({ ...prev, components: (prev.components ?? []).filter((_, i) => i !== idx) }))}
+                            className="text-[#9d8d81] hover:text-red-500 transition-colors mt-0.5"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
 
                 <div className="border border-[#e8dccb] rounded-xl p-4 bg-[#fdf8f2] space-y-3">
-                  <span className="text-xs font-semibold text-[#4a3f38]">Novo Componente</span>
+                  <span className="text-xs font-semibold text-[#4a3f38]">{editingCompIndex !== null ? 'Editar Componente' : 'Novo Componente'}</span>
                   <label className="flex flex-col gap-1">
                     <span className="text-xs text-[#9d8d81]">Descrição *</span>
                     <input className="input" placeholder="ex: Sofá 3 lugares, Poltrona, Mesa..." value={compForm.description}
@@ -1045,19 +1064,39 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     )}
                   </div>
 
-                  <button type="button"
-                    onClick={() => {
-                      if (!compForm.description.trim()) return
-                      setForm(prev => ({ ...prev, components: [...(prev.components ?? []), compForm] }))
-                      setCompForm(EMPTY_COMP)
-                      setCompActiveCategories([])
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
-                    style={{ backgroundColor: color }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Adicionar Componente
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button type="button"
+                      onClick={() => {
+                        if (!compForm.description.trim()) return
+                        setForm(prev => {
+                          const components = [...(prev.components ?? [])]
+                          if (editingCompIndex !== null) components[editingCompIndex] = compForm
+                          else components.push(compForm)
+                          return { ...prev, components }
+                        })
+                        setCompForm(EMPTY_COMP)
+                        setCompActiveCategories([])
+                        setEditingCompIndex(null)
+                      }}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
+                      style={{ backgroundColor: color }}
+                    >
+                      <Plus className="w-4 h-4" />
+                      {editingCompIndex !== null ? 'Salvar Componente' : 'Adicionar Componente'}
+                    </button>
+                    {editingCompIndex !== null && (
+                      <button type="button"
+                        onClick={() => {
+                          setCompForm(EMPTY_COMP)
+                          setCompActiveCategories([])
+                          setEditingCompIndex(null)
+                        }}
+                        className="px-4 py-2 rounded-lg text-sm font-medium border border-[#e8e0d6] text-[#6b5d52] hover:bg-[#f8f6f2] transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : form.is_set ? (
@@ -2258,6 +2297,35 @@ const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
   { key: 'importacao',     label: 'Importação CSV', Icon: Upload      },
 ]
 
+// ── Bloco 77: persistência de aba/páginas do Cadastro com TTL de 5 minutos ────
+
+const CADASTRO_STATE_KEY = 'cadastros_ui_state'
+const CADASTRO_STATE_TTL_MS = 5 * 60 * 1000
+
+interface PersistedCadastroState {
+  tab: Tab
+  productPage: number
+  clientPage: number
+  repPage: number
+  groupPage: number
+}
+
+function loadPersistedCadastroState(): PersistedCadastroState | null {
+  try {
+    const raw = localStorage.getItem(CADASTRO_STATE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.ts || Date.now() - parsed.ts > CADASTRO_STATE_TTL_MS) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function savePersistedCadastroState(state: PersistedCadastroState) {
+  localStorage.setItem(CADASTRO_STATE_KEY, JSON.stringify({ ...state, ts: Date.now() }))
+}
+
 export default function CadastroPage() {
   const { user } = useAuth()
   const isRep = user?.role === 'representante'
@@ -2271,13 +2339,23 @@ export default function CadastroPage() {
   })
 
   const defaultTab: Tab = isCliente ? 'opcionais' : isRep ? 'clientes' : 'produtos'
-  const [tab, setTab] = useState<Tab>(defaultTab)
+
+  // Bloco 77: restaura aba e paginação da última visita, com TTL de 5 minutos —
+  // depois disso, volta silenciosamente aos valores padrão.
+  const persisted = useRef(loadPersistedCadastroState()).current
+  const allowedTabs = new Set(visibleTabs.map(t => t.key))
+  const initialTab = persisted?.tab && allowedTabs.has(persisted.tab) ? persisted.tab : defaultTab
+  const [tab, setTab] = useState<Tab>(initialTab)
 
   // Estados de página isolados por tabela (Bloco 64) — persistem entre trocas de aba
-  const [productPage, setProductPage] = useState(1)
-  const [clientPage, setClientPage] = useState(1)
-  const [repPage, setRepPage] = useState(1)
-  const [groupPage, setGroupPage] = useState(1)
+  const [productPage, setProductPage] = useState(persisted?.productPage ?? 1)
+  const [clientPage, setClientPage] = useState(persisted?.clientPage ?? 1)
+  const [repPage, setRepPage] = useState(persisted?.repPage ?? 1)
+  const [groupPage, setGroupPage] = useState(persisted?.groupPage ?? 1)
+
+  useEffect(() => {
+    savePersistedCadastroState({ tab, productPage, clientPage, repPage, groupPage })
+  }, [tab, productPage, clientPage, repPage, groupPage])
 
   const { data: products } = useProducts()
   const { data: clients }  = useClients()
