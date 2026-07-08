@@ -3,6 +3,7 @@ import { X, ShoppingCart, Check, ImageIcon, Search } from 'lucide-react'
 import { useProducts } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
+import { isConjuntoType } from '../lib/productType'
 import type { Product } from '../types'
 
 const CAT_LABEL: Record<string, string> = {
@@ -111,7 +112,7 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
               <h3 className="text-lg font-semibold text-[#2c2420]">{product.description}</h3>
             </div>
 
-            {product.type !== 'Conjunto' && (
+            {!isConjuntoType(product.type) && (
               <div className="bg-[#f8f6f2] border border-[#e8e0d6] rounded-xl p-3">
                 <p className="text-xs text-[#9d8d81] font-semibold mb-1">Dimensões</p>
                 <p className="text-sm text-[#4a3f38]">{dimLabel(product)}</p>
@@ -125,7 +126,7 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
               </div>
             )}
 
-            {product.type === 'Conjunto' ? (
+            {isConjuntoType(product.type) ? (
               <div>
                 <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Componentes deste Conjunto</p>
                 <div className="space-y-2">

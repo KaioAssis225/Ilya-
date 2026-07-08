@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
+import { isConjuntoType } from '../lib/productType'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
@@ -548,7 +549,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     setShowForm(true)
   }
   function openEdit(p: Product) {
-    const isConjunto = p.type === 'Conjunto'
+    const isConjunto = isConjuntoType(p.type)
     const cats = isConjunto ? [] : Array.from(new Set(p.optionals.map((o) => o.category)))
     const allCats = isConjunto ? new Set<string>() : new Set<string>(
       (p.all_optionals_categories ?? '').split(',').filter(Boolean)
@@ -607,7 +608,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    const isConjunto = form.type === 'Conjunto'
+    const isConjunto = isConjuntoType(form.type)
     const activeCatsSet = new Set(activeCategories)
     // Exclude optionals from "all" categories — those are selected freely in the cart
     const filteredOptionalIds = isConjunto ? [] : (form.optional_ids ?? []).filter((optId) => {
@@ -687,7 +688,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] text-[#9d8d81]">
-                      {p.type === 'Conjunto' ? '' : p.is_circular
+                      {isConjuntoType(p.type) ? '' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
                         : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </span>
@@ -725,7 +726,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
                     <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
                     <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
-                      {p.type === 'Conjunto' ? '—' : p.is_circular
+                      {isConjuntoType(p.type) ? '—' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
@@ -840,7 +841,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
             </div>
 
-            {form.type !== 'Conjunto' && (
+            {!isConjuntoType(form.type) && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -854,7 +855,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
 
 
-            {form.type !== 'Conjunto' && (
+            {!isConjuntoType(form.type) && (
               <div className="grid grid-cols-3 gap-3">
                 {form.is_circular ? (
                   <>
@@ -891,7 +892,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </div>
             )}
 
-            {form.type === 'Conjunto' ? (
+            {isConjuntoType(form.type) ? (
               <div>
                 <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Componentes do Conjunto</span>
                 {(form.components ?? []).length > 0 && (

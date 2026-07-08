@@ -15,6 +15,13 @@ from app.schemas.product import (
 )
 from app.core.config import settings
 
+def _is_conjunto_type(type_: Optional[str]) -> bool:
+    """Bloco 74: identifica 'conjuntos' por substring case-insensitive no nome
+    do tipo (ex.: 'Conjunto de Jantar', 'conjuntos'), em vez de exigir o valor
+    exato 'Conjunto'."""
+    return "conjunto" in (type_ or "").lower()
+
+
 def _detect_mime(data: bytes) -> Optional[str]:
     if data[:3] == b"\xff\xd8\xff":
         return "jpg"
@@ -138,7 +145,7 @@ async def create_product(
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
     if payload.is_set:
         product.set_items = await _resolve_set_items(db, payload.set_items, payload.product_code)
-    if payload.type == "Conjunto" and payload.components:
+    if _is_conjunto_type(payload.type) and payload.components:
         product.components = await _resolve_components(db, payload.components)
     db.add(product)
     await db.commit()
@@ -170,10 +177,10 @@ async def update_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    data = payload.model_dump(exclude_unset=True)
-    optional_ids = data.pop("optional_ids", None)
-    set_items_in = data.pop("set_items", None)
-    components_in = data.pop("components", None)
+    data = payload.model_dump(exclude_unset=True, exclude={"optional_ids", "set_items", "components"})
+    optional_ids = payload.optional_ids
+    set_items_in = payload.set_items
+    components_in = payload.components
     for field, value in data.items():
         setattr(product, field, value)
     if optional_ids is not None:
@@ -184,7 +191,7 @@ async def update_product(
         else:
             product.set_items = []
     if components_in is not None:
-        if product.type == "Conjunto":
+        if _is_conjunto_type(product.type):
             product.components = await _resolve_components(db, components_in)
         else:
             product.components = []
