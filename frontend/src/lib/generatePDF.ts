@@ -233,7 +233,13 @@ export async function generateOrderPDF(
     })
     const compLinesTotal = compLineGroups.reduce((sum, lines) => sum + lines.length, 0)
 
-    const extraLines = dimLines.length + obsLines.length + optLines.length + compLinesTotal
+    // Nome do produto: também quebrado em WRAP_WIDTH (o espaço real até a coluna
+    // QTD é ~85mm a partir de x=40) — antes usava 95mm e a 1ª linha invadia o
+    // valor unitário em nomes longos. Agora todas as linhas são impressas.
+    const descLines: string[] = doc.splitTextToSize(item.description, WRAP_WIDTH)
+    const titleExtraLines = Math.max(0, descLines.length - 1)
+
+    const extraLines = titleExtraLines + dimLines.length + obsLines.length + optLines.length + compLinesTotal
     const rowH = Math.max(20, 13 + extraLines * 4)
     if (y + rowH > 265) {
       doc.addPage()
@@ -256,23 +262,23 @@ export async function generateOrderPDF(
       doc.text('sem\nfoto', 29, y + 5, { align: 'center' })
     }
 
-    // Nome do produto
+    // Nome do produto — todas as linhas quebradas são impressas (não só a 1ª)
     doc.setTextColor(...DARK)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8.5)
-    const descLines = doc.splitTextToSize(item.description, 95)
-    doc.text(descLines[0], 40, y)
+    let nameY = y
+    for (const line of descLines) { doc.text(line, 40, nameY); nameY += 4 }
 
     // Código
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.5)
     doc.setTextColor(...MUTED)
-    doc.text(item.product_code, 40, y + 4.5)
+    doc.text(item.product_code, 40, nameY + 0.5)
 
     // Linhas empilhadas abaixo do código: dimensões, observação, opcionais e
     // componentes do conjunto — cada uma quebrada em até 80mm (Bloco 82) e
     // reservando seu próprio espaço vertical linha a linha.
-    let lineY = y + 8.5
+    let lineY = nameY + 4.5
 
     if (dimLines.length > 0) {
       doc.setFontSize(7)
