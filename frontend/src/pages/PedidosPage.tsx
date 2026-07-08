@@ -152,12 +152,16 @@ function OrderDetailModal({
   const [signLinkLoading, setSignLinkLoading] = useState(false)
   const [clientSigOpen, setClientSigOpen] = useState(false)
   const [clientSaving, setClientSaving] = useState(false)
+  const [repSigOpen, setRepSigOpen] = useState(false)
+  const [repSaving, setRepSaving] = useState(false)
   const [sigError, setSigError] = useState(false)
   const [notifyLoading, setNotifyLoading] = useState(false)
   const [notifyDone, setNotifyDone] = useState(false)
   const [notifyError, setNotifyError] = useState(false)
   const clientCanvasRef = useRef<HTMLCanvasElement>(null)
   const clientIsDrawingRef = useRef(false)
+  const repCanvasRef = useRef<HTMLCanvasElement>(null)
+  const repIsDrawingRef = useRef(false)
 
   const canManage = userRole === 'admin' || userRole === 'vendedor'
   const profileSig = localStorage.getItem(`profile_signature_${userId}`)
@@ -189,6 +193,29 @@ function OrderDetailModal({
     }
   }, [clientSigOpen])
 
+  // Bloco 81: canvas de assinatura "na hora" para representante sem profileSig configurado
+  useEffect(() => {
+    if (!repSigOpen || !repCanvasRef.current) return
+    const canvas = repCanvasRef.current
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.strokeStyle = '#2c2420'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    function getXY(e: TouchEvent | MouseEvent) {
+      const rect = canvas.getBoundingClientRect()
+      if ('touches' in e) return { x: (e as TouchEvent).touches[0].clientX - rect.left, y: (e as TouchEvent).touches[0].clientY - rect.top }
+      return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
+    }
+    function onStart(e: TouchEvent | MouseEvent) { e.preventDefault(); repIsDrawingRef.current = true; const { x, y } = getXY(e); ctx.beginPath(); ctx.moveTo(x, y) }
+    function onMove(e: TouchEvent | MouseEvent) { e.preventDefault(); if (!repIsDrawingRef.current) return; const { x, y } = getXY(e); ctx.lineTo(x, y); ctx.stroke() }
+    function onEnd() { repIsDrawingRef.current = false }
+    canvas.addEventListener('mousedown', onStart); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('mouseup', onEnd)
+    canvas.addEventListener('touchstart', onStart, { passive: false }); canvas.addEventListener('touchmove', onMove, { passive: false }); canvas.addEventListener('touchend', onEnd)
+    return () => {
+      canvas.removeEventListener('mousedown', onStart); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('mouseup', onEnd)
+      canvas.removeEventListener('touchstart', onStart); canvas.removeEventListener('touchmove', onMove); canvas.removeEventListener('touchend', onEnd)
+    }
+  }, [repSigOpen])
+
   async function handleSaveClientSig() {
     if (!clientCanvasRef.current) return
     const data = clientCanvasRef.current.toDataURL('image/png')
@@ -202,6 +229,25 @@ function OrderDetailModal({
       setSigError(true)
     } finally {
       setClientSaving(false)
+    }
+  }
+
+  // Bloco 81: assina "na hora" e salva a assinatura no perfil (profile_signature_${userId})
+  // para reuso automático em próximos pedidos, sem exigir configuração prévia em Minha Conta.
+  async function handleSaveRepSig() {
+    if (!repCanvasRef.current) return
+    const data = repCanvasRef.current.toDataURL('image/png')
+    setRepSaving(true); setSigError(false)
+    try {
+      localStorage.setItem(`profile_signature_${userId}`, data)
+      await api.post(`/orders/${order.id}/sign-representative`, { signature: data })
+      localStorage.setItem(sigKey, data)
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      setRepSigOpen(false)
+    } catch {
+      setSigError(true)
+    } finally {
+      setRepSaving(false)
     }
   }
 
@@ -401,7 +447,11 @@ function OrderDetailModal({
                   ? <button onClick={() => { setSigError(false); setConfirmSign(true) }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#8b6914] text-white rounded-xl hover:bg-[#7a5c10] transition-colors text-sm font-semibold shadow-sm">
                       <FileSignature className="w-4 h-4" />{isClientUser ? 'Assinar como Cliente' : 'Assinar como Representante'}
                     </button>
-                  : <p className="text-xs text-center text-[#9d8d81] py-2">Configure sua assinatura em <span className="text-[#8b6914] font-medium">Minha Conta</span> para assinar contratos.</p>
+                  : !isClientUser
+                    ? <button onClick={() => { setSigError(false); setRepSigOpen(true) }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#8b6914] text-white rounded-xl hover:bg-[#7a5c10] transition-colors text-sm font-semibold shadow-sm">
+                        <FileSignature className="w-4 h-4" />Assinar Agora
+                      </button>
+                    : <p className="text-xs text-center text-[#9d8d81] py-2">Configure sua assinatura em <span className="text-[#8b6914] font-medium">Minha Conta</span> para assinar contratos.</p>
                 }
               </div>
             )}
@@ -434,6 +484,22 @@ function OrderDetailModal({
               <div className="flex gap-2 mt-4">
                 <button onClick={() => clientCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-[#e8e0d6] text-[#9d8d81] rounded-lg text-sm hover:bg-[#f8f6f2] transition-colors">Limpar</button>
                 <button onClick={handleSaveClientSig} disabled={clientSaving} className="flex-1 py-2 bg-[#8b6914] text-white rounded-lg text-sm font-semibold hover:bg-[#7a5c10] transition-colors disabled:opacity-60">{clientSaving ? 'Salvando...' : 'Confirmar Assinatura'}</button>
+              </div>
+              {sigError && <p className="text-xs text-red-500 mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Bloco 81: canvas de assinatura "na hora" para representante sem perfil configurado */}
+        {repSigOpen && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[#1a1410]/60 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-[#2c2420]">Sua Assinatura</h4><button onClick={() => setRepSigOpen(false)} className="text-[#9d8d81] hover:text-[#2c2420]"><X className="w-4 h-4" /></button></div>
+              <p className="text-xs text-[#9d8d81] mb-3">Assine no campo abaixo. Sua assinatura será salva para os próximos pedidos.</p>
+              <canvas ref={repCanvasRef} width={420} height={160} className="w-full border border-[#e8e0d6] rounded-xl bg-[#fafaf9] cursor-crosshair touch-none" />
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => repCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-[#e8e0d6] text-[#9d8d81] rounded-lg text-sm hover:bg-[#f8f6f2] transition-colors">Limpar</button>
+                <button onClick={handleSaveRepSig} disabled={repSaving} className="flex-1 py-2 bg-[#8b6914] text-white rounded-lg text-sm font-semibold hover:bg-[#7a5c10] transition-colors disabled:opacity-60">{repSaving ? 'Salvando...' : 'Confirmar Assinatura'}</button>
               </div>
               {sigError && <p className="text-xs text-red-500 mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
             </div>

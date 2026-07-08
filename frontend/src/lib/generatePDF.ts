@@ -210,7 +210,30 @@ export async function generateOrderPDF(
       label: catLabel(cat),
       value,
     }))
-    const extraLines = (hasDims ? 1 : 0) + (item.observacao ? 1 : 0) + (optSlots.length > 0 ? 1 : 0) + components.length
+    // Bloco 82: quebra de linha (80mm) para textos longos de opcionais, observação
+    // e componentes — o rowH soma as linhas físicas reais para não colidir com a
+    // próxima linha da tabela nem com as colunas numéricas (QTD/VALOR/IPI/TOTAL).
+    const WRAP_WIDTH = 80
+    const dimText = hasDims
+      ? `Dimensões: ${item.is_circular
+          ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
+          : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`}`
+      : null
+    const obsText = item.observacao ? `Obs.: ${item.observacao}` : null
+    const optText = optSlots.length > 0 ? 'Opcionais: ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ') : null
+
+    const dimLines: string[] = dimText ? doc.splitTextToSize(dimText, WRAP_WIDTH) : []
+    const obsLines: string[] = obsText ? doc.splitTextToSize(obsText, WRAP_WIDTH) : []
+    const optLines: string[] = optText ? doc.splitTextToSize(optText, WRAP_WIDTH) : []
+    const compLineGroups: string[][] = components.map((comp) => {
+      const compDim = comp.is_circular
+        ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
+        : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
+      return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})`, WRAP_WIDTH)
+    })
+    const compLinesTotal = compLineGroups.reduce((sum, lines) => sum + lines.length, 0)
+
+    const extraLines = dimLines.length + obsLines.length + optLines.length + compLinesTotal
     const rowH = Math.max(20, 13 + extraLines * 4)
     if (y + rowH > 265) {
       doc.addPage()
@@ -247,46 +270,33 @@ export async function generateOrderPDF(
     doc.text(item.product_code, 40, y + 4.5)
 
     // Linhas empilhadas abaixo do código: dimensões, observação, opcionais e
-    // componentes do conjunto — cada uma reserva seu próprio espaço vertical.
+    // componentes do conjunto — cada uma quebrada em até 80mm (Bloco 82) e
+    // reservando seu próprio espaço vertical linha a linha.
     let lineY = y + 8.5
 
-    if (hasDims) {
-      const dimRaw = item.is_circular
-        ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
-        : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`
+    if (dimLines.length > 0) {
       doc.setFontSize(7)
       doc.setTextColor(...MUTED)
-      doc.text(`Dimensões: ${dimRaw}`, 40, lineY)
-      lineY += 4
+      for (const line of dimLines) { doc.text(line, 40, lineY); lineY += 4 }
     }
 
-    // Observação técnica do produto
-    if (item.observacao) {
+    if (obsLines.length > 0) {
       doc.setFontSize(6)
       doc.setTextColor(...MUTED)
-      doc.text(`Obs.: ${item.observacao}`, 40, lineY)
-      lineY += 4
+      for (const line of obsLines) { doc.text(line, 40, lineY); lineY += 4 }
     }
 
-    // Opcionais — linha horizontal, uma entrada por categoria dinâmica do pedido
-    if (optSlots.length > 0) {
-      const optText = 'Opcionais: ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ')
+    if (optLines.length > 0) {
       doc.setFontSize(6.5)
       doc.setTextColor(...MUTED)
-      doc.text(optText, 40, lineY)
-      lineY += 4
+      for (const line of optLines) { doc.text(line, 40, lineY); lineY += 4 }
     }
 
-    // Componentes do conjunto — um marcador por item, com quantidade e dimensões
-    if (components.length > 0) {
+    if (compLineGroups.length > 0) {
       doc.setFontSize(6.5)
       doc.setTextColor(...MUTED)
-      for (const comp of components) {
-        const compDim = comp.is_circular
-          ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
-          : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
-        doc.text(`• ${comp.qty}x ${comp.description} (${compDim})`, 40, lineY)
-        lineY += 4
+      for (const lines of compLineGroups) {
+        for (const line of lines) { doc.text(line, 40, lineY); lineY += 4 }
       }
     }
 
