@@ -998,25 +998,30 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       )}
                     </div>
                     {compActiveCategories.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {compActiveCategories.flatMap(cat =>
-                          allOptionals.filter(o => o.category === cat).map(opt => {
-                            const isSel = compForm.optional_ids.includes(opt.id)
-                            return (
-                              <button type="button" key={opt.id}
-                                onClick={() => setCompForm(f => {
-                                  const ids = f.optional_ids
-                                  return { ...f, optional_ids: ids.includes(opt.id) ? ids.filter(id => id !== opt.id) : [...ids, opt.id] }
-                                })}
-                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all"
-                                style={isSel ? { backgroundColor: `${color}20`, borderColor: color, color } : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
-                              >
-                                {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
-                                <span>{opt.color_name}</span>
-                              </button>
-                            )
-                          })
-                        )}
+                      <div className="space-y-2.5">
+                        {compActiveCategories.map((cat) => (
+                          <div key={cat} className="border border-[#e8e0d6] rounded-lg p-2.5 bg-[#fdfdfd]">
+                            <span className="text-[11px] font-semibold block mb-1.5" style={{ color }}>{catLabel(cat).toUpperCase()}</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {allOptionals.filter(o => o.category === cat).map(opt => {
+                                const isSel = compForm.optional_ids.includes(opt.id)
+                                return (
+                                  <button type="button" key={opt.id}
+                                    onClick={() => setCompForm(f => {
+                                      const ids = f.optional_ids
+                                      return { ...f, optional_ids: ids.includes(opt.id) ? ids.filter(id => id !== opt.id) : [...ids, opt.id] }
+                                    })}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all"
+                                    style={isSel ? { backgroundColor: `${color}20`, borderColor: color, color } : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                                  >
+                                    {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
+                                    <span>{opt.color_name}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
