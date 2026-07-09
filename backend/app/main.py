@@ -78,16 +78,25 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     if not settings.DEBUG:
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "img-src 'self' data: blob:; "
-        # unsafe-inline necessário para Tailwind v4 em dev (injeta <style> no head).
-        # Em produção, substituir por 'sha256-<hash>' do bundle compilado.
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
-        "script-src 'self'; "
-        "connect-src 'self';"
-    )
+    if settings.DEBUG:
+        # unsafe-inline necessário para Tailwind v4 em dev (injeta <style> no head)
+        # e para o Swagger UI servido em /docs.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "img-src 'self' data: blob:; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "script-src 'self'; "
+            "connect-src 'self';"
+        )
+    else:
+        # Em produção o backend serve apenas API JSON e /static (imagens) —
+        # nenhuma página HTML própria, então a CSP pode ser estrita (V-03).
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; "
+            "img-src 'self' data:; "
+            "frame-ancestors 'none';"
+        )
     return response
 
 

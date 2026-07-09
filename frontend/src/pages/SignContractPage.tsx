@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import { authApi } from '../lib/api'
 
 interface OrderInfo {
   order_code: string
@@ -35,8 +36,9 @@ export default function SignContractPage() {
       setStage('error')
       return
     }
-    axios
-      .get<OrderInfo>(`/api/v1/orders/verify-sign-token?token=${encodeURIComponent(token)}`)
+    // POST com token no body: querystring vazaria o token nos access logs (V-04b)
+    authApi
+      .post<OrderInfo>('/orders/verify-sign-token', { token })
       .then(r => {
         if (r.data.is_signed) {
           setOrderInfo(r.data)
@@ -122,7 +124,7 @@ export default function SignContractPage() {
     const signature = canvas.toDataURL('image/png')
     setStage('signing')
     try {
-      await axios.post('/api/v1/orders/sign-with-token', { token, signature })
+      await authApi.post('/orders/sign-with-token', { token, signature })
       setTimeout(() => setStage('success'), 2000)
     } catch (err: unknown) {
       const msg =

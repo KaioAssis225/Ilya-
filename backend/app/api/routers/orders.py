@@ -475,14 +475,19 @@ async def generate_sign_token(
     return {"token": token, "url": url, "expires_in": 600}
 
 
-@router.get("/verify-sign-token")
+class VerifySignTokenPayload(BaseModel):
+    token: str
+
+
+# POST com token no body — token em querystring ficaria gravado nos access logs (V-04b)
+@router.post("/verify-sign-token")
 @limiter.limit("20/minute")
 async def verify_sign_token(
     request: Request,
-    token: str = Query(...),
+    body: VerifySignTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
-    payload = decode_sign_token(token)
+    payload = decode_sign_token(body.token)
     if not payload:
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
