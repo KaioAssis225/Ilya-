@@ -524,6 +524,10 @@ class SignPayload(BaseModel):
         return v
 
 
+class SignWithTokenPayload(SignPayload):
+    token: str
+
+
 @router.post("/{order_id}/sign-representative")
 async def sign_representative(
     order_id: uuid.UUID,
@@ -596,20 +600,6 @@ async def notify_client(
         message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
     ))
     await db.commit()
-
-
-class SignWithTokenPayload(BaseModel):
-    token: str
-    signature: str
-
-    @field_validator("signature")
-    @classmethod
-    def validate_signature(cls, v: str) -> str:
-        if len(v) > _MAX_SIG_SIZE:
-            raise ValueError("Assinatura excede o tamanho máximo permitido.")
-        if not v.startswith("data:image/png;base64,"):
-            raise ValueError("Formato de assinatura inválido. Esperado PNG em base64.")
-        return v
 
 
 @router.post("/sign-with-token")

@@ -18,5 +18,8 @@ EXPOSE 8000
 # e imediatamente baixa o privilégio para `ilya` antes de subir a aplicação.
 # alembic upgrade + seed_admin são idempotentes — seguros de rodar a cada start
 # (seed_admin exige ADMIN_EMAIL/ADMIN_PASSWORD e não faz nada se o admin já existir).
-CMD chown -R ilya:ilya app/static/uploads && \
+# find ! -user: só toca entradas com dono errado (mount point do volume e
+# arquivos legados criados quando o container rodava como root) — barato em
+# todo boot subsequente, ao contrário de um chown -R incondicional.
+CMD find app/static/uploads ! -user ilya -exec chown ilya:ilya {} + && \
     runuser -u ilya -- sh -c "alembic upgrade head && python seed_admin.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"

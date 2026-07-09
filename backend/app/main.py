@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -25,13 +26,23 @@ logging.basicConfig(
 logger = logging.getLogger("ilya")
 
 
+async def _cleanup_tokens_background() -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            await cleanup_expired_tokens(session)
+    except Exception:
+        logger.exception("Falha na limpeza de refresh tokens expirados")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    async with AsyncSessionLocal() as session:
-        await cleanup_expired_tokens(session)
+    # Limpeza em background: não bloqueia a prontidão da API a cada boot
+    # (a tabela cresce com o uso e o DELETE não tem índice em expires_at).
+    cleanup_task = asyncio.create_task(_cleanup_tokens_background())
     logger.info("Ilya API iniciada")
     yield
+    cleanup_task.cancel()
     logger.info("Ilya API encerrada")
 
 
@@ -68,35 +79,41 @@ app.add_middleware(
 
 
 # ── Security headers middleware ───────────────────────────────────────────────
+# Os headers são idênticos para todas as respostas — montados uma única vez no
+# load do módulo em vez de re-avaliar o branch de DEBUG a cada request.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+}
+if settings.DEBUG:
+    # unsafe-inline necessário para Tailwind v4 em dev (injeta <style> no head)
+    # e para o Swagger UI servido em /docs.
+    _SECURITY_HEADERS["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self'; "
+        "connect-src 'self';"
+    )
+else:
+    _SECURITY_HEADERS["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    # Em produção o backend serve apenas API JSON e /static (imagens) —
+    # nenhuma página HTML própria, então a CSP pode ser estrita (V-03).
+    _SECURITY_HEADERS["Content-Security-Policy"] = (
+        "default-src 'none'; "
+        "img-src 'self' data:; "
+        "frame-ancestors 'none';"
+    )
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    if not settings.DEBUG:
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-    if settings.DEBUG:
-        # unsafe-inline necessário para Tailwind v4 em dev (injeta <style> no head)
-        # e para o Swagger UI servido em /docs.
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "img-src 'self' data: blob:; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "script-src 'self'; "
-            "connect-src 'self';"
-        )
-    else:
-        # Em produção o backend serve apenas API JSON e /static (imagens) —
-        # nenhuma página HTML própria, então a CSP pode ser estrita (V-03).
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; "
-            "img-src 'self' data:; "
-            "frame-ancestors 'none';"
-        )
+    response.headers.update(_SECURITY_HEADERS)
     return response
 
 
