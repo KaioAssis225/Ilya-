@@ -557,22 +557,32 @@ export default function OrcamentoPage() {
   const priceProfile = selectedClient?.price_profile ?? 'lojista'
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
   const [notes, setNotes] = useState('')
-  const [cart, setCart] = useState<CartItem[]>(() => {
+  const [cart, setCart] = useState<CartItem[]>([])
+  // BUG-01 (Bloco 88): a hidratação só pode acontecer DEPOIS da query de produtos
+  // carregar — no mount, products=[] fazia o filtro descartar todos os itens e o
+  // efeito de persistência gravava o carrinho vazio de volta, apagando-o no F5.
+  const cartLoadedRef = useRef(false)
+
+  useEffect(() => {
+    if (cartLoadedRef.current || products.length === 0) return
+    cartLoadedRef.current = true
     try {
       const raw = localStorage.getItem('carrinho_orcamento')
-      if (!raw) return []
+      if (!raw) return
       const parsed = JSON.parse(raw) as CartItem[]
       const productMap = new Map(products.map(p => [p.product_code, p]))
-      return parsed.filter(i => productMap.has(i.product_code)).map(i => ({
+      setCart(parsed.filter(i => productMap.has(i.product_code)).map(i => ({
         ...i,
         _product: productMap.get(i.product_code)!,
-      }))
-    } catch { return [] }
-  })
+      })))
+    } catch { /* payload corrompido — começa vazio */ }
+  }, [products])
 
   useEffect(() => {
     // Persiste apenas os dados próprios do carrinho; _product é derivado de products
     // e re-hidratado no load — não deve ser a fonte da verdade persistida (V-M8).
+    // Nunca grava antes da hidratação (senão o mount sobrescreve o carrinho salvo).
+    if (!cartLoadedRef.current) return
     const serializable = cart.map(({ _product, ...rest }) => rest)
     localStorage.setItem('carrinho_orcamento', JSON.stringify(serializable))
   }, [cart])
@@ -637,9 +647,15 @@ export default function OrcamentoPage() {
     else localStorage.removeItem('orcamento_rep_id')
   }, [selectedRep])
 
-  // Pre-populate cart + client + rep when editing an existing order
+  // Pre-populate cart + client + rep when editing an existing order.
+  // BUG-02 (Bloco 88): refetches em background do React Query trocam a identidade
+  // de editOrder e re-disparavam este efeito, sobrescrevendo edições em andamento
+  // do carrinho — o ref garante que cada pedido só popule o formulário uma vez.
+  const editOrderLoadedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!editOrder || products.length === 0 || clients.length === 0) return
+    if (editOrderLoadedRef.current === editOrder.id) return
+    editOrderLoadedRef.current = editOrder.id
     const productMap = new Map(products.map(p => [p.product_code, p]))
     const cartItems: CartItem[] = editOrder.items
       .map(item => {

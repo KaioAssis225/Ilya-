@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -12,6 +11,7 @@ from app.core.security import (
     verify_password,
     dummy_verify,
     hash_password,
+    validate_password_strength,
     create_access_token,
     generate_refresh_token,
     hash_refresh_token,
@@ -199,17 +199,6 @@ async def me(
     return data
 
 
-def _validate_password_strength(password: str) -> None:
-    if len(password) < 8:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A senha deve ter pelo menos 8 caracteres.")
-    if not re.search(r"[A-Z]", password):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A senha deve conter pelo menos 1 letra maiúscula.")
-    if not re.search(r"[a-z]", password):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A senha deve conter pelo menos 1 letra minúscula.")
-    if not re.search(r"[0-9]", password):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A senha deve conter pelo menos 1 número.")
-
-
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/minute")
 async def change_password(
@@ -218,7 +207,10 @@ async def change_password(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_authenticated_user),
 ):
-    _validate_password_strength(body.new_password)
+    try:
+        validate_password_strength(body.new_password)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
     if not user.must_change_password:

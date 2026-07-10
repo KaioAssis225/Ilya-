@@ -1,4 +1,5 @@
 import hashlib
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,20 @@ ALGORITHM = "HS256"
 
 
 # ── Password ──────────────────────────────────────────────────────────────────
+
+def validate_password_strength(password: str) -> None:
+    """Política de complexidade compartilhada por todas as rotas que definem senha
+    (change-password, criação de usuário e reset administrativo — Bloco 88/BUG-03).
+    Levanta ValueError com mensagem pt-BR; as rotas convertem em HTTP 422."""
+    if len(password) < 8:
+        raise ValueError("A senha deve ter pelo menos 8 caracteres.")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError("A senha deve conter pelo menos 1 letra maiúscula.")
+    if not re.search(r"[a-z]", password):
+        raise ValueError("A senha deve conter pelo menos 1 letra minúscula.")
+    if not re.search(r"[0-9]", password):
+        raise ValueError("A senha deve conter pelo menos 1 número.")
+
 
 def hash_password(plain: str) -> str:
     return _hasher.hash(plain + settings.PASSWORD_PEPPER)

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
 from app.api.deps import get_db_session, get_current_user, require_roles
-from app.core.security import hash_password
+from app.core.security import hash_password, validate_password_strength
 from app.models.user import User, UserRole
 from app.models.client import Client
 from app.models.representative import Representative
@@ -57,6 +57,11 @@ async def create_user(
     db: AsyncSession = Depends(get_db_session),
     _: User = Depends(_admin_only),
 ):
+    # BUG-03 (Bloco 88): mesma política de complexidade do change-password
+    try:
+        validate_password_strength(body.password)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "E-mail já cadastrado.")
@@ -98,6 +103,11 @@ async def reset_password(
     db: AsyncSession = Depends(get_db_session),
     _: User = Depends(_admin_only),
 ):
+    # BUG-03 (Bloco 88): reset administrativo também exige senha forte
+    try:
+        validate_password_strength(body.new_password)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
