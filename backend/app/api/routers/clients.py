@@ -5,12 +5,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+import logging
+
 from app.api.deps import get_db_session, get_current_user, require_roles
-from app.models.client import Client
+from app.models.client import Client, anonymize_client_fields
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
 
 router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
+
+logger = logging.getLogger("ilya.clients")
 
 _ADMIN = Depends(require_roles(UserRole.admin))
 
@@ -146,3 +150,30 @@ async def delete_client(
                 "Solicite a anonimização dos dados de contato caso necessário."
             ),
         )
+
+
+@router.post("/{client_id}/anonymize", status_code=status.HTTP_204_NO_CONTENT)
+async def anonymize_client(
+    client_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+):
+    """LGPD Art. 18, IV (via Art. 18 §1º — pedido do titular por outros canais):
+    anonimiza um cliente que não possui conta no sistema, preservando o registro
+    para integridade fiscal dos pedidos (Art. 16, I). Desativa a conta vinculada,
+    caso exista."""
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+
+    anonymize_client_fields(client)
+
+    linked_user = (await db.execute(
+        select(User).where(User.linked_id == client_id, User.is_active.is_(True))
+    )).scalar_one_or_none()
+    if linked_user:
+        linked_user.is_active = False
+
+    await db.commit()
+    logger.info("Anonimização admin: client_id=%s por user_id=%s", client_id, current_user.id)

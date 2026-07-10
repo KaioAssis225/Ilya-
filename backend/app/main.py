@@ -90,12 +90,13 @@ _SECURITY_HEADERS = {
 }
 if settings.DEBUG:
     # unsafe-inline necessário para Tailwind v4 em dev (injeta <style> no head)
-    # e para o Swagger UI servido em /docs.
+    # e para o Swagger UI servido em /docs. Fontes agora são self-hosted
+    # via @fontsource (LGPD L-01) — sem domínios do Google.
     _SECURITY_HEADERS["Content-Security-Policy"] = (
         "default-src 'self'; "
         "img-src 'self' data: blob:; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
         "script-src 'self'; "
         "connect-src 'self';"
     )

@@ -21,7 +21,7 @@ from decimal import Decimal
 
 from app.core.config import settings
 from app.models.user import User, UserRole
-from app.models.client import Client
+from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
 from app.schemas.auth import LoginRequest, AccessTokenResponse, UserRead, ChangePasswordRequest
@@ -291,14 +291,7 @@ async def anonymize_my_data(
 
     client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
     if client:
-        client.name = "CLIENTE ANONIMIZADO"
-        client.phone = "(00) 00000-0000"
-        client.email = f"anonimizado_{client.id}@excluido.ilya"
-        client.cep = "00000-000"
-        client.numero = None
-        client.address = "Endereço Excluído, 00"
-        client.city = "—"
-        client.state = "EX"
+        anonymize_client_fields(client)
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()

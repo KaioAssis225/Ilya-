@@ -135,6 +135,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignora falha de rede no logout
     }
+    // LGPD (L-04): remove as imagens de assinatura cacheadas no navegador —
+    // em dispositivo compartilhado, o próximo usuário não deve acessá-las.
+    // Chaves: profile_signature_<userId>, signature_cli_<code>, signature_rep_<code>
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('profile_signature_') || key.startsWith('signature_')) {
+        localStorage.removeItem(key)
+      }
+    }
     clearSession()
   }, [clearSession])
 

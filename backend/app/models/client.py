@@ -20,3 +20,17 @@ class Client(Base, TimestampMixin):
     price_profile: Mapped[str] = mapped_column(String(20), nullable=False, default="lojista")
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id", ondelete="SET NULL"), nullable=True)
     max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("0.00"))
+
+
+def anonymize_client_fields(client: Client) -> None:
+    """Anonimiza os campos PII do cliente (LGPD Art. 18, IV) preservando o
+    registro para integridade fiscal dos pedidos vinculados (Art. 16, I).
+    Usado tanto pelo fluxo self-service (/auth/anonymize) quanto pelo admin."""
+    client.name = "CLIENTE ANONIMIZADO"
+    client.phone = "(00) 00000-0000"
+    client.email = f"anonimizado_{client.id}@excluido.ilya"
+    client.cep = "00000-000"
+    client.numero = None
+    client.address = "Endereço Excluído, 00"
+    client.city = "—"
+    client.state = "EX"
