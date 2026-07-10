@@ -84,41 +84,43 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-white flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6] flex-shrink-0">
-          <span className="font-mono text-sm font-semibold text-[#8b6914]">{product.product_code}</span>
-          <button
-            onClick={onClose}
-            className="text-[#9d8d81] hover:text-[#2c2420] transition-colors w-11 h-11 flex items-center justify-center"
-            style={{ touchAction: 'manipulation' }}
-          >
-            <X className="w-5 h-5" />
-          </button>
+      <div className="fixed inset-0 z-50 bg-white flex flex-col md:flex-row overflow-y-auto md:overflow-hidden" style={{ animation: 'fadeIn 0.25s ease-out' }}>
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-20 w-11 h-11 flex items-center justify-center rounded-full bg-white/85 backdrop-blur-sm text-[#9d8d81] hover:text-[#2c2420] shadow-sm transition-colors"
+          style={{ touchAction: 'manipulation' }}
+          aria-label="Fechar"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Foto: metade esquerda no desktop, topo no mobile */}
+        <div className="md:w-[55%] md:h-full flex-shrink-0 bg-[#f8f6f2] flex items-center justify-center p-6 md:p-14">
+          {product.photo_url
+            ? <img src={product.photo_url} alt={product.description} className="w-full h-[40vh] md:h-full object-contain" />
+            : <div className="w-full h-[40vh] md:h-full flex items-center justify-center">
+                <span className="text-[#c8bdb5] text-sm tracking-widest uppercase">Sem foto</span>
+              </div>
+          }
         </div>
 
-        <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
-          {/* Foto: metade esquerda no desktop, topo no mobile */}
-          <div className="md:w-1/2 md:h-full flex-shrink-0 bg-[#f8f6f2] flex items-center justify-center">
-            {product.photo_url
-              ? <img src={product.photo_url} alt={product.description} className="w-full h-[42vh] md:h-full object-contain" />
-              : <div className="w-full h-[42vh] md:h-full flex items-center justify-center">
-                  <span className="text-[#c8bdb5] text-sm">Sem foto</span>
-                </div>
-            }
-          </div>
-
-          {/* Detalhes: metade direita no desktop, rolagem própria */}
-          <div className="flex-1 min-w-0 flex flex-col md:overflow-hidden">
-            <div className="px-6 md:px-10 py-5 md:py-8 flex-1 space-y-4 md:overflow-y-auto max-w-2xl">
-            <div>
-              <p className="text-xs text-[#9d8d81] uppercase tracking-wider font-semibold mb-1">{product.type}</p>
-              <h3 className="text-lg font-semibold text-[#2c2420]">{product.description}</h3>
+        {/* Detalhes: coluna direita, conteúdo centrado verticalmente */}
+        <div className="flex-1 min-w-0 md:h-full md:overflow-y-auto">
+          <div className="min-h-full flex flex-col justify-center max-w-[480px] mx-auto w-full px-6 md:px-12 py-10 md:py-16 space-y-8" style={{ animation: 'slideUp 0.35s ease-out' }}>
+            <div className="space-y-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9d8d81] font-semibold">
+                {product.type}
+                <span className="mx-2 text-[#d8cfc2]">·</span>
+                <span className="font-mono normal-case tracking-normal text-[#8b6914]">{product.product_code}</span>
+              </p>
+              <h2 className="text-3xl md:text-[2.4rem] leading-[1.12] text-[#2c2420]">{product.description}</h2>
+              <div className="w-12 h-px bg-[#8b6914]/50" />
             </div>
 
             {!isConjuntoType(product.type) && (
-              <div className="bg-[#f8f6f2] border border-[#e8e0d6] rounded-xl p-3">
-                <p className="text-xs text-[#9d8d81] font-semibold mb-1">Dimensões</p>
-                <p className="text-sm text-[#4a3f38]">{dimLabel(product)}</p>
+              <div className="flex items-baseline gap-6 py-4 border-y border-[#efe9e1]">
+                <span className="text-[10px] uppercase tracking-[0.15em] text-[#9d8d81] font-semibold flex-shrink-0">Dimensões</span>
+                <span className="text-[15px] text-[#4a3f38]">{dimLabel(product)}</span>
               </div>
             )}
 
@@ -191,22 +193,22 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
             ) : optCategories.length > 0 ? (
               <div>
                 <p className="text-xs text-[#9d8d81] font-semibold uppercase tracking-wider mb-3">Opcionais</p>
-                <div className="flex flex-wrap gap-4">
+                <div className="flex flex-wrap gap-5">
                   {optCategories.map(({ cat, opt }) => (
-                    <div key={cat} className="flex flex-col items-center gap-1.5">
+                    <div key={cat} className="flex flex-col items-center gap-2">
                       <div className="relative group">
                         {opt.photo_url ? (
                           <>
                             <img
                               src={opt.photo_url}
                               alt={opt.color_name}
-                              className="w-10 h-10 rounded-lg object-cover border border-[#e8e0d6] cursor-zoom-in hidden md:block"
+                              className="w-14 h-14 rounded-xl object-cover border border-[#e8e0d6] cursor-zoom-in hidden md:block"
                             />
-                            <div className="hidden group-hover:block absolute z-50 bottom-12 left-1/2 -translate-x-1/2 w-40 h-40 rounded-xl overflow-hidden shadow-2xl border border-[#e8e0d6] pointer-events-none">
+                            <div className="hidden group-hover:block absolute z-50 bottom-16 left-1/2 -translate-x-1/2 w-44 h-44 rounded-xl overflow-hidden shadow-2xl border border-[#e8e0d6] pointer-events-none">
                               <img src={opt.photo_url} alt={opt.color_name} className="w-full h-full object-cover" />
                             </div>
                             <button
-                              className="md:hidden w-10 h-10 rounded-lg overflow-hidden border border-[#e8e0d6] active:opacity-70 transition-opacity"
+                              className="md:hidden w-14 h-14 rounded-xl overflow-hidden border border-[#e8e0d6] active:opacity-70 transition-opacity"
                               style={{ touchAction: 'manipulation' }}
                               onClick={() => setMobileOptModal({ photo_url: opt.photo_url!, label: `${CAT_LABEL[cat] ?? cat}: ${opt.color_name}` })}
                             >
@@ -214,30 +216,27 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
                             </button>
                           </>
                         ) : (
-                          <div className="w-10 h-10 rounded-lg bg-[#f0ece6] border border-[#e8e0d6]" />
+                          <div className="w-14 h-14 rounded-xl bg-[#f0ece6] border border-[#e8e0d6]" />
                         )}
                       </div>
                       <div className="text-center">
                         <span className="block text-[9px] text-[#9d8d81] uppercase tracking-wide">{CAT_LABEL[cat] ?? cat}</span>
-                        <span className="text-[10px] text-[#4a3f38] font-medium">{opt.color_name}</span>
+                        <span className="text-[11px] text-[#4a3f38] font-medium">{opt.color_name}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             ) : null}
-          </div>
 
-            <div className="px-6 md:px-10 py-4 border-t border-[#e8e0d6] flex-shrink-0">
-              <button
-                onClick={handleAdd}
-                style={{ touchAction: 'manipulation' }}
-                className={`w-full max-w-md flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-sm text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
-              >
-                {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-                {added ? 'Adicionado ao Orçamento!' : 'Adicionar ao Orçamento'}
-              </button>
-            </div>
+            <button
+              onClick={handleAdd}
+              style={{ touchAction: 'manipulation' }}
+              className={`w-full flex items-center justify-center gap-2.5 py-4 rounded-xl font-semibold text-[13px] uppercase tracking-[0.12em] text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
+            >
+              {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
+              {added ? 'Adicionado ao Orçamento' : 'Adicionar ao Orçamento'}
+            </button>
           </div>
         </div>
       </div>
