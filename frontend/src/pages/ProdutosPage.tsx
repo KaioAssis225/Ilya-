@@ -64,9 +64,10 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
   )
 }
 
-// ── SlideOver (desktop) / Bottom Sheet (mobile) ───────────────────────────────
+// ── Detalhe do produto em tela inteira ────────────────────────────────────────
+// Desktop: foto grande à esquerda + detalhes à direita. Mobile: coluna única.
 
-function SlideOver({ product, onClose }: { product: Product; onClose: () => void }) {
+function ProductFullView({ product, onClose }: { product: Product; onClose: () => void }) {
   const [added, setAdded] = useState(false)
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
 
@@ -83,30 +84,32 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end md:items-stretch md:justify-end">
-        <div className="fixed inset-0 bg-[#1a1410]/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6] flex-shrink-0">
+          <span className="font-mono text-sm font-semibold text-[#8b6914]">{product.product_code}</span>
+          <button
+            onClick={onClose}
+            className="text-[#9d8d81] hover:text-[#2c2420] transition-colors w-11 h-11 flex items-center justify-center"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-        {/* Desktop: right panel — Mobile: bottom sheet */}
-        <div className="relative z-10 w-full md:w-[400px] bg-white md:h-full h-[90vh] shadow-2xl flex flex-col overflow-y-auto rounded-t-2xl md:rounded-none">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6] flex-shrink-0">
-            <span className="font-mono text-sm font-semibold text-[#8b6914]">{product.product_code}</span>
-            <button
-              onClick={onClose}
-              className="text-[#9d8d81] hover:text-[#2c2420] transition-colors w-11 h-11 flex items-center justify-center"
-              style={{ touchAction: 'manipulation' }}
-            >
-              <X className="w-5 h-5" />
-            </button>
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+          {/* Foto: metade esquerda no desktop, topo no mobile */}
+          <div className="md:w-1/2 md:h-full flex-shrink-0 bg-[#f8f6f2] flex items-center justify-center">
+            {product.photo_url
+              ? <img src={product.photo_url} alt={product.description} className="w-full h-[42vh] md:h-full object-contain" />
+              : <div className="w-full h-[42vh] md:h-full flex items-center justify-center">
+                  <span className="text-[#c8bdb5] text-sm">Sem foto</span>
+                </div>
+            }
           </div>
 
-          {product.photo_url
-            ? <img src={product.photo_url} alt={product.description} className="w-full aspect-square object-cover flex-shrink-0" />
-            : <div className="w-full aspect-square bg-[#f0ece6] flex items-center justify-center flex-shrink-0">
-                <span className="text-[#c8bdb5] text-sm">Sem foto</span>
-              </div>
-          }
-
-          <div className="px-6 py-5 flex-1 space-y-4">
+          {/* Detalhes: metade direita no desktop, rolagem própria */}
+          <div className="flex-1 min-w-0 flex flex-col md:overflow-hidden">
+            <div className="px-6 md:px-10 py-5 md:py-8 flex-1 space-y-4 md:overflow-y-auto max-w-2xl">
             <div>
               <p className="text-xs text-[#9d8d81] uppercase tracking-wider font-semibold mb-1">{product.type}</p>
               <h3 className="text-lg font-semibold text-[#2c2420]">{product.description}</h3>
@@ -225,15 +228,16 @@ function SlideOver({ product, onClose }: { product: Product; onClose: () => void
             ) : null}
           </div>
 
-          <div className="px-6 py-4 border-t border-[#e8e0d6] flex-shrink-0">
-            <button
-              onClick={handleAdd}
-              style={{ touchAction: 'manipulation' }}
-              className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-sm text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
-            >
-              {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-              {added ? 'Adicionado ao Orçamento!' : 'Adicionar ao Orçamento'}
-            </button>
+            <div className="px-6 md:px-10 py-4 border-t border-[#e8e0d6] flex-shrink-0">
+              <button
+                onClick={handleAdd}
+                style={{ touchAction: 'manipulation' }}
+                className={`w-full max-w-md flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-sm text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
+              >
+                {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
+                {added ? 'Adicionado ao Orçamento!' : 'Adicionar ao Orçamento'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -405,7 +409,7 @@ export default function ProdutosPage() {
         )}
       </div>
 
-      {selected && <SlideOver product={selected} onClose={() => setSelected(null)} />}
+      {selected && <ProductFullView product={selected} onClose={() => setSelected(null)} />}
     </div>
   )
 }
