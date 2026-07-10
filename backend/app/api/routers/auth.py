@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from app.api.deps import get_db_session, get_authenticated_user, get_current_user
+from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
 from app.core.limiter import limiter
 from app.core.security import (
     verify_password,
@@ -108,7 +108,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=AccessTokenResponse)
-@limiter.limit("20/minute")
+@limiter.limit("5/minute")
 async def refresh(
     request: Request,
     response: Response,
@@ -182,7 +182,7 @@ async def _resolve_max_discount(db: AsyncSession, user: User) -> Decimal:
     if user.role == UserRole.representante and user.rep_id:
         rep = (await db.execute(select(Representative).where(Representative.id == user.rep_id))).scalar_one_or_none()
         return rep.max_discount if rep else Decimal("0.00")
-    if user.role == UserRole.vendedor and user.linked_id:
+    if is_client_account(user) and user.linked_id:
         client = (await db.execute(select(Client).where(Client.id == user.linked_id))).scalar_one_or_none()
         return client.max_discount if client else Decimal("0.00")
     return Decimal("100.00")
@@ -238,7 +238,7 @@ async def my_data(
         },
         "dados_cliente": None,
     }
-    if current_user.linked_id and current_user.role == UserRole.vendedor:
+    if current_user.linked_id and is_client_account(current_user):
         client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
         if client:
             payload["dados_cliente"] = {
@@ -278,7 +278,7 @@ async def anonymize_my_data(
     current_user: User = Depends(get_current_user),
 ):
     """ACT-03: anonimiza os dados PII do titular e desativa a conta (Art. 18, IV e VI)."""
-    if current_user.role != UserRole.vendedor or not current_user.linked_id:
+    if not is_client_account(current_user) or not current_user.linked_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Operação disponível apenas para usuários clientes.")
 
     client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()

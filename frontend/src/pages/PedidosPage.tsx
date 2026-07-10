@@ -142,7 +142,7 @@ function OrderDetailModal({
   const order = orderDetail ?? orderLight
   const { data: optCategories = [] } = useOptionalCategories()
   const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
-  const isClientUser = userRole === 'vendedor'
+  const isClientUser = userRole === 'cliente' || userRole === 'vendedor'
   const sigKey = isClientUser ? `signature_cli_${order.code}` : `signature_rep_${order.code}`
   const [tab, setTab] = useState<'details' | 'history'>('details')
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
@@ -609,7 +609,7 @@ export default function PedidosPage() {
   const pdfCatLabel = (code: string) => optCategoriesList.find(c => c.code === code)?.name ?? code
   const { data: globalHistory = [] } = useGlobalOrderHistory(canManage)
   const deleteM = useDeleteOrder()
-  const canSignContract = user?.role === 'representante' || (user?.role === 'vendedor' && !!user?.linked_id)
+  const canSignContract = user?.role === 'representante' || user?.role === 'cliente' || (user?.role === 'vendedor' && !!user?.linked_id)
 
   async function handlePDF(orderLight: Order) {
     const client = clients.find((c) => c.id === orderLight.client_id)

@@ -561,8 +561,8 @@ export default function OrcamentoPage() {
 
   // Locking flags
   const isRep = user?.role === 'representante'
-  // vendedor criado de um cliente tem linked_id preenchido
-  const isClientUser = user?.role === 'vendedor' && !!user?.linked_id
+  // cliente-final: role própria `cliente` (ou legado `vendedor`+linked_id)
+  const isClientUser = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user?.linked_id)
   const repLocked = isRep || isClientUser
   const clientLocked = isClientUser
 

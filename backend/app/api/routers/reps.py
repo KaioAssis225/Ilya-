@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.api.deps import get_db_session, get_current_user, require_roles
+from app.api.deps import get_db_session, get_current_user, require_roles, is_internal_operator
 from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.representative import RepresentativeCreate, RepresentativeUpdate, RepresentativeRead
@@ -82,7 +82,7 @@ async def update_representative(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in [UserRole.admin, UserRole.vendedor]:
+    if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         if current_user.role != UserRole.representante or current_user.rep_id != rep_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para o seu nível de acesso.")
     result = await db.execute(select(Representative).where(Representative.id == rep_id))

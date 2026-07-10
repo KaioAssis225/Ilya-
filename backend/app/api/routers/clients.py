@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 import logging
 
-from app.api.deps import get_db_session, get_current_user, require_roles
+from app.api.deps import get_db_session, get_current_user, require_roles, is_client_account
 from app.models.client import Client, anonymize_client_fields
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
@@ -22,7 +22,7 @@ _ADMIN = Depends(require_roles(UserRole.admin))
 def _rep_guard(client: Client, current_user: User) -> None:
     if current_user.role == UserRole.representante and client.rep_id != current_user.rep_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
-    if current_user.role == UserRole.vendedor and client.id != current_user.linked_id:
+    if is_client_account(current_user) and client.id != current_user.linked_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
 
 
@@ -56,7 +56,7 @@ async def list_clients(
             .where(Client.rep_id == current_user.rep_id)
             .offset(skip).limit(limit)
         )
-    elif current_user.role == UserRole.vendedor:
+    elif is_client_account(current_user):
         # Cliente logado (V-Bloco66-RBAC): só o próprio registro, nunca a listagem completa.
         result = await db.execute(
             select(Client).where(Client.id == current_user.linked_id)

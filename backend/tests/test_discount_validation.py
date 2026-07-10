@@ -14,8 +14,9 @@ from app.api.routers.orders import _resolve_max_discount, _validate_discount
 from app.models.user import UserRole
 
 
-def _user(role: UserRole) -> SimpleNamespace:
-    return SimpleNamespace(role=role)
+def _user(role: UserRole, linked_id=None) -> SimpleNamespace:
+    # linked_id é lido por is_client_account() dentro de _resolve_max_discount (SEC-01).
+    return SimpleNamespace(role=role, linked_id=linked_id)
 
 
 def _client(max_discount: str) -> SimpleNamespace:

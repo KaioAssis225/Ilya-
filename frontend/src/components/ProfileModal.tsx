@@ -8,13 +8,14 @@ const ROLE_LABELS: Record<string, string> = {
   representante: 'Representante',
   cadastros: 'Cadastros',
   produtos: 'Produtos',
+  cliente: 'Cliente',
 }
 
 export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const { user } = useAuth()
   if (!user) return null
 
-  const isCliente = user.role === 'vendedor' && !!user.linked_id
+  const isCliente = user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
   const profileSigKey = `profile_signature_${user.id}`
 
   const [sigData, setSigData] = useState<string | null>(() => localStorage.getItem(profileSigKey))

@@ -169,7 +169,7 @@ async def create_user_from_client(
         username=username,
         hashed_password=hash_password(temp_password),
         full_name=client.name,
-        role=UserRole.vendedor,
+        role=UserRole.cliente,  # SEC-01: conta de cliente-final, sem acesso de operador
         must_change_password=True,
         linked_id=client_id,
     )

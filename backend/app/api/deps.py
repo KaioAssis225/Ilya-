@@ -61,11 +61,33 @@ async def get_current_user(
     return user
 
 
+def is_client_account(user: User) -> bool:
+    """Conta de portal do cliente-final (SEC-01).
+
+    A role oficial é `cliente`; contas legadas criadas antes da migração 0028
+    ainda podem ter `vendedor` + `linked_id` — tratadas aqui como cliente para
+    que nunca exerçam permissão de operador interno mesmo antes de migrar.
+    """
+    return user.role == UserRole.cliente or (
+        user.role == UserRole.vendedor and user.linked_id is not None
+    )
+
+
+def is_internal_operator(user: User) -> bool:
+    """Operador interno de vendas: `vendedor` sem vínculo de cliente (SEC-01)."""
+    return user.role == UserRole.vendedor and user.linked_id is None
+
+
 def require_roles(*allowed_roles: UserRole):
     def dependency(current_user: User = Depends(get_current_user)):
         if current_user.role == UserRole.admin:
             return current_user
-        if current_user.role not in allowed_roles:
+        # SEC-01: uma conta de cliente-final nunca deve receber permissão de
+        # operador interno. Se estiver com a role legada `vendedor`+linked_id,
+        # rebaixamos para `cliente` na verificação — assim endpoints que aceitam
+        # `vendedor` (ex.: catálogo) a rejeitam até a migração 0028 concluir.
+        effective_role = UserRole.cliente if is_client_account(current_user) else current_user.role
+        if effective_role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Operação não permitida para o seu nível de acesso."

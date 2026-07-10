@@ -1513,7 +1513,7 @@ function PeopleTab<T extends Client | Representative>({
                   <div className="text-sm text-ink-2 space-y-1">
                     <p><span className="text-muted">Usuário:</span> <strong>{createdUser.username}</strong></p>
                     <p><span className="text-muted">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>
-                    <p><span className="text-muted">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Vendedor'}</p>
+                    <p><span className="text-muted">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Cliente'}</p>
                   </div>
                   <p className="text-xs text-muted-2 mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
                 </div>
@@ -2329,7 +2329,7 @@ function savePersistedCadastroState(state: PersistedCadastroState) {
 export default function CadastroPage() {
   const { user } = useAuth()
   const isRep = user?.role === 'representante'
-  const isCliente = user?.role === 'vendedor' && !!user.linked_id
+  const isCliente = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user.linked_id)
   const isLimited = isRep || isCliente
 
   const visibleTabs = TAB_CONFIG.filter(t => {

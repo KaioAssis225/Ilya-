@@ -7,10 +7,11 @@ from app.models.base import Base, TimestampMixin
 
 class UserRole(str, enum.Enum):
     admin = "admin"
-    vendedor = "vendedor"
+    vendedor = "vendedor"          # operador interno (sem vínculo de cliente)
     representante = "representante"
     cadastros = "cadastros"
     produtos = "produtos"
+    cliente = "cliente"            # conta de portal do cliente-final (linked_id = client_id)
 
 
 class User(Base, TimestampMixin):

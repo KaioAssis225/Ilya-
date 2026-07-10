@@ -10,6 +10,7 @@ const ROLE_LABEL: Record<string, string> = {
   representante: 'Representante',
   cadastros: 'Cadastros',
   produtos: 'Produtos',
+  cliente: 'Cliente',
 }
 
 const ROLE_COLOR: Record<string, string> = {
@@ -18,6 +19,7 @@ const ROLE_COLOR: Record<string, string> = {
   representante: '#648261',
   cadastros: '#7a5a9b',
   produtos: '#9b5a50',
+  cliente: '#a08558',
 }
 
 type ModalMode = 'create' | 'edit' | 'password' | 'delete'

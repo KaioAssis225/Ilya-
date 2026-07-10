@@ -6,7 +6,7 @@ export interface UserRead {
   email: string
   username: string | null
   full_name: string
-  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
+  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
   rep_id: string | null
   is_active: boolean
 }
@@ -15,14 +15,14 @@ export interface UserCreate {
   email: string
   password: string
   full_name: string
-  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
+  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
   rep_id?: string | null
 }
 
 export interface UserUpdate {
   email?: string
   full_name?: string
-  role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos'
+  role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
   rep_id?: string | null
   is_active?: boolean
 }

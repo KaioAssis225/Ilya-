@@ -12,7 +12,7 @@ from app.schemas.product_type import ProductTypeCreate, ProductTypeUpdate, Produ
 
 router = APIRouter(prefix="/api/v1/product-types", tags=["product-types"])
 
-_ANY = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante))
+_ANY = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.cliente))
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
 _ADMIN = Depends(require_roles(UserRole.admin))
 

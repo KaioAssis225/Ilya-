@@ -27,7 +27,8 @@ const queryClient = new QueryClient({
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
 function isCliente(user: AuthUser) {
-  return user.role === 'vendedor' && !!user.linked_id
+  // SEC-01: role própria `cliente`; mantém o legado `vendedor`+linked_id até a migração propagar.
+  return user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
 }
 
 function canSeeOrcamentoPedidos(user: AuthUser) {

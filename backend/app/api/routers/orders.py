@@ -6,7 +6,13 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
-from app.api.deps import get_db_session, get_current_user, require_roles
+from app.api.deps import (
+    get_db_session,
+    get_current_user,
+    require_roles,
+    is_client_account,
+    is_internal_operator,
+)
 from app.core.limiter import limiter
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
@@ -61,9 +67,10 @@ def _resolve_max_discount(current_user: User, client: Client, rep: Representativ
     """Bloco 69: teto dinamico por Cliente/Representante em vez de limite fixo por role."""
     if current_user.role == UserRole.representante:
         return float(rep.max_discount) if rep else 0.0
-    if current_user.role == UserRole.vendedor:
+    # cliente-final e operador interno de vendas respeitam o teto do cliente
+    if is_client_account(current_user) or current_user.role == UserRole.vendedor:
         return float(client.max_discount)
-    return 100.0
+    return 100.0  # admin / produtos
 
 
 def _validate_discount(discount: float, max_discount: float, product_code: str) -> None:
@@ -96,7 +103,7 @@ async def create_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    _allowed_create = {UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.produtos}
+    _allowed_create = {UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.produtos, UserRole.cliente}
     if current_user.role not in _allowed_create:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -111,7 +118,7 @@ async def create_order(
             )
         payload.rep_id = current_user.rep_id
 
-    if current_user.role == UserRole.vendedor and payload.client_id != current_user.linked_id:
+    if is_client_account(current_user) and payload.client_id != current_user.linked_id:
         # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para este cliente.")
 
@@ -207,7 +214,7 @@ async def list_orders(
             select(Order).where(Order.rep_id == current_user.rep_id)
             .order_by(Order.created_at.desc()).offset(skip).limit(limit)
         )
-    elif current_user.role == UserRole.vendedor and current_user.linked_id:
+    elif is_client_account(current_user) and current_user.linked_id:
         result = await db.execute(
             select(Order).where(Order.client_id == current_user.linked_id)
             .order_by(Order.created_at.desc()).offset(skip).limit(limit)
@@ -226,7 +233,7 @@ async def list_global_history(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in {UserRole.admin, UserRole.vendedor}:
+    if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
         select(OrderHistory).order_by(OrderHistory.created_at.desc()).offset(skip).limit(limit)
@@ -241,8 +248,8 @@ async def update_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    _allowed = {UserRole.admin, UserRole.vendedor, UserRole.representante}
-    if current_user.role not in _allowed:
+    # Edição é operação de operador interno ou representante — cliente-final nunca edita pedido (SEC-02).
+    if not (current_user.role in {UserRole.admin, UserRole.representante} or is_internal_operator(current_user)):
         raise HTTPException(status_code=403, detail="Operação não permitida.")
 
     result = await db.execute(select(Order).where(Order.id == order_id))
@@ -365,7 +372,7 @@ async def finalize_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in {UserRole.admin, UserRole.vendedor, UserRole.representante}:
+    if not (current_user.role == UserRole.admin or is_internal_operator(current_user) or current_user.role == UserRole.representante):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
@@ -404,7 +411,7 @@ async def get_order_history(
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    if current_user.role == UserRole.vendedor and current_user.linked_id and order.client_id != current_user.linked_id:
+    if is_client_account(current_user) and order.client_id != current_user.linked_id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
     hist = await db.execute(
         select(OrderHistory).where(OrderHistory.order_id == order_id).order_by(OrderHistory.created_at.asc())
@@ -421,7 +428,7 @@ async def get_order(
     order = await _get_order(db, id_or_code)
     if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-    if current_user.role == UserRole.vendedor and current_user.linked_id and order.client_id != current_user.linked_id:
+    if is_client_account(current_user) and order.client_id != current_user.linked_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     return order
 
@@ -456,7 +463,7 @@ async def generate_sign_token(
 
     if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-    if current_user.role == UserRole.vendedor and current_user.linked_id and order.client_id != current_user.linked_id:
+    if is_client_account(current_user) and order.client_id != current_user.linked_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
     token = create_sign_token(str(order.id), str(order.client_id))
@@ -558,7 +565,7 @@ async def sign_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    is_client = current_user.role == UserRole.vendedor and current_user.linked_id is not None
+    is_client = is_client_account(current_user)
     is_rep = current_user.role == UserRole.representante
     if current_user.role != UserRole.admin and not is_client and not is_rep:
         raise HTTPException(status_code=403, detail="Acesso negado.")

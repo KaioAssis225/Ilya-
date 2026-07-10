@@ -13,7 +13,7 @@ from app.schemas.optional_category import OptionalCategoryCreate, OptionalCatego
 
 router = APIRouter(prefix="/api/v1/optional-categories", tags=["optional-categories"])
 
-_ANY = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante))
+_ANY = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.cliente))
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
 _ADMIN = Depends(require_roles(UserRole.admin))
 
