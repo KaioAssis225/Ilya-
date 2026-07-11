@@ -90,7 +90,7 @@ function Th({ label, col, sortKey, sortDir, onSort, color }: {
 }) {
   return (
     <th
-      className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase tracking-wider cursor-pointer select-none transition-colors"
+      className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider cursor-pointer select-none transition-colors"
       onClick={() => onSort(col)}
       onMouseEnter={(e) => (e.currentTarget.style.color = color)}
       onMouseLeave={(e) => (e.currentTarget.style.color = '')}
@@ -160,36 +160,36 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
   return (
     <div className="grid grid-cols-2 gap-3">
       <label className="col-span-2 flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">Nome *</span>
+        <span className="text-xs text-muted">Nome *</span>
         <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">Telefone *</span>
+        <span className="text-xs text-muted">Telefone *</span>
         <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">E-mail *</span>
+        <span className="text-xs text-muted">E-mail *</span>
         <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1 relative">
-        <span className="text-xs text-[#9d8d81]">CEP *</span>
+        <span className="text-xs text-muted">CEP *</span>
         <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: formatCep(e.target.value) })} onBlur={handleCepBlur} maxLength={9} required />
-        {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-[#8b6914] animate-pulse">...</span>}
+        {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">Número</span>
+        <span className="text-xs text-muted">Número</span>
         <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: formatOnlyNumbers(e.target.value) })} />
       </label>
       <label className="col-span-2 flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">Endereço *</span>
+        <span className="text-xs text-muted">Endereço *</span>
         <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">Cidade *</span>
+        <span className="text-xs text-muted">Cidade *</span>
         <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-[#9d8d81]">Estado *</span>
+        <span className="text-xs text-muted">Estado *</span>
         <select className="input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required>
           <option value="">UF</option>
           {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -207,10 +207,10 @@ function Modal({ title, onClose, children, accentColor }: {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-panel w-full max-w-lg mx-4 md:mx-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e0d6]"
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
-          <h3 className="text-base font-semibold text-[#2c2420]">{title}</h3>
-          <button onClick={onClose} className="text-[#9d8d81] hover:text-[#2c2420] transition-colors"><X className="w-5 h-5" /></button>
+          <h3 className="text-base font-semibold text-ink">{title}</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink transition-colors" aria-label="Fechar"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
       </div>
@@ -221,7 +221,7 @@ function Modal({ title, onClose, children, accentColor }: {
 function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
   return (
     <Modal title="Confirmar exclusão" onClose={onCancel}>
-      <p className="text-[#4a3f38] mb-6">Excluir <span className="text-[#2c2420] font-medium">"{name}"</span>? Esta ação não pode ser desfeita.</p>
+      <p className="text-ink-2 mb-6">Excluir <span className="text-ink font-medium">"{name}"</span>? Esta ação não pode ser desfeita.</p>
       <div className="flex justify-end gap-3">
         <button className="btn-secondary" onClick={onCancel}>Cancelar</button>
         <button className="btn-danger" onClick={onConfirm}>Excluir</button>
@@ -304,7 +304,7 @@ function Pagination({ page, totalPages, onPage, color }: {
         onFocus={(e) => ring(e, canPrev)} onBlur={(e) => ring(e, false)}>
         <ChevronLeft className="w-4 h-4" /> Anterior
       </button>
-      <span className="text-sm text-[#6b5d52] tabular-nums select-none">Página <span className="font-semibold text-[#2c2420]">{page}</span> de {totalPages}</span>
+      <span className="text-sm text-ink-3 tabular-nums select-none">Página <span className="font-semibold text-ink">{page}</span> de {totalPages}</span>
       <button type="button" disabled={!canNext} onClick={() => onPage(page + 1)}
         className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canNext ? '#4a3f38' : '#c8bdb5' }}
         onFocus={(e) => ring(e, canNext)} onBlur={(e) => ring(e, false)}>
@@ -428,24 +428,24 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
   const progress = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0
 
   return (
-    <div className={collapsible ? 'mb-4 border border-[#e8e0d6] rounded-xl overflow-hidden' : ''}>
+    <div className={collapsible ? 'mb-4 border border-line rounded-xl overflow-hidden' : ''}>
       {collapsible ? (
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           className="w-full flex items-center justify-between px-4 py-3 bg-[#fcfbfa] text-left"
         >
-          <span className="flex items-center gap-2 text-sm font-semibold text-[#2c2420]">
+          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
             <Upload className="w-4 h-4" style={{ color }} /> {title}
           </span>
-          {open ? <ChevronUp className="w-4 h-4 text-[#9d8d81]" /> : <ChevronDown className="w-4 h-4 text-[#9d8d81]" />}
+          {open ? <ChevronUp className="w-4 h-4 text-muted" /> : <ChevronDown className="w-4 h-4 text-muted" />}
         </button>
       ) : (
-        <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2 mb-3"><ImageIcon className="w-4 h-4" style={{ color }} /> {title}</h3>
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2 mb-3"><ImageIcon className="w-4 h-4" style={{ color }} /> {title}</h3>
       )}
 
       {open && (
-        <div className={collapsible ? 'p-4 border-t border-[#e8e0d6] space-y-4' : 'space-y-4'}>
+        <div className={collapsible ? 'p-4 border-t border-line space-y-4' : 'space-y-4'}>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
@@ -454,8 +454,8 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
             style={{ borderColor: dragOver ? color : '#e8e0d6', backgroundColor: dragOver ? `${color}0a` : '#faf8f4' }}
           >
             <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: dragOver ? color : '#c8bdb5' }} />
-            <p className="text-sm text-[#6b5d52]">Arraste uma pasta ou arquivos de fotos aqui</p>
-            <p className="text-xs text-[#9d8d81] mt-1">O nome do arquivo deve ser o código do produto (ex.: IML0001.png)</p>
+            <p className="text-sm text-ink-3">Arraste uma pasta ou arquivos de fotos aqui</p>
+            <p className="text-xs text-muted mt-1">O nome do arquivo deve ser o código do produto (ex.: IML0001.png)</p>
             <div className="flex items-center justify-center gap-2 mt-3">
               <button type="button" className="btn-secondary text-xs" onClick={() => dirInputRef.current?.click()}>Selecionar pasta</button>
               <button type="button" className="btn-secondary text-xs" onClick={() => filesInputRef.current?.click()}>Selecionar arquivos</button>
@@ -475,31 +475,31 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
             <div className="space-y-3">
               <div className="flex flex-wrap gap-4 text-xs">
                 <span className="flex items-center gap-1.5 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {items.length} validada(s)</span>
-                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-[#b25e50]"><X className="w-3.5 h-3.5" /> {rejected.length} rejeitada(s) — SKU não encontrado</span>}
+                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-terracotta"><X className="w-3.5 h-3.5" /> {rejected.length} rejeitada(s) — SKU não encontrado</span>}
               </div>
 
               {rejected.length > 0 && (
                 <div className="bg-[#fef3f2] border border-red-200 rounded-lg p-2.5 max-h-24 overflow-y-auto">
-                  {rejected.map((name) => <p key={name} className="text-[11px] text-[#b25e50] font-mono">{name}</p>)}
+                  {rejected.map((name) => <p key={name} className="text-[11px] text-terracotta font-mono">{name}</p>)}
                 </div>
               )}
 
               {items.length > 0 && (
                 <>
                   {uploading && (
-                    <div className="w-full h-2 bg-[#f0ece6] rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-bg-2 rounded-full overflow-hidden">
                       <div className="h-full transition-all" style={{ width: `${progress}%`, backgroundColor: color }} />
                     </div>
                   )}
-                  <div className="max-h-56 overflow-y-auto border border-[#e8e0d6] rounded-lg divide-y divide-[#f0ece6]">
+                  <div className="max-h-56 overflow-y-auto border border-line rounded-lg divide-y divide-bg-2">
                     {items.map((item) => (
                       <div key={item.file.name} className="flex items-center justify-between px-3 py-1.5 text-xs">
-                        <span className="font-mono text-[#4a3f38] truncate">{item.sku}</span>
-                        <span className="text-[#9d8d81] truncate flex-1 px-2">{item.file.name}</span>
-                        {item.status === 'pending' && <span className="text-[#9d8d81]">Aguardando</span>}
+                        <span className="font-mono text-ink-2 truncate">{item.sku}</span>
+                        <span className="text-muted truncate flex-1 px-2">{item.file.name}</span>
+                        {item.status === 'pending' && <span className="text-muted">Aguardando</span>}
                         {item.status === 'uploading' && <span style={{ color }}>Enviando…</span>}
                         {item.status === 'success' && <span className="flex items-center gap-1 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> Enviada</span>}
-                        {item.status === 'error' && <span className="text-[#b25e50]" title={item.error}>Erro</span>}
+                        {item.status === 'error' && <span className="text-terracotta" title={item.error}>Erro</span>}
                       </div>
                     ))}
                   </div>
@@ -667,10 +667,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       <BatchPhotoUpload products={products ?? []} color={color} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <span className="text-sm text-[#9d8d81] whitespace-nowrap">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
+        <span className="text-sm text-muted whitespace-nowrap">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#a89a8e]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
             <input className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
@@ -680,63 +680,63 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       </div>
 
       {isLoading ? (
-        <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
+        <p className="text-muted text-sm py-8 text-center">Carregando...</p>
       ) : (
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
           <div className="md:hidden flex flex-col gap-3">
             {pageItems.map((p) => (
-              <div key={p.id} className="bg-[#fcfbfa] border border-[#e8e0d6] rounded-xl p-3.5 flex gap-3">
+              <div key={p.id} className="bg-[#fcfbfa] border border-line rounded-xl p-3.5 flex gap-3">
                 {p.photo_url
-                  ? <img src={p.photo_url} alt="" className="w-14 h-14 object-cover rounded-lg border border-[#e8e0d6] flex-shrink-0" />
-                  : <div className="w-14 h-14 bg-[#f0ece6] rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-[#c8bdb5]" /></div>
+                  ? <img src={p.photo_url} alt="" className="w-14 h-14 object-cover rounded-lg border border-line flex-shrink-0" />
+                  : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
                 }
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-1">
                     <div className="min-w-0">
                       <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
-                      <p className="text-sm font-medium text-[#2c2420] leading-snug line-clamp-2">{p.description}</p>
+                      <p className="text-sm font-medium text-ink leading-snug line-clamp-2">{p.description}</p>
                     </div>
                     <div className="flex gap-0 flex-shrink-0">
-                      <button onClick={() => openEdit(p)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => openEdit(p)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setDeleting(p)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => setDeleting(p)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-1">
-                    <span className="text-[10px] text-[#9d8d81]">
+                    <span className="text-[10px] text-muted">
                       {isConjuntoType(p.type) ? '' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
                         : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </span>
                     <span className="text-right">
-                      <span className="block text-sm font-bold text-[#2c2420]">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</span>
-                      <span className="block text-[10px] text-[#6b5d52]">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</span>
+                      <span className="block text-sm font-bold text-ink">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</span>
+                      <span className="block text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</span>
                     </span>
                   </div>
                   {(p.optionals.length > 0 || p.all_optionals_categories) && (
-                    <p className="text-[10px] text-[#9d8d81] mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ')}</p>
+                    <p className="text-[10px] text-muted mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ')}</p>
                   )}
                 </div>
               </div>
             ))}
-            {filtered.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</p>}
+            {filtered.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
-          <div className="hidden md:block overflow-x-auto rounded-xl border border-[#e8e0d6]">
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: `${color}12` }}>
                 <tr>
                   <Th label="Código" col="product_code" {...thProps} />
                   <Th label="Descrição" col="description" {...thProps} />
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Dimensões</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase">Dimensões</th>
                   <Th label="Preço" col="price_lojista" {...thProps} />
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#9d8d81] uppercase">Opcionais</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-[#9d8d81] uppercase">Foto</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase">Opcionais</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted uppercase">Foto</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -744,38 +744,38 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {pageItems.map((p) => (
                   <tr key={p.id} className="table-row">
                     <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
-                    <td className="px-4 py-3 text-[#2c2420] max-w-[180px] truncate">{p.description}</td>
-                    <td className="px-4 py-3 text-[#4a3f38] text-xs whitespace-nowrap">
+                    <td className="px-4 py-3 text-ink max-w-[180px] truncate">{p.description}</td>
+                    <td className="px-4 py-3 text-ink-2 text-xs whitespace-nowrap">
                       {isConjuntoType(p.type) ? '—' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
                     <td className="px-4 py-3 text-sm whitespace-nowrap">
-                      <div className="text-[#2c2420] font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</div>
-                      <div className="text-[10px] text-[#6b5d52]">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</div>
+                      <div className="text-ink font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</div>
+                      <div className="text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</div>
                     </td>
-                    <td className="px-4 py-3 text-[#8a7a6e] text-xs max-w-[160px]">
+                    <td className="px-4 py-3 text-muted-2 text-xs max-w-[160px]">
                       {p.optionals.length > 0 || p.all_optionals_categories
                         ? getProductOptionalsLabel(p, catLabel, ', ')
                         : '—'}
                     </td>
                     <td className="px-4 py-3">
                       {p.photo_url
-                        ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-[#e8e0d6]" />
-                        : <ImageIcon className="w-6 h-6 text-[#c8bdb5]" />}
+                        ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-line" />
+                        : <ImageIcon className="w-6 h-6 text-faint" />}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openEdit(p)} className="text-[#9d8d81] transition-colors"
+                        <button onClick={() => openEdit(p)} aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => setDeleting(p)} className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(p)} aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -798,7 +798,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             }
           }} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Nome do Novo Tipo *</span>
+              <span className="text-xs text-muted">Nome do Novo Tipo *</span>
               <input className="input" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} required autoFocus />
             </label>
             {newTypeErr && <p className="text-xs text-red-500">{newTypeErr}</p>}
@@ -822,23 +822,23 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-[#9d8d81]">Código *</span>
+                <span className="text-xs text-muted">Código *</span>
                 <input className="input" value={form.product_code} onChange={(e) => setForm({ ...form, product_code: e.target.value })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-[#9d8d81]">Preço Lojista (R$) *</span>
+                <span className="text-xs text-muted">Preço Lojista (R$) *</span>
                 <input className="input" type="number" min="0" step="0.01" value={form.price_lojista ?? 0} onChange={(e) => setForm({ ...form, price_lojista: Number(e.target.value) })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-[#9d8d81]">Preço Corporativo (R$) *</span>
+                <span className="text-xs text-muted">Preço Corporativo (R$) *</span>
                 <input className="input" type="number" min="0" step="0.01" value={form.price_corporativo ?? 0} onChange={(e) => setForm({ ...form, price_corporativo: Number(e.target.value) })} required />
               </label>
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-[#9d8d81]">Descrição *</span>
+                <span className="text-xs text-muted">Descrição *</span>
                 <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
               </label>
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-[#9d8d81]">Observação</span>
+                <span className="text-xs text-muted">Observação</span>
                 <textarea
                   className="input resize-none"
                   rows={2}
@@ -848,7 +848,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-[#9d8d81]">Tipo</span>
+                <span className="text-xs text-muted">Tipo</span>
                 <select className="input" value={form.type ?? 'Outro'} onChange={(e) => {
                   if (e.target.value === '__new__') { setShowNewTypeModal(true) }
                   else setForm({ ...form, type: e.target.value })
@@ -870,7 +870,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   style={{ accentColor: color }}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø — circular)</span>
+                <span className="text-sm text-ink-2">Medida Redonda (Ø — circular)</span>
               </label>
             )}
 
@@ -880,12 +880,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {form.is_circular ? (
                   <>
                     <label className="flex flex-col gap-1 col-span-2">
-                      <span className="text-xs text-[#9d8d81]">Diâmetro Ø (m) *</span>
+                      <span className="text-xs text-muted">Diâmetro Ø (m) *</span>
                       <input className="input" type="number" min="0" step="0.01" value={form.largura}
                         onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
+                      <span className="text-xs text-muted">Altura A (m) *</span>
                       <input className="input" type="number" min="0" step="0.01" value={form.altura}
                         onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
                     </label>
@@ -893,17 +893,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 ) : (
                   <>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-[#9d8d81]">Largura L (m) *</span>
+                      <span className="text-xs text-muted">Largura L (m) *</span>
                       <input className="input" type="number" min="0" step="0.01" value={form.largura}
                         onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-[#9d8d81]">Prof. P (m) *</span>
+                      <span className="text-xs text-muted">Prof. P (m) *</span>
                       <input className="input" type="number" min="0" step="0.01" value={form.profundidade}
                         onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-[#9d8d81]">Altura A (m) *</span>
+                      <span className="text-xs text-muted">Altura A (m) *</span>
                       <input className="input" type="number" min="0" step="0.01" value={form.altura}
                         onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
                     </label>
@@ -914,14 +914,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
             {isConjuntoType(form.type) ? (
               <div>
-                <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Componentes do Conjunto</span>
+                <span className="text-xs text-muted block mb-2 font-medium">Componentes do Conjunto</span>
                 {(form.components ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.components ?? []).map((comp, idx) => (
-                      <div key={idx} className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-[#e8e0d6] bg-[#fcfbfa]">
+                      <div key={idx} className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-line bg-[#fcfbfa]">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-[#2c2420] leading-snug">{comp.description}</p>
-                          <p className="text-[10px] text-[#9d8d81] mt-0.5">
+                          <p className="text-sm font-medium text-ink leading-snug">{comp.description}</p>
+                          <p className="text-[10px] text-muted mt-0.5">
                             {comp.is_circular
                               ? `Ø ${Number(comp.largura).toFixed(2).replace('.', ',')} × A ${Number(comp.altura).toFixed(2).replace('.', ',')} m`
                               : `L ${Number(comp.largura).toFixed(2).replace('.', ',')} × P ${Number(comp.profundidade).toFixed(2).replace('.', ',')} × A ${Number(comp.altura).toFixed(2).replace('.', ',')} m`
@@ -940,7 +940,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               )))
                               setEditingCompIndex(idx)
                             }}
-                            className="text-[#9d8d81] hover:opacity-70 transition-colors mt-0.5"
+                            className="text-muted hover:opacity-70 transition-colors mt-0.5"
                             style={{ color: editingCompIndex === idx ? color : undefined }}
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -948,7 +948,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           <button
                             type="button"
                             onClick={() => setForm(prev => ({ ...prev, components: (prev.components ?? []).filter((_, i) => i !== idx) }))}
-                            className="text-[#9d8d81] hover:text-red-500 transition-colors mt-0.5"
+                            className="text-muted hover:text-red-500 transition-colors mt-0.5"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -959,9 +959,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 )}
 
                 <div className="border border-[#e8dccb] rounded-xl p-4 bg-[#fdf8f2] space-y-3">
-                  <span className="text-xs font-semibold text-[#4a3f38]">{editingCompIndex !== null ? 'Editar Componente' : 'Novo Componente'}</span>
+                  <span className="text-xs font-semibold text-ink-2">{editingCompIndex !== null ? 'Editar Componente' : 'Novo Componente'}</span>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-[#9d8d81]">Descrição *</span>
+                    <span className="text-xs text-muted">Descrição *</span>
                     <input className="input" placeholder="ex: Sofá 3 lugares, Poltrona, Mesa..." value={compForm.description}
                       onChange={e => setCompForm(f => ({ ...f, description: e.target.value }))} />
                   </label>
@@ -969,17 +969,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <input type="checkbox" checked={compForm.is_circular}
                       onChange={e => setCompForm(f => ({ ...f, is_circular: e.target.checked, profundidade: e.target.checked ? 0 : f.profundidade }))}
                       style={{ accentColor: color }} className="w-4 h-4" />
-                    <span className="text-sm text-[#4a3f38]">Medida Redonda (Ø)</span>
+                    <span className="text-sm text-ink-2">Medida Redonda (Ø)</span>
                   </label>
                   {compForm.is_circular ? (
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1 col-span-2">
-                        <span className="text-xs text-[#9d8d81]">Diâmetro Ø (m)</span>
+                        <span className="text-xs text-muted">Diâmetro Ø (m)</span>
                         <input className="input" type="number" min="0" step="0.01" value={compForm.largura}
                           onChange={e => setCompForm(f => ({ ...f, largura: Number(e.target.value) }))} />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-[#9d8d81]">Altura A (m)</span>
+                        <span className="text-xs text-muted">Altura A (m)</span>
                         <input className="input" type="number" min="0" step="0.01" value={compForm.altura}
                           onChange={e => setCompForm(f => ({ ...f, altura: Number(e.target.value) }))} />
                       </label>
@@ -987,35 +987,35 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   ) : (
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-[#9d8d81]">L (m)</span>
+                        <span className="text-xs text-muted">L (m)</span>
                         <input className="input" type="number" min="0" step="0.01" value={compForm.largura}
                           onChange={e => setCompForm(f => ({ ...f, largura: Number(e.target.value) }))} />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-[#9d8d81]">P (m)</span>
+                        <span className="text-xs text-muted">P (m)</span>
                         <input className="input" type="number" min="0" step="0.01" value={compForm.profundidade}
                           onChange={e => setCompForm(f => ({ ...f, profundidade: Number(e.target.value) }))} />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-[#9d8d81]">A (m)</span>
+                        <span className="text-xs text-muted">A (m)</span>
                         <input className="input" type="number" min="0" step="0.01" value={compForm.altura}
                           onChange={e => setCompForm(f => ({ ...f, altura: Number(e.target.value) }))} />
                       </label>
                     </div>
                   )}
                   <label className="flex flex-col gap-1 w-24">
-                    <span className="text-xs text-[#9d8d81]">Quantidade</span>
+                    <span className="text-xs text-muted">Quantidade</span>
                     <input className="input text-center" type="number" min="1" value={compForm.qty}
                       onChange={e => setCompForm(f => ({ ...f, qty: Math.max(1, Number(e.target.value)) }))} />
                   </label>
 
                   <div>
-                    <span className="text-xs text-[#9d8d81] block mb-2">Opcionais do Componente</span>
+                    <span className="text-xs text-muted block mb-2">Opcionais do Componente</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
                       {optCategories.map(({ code: value, name: label }) => {
                         const isActive = compActiveCategories.includes(value)
                         return (
-                          <label key={value} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
+                          <label key={value} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-line hover:bg-bg cursor-pointer transition-colors">
                             <input type="checkbox" checked={isActive} style={{ accentColor: color }}
                               onChange={(e) => {
                                 if (e.target.checked) {
@@ -1027,18 +1027,18 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                 }
                               }}
                               className="w-3.5 h-3.5" />
-                            <span className="text-xs text-[#4a3f38] select-none">{label}</span>
+                            <span className="text-xs text-ink-2 select-none">{label}</span>
                           </label>
                         )
                       })}
                       {optCategories.length === 0 && (
-                        <p className="col-span-full text-xs text-[#c8bdb5]">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                        <p className="col-span-full text-xs text-faint">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
                       )}
                     </div>
                     {compActiveCategories.length > 0 && (
                       <div className="space-y-2.5">
                         {compActiveCategories.map((cat) => (
-                          <div key={cat} className="border border-[#e8e0d6] rounded-lg p-2.5 bg-[#fdfdfd]">
+                          <div key={cat} className="border border-line rounded-lg p-2.5 bg-[#fdfdfd]">
                             <span className="text-[11px] font-semibold block mb-1.5" style={{ color }}>{catLabel(cat).toUpperCase()}</span>
                             <div className="flex flex-wrap gap-1.5">
                               {allOptionals.filter(o => o.category === cat).map(opt => {
@@ -1091,7 +1091,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           setCompActiveCategories([])
                           setEditingCompIndex(null)
                         }}
-                        className="px-4 py-2 rounded-lg text-sm font-medium border border-[#e8e0d6] text-[#6b5d52] hover:bg-[#f8f6f2] transition-colors"
+                        className="px-4 py-2 rounded-lg text-sm font-medium border border-line text-ink-3 hover:bg-bg transition-colors"
                       >
                         Cancelar
                       </button>
@@ -1101,20 +1101,20 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </div>
             ) : form.is_set ? (
               <div>
-                <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Componentes do Conjunto</span>
+                <span className="text-xs text-muted block mb-2 font-medium">Componentes do Conjunto</span>
                 {(form.set_items ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.set_items ?? []).map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] bg-[#fcfbfa]">
-                        <span className="font-mono text-xs font-semibold text-[#8b6914] flex-1">{item.product_code}</span>
-                        <span className="text-xs text-[#9d8d81]">×{item.qty}</span>
+                      <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-[#fcfbfa]">
+                        <span className="font-mono text-xs font-semibold text-gold flex-1">{item.product_code}</span>
+                        <span className="text-xs text-muted">×{item.qty}</span>
                         <button
                           type="button"
                           onClick={() => setForm(prev => ({
                             ...prev,
                             set_items: (prev.set_items ?? []).filter((_, i) => i !== idx),
                           }))}
-                          className="text-[#9d8d81] hover:text-red-500 transition-colors ml-1"
+                          className="text-muted hover:text-red-500 transition-colors ml-1"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -1147,16 +1147,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <span className="hidden sm:inline">Add</span>
                   </button>
                 </div>
-                <p className="text-[10px] text-[#c8bdb5] mt-1.5">Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.</p>
+                <p className="text-[10px] text-faint mt-1.5">Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.</p>
               </div>
             ) : (
               <div>
-                <span className="text-xs text-[#9d8d81] block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
+                <span className="text-xs text-muted block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {optCategories.map(({ code: value, name: label }) => {
                     const isActive = activeCategories.includes(value)
                     return (
-                      <label key={value} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#e8e0d6] hover:bg-[#f8f6f2] cursor-pointer transition-colors">
+                      <label key={value} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-line hover:bg-bg cursor-pointer transition-colors">
                         <input
                           type="checkbox"
                           checked={isActive}
@@ -1175,25 +1175,25 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           }}
                           className="w-4 h-4"
                         />
-                        <span className="text-xs text-[#4a3f38] select-none">{label}</span>
+                        <span className="text-xs text-ink-2 select-none">{label}</span>
                       </label>
                     )
                   })}
                   {optCategories.length === 0 && (
-                    <p className="col-span-full text-xs text-[#c8bdb5]">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                    <p className="col-span-full text-xs text-faint">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
                   )}
                 </div>
 
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
-                    <span className="text-xs text-[#9d8d81] block font-medium">Cores e Permissões por Categoria</span>
+                    <span className="text-xs text-muted block font-medium">Cores e Permissões por Categoria</span>
                     {activeCategories.map((catValue) => {
                       const catValueLabel = catLabel(catValue)
                       const catItems = allOptionals.filter(o => o.category === catValue)
                       const isAllowed = allOptCats.has(catValue)
                       const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
-                        <div key={catValue} className="border border-[#e8e0d6] rounded-xl p-3.5 space-y-2.5 bg-[#fdfdfd] shadow-sm">
+                        <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-[#fdfdfd] shadow-sm">
                           <div className="flex items-center justify-between pb-1 border-b border-[#f3ede6]">
                             <span className="text-xs font-semibold" style={{ color }}>{catValueLabel.toUpperCase()}</span>
                             <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -1221,13 +1221,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                             </label>
                           </div>
                           {isAllowed ? (
-                            <p className="text-[11px] text-[#9d8d81] italic">
+                            <p className="text-[11px] text-muted italic">
                               Todos os opcionais desta categoria estarão disponíveis no carrinho.
                             </p>
                           ) : (
                             <div>
                               {catItems.length === 0 ? (
-                                <span className="text-xs text-[#c8bdb5] italic">Nenhuma cor cadastrada nesta categoria.</span>
+                                <span className="text-xs text-faint italic">Nenhuma cor cadastrada nesta categoria.</span>
                               ) : (
                                 <select
                                   multiple
@@ -1238,14 +1238,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                     const otherIds = (form.optional_ids ?? []).filter(id => !catItems.some(o => o.id === id))
                                     setForm(prev => ({ ...prev, optional_ids: [...otherIds, ...chosen] }))
                                   }}
-                                  className="w-full border border-[#e8e0d6] rounded-lg text-xs text-[#2c2420] bg-white focus:outline-none focus:ring-2 focus:ring-[#8b6914]/20 focus:border-[#8b6914]/60 px-2 py-1"
+                                  className="w-full border border-line rounded-lg text-xs text-ink bg-white focus:outline-none focus:ring-2 focus:ring-gold/20 focus:border-gold/60 px-2 py-1"
                                 >
                                   {catItems.map(opt => (
                                     <option key={opt.id} value={opt.id}>{opt.color_name}</option>
                                   ))}
                                 </select>
                               )}
-                              <p className="text-[10px] text-[#c8bdb5] mt-1">Ctrl+clique para selecionar múltiplas cores.</p>
+                              <p className="text-[10px] text-faint mt-1">Ctrl+clique para selecionar múltiplas cores.</p>
                             </div>
                           )}
                         </div>
@@ -1257,15 +1257,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
 
             <div>
-              <span className="text-xs text-[#9d8d81] block mb-1">Foto</span>
+              <span className="text-xs text-muted block mb-1">Foto</span>
               <div
-                className="border-2 border-dashed border-[#e8e0d6] rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
+                className="border-2 border-dashed border-line rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
                 onClick={() => fileRef.current?.click()}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = color)}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
               >
-                {photoPreview ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" /> : <Upload className="w-8 h-8 text-[#c8bdb5]" />}
-                <span className="text-xs text-[#9d8d81]">{photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB'}</span>
+                {photoPreview ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" /> : <Upload className="w-8 h-8 text-faint" />}
+                <span className="text-xs text-muted">{photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB'}</span>
               </div>
               <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
                 onChange={(e) => {
@@ -1391,10 +1391,10 @@ function PeopleTab<T extends Client | Representative>({
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <span className="text-sm text-[#9d8d81] whitespace-nowrap">{items?.length ?? 0} {label.toLowerCase()} cadastrados</span>
+        <span className="text-sm text-muted whitespace-nowrap">{items?.length ?? 0} {label.toLowerCase()} cadastrados</span>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#a89a8e]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
             <input className="input pl-9" placeholder="Buscar por nome, e-mail ou telefone..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color }} onClick={openCreate}>
@@ -1404,43 +1404,43 @@ function PeopleTab<T extends Client | Representative>({
       </div>
 
       {isLoading ? (
-        <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
+        <p className="text-muted text-sm py-8 text-center">Carregando...</p>
       ) : (
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
           <div className="md:hidden flex flex-col gap-3">
             {pageItems.map((item) => (
-              <div key={item.id} className="bg-[#fcfbfa] border border-[#e8e0d6] rounded-xl p-3.5">
+              <div key={item.id} className="bg-[#fcfbfa] border border-line rounded-xl p-3.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[#2c2420]">{item.name}</p>
-                    <p className="text-xs text-[#9d8d81] mt-0.5">{item.city} / {item.state}</p>
+                    <p className="text-sm font-semibold text-ink">{item.name}</p>
+                    <p className="text-xs text-muted mt-0.5">{item.city} / {item.state}</p>
                   </div>
                   <div className="flex gap-0 flex-shrink-0">
-                    <button onClick={() => openView(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => openView(item)} aria-label="Visualizar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button onClick={() => openEdit(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => openEdit(item)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Pencil className="w-4 h-4" />
                     </button>
                     {!(isRep && entityType === 'client') && (
-                      <button onClick={() => setDeleting(item)} className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => setDeleting(item)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
                 </div>
-                <div className="mt-2 space-y-0.5 text-xs text-[#4a3f38]">
+                <div className="mt-2 space-y-0.5 text-xs text-ink-2">
                   <p>{item.phone}</p>
-                  <p className="truncate text-[#8a7a6e]">{item.email}</p>
+                  <p className="truncate text-muted-2">{item.email}</p>
                 </div>
               </div>
             ))}
-            {filtered.length === 0 && <p className="text-center text-[#9d8d81] text-sm py-8">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</p>}
+            {filtered.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
-          <div className="hidden md:block overflow-x-auto rounded-xl border border-[#e8e0d6]">
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: `${color}12` }}>
                 <tr>
@@ -1456,29 +1456,29 @@ function PeopleTab<T extends Client | Representative>({
               <tbody>
                 {pageItems.map((item) => (
                   <tr key={item.id} className="table-row">
-                    <td className="px-4 py-3 text-[#2c2420] font-medium">{item.name}</td>
-                    <td className="px-4 py-3 text-[#4a3f38]">{item.phone}</td>
-                    <td className="px-4 py-3 text-[#4a3f38]">{item.email}</td>
-                    <td className="px-4 py-3 text-[#4a3f38]">{item.city}</td>
-                    <td className="px-4 py-3 text-[#8a7a6e]">{item.state}</td>
-                    <td className="px-4 py-3 text-[#8a7a6e]">{item.max_discount}%</td>
+                    <td className="px-4 py-3 text-ink font-medium">{item.name}</td>
+                    <td className="px-4 py-3 text-ink-2">{item.phone}</td>
+                    <td className="px-4 py-3 text-ink-2">{item.email}</td>
+                    <td className="px-4 py-3 text-ink-2">{item.city}</td>
+                    <td className="px-4 py-3 text-muted-2">{item.state}</td>
+                    <td className="px-4 py-3 text-muted-2">{item.max_discount}%</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openView(item)} title="Visualizar" className="text-[#9d8d81] transition-colors"
+                        <button onClick={() => openView(item)} title="Visualizar" aria-label="Visualizar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Eye className="w-4 h-4" /></button>
-                        <button onClick={() => openEdit(item)} title="Editar" className="text-[#9d8d81] transition-colors"
+                        <button onClick={() => openEdit(item)} title="Editar" aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
                         {!(isRep && entityType === 'client') && (
-                          <button onClick={() => setDeleting(item)} title="Excluir" className="text-[#9d8d81] hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => setDeleting(item)} title="Excluir" aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                         )}
                       </div>
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-[#9d8d81]">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1493,16 +1493,16 @@ function PeopleTab<T extends Client | Representative>({
         <Modal title={`Detalhes — ${viewing.name}`} onClose={() => setViewing(null)} accentColor={color}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              <div><span className="text-xs text-[#9d8d81] block">Nome</span><span className="text-[#2c2420] font-medium">{viewing.name}</span></div>
-              <div><span className="text-xs text-[#9d8d81] block">Telefone</span><span className="text-[#4a3f38]">{viewing.phone}</span></div>
-              <div className="col-span-2"><span className="text-xs text-[#9d8d81] block">E-mail</span><span className="text-[#4a3f38]">{viewing.email}</span></div>
-              <div><span className="text-xs text-[#9d8d81] block">Cidade</span><span className="text-[#4a3f38]">{viewing.city}</span></div>
-              <div><span className="text-xs text-[#9d8d81] block">Estado</span><span className="text-[#4a3f38]">{viewing.state}</span></div>
-              <div className="col-span-2"><span className="text-xs text-[#9d8d81] block">Endereço</span><span className="text-[#4a3f38]">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — CEP {viewing.cep}</span></div>
+              <div><span className="text-xs text-muted block">Nome</span><span className="text-ink font-medium">{viewing.name}</span></div>
+              <div><span className="text-xs text-muted block">Telefone</span><span className="text-ink-2">{viewing.phone}</span></div>
+              <div className="col-span-2"><span className="text-xs text-muted block">E-mail</span><span className="text-ink-2">{viewing.email}</span></div>
+              <div><span className="text-xs text-muted block">Cidade</span><span className="text-ink-2">{viewing.city}</span></div>
+              <div><span className="text-xs text-muted block">Estado</span><span className="text-ink-2">{viewing.state}</span></div>
+              <div className="col-span-2"><span className="text-xs text-muted block">Endereço</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — CEP {viewing.cep}</span></div>
             </div>
 
-            {(isAdmin || (isRep && entityType === 'client')) && <div className="border-t border-[#e8e0d6] pt-4">
-              <p className="text-xs font-semibold text-[#8a7a6e] uppercase tracking-wider mb-3">Acesso ao Sistema</p>
+            {(isAdmin || (isRep && entityType === 'client')) && <div className="border-t border-line pt-4">
+              <p className="text-xs font-semibold text-muted-2 uppercase tracking-wider mb-3">Acesso ao Sistema</p>
 
               {createdUser ? (
                 <div className="bg-[#f0f7f0] border border-[#c5dfc4] rounded-xl p-4 space-y-2">
@@ -1510,12 +1510,12 @@ function PeopleTab<T extends Client | Representative>({
                     <CheckCircle className="w-5 h-5 flex-shrink-0" />
                     <span className="text-sm font-semibold">Usuário criado com sucesso!</span>
                   </div>
-                  <div className="text-sm text-[#4a3f38] space-y-1">
-                    <p><span className="text-[#9d8d81]">Usuário:</span> <strong>{createdUser.username}</strong></p>
-                    <p><span className="text-[#9d8d81]">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>
-                    <p><span className="text-[#9d8d81]">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Vendedor'}</p>
+                  <div className="text-sm text-ink-2 space-y-1">
+                    <p><span className="text-muted">Usuário:</span> <strong>{createdUser.username}</strong></p>
+                    <p><span className="text-muted">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>
+                    <p><span className="text-muted">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Vendedor'}</p>
                   </div>
-                  <p className="text-xs text-[#8a7a6e] mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
+                  <p className="text-xs text-muted-2 mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
                 </div>
               ) : viewing?.has_user ? (
                 <div className="flex items-center gap-3">
@@ -1527,12 +1527,12 @@ function PeopleTab<T extends Client | Representative>({
                     <CheckCircle className="w-4 h-4" />
                     Usuário já criado
                   </button>
-                  <span className="text-xs text-[#9d8d81]">Gerencie pela tela Admin.</span>
+                  <span className="text-xs text-muted">Gerencie pela tela Admin.</span>
                 </div>
               ) : (
                 <>
                   {createUserError && (
-                    <p className="text-xs text-[#b25e50] mb-2">{createUserError}</p>
+                    <p className="text-xs text-terracotta mb-2">{createUserError}</p>
                   )}
                   <button
                     onClick={handleCreateUser}
@@ -1543,7 +1543,7 @@ function PeopleTab<T extends Client | Representative>({
                     <UserPlus className="w-4 h-4" />
                     {createUserPending ? 'Criando…' : 'Criar Usuário'}
                   </button>
-                  <p className="text-xs text-[#9d8d81] mt-2">
+                  <p className="text-xs text-muted mt-2">
                     Cria acesso com usuário gerado pelo nome e senha temporária aleatória.
                   </p>
                 </>
@@ -1563,14 +1563,14 @@ function PeopleTab<T extends Client | Representative>({
             <AddressFields form={form} setForm={setForm} />
             {entityType === 'client' && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-[#9d8d81]">Perfil de faturamento *</span>
+                <span className="text-xs text-muted">Perfil de faturamento *</span>
                 <div className="flex gap-2">
                   {(['lojista', 'corporativo'] as const).map((profile) => (
                     <button
                       key={profile}
                       type="button"
                       onClick={() => setForm({ ...form, price_profile: profile })}
-                      className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${(form.price_profile ?? 'lojista') === profile ? 'text-white' : 'border-[#e8e0d6] text-[#6b5d52] hover:border-[#c8bdb5]'}`}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${(form.price_profile ?? 'lojista') === profile ? 'text-white' : 'border-line text-ink-3 hover:border-faint'}`}
                       style={(form.price_profile ?? 'lojista') === profile ? { backgroundColor: color, borderColor: color } : undefined}
                     >
                       {profile}
@@ -1581,7 +1581,7 @@ function PeopleTab<T extends Client | Representative>({
             )}
             {canEditDiscount && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-[#9d8d81]">Desconto Máximo (%)</span>
+                <span className="text-xs text-muted">Desconto Máximo (%)</span>
                 <input
                   type="number" min={0} max={100} step={0.5} className="input"
                   value={form.max_discount ?? defaultMaxDiscount}
@@ -1715,7 +1715,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   return (
     <div>
       <div className="flex items-center justify-between mb-4 gap-2">
-        <span className="text-sm text-[#9d8d81]">{optionals?.length ?? 0} opcionais cadastrados</span>
+        <span className="text-sm text-muted">{optionals?.length ?? 0} opcionais cadastrados</span>
         {!readOnly && (
           <div className="flex items-center gap-2">
             <button className="btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={openNewGroup}>
@@ -1731,11 +1731,11 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       </div>
 
       {isLoading ? (
-        <p className="text-[#9d8d81] text-sm py-8 text-center">Carregando...</p>
+        <p className="text-muted text-sm py-8 text-center">Carregando...</p>
       ) : (
         <div className="space-y-4">
           {grouped.map(({ category, label, items, cat }) => (
-            <div key={category} className={`rounded-xl border overflow-hidden ${cat ? 'border-[#e8e0d6]' : 'border-dashed border-[#e0b88a]'}`}>
+            <div key={category} className={`rounded-xl border overflow-hidden ${cat ? 'border-line' : 'border-dashed border-[#e0b88a]'}`}>
               <div className="px-4 py-2 flex items-center justify-between gap-2"
                 style={{ backgroundColor: cat ? `${color}12` : '#fdf6ec' }}>
                 <div className="flex items-center gap-2 min-w-0">
@@ -1752,13 +1752,13 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                   <div className="flex gap-2 flex-shrink-0">
                     {cat ? (
                       <>
-                        <button onClick={() => openEditGroup(cat)} className="text-[#9d8d81] transition-colors"
+                        <button onClick={() => openEditGroup(cat)} className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')} title="Editar grupo">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setDeletingGroup({ id: cat.id, name: cat.name, count: items.length })}
-                          className="text-[#9d8d81] hover:text-red-500 transition-colors" title="Excluir grupo">
+                          className="text-muted hover:text-red-500 transition-colors" title="Excluir grupo">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>
@@ -1774,7 +1774,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                 )}
               </div>
               {items.length === 0 ? (
-                <p className="px-4 py-3 text-xs text-[#c8bdb5]">Nenhuma cor cadastrada.</p>
+                <p className="px-4 py-3 text-xs text-faint">Nenhuma cor cadastrada.</p>
               ) : (
               <table className="w-full text-sm">
                 <tbody>
@@ -1784,20 +1784,20 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                         {opt.photo_url
                           ? <button onClick={() => setLightboxUrl(opt.photo_url!)} className="cursor-zoom-in">
                               <img src={opt.photo_url} alt={opt.color_name}
-                                className="w-8 h-8 rounded-md object-cover border border-[#e8e0d6] hover:opacity-80 transition-opacity" />
+                                className="w-8 h-8 rounded-md object-cover border border-line hover:opacity-80 transition-opacity" />
                             </button>
-                          : <div className="w-8 h-8 rounded-md bg-[#f0ece6] border border-[#e8e0d6]" />}
+                          : <div className="w-8 h-8 rounded-md bg-bg-2 border border-line" />}
                       </td>
-                      <td className="px-4 py-2.5 text-[#2c2420]">{opt.color_name}</td>
+                      <td className="px-4 py-2.5 text-ink">{opt.color_name}</td>
                       {!readOnly && (
                         <td className="px-4 py-2.5 w-16">
                           <div className="flex gap-2">
-                            <button onClick={() => openEdit(opt)} className="text-[#9d8d81] transition-colors"
+                            <button onClick={() => openEdit(opt)} aria-label="Editar" className="text-muted transition-colors"
                               onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                               onMouseLeave={(e) => (e.currentTarget.style.color = '')}>
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleting(opt)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                            <button onClick={() => setDeleting(opt)} aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1811,7 +1811,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
             </div>
           ))}
           {grouped.length === 0 && (
-            <p className="text-[#9d8d81] text-sm py-8 text-center">Nenhum grupo cadastrado. Clique em "Adicionar Grupos" para começar.</p>
+            <p className="text-muted text-sm py-8 text-center">Nenhum grupo cadastrado. Clique em "Adicionar Grupos" para começar.</p>
           )}
         </div>
       )}
@@ -1824,7 +1824,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
             <img src={lightboxUrl} alt="Swatch ampliado"
               className="max-w-[90vw] max-h-[80vh] w-64 h-64 object-cover rounded-2xl shadow-2xl border border-white/20" />
             <button onClick={() => setLightboxUrl(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-lg text-[#2c2420] hover:bg-[#f8f6f2] transition-colors">
+              className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-lg text-ink hover:bg-bg transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -1836,7 +1836,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
         <Modal title={editing ? 'Editar Opcional' : 'Novo Opcional'} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Categoria *</span>
+              <span className="text-xs text-muted">Categoria *</span>
               <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
                 {catOptions.map(({ value, label }) => (
                   <option key={value} value={value}>{label}</option>
@@ -1844,23 +1844,23 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Nome da Cor *</span>
+              <span className="text-xs text-muted">Nome da Cor *</span>
               <input className="input" value={form.color_name}
                 onChange={(e) => setForm({ ...form, color_name: e.target.value })} required />
             </label>
 
             <div>
-              <span className="text-xs text-[#9d8d81] block mb-1">Imagem de Textura (swatch)</span>
+              <span className="text-xs text-muted block mb-1">Imagem de Textura (swatch)</span>
               <div
-                className="border-2 border-dashed border-[#e8e0d6] rounded-xl p-3 flex flex-col items-center gap-1.5 cursor-pointer transition-colors"
+                className="border-2 border-dashed border-line rounded-xl p-3 flex flex-col items-center gap-1.5 cursor-pointer transition-colors"
                 onClick={() => optFileRef.current?.click()}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = color)}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
               >
                 {optPhotoPreview
                   ? <img src={optPhotoPreview} alt="" className="w-16 h-16 object-cover rounded-lg" />
-                  : <Upload className="w-6 h-6 text-[#c8bdb5]" />}
-                <span className="text-xs text-[#9d8d81]">
+                  : <Upload className="w-6 h-6 text-faint" />}
+                <span className="text-xs text-muted">
                   {optPhotoPreview ? 'Clique para trocar' : 'PNG, JPG — textura do material'}
                 </span>
               </div>
@@ -1887,13 +1887,13 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
         <Modal title={editingGroup ? 'Editar Grupo' : 'Novo Grupo de Opcionais'} onClose={() => setShowGroupForm(false)} accentColor={color}>
           <form onSubmit={handleGroupSubmit} className="space-y-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Nome do Grupo *</span>
+              <span className="text-xs text-muted">Nome do Grupo *</span>
               <input className="input" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} required autoFocus placeholder="ex: Alumínio" />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Código (identificador único) *</span>
+              <span className="text-xs text-muted">Código (identificador único) *</span>
               <input className="input font-mono text-sm" value={groupForm.code} onChange={(e) => setGroupForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} required placeholder="ex: aluminio" />
-              <span className="text-[10px] text-[#c8bdb5]">Apenas letras minúsculas, números e underscores.</span>
+              <span className="text-[10px] text-faint">Apenas letras minúsculas, números e underscores.</span>
             </label>
             {groupErr && <p className="text-xs text-red-500">{groupErr}</p>}
             <div className="flex gap-2 pt-1">
@@ -1996,7 +1996,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-[#2c2420]">Grupos & Subgrupos</h2>
+        <h2 className="text-base font-semibold text-ink">Grupos & Subgrupos</h2>
         <button onClick={openNewGroup}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
           style={{ backgroundColor: color }}>
@@ -2013,11 +2013,11 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
         >
           <form onSubmit={handleGroupSubmit} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Nome do Grupo *</span>
+              <span className="text-xs text-muted">Nome do Grupo *</span>
               <input className="input" value={gName} onChange={(e) => setGName(e.target.value)} required autoFocus />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Alíquota IPI (%)</span>
+              <span className="text-xs text-muted">Alíquota IPI (%)</span>
               <input
                 className="input"
                 type="number"
@@ -2048,11 +2048,11 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
         >
           <form onSubmit={handleTypeSubmit} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Nome do Subgrupo *</span>
+              <span className="text-xs text-muted">Nome do Subgrupo *</span>
               <input className="input" value={tName} onChange={(e) => setTName(e.target.value)} required autoFocus />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-[#9d8d81]">Grupo</span>
+              <span className="text-xs text-muted">Grupo</span>
               <select className="input" value={tGroupId ?? ''} onChange={(e) => setTGroupId(e.target.value || null)}>
                 <option value="">Sem grupo</option>
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -2082,27 +2082,27 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       )}
 
       {isLoading ? (
-        <p className="text-sm text-[#9d8d81]">Carregando...</p>
+        <p className="text-sm text-muted">Carregando...</p>
       ) : (
         <div className="space-y-3">
           {pagedGroups.map(group => {
             const groupTypes = types.filter(t => t.group_id === group.id)
             return (
-              <div key={group.id} className="border border-[#e8e0d6] rounded-xl p-4 bg-white space-y-3">
+              <div key={group.id} className="border border-line rounded-xl p-4 bg-white space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <span className="font-semibold text-sm text-[#2c2420]">{group.name}</span>
+                    <span className="font-semibold text-sm text-ink">{group.name}</span>
                     {Number(group.ipi) > 0 && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#fdf6ec] text-[#8b6914] border border-[#e8d8b8]">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#fdf6ec] text-gold border border-[#e8d8b8]">
                         IPI {Number(group.ipi).toFixed(2).replace('.', ',')}%
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={() => openEditGroup(group)} className="p-1 text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                    <button onClick={() => openEditGroup(group)} className="p-1 text-muted hover:text-gold transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setDeletingGroup(group)} className="p-1 text-[#9d8d81] hover:text-red-500 transition-colors">
+                    <button onClick={() => setDeletingGroup(group)} className="p-1 text-muted hover:text-red-500 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -2112,12 +2112,12 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                   <div className="flex flex-wrap gap-1.5">
                     {groupTypes.map(t => (
                       <div key={t.id}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e8e0d6] bg-[#f8f6f2] text-xs text-[#2c2420]">
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-bg text-xs text-ink">
                         <span>{t.name}</span>
-                        <button onClick={() => openEditType(t)} className="text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                        <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
                           <Pencil className="w-2.5 h-2.5" />
                         </button>
-                        <button onClick={() => setDeletingType(t)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                        <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
                           <Trash2 className="w-2.5 h-2.5" />
                         </button>
                       </div>
@@ -2137,21 +2137,21 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
           })}
 
           {groups.length === 0 && orphanTypes.length === 0 && (
-            <p className="text-sm text-[#9d8d81]">Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.</p>
+            <p className="text-sm text-muted">Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.</p>
           )}
 
           {orphanTypes.length > 0 && (
-            <div className="border border-dashed border-[#e8e0d6] rounded-xl p-4 space-y-3">
-              <span className="text-xs font-semibold text-[#9d8d81] uppercase tracking-wider">Sem grupo</span>
+            <div className="border border-dashed border-line rounded-xl p-4 space-y-3">
+              <span className="text-xs font-semibold text-muted uppercase tracking-wider">Sem grupo</span>
               <div className="flex flex-wrap gap-1.5">
                 {orphanTypes.map(t => (
                   <div key={t.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e8e0d6] bg-white text-xs text-[#2c2420]">
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-white text-xs text-ink">
                     <span>{t.name}</span>
-                    <button onClick={() => openEditType(t)} className="text-[#9d8d81] hover:text-[#8b6914] transition-colors">
+                    <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
                       <Pencil className="w-2.5 h-2.5" />
                     </button>
-                    <button onClick={() => setDeletingType(t)} className="text-[#9d8d81] hover:text-red-500 transition-colors">
+                    <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
                       <Trash2 className="w-2.5 h-2.5" />
                     </button>
                   </div>
@@ -2207,15 +2207,15 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
   }
 
   return (
-    <div className="rounded-xl border border-[#e8e0d6] bg-[#fcfbfa] p-4">
-      <p className="text-sm font-semibold text-[#2c2420]">{label}</p>
-      {hint && <p className="text-xs text-[#6b5d52] mt-0.5">{hint}</p>}
-      <p className="text-[11px] text-[#9d8d81] mt-1">Colunas: <span className="font-mono text-[#6b5d52]">{columns}</span></p>
+    <div className="rounded-xl border border-line bg-[#fcfbfa] p-4">
+      <p className="text-sm font-semibold text-ink">{label}</p>
+      {hint && <p className="text-xs text-ink-3 mt-0.5">{hint}</p>}
+      <p className="text-[11px] text-muted mt-1">Colunas: <span className="font-mono text-ink-3">{columns}</span></p>
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         <input
           type="file" accept=".csv,text/csv"
           onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); setError(null) }}
-          className="text-xs text-[#4a3f38] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#f0ece6] file:text-[#4a3f38] file:cursor-pointer"
+          className="text-xs text-ink-2 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-bg-2 file:text-ink-2 file:cursor-pointer"
         />
         <button
           onClick={handleUpload} disabled={!file || loading}
@@ -2229,10 +2229,10 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
       {result && (
         <div className={`mt-3 rounded-lg border p-3 ${result.committed ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40'}`}>
           {result.committed ? (
-            <p className="text-xs text-[#2c2420]">
+            <p className="text-xs text-ink">
               ✓ <span className="font-semibold">{result.processed}</span> linhas processadas ·{' '}
               <span className="text-green-700 font-semibold">{result.created}</span> criadas ·{' '}
-              <span className="text-[#8b6914] font-semibold">{result.updated}</span> atualizadas
+              <span className="text-gold font-semibold">{result.updated}</span> atualizadas
             </p>
           ) : (
             <p className="text-xs text-red-700 font-semibold">
@@ -2259,14 +2259,14 @@ function ImportTab({ color }: { color: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-[#2c2420]">Importação CSV</h2>
-        <p className="text-sm text-[#6b5d52] mt-0.5">Importe cadastros em massa via arquivos .csv (UTF-8; separador vírgula ou ponto-e-vírgula). Reimportações atualizam registros existentes pela chave (nome, SKU ou e-mail).</p>
+        <h2 className="text-lg font-semibold text-ink">Importação CSV</h2>
+        <p className="text-sm text-ink-3 mt-0.5">Importe cadastros em massa via arquivos .csv (UTF-8; separador vírgula ou ponto-e-vírgula). Reimportações atualizam registros existentes pela chave (nome, SKU ou e-mail).</p>
       </div>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> Cadastros de apoio</h3>
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> Cadastros de apoio</h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-[#9d8d81]">Tabela:</span>
+          <span className="text-xs text-muted">Tabela:</span>
           <select value={supportTable} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
             {SUPPORT_TABLES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
@@ -2275,13 +2275,13 @@ function ImportTab({ color }: { color: string }) {
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-[#2c2420] flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> Catálogo de produtos — 2 etapas</h3>
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> Catálogo de produtos — 2 etapas</h3>
         <ImportUploader endpoint="products" label="Etapa 1: Subir Tabela de Produtos" hint="Cria/atualiza produtos pelo SKU (product_code)." columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
         <ImportUploader endpoint="product-optionals" label="Etapa 2: Subir Tabela de Opcionais do Produto" hint="Vincula opcionais a cada SKU — rode após a Etapa 1." columns="product_code, category, color_name" color={color} />
       </section>
 
       <section className="space-y-3">
-        <p className="text-xs text-[#6b5d52] -mt-1">Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.</p>
+        <p className="text-xs text-ink-3 -mt-1">Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.</p>
         <BatchPhotoUpload products={products} color={color} title="Importar Foto" collapsible={false} />
       </section>
     </div>
@@ -2381,7 +2381,7 @@ export default function CadastroPage() {
   const activeColor = TAB_PALETTE[tab].color
 
   return (
-    <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420] pb-24 md:pb-0">
+    <div className="min-h-screen bg-bg text-ink pb-24 md:pb-0">
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6">
 
         {/* ── Mobile horizontal tab bar ──────────────────────── */}
@@ -2419,8 +2419,8 @@ export default function CadastroPage() {
 
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
-            <div className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
-              <p className="text-[10px] font-semibold text-[#c8bdb5] uppercase tracking-widest px-3 pb-2">Cadastros</p>
+            <div className="bg-white border border-line rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
+              <p className="text-[10px] font-semibold text-faint uppercase tracking-widest px-3 pb-2">Cadastros</p>
               {visibleTabs.map(({ key, label, Icon }) => {
                 const { color } = TAB_PALETTE[key]
                 const isActive = tab === key
@@ -2454,7 +2454,7 @@ export default function CadastroPage() {
           </aside>
 
           {/* ── Painel de Dados ───────────────────────────────────── */}
-          <main className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm p-6"
+          <main className="bg-white border border-line rounded-xl shadow-sm p-6"
             style={{ borderTop: `3px solid ${activeColor}` }}>
             {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} page={productPage} onPage={setProductPage} />}
 

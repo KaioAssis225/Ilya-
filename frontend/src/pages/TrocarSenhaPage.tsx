@@ -47,7 +47,7 @@ export default function TrocarSenhaPage() {
     <div className="min-h-screen flex items-center justify-center bg-bg px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#8b6914]/10 mb-4">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gold/10 mb-4">
             <ShieldCheck className="w-7 h-7 text-gold" />
           </div>
           <h1 className="text-2xl font-medium text-ink" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>

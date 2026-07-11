@@ -68,11 +68,11 @@ function BottomNav() {
 
   const itemClass = (path: string) =>
     `flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 transition-colors ${
-      active(path) ? 'text-[#8b6914]' : 'text-[#a89a8e]'
+      active(path) ? 'text-gold' : 'text-muted-3'
     }`
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-[#e8e0d6] flex items-center justify-around px-2 pb-safe">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe">
       <NavLink to="/produtos" className={itemClass('/produtos')}>
         <LayoutGrid className="w-5 h-5" />
         <span className="text-[9px] font-semibold uppercase tracking-wider">Produtos</span>
@@ -103,7 +103,7 @@ function BottomNav() {
       )}
       <button
         onClick={logout}
-        className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-[#a89a8e] active:text-[#2c2420] transition-colors"
+        className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-muted-3 active:text-ink transition-colors"
       >
         <LogOut className="w-5 h-5" />
         <span className="text-[9px] font-semibold uppercase tracking-wider">Sair</span>
@@ -130,13 +130,13 @@ function Nav() {
 
   return (
     <>
-      <nav className="bg-white/80 backdrop-blur-md border-b border-[#e8e0d6] px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+      <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-1">
           <h1
-            className="text-base font-semibold tracking-widest mr-5 text-[#2c2420]"
+            className="text-base font-semibold tracking-widest mr-5 text-ink"
             style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
           >
-            ILYA <span className="text-[#8b6914] text-sm font-normal tracking-normal hidden sm:inline">— Sistema</span>
+            ILYA <span className="text-gold text-sm font-normal tracking-normal hidden sm:inline">— Sistema</span>
           </h1>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
@@ -152,34 +152,34 @@ function Nav() {
           <div className="relative">
             <button
               onClick={() => setShowNotifs(v => !v)}
-              className="relative text-[#8a7a6e] hover:text-[#8b6914] transition-colors p-1"
+              className="relative text-muted-2 hover:text-gold transition-colors p-1"
               title="Notificações"
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#8b6914] text-white text-[9px] font-bold flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-gold text-white text-[9px] font-bold flex items-center justify-center">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </button>
             {showNotifs && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-[#e8e0d6] rounded-xl shadow-lg z-50 overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-[#e8e0d6] flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[#2c2420] uppercase tracking-wider">Notificações</span>
-                  <button onClick={() => setShowNotifs(false)} className="text-[#9d8d81] hover:text-[#2c2420] text-lg leading-none">&times;</button>
+              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-line rounded-xl shadow-lg z-50 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-line flex items-center justify-between">
+                  <span className="text-xs font-semibold text-ink uppercase tracking-wider">Notificações</span>
+                  <button onClick={() => setShowNotifs(false)} className="text-muted hover:text-ink text-lg leading-none">&times;</button>
                 </div>
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-xs text-[#9d8d81]">Nenhuma notificação.</div>
+                  <div className="px-4 py-6 text-center text-xs text-muted">Nenhuma notificação.</div>
                 ) : (
-                  <ul className="divide-y divide-[#f0ece6] max-h-72 overflow-y-auto">
+                  <ul className="divide-y divide-bg-2 max-h-72 overflow-y-auto">
                     {notifications.map(n => (
                       <li
                         key={n.id}
                         className="px-4 py-3 hover:bg-[#fdf9f0] cursor-pointer transition-colors"
                         onClick={() => { markRead.mutate(n.id); setShowNotifs(false) }}
                       >
-                        <p className="text-xs text-[#2c2420]">{n.message}</p>
-                        <p className="text-[10px] text-[#a89a8e] mt-0.5">
+                        <p className="text-xs text-ink">{n.message}</p>
+                        <p className="text-[10px] text-muted-3 mt-0.5">
                           {new Date(n.created_at).toLocaleString('pt-BR')}
                         </p>
                       </li>
@@ -193,12 +193,12 @@ function Nav() {
             onClick={() => setShowProfile(true)}
             className="text-right hover:opacity-70 transition-opacity cursor-pointer"
           >
-            <span className="block font-medium text-[#2c2420] max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
-            <span className="hidden sm:block text-[10px] uppercase tracking-wider text-[#8b6914]/80">{user.role}</span>
+            <span className="block font-medium text-ink max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
+            <span className="hidden sm:block text-[10px] uppercase tracking-wider text-gold/80">{user.role}</span>
           </button>
           <button
             onClick={logout}
-            className="hidden md:block text-[#8a7a6e] hover:text-[#2c2420] border border-[#e8e0d6] hover:border-[#2c2420] px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
+            className="hidden md:block text-muted-2 hover:text-ink border border-line hover:border-ink px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
           >
             Sair
           </button>

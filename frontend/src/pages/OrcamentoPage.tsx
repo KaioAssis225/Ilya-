@@ -48,34 +48,34 @@ function Autocomplete<T extends { id: string }>({
   return (
     <div ref={ref} className="space-y-1 w-full">
       <div className="flex gap-2">
-        <div className="input flex items-center justify-between bg-[#fcfbfa] border border-[#e8e0d6] px-3 py-1.5 rounded-lg text-sm flex-1 min-w-0 h-[36px]">
-          <span className={`${value ? 'text-[#2c2420] font-medium' : 'text-[#a89a8e]'} truncate flex-1 min-w-0`}>
+        <div className="input flex items-center justify-between bg-[#fcfbfa] border border-line px-3 py-1.5 rounded-lg text-sm flex-1 min-w-0 h-[36px]">
+          <span className={`${value ? 'text-ink font-medium' : 'text-muted-3'} truncate flex-1 min-w-0`}>
             {value ? getLabel(value) : displayPlaceholder}
           </span>
           {value && (
-            <button type="button" onClick={onClear} className="text-[#9d8d81] hover:text-[#2c2420] transition-colors w-7 h-7 flex items-center justify-center">
+            <button type="button" onClick={onClear} className="text-muted hover:text-ink transition-colors w-11 h-11 flex items-center justify-center">
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
         {showQuickAdd && onQuickAdd && (
-          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 h-[36px] border border-[#e8e0d6] hover:bg-[#f8f6f2] rounded-lg transition-colors flex items-center justify-center min-w-[44px]">
-            <Plus className="w-4 h-4 text-[#9d8d81]" />
+          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 h-[36px] border border-line hover:bg-bg rounded-lg transition-colors flex items-center justify-center min-w-[44px]">
+            <Plus className="w-4 h-4 text-muted" />
           </button>
         )}
       </div>
       <div className="relative">
         <input
-          className="input w-full text-xs placeholder:text-[#c8bdb5] border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
+          className="input w-full text-xs placeholder:text-faint border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
           placeholder={searchPlaceholder}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
         />
         {open && filtered.length > 0 && (
-          <ul className="absolute z-30 w-full mt-1 bg-white border border-[#e8e0d6] rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
+          <ul className="absolute z-30 w-full mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
             {filtered.slice(0, 15).map((item) => (
-              <li key={item.id} className="px-3 py-2 text-xs text-[#2c2420] hover:bg-[#f8f6f2] cursor-pointer transition-colors"
+              <li key={item.id} className="px-3 py-2 text-xs text-ink hover:bg-bg cursor-pointer transition-colors"
                 onMouseDown={() => { onChange(item); setQuery(''); setOpen(false) }}>
                 {getLabel(item)}
               </li>
@@ -136,42 +136,42 @@ function QuickRegisterModal({ title, onSave, onClose }: {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-panel w-full max-w-lg p-6 mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-[#2c2420]">{title}</h3>
-          <button onClick={onClose} className="text-[#9d8d81] hover:text-[#2c2420] w-11 h-11 flex items-center justify-center"><X className="w-5 h-5" /></button>
+          <h3 className="text-lg font-semibold text-ink">{title}</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink w-11 h-11 flex items-center justify-center" aria-label="Fechar"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
           <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">Nome *</span>
+            <span className="text-xs text-muted">Nome *</span>
             <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">Telefone *</span>
+            <span className="text-xs text-muted">Telefone *</span>
             <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">E-mail *</span>
+            <span className="text-xs text-muted">E-mail *</span>
             <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1 relative">
-            <span className="text-xs text-[#9d8d81]">CEP *</span>
+            <span className="text-xs text-muted">CEP *</span>
             <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={9} required />
-            {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-[#8b6914] animate-pulse">...</span>}
+            {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
             {cepError && <span className="text-[10px] text-red-500">CEP não encontrado ou serviço indisponível.</span>}
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">Número</span>
+            <span className="text-xs text-muted">Número</span>
             <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
           </label>
           <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">Endereço *</span>
+            <span className="text-xs text-muted">Endereço *</span>
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">Cidade *</span>
+            <span className="text-xs text-muted">Cidade *</span>
             <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-[#9d8d81]">UF *</span>
+            <span className="text-xs text-muted">UF *</span>
             <input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required />
           </label>
           <div className="col-span-2 flex justify-end gap-3 pt-1">
@@ -236,15 +236,15 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
         const currentValue = item.opt_categories[cat] ?? ''
         const currentOpt = available.find(o => o.color_name === currentValue)
         return (
-          <div key={cat} className="flex items-center gap-1 bg-[#fcfbfa] border border-[#f0ece6] rounded-md px-1.5 py-0.5">
-            <span className="text-[10px] text-[#9d8d81] font-medium whitespace-nowrap">{catLabel(cat)}:</span>
+          <div key={cat} className="flex items-center gap-1 bg-[#fcfbfa] border border-bg-2 rounded-md px-1.5 py-0.5">
+            <span className="text-[10px] text-muted font-medium whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt?.photo_url && (
               <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
             )}
             <select
               value={currentValue}
               onChange={(e) => onChange(cat, e.target.value || null)}
-              className="text-[10px] text-[#2c2420] bg-transparent border-none outline-none cursor-pointer"
+              className="text-[10px] text-ink bg-transparent border-none outline-none cursor-pointer"
               style={{ maxWidth: '100px' }}
             >
               <option value="">—</option>
@@ -263,13 +263,13 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
 
 function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#1a1410]/75 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/75 backdrop-blur-sm"
       onClick={onClose}>
       <div className="relative mx-4" onClick={(e) => e.stopPropagation()}>
-        <img src={url} alt="" className="max-w-[480px] max-h-[480px] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-[#e8e0d6]" />
+        <img src={url} alt="" className="max-w-[480px] max-h-[480px] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 bg-white border border-[#e8e0d6] rounded-full w-8 h-8 flex items-center justify-center shadow-md text-[#9d8d81] hover:text-[#2c2420] transition-colors"
+          className="absolute -top-3 -right-3 bg-white border border-line rounded-full w-11 h-11 flex items-center justify-center shadow-md text-muted hover:text-ink transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -302,29 +302,29 @@ function MobileCartCard({
   const hasDiscount = item.discount > 0
 
   return (
-    <div className="bg-white border border-[#e8e0d6] rounded-xl p-3.5 shadow-sm">
+    <div className="bg-white border border-line rounded-xl p-3.5 shadow-sm">
       {/* Top: thumbnail + info + trash */}
       <div className="flex gap-3">
         {item._product.photo_url
           ? <img
               src={item._product.photo_url} alt=""
               onClick={() => onPhotoClick(item._product.photo_url!)}
-              className="w-14 h-14 object-cover rounded-lg border border-[#e8e0d6] flex-shrink-0 cursor-pointer active:opacity-70 transition-opacity"
+              className="w-14 h-14 object-cover rounded-lg border border-line flex-shrink-0 cursor-pointer active:opacity-70 transition-opacity"
               style={{ minWidth: '56px', minHeight: '56px' }}
             />
-          : <div className="w-14 h-14 bg-[#f0ece6] rounded-lg flex items-center justify-center flex-shrink-0">
-              <ImageIcon className="w-5 h-5 text-[#c8bdb5]" />
+          : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0">
+              <ImageIcon className="w-5 h-5 text-faint" />
             </div>
         }
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-[11px] text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
-              <p className="text-xs font-semibold text-[#2c2420] leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
+              <span className="text-[11px] text-gold font-mono font-semibold">{item.product_code}</span>
+              <p className="text-xs font-semibold text-ink leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
               {item._product.components.length > 0 && (
                 <ul className="mt-0.5 space-y-0.5">
                   {item._product.components.map((comp) => (
-                    <li key={comp.id} className="text-[10px] text-[#6b5d52] leading-snug">
+                    <li key={comp.id} className="text-[10px] text-ink-3 leading-snug">
                       • {comp.qty}x {comp.description} ({comp.is_circular
                         ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
                         : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
@@ -333,12 +333,12 @@ function MobileCartCard({
                 </ul>
               )}
               {item._product.observacao && (
-                <p className="text-[10px] text-[#8b6914] italic mt-0.5 line-clamp-2">{item._product.observacao}</p>
+                <p className="text-[10px] text-gold italic mt-0.5 line-clamp-2">{item._product.observacao}</p>
               )}
             </div>
             <button
               onClick={() => onRemove(item.product_code)}
-              className="text-[#c8bdb5] active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
+              className="text-faint active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
               style={{ touchAction: 'manipulation' }}
             >
               <Trash2 className="w-4 h-4" />
@@ -349,20 +349,20 @@ function MobileCartCard({
       </div>
 
       {/* Bottom: qty +/- | price / discount / subtotal */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#f0ece6]">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-bg-2">
         {/* Qty stepper */}
-        <div className="flex items-center gap-0 border border-[#e8e0d6] rounded-lg overflow-hidden">
+        <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
           <button
             onClick={() => onQtyChange(item.product_code, Math.max(1, item.qty - 1))}
-            className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:bg-[#f0ece6] transition-colors"
+            className="w-9 h-9 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
-          <span className="w-9 text-center text-sm font-semibold text-[#2c2420]">{item.qty}</span>
+          <span className="w-9 text-center text-sm font-semibold text-ink">{item.qty}</span>
           <button
             onClick={() => onQtyChange(item.product_code, item.qty + 1)}
-            className="w-9 h-9 flex items-center justify-center text-[#9d8d81] active:bg-[#f0ece6] transition-colors"
+            className="w-9 h-9 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -372,14 +372,14 @@ function MobileCartCard({
         {/* Pricing */}
         <div className="text-right">
           {hasDiscount && (
-            <p className="text-[10px] text-[#c8bdb5] line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} /></p>
+            <p className="text-[10px] text-faint line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} /></p>
           )}
           {hasDiscount && (
-            <span className="text-[10px] bg-[#8b6914]/10 text-[#8b6914] font-semibold px-1.5 py-0.5 rounded-full">
+            <span className="text-[10px] bg-gold/10 text-gold font-semibold px-1.5 py-0.5 rounded-full">
               -{item.discount}%
             </span>
           )}
-          <p className="text-sm font-bold text-[#2c2420] mt-0.5"><SafePrice value={subtotal} /></p>
+          <p className="text-sm font-bold text-ink mt-0.5"><SafePrice value={subtotal} /></p>
         </div>
       </div>
     </div>
@@ -391,10 +391,10 @@ function MobileCartCard({
 function LockedField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
-      <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">{label}</span>
-      <div className="flex items-center gap-2 bg-[#f8f6f2] border border-[#e8e0d6] rounded-lg px-3 py-2 h-[36px]">
-        <Lock className="w-3 h-3 text-[#c8bdb5] flex-shrink-0" />
-        <span className="text-sm font-medium text-[#2c2420] truncate flex-1">{value}</span>
+      <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">{label}</span>
+      <div className="flex items-center gap-2 bg-bg border border-line rounded-lg px-3 py-2 h-[36px]">
+        <Lock className="w-3 h-3 text-faint flex-shrink-0" />
+        <span className="text-sm font-medium text-ink truncate flex-1">{value}</span>
       </div>
     </div>
   )
@@ -422,8 +422,8 @@ function OrderForm({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between pb-3 border-b border-[#f3ede6]">
-        <h2 className="text-base font-semibold text-[#2c2420]">{editMode ? 'Editar Pedido' : 'Novo Orçamento'}</h2>
-        <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider ${editMode ? 'bg-[#8b6914]/10 text-[#8b6914]' : 'bg-[#648261]/10 text-[#648261]'}`}>
+        <h2 className="text-base font-semibold text-ink">{editMode ? 'Editar Pedido' : 'Novo Orçamento'}</h2>
+        <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider ${editMode ? 'bg-gold/10 text-gold' : 'bg-olive/10 text-olive'}`}>
           {editMode ? editCode : budgetCode}
         </span>
       </div>
@@ -435,7 +435,7 @@ function OrderForm({
         />
       ) : (
         <div className="space-y-1">
-          <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Representante</span>
+          <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Representante</span>
           <Autocomplete
             searchPlaceholder="Buscar representante..."
             items={reps}
@@ -455,7 +455,7 @@ function OrderForm({
         <LockedField label="Cliente" value={`${selectedClient.name} — ${selectedClient.city}/${selectedClient.state}`} />
       ) : (
         <div className="space-y-1">
-          <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Cliente</span>
+          <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Cliente</span>
           {repLocked && clients.length === 0 ? (
             <div className="flex items-start gap-2 bg-[#fef3f2] border border-red-200 rounded-lg px-3 py-2.5">
               <span className="text-[11px] text-red-700 leading-snug">Nenhum cliente vinculado à sua conta. Solicite ao administrador para associar clientes ao seu perfil.</span>
@@ -478,7 +478,7 @@ function OrderForm({
       )}
 
       <div className="space-y-1">
-        <span className="text-[10px] font-bold text-[#9d8d81] uppercase tracking-wider block">Observações</span>
+        <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Observações</span>
         <textarea
           className="input resize-none text-xs"
           rows={3}
@@ -490,7 +490,7 @@ function OrderForm({
 
 
       {(!selectedClient || cart.length === 0) && !isGenerating && (
-        <p className="text-[10px] text-[#9d8d81] text-center -mt-1">
+        <p className="text-[10px] text-muted text-center -mt-1">
           {cart.length === 0 ? 'Adicione ao menos um produto ao orçamento.' : 'Selecione um cliente para continuar.'}
         </p>
       )}
@@ -498,7 +498,7 @@ function OrderForm({
         onClick={onSubmit}
         disabled={!selectedClient || cart.length === 0 || isGenerating}
         style={{ touchAction: 'manipulation' }}
-        className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
+        className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-gold hover:bg-[#725510] disabled:bg-faint disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
       >
         {editMode ? 'Salvar Alterações' : 'Finalizar Orçamento'}
       </button>
@@ -512,11 +512,11 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[60] flex items-end lg:hidden">
-      <div className="fixed inset-0 bg-[#1a1410]/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 bg-scrim/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#e8e0d6]">
-          <span className="text-sm font-semibold text-[#2c2420]">Configurar Orçamento</span>
-          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[#9d8d81]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <span className="text-sm font-semibold text-ink">Configurar Orçamento</span>
+          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-muted">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -826,12 +826,12 @@ export default function OrcamentoPage() {
   // Product search card (shared between desktop and a potential mobile add section)
   const productSearchCard = (
     <div className="bg-[#f5ede3] border border-[#e8dccb] rounded-xl p-4 space-y-3.5">
-      <span className="text-[10px] font-bold text-[#8b6914] uppercase tracking-wider block">Adicionar Produto</span>
+      <span className="text-[10px] font-bold text-gold uppercase tracking-wider block">Adicionar Produto</span>
       <div ref={productRef} className="relative">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
           <input
-            className="input pl-8 w-full text-xs bg-white border border-[#e8e0d6] rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#8b6914]"
+            className="input pl-8 w-full text-xs bg-white border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gold"
             placeholder="Buscar produto por codigo ou desc"
             value={productQuery}
             onChange={(e) => { setProductQuery(e.target.value); setProductOpen(true) }}
@@ -839,20 +839,20 @@ export default function OrcamentoPage() {
           />
         </div>
         {productOpen && filteredProducts.length > 0 && (
-          <ul className="absolute left-0 right-0 z-30 mt-1 bg-white border border-[#e8e0d6] rounded-xl overflow-hidden shadow-xl max-h-52 overflow-y-auto">
+          <ul className="absolute left-0 right-0 z-30 mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-52 overflow-y-auto">
             {filteredProducts.slice(0, 15).map((p) => (
               <li
                 key={p.id}
-                className="px-3 py-2 text-xs hover:bg-[#f8f6f2] cursor-pointer flex items-center gap-2 transition-colors border-b border-[#fbfaf9]"
+                className="px-3 py-2 text-xs hover:bg-bg cursor-pointer flex items-center gap-2 transition-colors border-b border-[#fbfaf9]"
                 onMouseDown={() => { setSelectedProduct(p); setProductQuery(''); setProductOpen(false) }}
               >
                 {p.photo_url
-                  ? <img src={p.photo_url} alt="" className="w-8 h-8 rounded object-cover border border-[#e8e0d6] flex-shrink-0" />
-                  : <ImageIcon className="w-8 h-8 text-[#c8bdb5] flex-shrink-0" />}
+                  ? <img src={p.photo_url} alt="" className="w-8 h-8 rounded object-cover border border-line flex-shrink-0" />
+                  : <ImageIcon className="w-8 h-8 text-faint flex-shrink-0" />}
                 <div className="truncate">
-                  <span className="text-[#8b6914] font-mono font-medium">{p.product_code}</span>
-                  <span className="text-[#2c2420] ml-1.5 font-medium">{p.description}</span>
-                  <div className="text-[9px] text-[#9d8d81]">{dimLabel(p)}</div>
+                  <span className="text-gold font-mono font-medium">{p.product_code}</span>
+                  <span className="text-ink ml-1.5 font-medium">{p.description}</span>
+                  <div className="text-[9px] text-muted">{dimLabel(p)}</div>
                 </div>
               </li>
             ))}
@@ -862,18 +862,18 @@ export default function OrcamentoPage() {
       {selectedProduct && (
         <div className="bg-white border border-[#e8dccb] rounded-lg p-2.5 flex gap-2.5 shadow-sm relative">
           <button type="button" onClick={() => setSelectedProduct(null)}
-            className="absolute top-1.5 right-1.5 text-[#9d8d81] hover:text-red-500 transition-colors w-7 h-7 flex items-center justify-center">
+            className="absolute top-1.5 right-1.5 text-muted hover:text-red-500 transition-colors w-7 h-7 flex items-center justify-center">
             <X className="w-3.5 h-3.5" />
           </button>
           {selectedProduct.photo_url
             ? <img src={selectedProduct.photo_url} alt="" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)}
-                className="w-12 h-12 object-cover rounded border border-[#e8e0d6] flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity" />
-            : <div className="w-12 h-12 bg-[#f0ece6] rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-[#c8bdb5]" /></div>
+                className="w-12 h-12 object-cover rounded border border-line flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity" />
+            : <div className="w-12 h-12 bg-bg-2 rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
           }
           <div className="text-[11px] pr-5 flex-1 min-w-0">
-            <p className="text-[#8b6914] font-mono font-semibold">{selectedProduct.product_code}</p>
-            <p className="text-[#2c2420] font-medium truncate">{selectedProduct.description}</p>
-            <p className="text-[#8b6914] font-bold mt-0.5"><SafePrice value={effectivePrice(selectedProduct, priceProfile)} /></p>
+            <p className="text-gold font-mono font-semibold">{selectedProduct.product_code}</p>
+            <p className="text-ink font-medium truncate">{selectedProduct.description}</p>
+            <p className="text-gold font-bold mt-0.5"><SafePrice value={effectivePrice(selectedProduct, priceProfile)} /></p>
           </div>
         </div>
       )}
@@ -882,7 +882,7 @@ export default function OrcamentoPage() {
         onClick={handleAddProductToCart}
         disabled={!selectedProduct}
         style={{ touchAction: 'manipulation' }}
-        className="w-full py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-[#8b6914] hover:bg-[#725510] disabled:bg-[#c8bdb5] disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
+        className="w-full py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-gold hover:bg-[#725510] disabled:bg-faint disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
       >
         ADICIONAR AO ORÇAMENTO
       </button>
@@ -890,9 +890,9 @@ export default function OrcamentoPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#f8f6f2] text-[#2c2420]">
+    <div className="min-h-screen bg-bg text-ink">
       {editId && editOrder && (
-        <div className="bg-[#8b6914] text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
+        <div className="bg-gold text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
           <PenLine className="w-4 h-4 flex-shrink-0" />
           <span className="text-xs font-semibold tracking-wide">
             Editando Pedido: <span className="font-mono">{editOrder.code}</span>
@@ -911,25 +911,25 @@ export default function OrcamentoPage() {
         <div className="lg:hidden">{productSearchCard}</div>
 
         {/* ── Items Panel ──────────────────────────────────────────────────── */}
-        <main className="bg-white border border-[#e8e0d6] rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
-          <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-[#e8e0d6] flex items-center justify-between bg-white flex-shrink-0">
-            <h2 className="text-sm font-semibold text-[#8b6914] uppercase tracking-wider flex items-center gap-2">
+        <main className="bg-white border border-line rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
+          <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-line flex items-center justify-between bg-white flex-shrink-0">
+            <h2 className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
               <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
             </h2>
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
                   onClick={() => { setCart([]); localStorage.removeItem('carrinho_orcamento') }}
-                  className="text-xs text-[#b25e50] hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-[#b25e50] px-2.5 py-1.5 rounded-lg transition-colors"
+                  className="text-xs text-terracotta hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >
                   Limpar
                 </button>
               )}
               <div className="relative w-36 lg:w-52">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#a89a8e]" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
                 <input
-                  className="input pl-8 w-full text-xs border border-[#e8e0d6] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#8b6914] bg-white"
+                  className="input pl-8 w-full text-xs border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
                   placeholder="Buscar..."
                   value={cartFilter}
                   onChange={(e) => setCartFilter(e.target.value)}
@@ -940,8 +940,8 @@ export default function OrcamentoPage() {
 
           <div className="flex-1 overflow-y-auto">
             {filteredCart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-[#9d8d81] space-y-3">
-                <Clipboard className="w-10 h-10 text-[#c8bdb5] stroke-[1.2]" />
+              <div className="flex flex-col items-center justify-center py-20 text-muted space-y-3">
+                <Clipboard className="w-10 h-10 text-faint stroke-[1.2]" />
                 <p className="text-sm font-medium text-[#6b5d55]">Nenhum item adicionado.</p>
               </div>
             ) : (
@@ -965,7 +965,7 @@ export default function OrcamentoPage() {
 
                 {/* ── Desktop table ────────────────────────────── */}
                 <table className="hidden lg:table w-full text-sm">
-                  <thead className="bg-[#fbfaf8] text-xs text-[#9d8d81] uppercase font-semibold border-b border-[#e8e0d6] sticky top-0 z-10">
+                  <thead className="bg-surface-2 text-xs text-muted uppercase font-semibold border-b border-line sticky top-0 z-10">
                     <tr>
                       <th className="px-4 py-3 text-left">Produto</th>
                       <th className="px-4 py-3 text-left w-16">Qtd</th>
@@ -976,7 +976,7 @@ export default function OrcamentoPage() {
                       <th className="px-4 py-3 w-8"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#e8e0d6]">
+                  <tbody className="divide-y divide-line">
                     {filteredCart.map((item) => {
                       const pt = productTypes.find(t => t.name === item._product.type)
                       const ipiRate = Number(pt?.group?.ipi ?? 0)
@@ -988,20 +988,20 @@ export default function OrcamentoPage() {
                             <div className="flex gap-3">
                               {item._product.photo_url
                                 ? <img src={item._product.photo_url} alt="" onClick={() => setActivePhotoModal(item._product.photo_url!)}
-                                    className="object-cover rounded-lg border border-[#e8e0d6] cursor-pointer hover:opacity-80 transition-opacity"
+                                    className="object-cover rounded-lg border border-line cursor-pointer hover:opacity-80 transition-opacity"
                                     style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }} />
-                                : <div className="bg-[#f0ece6] rounded-lg flex items-center justify-center"
+                                : <div className="bg-bg-2 rounded-lg flex items-center justify-center"
                                     style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
-                                    <ImageIcon className="w-5 h-5 text-[#c8bdb5]" />
+                                    <ImageIcon className="w-5 h-5 text-faint" />
                                   </div>
                               }
                               <div className="flex-1 min-w-0">
-                                <span className="text-[#8b6914] font-mono font-semibold">{item.product_code}</span>
-                                <span className="text-[#2c2420] ml-2 text-xs font-semibold">{item._product.description}</span>
+                                <span className="text-gold font-mono font-semibold">{item.product_code}</span>
+                                <span className="text-ink ml-2 text-xs font-semibold">{item._product.description}</span>
                                 {item._product.components.length > 0 && (
                                   <ul className="mt-0.5 space-y-0.5">
                                     {item._product.components.map((comp) => (
-                                      <li key={comp.id} className="text-[10px] text-[#6b5d52] leading-snug">
+                                      <li key={comp.id} className="text-[10px] text-ink-3 leading-snug">
                                         • {comp.qty}x {comp.description} ({comp.is_circular
                                           ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
                                           : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
@@ -1010,9 +1010,9 @@ export default function OrcamentoPage() {
                                   </ul>
                                 )}
                                 {item._product.observacao && (
-                                  <div className="text-[10px] text-[#8b6914] italic mt-0.5">{item._product.observacao}</div>
+                                  <div className="text-[10px] text-gold italic mt-0.5">{item._product.observacao}</div>
                                 )}
-                                <div className="text-[10px] text-[#9d8d81] mt-0.5">{dimLabel(item._product)}</div>
+                                <div className="text-[10px] text-muted mt-0.5">{dimLabel(item._product)}</div>
                                 <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} catLabel={catLabel} />
                               </div>
                             </div>
@@ -1020,18 +1020,18 @@ export default function OrcamentoPage() {
                           <td className="px-4 py-3.5 align-middle">
                             <input
                               type="number" min={1}
-                              className="input w-16 text-center text-xs border border-[#e8e0d6] rounded-lg py-1 bg-white text-[#2c2420]"
+                              className="input w-16 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
                               value={item.qty}
                               onChange={(e) => updateQty(item.product_code, Number(e.target.value))}
                             />
                           </td>
-                          <td className="px-4 py-3.5 text-[#4a3f38] text-xs font-semibold whitespace-nowrap align-middle">
+                          <td className="px-4 py-3.5 text-ink-2 text-xs font-semibold whitespace-nowrap align-middle">
                             <SafePrice value={effectivePrice(item._product, priceProfile)} />
                           </td>
                           <td className="px-4 py-3.5 align-middle">
                             <input
                               type="number" min={0} max={user?.max_discount ?? 0}
-                              className="input w-16 text-center text-xs border border-[#e8e0d6] rounded-lg px-1.5 py-1 bg-white text-[#2c2420]"
+                              className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
                               value={item.discount === 0 ? '' : item.discount}
                               placeholder="0"
                               onChange={(e) => {
@@ -1040,22 +1040,22 @@ export default function OrcamentoPage() {
                               }}
                             />
                             {item.discount > 0 && (
-                              <p className="text-[9px] text-[#9d8d81] mt-0.5 text-center whitespace-nowrap">
+                              <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
                                 <SafePrice value={effectivePrice(item._product, priceProfile) * item.discount / 100} prefix="− R$ " />
                               </p>
                             )}
                           </td>
                           <td className="px-4 py-3.5 text-right align-middle whitespace-nowrap">
                             {ipiRate > 0
-                              ? <span className="text-xs font-semibold text-[#8b6914]">{ipiRate}%</span>
-                              : <span className="text-xs text-[#c8bdb5]">—</span>
+                              ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
+                              : <span className="text-xs text-faint">—</span>
                             }
                           </td>
-                          <td className="px-4 py-3.5 text-right text-xs font-bold text-[#2c2420] align-middle whitespace-nowrap">
+                          <td className="px-4 py-3.5 text-right text-xs font-bold text-ink align-middle whitespace-nowrap">
                             <SafePrice value={subtotalWithIpi} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.product_code)} className="text-[#c8bdb5] hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center mx-auto">
+                            <button onClick={() => removeItem(item.product_code)} className="text-faint hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>
@@ -1070,14 +1070,14 @@ export default function OrcamentoPage() {
 
           {/* Desktop summary footer */}
           {cart.length > 0 && (
-            <div className="hidden lg:flex bg-[#fbfaf8] border-t border-[#e8e0d6] px-6 py-4 justify-between items-center flex-shrink-0">
-              <div className="flex gap-4 text-xs text-[#8a7a6e]">
-                <div><span>Itens: </span><span className="font-semibold text-[#2c2420]">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
-                <div><span>Produtos: </span><span className="font-semibold text-[#2c2420]">{cart.length}</span></div>
+            <div className="hidden lg:flex bg-surface-2 border-t border-line px-6 py-4 justify-between items-center flex-shrink-0">
+              <div className="flex gap-4 text-xs text-muted-2">
+                <div><span>Itens: </span><span className="font-semibold text-ink">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
+                <div><span>Produtos: </span><span className="font-semibold text-ink">{cart.length}</span></div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[#2c2420] font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
-                <span className="text-[#8b6914] font-bold text-base"><SafePrice value={totalWithIpi} /></span>
+                <span className="text-ink font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
+                <span className="text-gold font-bold text-base"><SafePrice value={totalWithIpi} /></span>
               </div>
             </div>
           )}
@@ -1085,7 +1085,7 @@ export default function OrcamentoPage() {
 
         {/* ── Desktop Sidebar (hidden on mobile) ───────────────────────── */}
         <aside className="hidden lg:block space-y-5">
-          <div className="bg-white border border-[#e8e0d6] rounded-xl p-5 shadow-sm space-y-4">
+          <div className="bg-white border border-line rounded-xl p-5 shadow-sm space-y-4">
             <OrderForm
               reps={reps} clients={clients}
               selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
@@ -1106,7 +1106,7 @@ export default function OrcamentoPage() {
         <button
           onClick={() => setDrawerOpen(true)}
           style={{ touchAction: 'manipulation' }}
-          className="w-full flex items-center justify-between bg-[#8b6914] text-white px-5 py-3.5 rounded-xl shadow-xl active:scale-[0.98] active:opacity-90 transition-all"
+          className="w-full flex items-center justify-between bg-gold text-white px-5 py-3.5 rounded-xl shadow-xl active:scale-[0.98] active:opacity-90 transition-all"
         >
           <div className="flex items-center gap-2">
             <ChevronUp className="w-4 h-4" />
@@ -1157,7 +1157,7 @@ export default function OrcamentoPage() {
 
       {/* ── Overlay de Geração Premium ─────────────────────────────── */}
       {isGenerating && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#f8f6f2]/90 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-bg/90 backdrop-blur-sm">
           <div
             className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
             style={{
@@ -1180,12 +1180,12 @@ export default function OrcamentoPage() {
             ILYA
           </p>
           <p
-            className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-[#8b6914]"
+            className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-gold"
             style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}
           >
             Gerando Orçamento
           </p>
-          <div className="mt-9 w-52 h-[1px] bg-[#8b6914]/25 overflow-hidden rounded-full">
+          <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
             <div
               className="h-full rounded-full"
               style={{

@@ -137,60 +137,55 @@ export default function SignContractPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f6f2] flex flex-col items-center justify-center px-4">
+    <div className="min-h-screen bg-bg flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <p
-            className="text-5xl tracking-[0.35em] font-light text-[#8b6914]"
-            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-          >
-            ILYA
-          </p>
-          <div className="w-16 h-px bg-[#c8a84b] mx-auto mt-2" />
+          <h1 className="text-5xl tracking-[0.35em] font-light text-gold">ILYA</h1>
+          <div className="w-16 h-px bg-gold-soft mx-auto mt-2" />
         </div>
 
         {stage === 'loading' && (
-          <div className="text-center text-[#9d8d81] text-sm">Verificando contrato...</div>
+          <div className="text-center text-muted text-sm">Verificando contrato...</div>
         )}
 
         {stage === 'error' && (
-          <div className="bg-white rounded-2xl border border-[#e8e0d6] shadow-sm p-6 text-center">
+          <div className="bg-white rounded-2xl border border-line shadow-sm p-6 text-center">
             <p className="text-red-700 text-sm font-medium mb-1">Erro</p>
-            <p className="text-[#4a3f38] text-sm">{errorMsg}</p>
+            <p className="text-ink-2 text-sm">{errorMsg}</p>
           </div>
         )}
 
         {stage === 'already_signed' && (
-          <div className="bg-white rounded-2xl border border-[#e8e0d6] shadow-sm p-6 text-center">
-            <p className="text-[#8b6914] text-base font-semibold mb-1">Contrato já assinado</p>
-            <p className="text-[#4a3f38] text-sm">
-              O pedido <span className="font-mono font-semibold text-[#8b6914]">{orderInfo?.order_code}</span> já possui assinatura registrada.
+          <div className="bg-white rounded-2xl border border-line shadow-sm p-6 text-center">
+            <p className="text-gold text-base font-semibold mb-1">Contrato já assinado</p>
+            <p className="text-ink-2 text-sm">
+              O pedido <span className="font-mono font-semibold text-gold">{orderInfo?.order_code}</span> já possui assinatura registrada.
             </p>
           </div>
         )}
 
         {stage === 'ready' && orderInfo && (
-          <div className="bg-white rounded-2xl border border-[#e8e0d6] shadow-sm p-6 space-y-5">
+          <div className="bg-white rounded-2xl border border-line shadow-sm p-6 space-y-5">
             <div>
-              <p className="text-xs text-[#9d8d81] uppercase tracking-wider mb-1">Pedido</p>
-              <p className="text-[#8b6914] font-mono font-semibold text-lg">{orderInfo.order_code}</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">Pedido</p>
+              <p className="text-gold font-mono font-semibold text-lg">{orderInfo.order_code}</p>
             </div>
             <div>
-              <p className="text-xs text-[#9d8d81] uppercase tracking-wider mb-1">Valor Total</p>
-              <p className="text-[#2c2420] font-bold text-xl">{fmt(orderInfo.total_value)}</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">Valor Total</p>
+              <p className="text-ink font-bold text-xl">{fmt(orderInfo.total_value)}</p>
             </div>
 
             <div>
-              <p className="text-xs text-[#9d8d81] uppercase tracking-wider mb-2">Sua Assinatura</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-2">Sua Assinatura</p>
               <canvas
                 ref={canvasRef}
                 width={600}
                 height={200}
-                className="w-full border border-[#e8e0d6] rounded-xl bg-[#fafaf9] cursor-crosshair touch-none"
+                className="w-full border border-line rounded-xl bg-[#fafaf9] cursor-crosshair touch-none"
               />
               <button
                 onClick={clearCanvas}
-                className="mt-1 text-xs text-[#9d8d81] hover:text-[#8b6914] underline transition-colors"
+                className="mt-1 text-xs text-muted hover:text-gold underline transition-colors"
               >
                 Limpar
               </button>
@@ -198,19 +193,19 @@ export default function SignContractPage() {
 
             <button
               onClick={handleSubmit}
-              className="w-full py-3 bg-[#8b6914] text-white rounded-xl font-semibold text-sm hover:bg-[#7a5c10] transition-colors shadow-sm"
+              className="w-full py-3 bg-gold text-white rounded-xl font-semibold text-sm hover:bg-gold-600 transition-colors shadow-sm"
             >
               Assinar Contrato
             </button>
 
-            <p className="text-[10px] text-[#a89a8e] text-center">
+            <p className="text-[10px] text-muted-3 text-center">
               Ao assinar você confirma o aceite dos termos e valores do pedido acima.
             </p>
           </div>
         )}
 
         {stage === 'signing' && (
-          <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-[#1a1410]/88 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-scrim/88 backdrop-blur-sm">
             <div
               className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
               style={{
@@ -238,7 +233,7 @@ export default function SignContractPage() {
             >
               GERANDO ASSINATURA
             </p>
-            <div className="mt-9 w-52 h-[1px] bg-[#8b6914]/25 overflow-hidden rounded-full">
+            <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
               <div
                 className="h-full rounded-full"
                 style={{
@@ -251,13 +246,13 @@ export default function SignContractPage() {
         )}
 
         {stage === 'success' && (
-          <div className="bg-white rounded-2xl border border-[#e8e0d6] shadow-sm p-8 text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-[#f0ece6] flex items-center justify-center mx-auto">
-              <span className="text-[#8b6914] text-2xl">✓</span>
+          <div className="bg-white rounded-2xl border border-line shadow-sm p-8 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-bg-2 flex items-center justify-center mx-auto">
+              <span className="text-gold text-2xl">✓</span>
             </div>
-            <p className="text-[#2c2420] font-semibold text-base">Contrato assinado com sucesso!</p>
-            <p className="text-[#8a7a6e] text-sm">
-              Seu pedido <span className="font-mono font-semibold text-[#8b6914]">{orderInfo?.order_code}</span> foi confirmado.
+            <p className="text-ink font-semibold text-base">Contrato assinado com sucesso!</p>
+            <p className="text-muted-2 text-sm">
+              Seu pedido <span className="font-mono font-semibold text-gold">{orderInfo?.order_code}</span> foi confirmado.
             </p>
           </div>
         )}
