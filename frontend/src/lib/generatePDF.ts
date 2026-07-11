@@ -229,7 +229,15 @@ export async function generateOrderPDF(
       const compDim = comp.is_circular
         ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
         : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
-      return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})`, WRAP_WIDTH)
+      // Acabamentos do componente ("Alumínio: Taupe, Teka: Polywood") — mesma
+      // informação exibida no carrinho; sem ela o PDF omitia os acabamentos
+      // dos itens internos de um conjunto.
+      const compCats = Array.from(new Set(comp.optionals.map((o) => o.category)))
+      const finishes = compCats
+        .map((cat) => `${catLabel(cat)}: ${comp.optionals.find((o) => o.category === cat)!.color_name}`)
+        .join(', ')
+      const suffix = finishes ? ` — ${finishes}` : ''
+      return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})${suffix}`, WRAP_WIDTH)
     })
     const compLinesTotal = compLineGroups.reduce((sum, lines) => sum + lines.length, 0)
 
@@ -240,7 +248,10 @@ export async function generateOrderPDF(
     const titleExtraLines = Math.max(0, descLines.length - 1)
 
     const extraLines = titleExtraLines + dimLines.length + obsLines.length + optLines.length + compLinesTotal
-    const rowH = Math.max(20, 13 + extraLines * 4)
+    // Base 18 (antes 13) e mínimo 26 (antes 20): respiro vertical maior entre
+    // os itens da tabela, a pedido do usuário — a foto tem 14mm, então o
+    // conteúdo não colide com a régua separadora.
+    const rowH = Math.max(26, 18 + extraLines * 4)
     if (y + rowH > 265) {
       doc.addPage()
       y = 20

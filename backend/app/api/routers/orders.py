@@ -365,12 +365,15 @@ async def finalize_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in {UserRole.admin, UserRole.vendedor}:
+    if current_user.role not in {UserRole.admin, UserRole.vendedor, UserRole.representante}:
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    # Representante só finaliza os próprios pedidos (mesma regra do update_order)
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     order.is_finalized = True

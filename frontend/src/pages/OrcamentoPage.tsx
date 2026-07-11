@@ -15,6 +15,17 @@ import type { Product, Client, Representative, ClientCreate, OptionalColor } fro
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
 
+// Acabamentos de um componente de conjunto: "Alumínio: Taupe · Teka: Polywood"
+function compFinishes(
+  optionals: { category: string; color_name: string }[],
+  catLabel: (code: string) => string
+): string {
+  const cats = Array.from(new Set(optionals.map(o => o.category)))
+  return cats
+    .map(cat => `${catLabel(cat)}: ${optionals.find(o => o.category === cat)!.color_name}`)
+    .join(' · ')
+}
+
 function dimLabel(p: Product) {
   return p.is_circular
     ? `Ø ${fmtM(p.largura)} × A ${fmtM(p.altura)} m`
@@ -328,6 +339,9 @@ function MobileCartCard({
                       • {comp.qty}x {comp.description} ({comp.is_circular
                         ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
                         : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
+                      {comp.optionals.length > 0 && (
+                        <span className="block text-muted pl-2.5">{compFinishes(comp.optionals, catLabel)}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1005,6 +1019,9 @@ export default function OrcamentoPage() {
                                         • {comp.qty}x {comp.description} ({comp.is_circular
                                           ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
                                           : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
+                                        {comp.optionals.length > 0 && (
+                                          <span className="block text-muted pl-2.5">{compFinishes(comp.optionals, catLabel)}</span>
+                                        )}
                                       </li>
                                     ))}
                                   </ul>

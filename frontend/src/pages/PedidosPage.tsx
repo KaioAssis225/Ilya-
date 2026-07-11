@@ -163,7 +163,8 @@ function OrderDetailModal({
   const repCanvasRef = useRef<HTMLCanvasElement>(null)
   const repIsDrawingRef = useRef(false)
 
-  const canManage = userRole === 'admin' || userRole === 'vendedor'
+  // Representante também edita/finaliza os próprios pedidos (backend valida a posse)
+  const canManage = userRole === 'admin' || userRole === 'vendedor' || userRole === 'representante'
   const profileSig = localStorage.getItem(`profile_signature_${userId}`)
   const isContractSigned = !!(order.rep_signed || order.rep_signature)
   const isClientSigned = !!(order.client_signed || order.client_signature)
@@ -598,7 +599,7 @@ function MobileOrderCard({
 export default function PedidosPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const canManage = user?.role === 'admin' || user?.role === 'vendedor'
+  const canManage = user?.role === 'admin' || user?.role === 'vendedor' || user?.role === 'representante'
   const { data: orders = [], isLoading } = useOrders()
   const { data: clients = [] } = useClients()
   const { data: reps = [] } = useRepresentatives()

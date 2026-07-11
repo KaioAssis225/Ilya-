@@ -381,7 +381,9 @@ export default function ProdutosPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
+            {/* Cards maiores (2/3 colunas) e foto em object-contain sobre fundo
+                linho — object-cover cortava a imagem de produtos mais altos/largos */}
             {filtered.map(product => (
               <button
                 key={product.id}
@@ -390,12 +392,14 @@ export default function ProdutosPage() {
                 style={{ touchAction: 'manipulation' }}
               >
                 {product.photo_url
-                  ? <img src={product.photo_url} alt={product.description} className="w-full aspect-square object-cover" />
-                  : <div className="w-full aspect-square bg-bg-2 flex items-center justify-center">
+                  ? <div className="w-full aspect-[4/5] bg-bg flex items-center justify-center p-3">
+                      <img src={product.photo_url} alt={product.description} className="w-full h-full object-contain" />
+                    </div>
+                  : <div className="w-full aspect-[4/5] bg-bg-2 flex items-center justify-center">
                       <span className="text-faint text-xs">Sem foto</span>
                     </div>
                 }
-                <div className="p-3 md:p-3.5">
+                <div className="p-3 md:p-4">
                   <span className="text-[10px] font-mono font-semibold text-gold">{product.product_code}</span>
                   <p className="text-xs md:text-sm font-medium text-ink leading-snug mt-0.5 line-clamp-2">{product.description}</p>
                   {selectedGroupId === '' && product.type && (
