@@ -392,15 +392,21 @@ export default function ProdutosPage() {
                 className="group bg-white border border-line rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:shadow-ink/8 hover:-translate-y-1 active:scale-[0.99] transition-all duration-300"
                 style={{ touchAction: 'manipulation' }}
               >
-                <div className="w-full aspect-square overflow-hidden">
+                {/* object-contain sobre fundo BRANCO: fotos de estúdio têm fundo
+                    branco, então a emenda é invisível e o móvel nunca é cortado,
+                    qualquer que seja a proporção real do arquivo. (object-cover
+                    cortava fotos não-quadradas; contain sobre linho criava
+                    moldura dupla.) O padding dá respiro a móveis que encostam
+                    nas bordas da própria foto. */}
+                <div className="w-full aspect-square overflow-hidden bg-white p-3 md:p-4">
                   {product.photo_url
                     ? <img
                         src={product.photo_url}
                         alt={product.description}
                         loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+                        className="w-full h-full object-contain transition-transform duration-500 ease-out group-hover:scale-[1.04]"
                       />
-                    : <div className="w-full h-full bg-bg-2 flex items-center justify-center">
+                    : <div className="w-full h-full flex items-center justify-center">
                         <span className="text-faint text-[11px] uppercase tracking-widest">Sem foto</span>
                       </div>
                   }
