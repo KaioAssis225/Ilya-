@@ -381,30 +381,40 @@ export default function ProdutosPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
-            {/* Cards maiores (2/3 colunas) e foto em object-contain sobre fundo
-                linho — object-cover cortava a imagem de produtos mais altos/largos */}
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
+            {/* Galeria: fotos são todas 1600×1600, então a imagem sangra até a
+                borda do card (sem moldura dupla, sem corte) com zoom sutil no
+                hover. Título em serif (h3 herda Cormorant do CSS base). */}
             {filtered.map(product => (
               <button
                 key={product.id}
                 onClick={() => setSelected(product)}
-                className="bg-white border border-line rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] active:opacity-85 transition-all duration-200"
+                className="group bg-white border border-line rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:shadow-ink/8 hover:-translate-y-1 active:scale-[0.99] transition-all duration-300"
                 style={{ touchAction: 'manipulation' }}
               >
-                {product.photo_url
-                  ? <div className="w-full aspect-[4/5] bg-bg flex items-center justify-center p-3">
-                      <img src={product.photo_url} alt={product.description} className="w-full h-full object-contain" />
-                    </div>
-                  : <div className="w-full aspect-[4/5] bg-bg-2 flex items-center justify-center">
-                      <span className="text-faint text-xs">Sem foto</span>
-                    </div>
-                }
-                <div className="p-3 md:p-4">
-                  <span className="text-[10px] font-mono font-semibold text-gold">{product.product_code}</span>
-                  <p className="text-xs md:text-sm font-medium text-ink leading-snug mt-0.5 line-clamp-2">{product.description}</p>
-                  {selectedGroupId === '' && product.type && (
-                    <span className="text-[9px] text-muted mt-1 block">{product.type}</span>
-                  )}
+                <div className="w-full aspect-square overflow-hidden">
+                  {product.photo_url
+                    ? <img
+                        src={product.photo_url}
+                        alt={product.description}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+                      />
+                    : <div className="w-full h-full bg-bg-2 flex items-center justify-center">
+                        <span className="text-faint text-[11px] uppercase tracking-widest">Sem foto</span>
+                      </div>
+                  }
+                </div>
+                <div className="px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[10px] font-mono font-semibold text-gold tracking-wide">{product.product_code}</span>
+                    {selectedGroupId === '' && product.type && (
+                      <span className="text-[9px] text-muted uppercase tracking-[0.14em] whitespace-nowrap">{product.type}</span>
+                    )}
+                  </div>
+                  <h3 className="text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
+                    {product.description}
+                  </h3>
                 </div>
               </button>
             ))}
