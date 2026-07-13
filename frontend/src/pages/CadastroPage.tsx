@@ -695,7 +695,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   <div className="flex items-start justify-between gap-1">
                     <div className="min-w-0">
                       <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
-                      <p className="text-sm font-medium text-ink leading-snug line-clamp-2">{p.description}</p>
+                      <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
                     </div>
                     <div className="flex gap-0 flex-shrink-0">
                       <button onClick={() => openEdit(p)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
@@ -744,7 +744,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {pageItems.map((p) => (
                   <tr key={p.id} className="table-row">
                     <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
-                    <td className="px-4 py-3 text-ink max-w-[180px] truncate">{p.description}</td>
+                    <td className="px-4 py-3 text-ink min-w-[200px] max-w-[300px] whitespace-normal break-words align-top">{p.description}</td>
                     <td className="px-4 py-3 text-ink-2 text-xs whitespace-nowrap">
                       {isConjuntoType(p.type) ? '—' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
