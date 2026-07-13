@@ -4,15 +4,10 @@ import { authApi } from '../lib/api'
 
 interface OrderInfo {
   order_code: string
-  total_value: number
   is_signed: boolean
 }
 
 type Stage = 'loading' | 'ready' | 'signing' | 'success' | 'error' | 'already_signed'
-
-function fmt(n: number) {
-  return 'R$ ' + Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 
 export default function SignContractPage() {
   const [token] = useState<string>(() => {
@@ -170,10 +165,6 @@ export default function SignContractPage() {
               <p className="text-xs text-muted uppercase tracking-wider mb-1">Pedido</p>
               <p className="text-gold font-mono font-semibold text-lg">{orderInfo.order_code}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Valor Total</p>
-              <p className="text-ink font-bold text-xl">{fmt(orderInfo.total_value)}</p>
-            </div>
 
             <div>
               <p className="text-xs text-muted uppercase tracking-wider mb-2">Sua Assinatura</p>
@@ -205,16 +196,16 @@ export default function SignContractPage() {
         )}
 
         {stage === 'signing' && (
-          <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-scrim/88 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-[#f8f6f2]/90 backdrop-blur-sm">
             <div
               className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
               style={{
-                background: 'radial-gradient(circle, rgba(139,105,20,0.28) 0%, transparent 68%)',
+                background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)',
                 animation: 'pulseRadial 2.2s ease-in-out infinite',
               }}
             />
             <p
-              className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none"
+              className="relative text-[50px] sm:text-[80px] leading-none tracking-[0.35em] font-light select-none"
               style={{
                 fontFamily: "'Cormorant Garamond', Georgia, serif",
                 backgroundImage: 'linear-gradient(90deg, #7a5a10 0%, #c8952e 25%, #f5d78e 50%, #c8952e 75%, #7a5a10 100%)',
@@ -228,7 +219,7 @@ export default function SignContractPage() {
               ILYA
             </p>
             <p
-              className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-[#c8952e]"
+              className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-[#8b6914]"
               style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}
             >
               GERANDO ASSINATURA
