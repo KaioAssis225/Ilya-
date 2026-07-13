@@ -103,6 +103,100 @@ function Th({ label, col, sortKey, sortDir, onSort, color }: {
   )
 }
 
+type ProductColumnKey = 'code' | 'description' | 'dimensions' | 'price' | 'optionals' | 'photo' | 'actions'
+
+const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
+  code: 110,
+  description: 180,
+  dimensions: 190,
+  price: 130,
+  optionals: 150,
+  photo: 72,
+  actions: 72,
+}
+
+const INITIAL_PRODUCT_COLUMN_WIDTHS: Record<ProductColumnKey, number> = {
+  code: 140,
+  description: 320,
+  dimensions: 270,
+  price: 150,
+  optionals: 240,
+  photo: 88,
+  actions: 80,
+}
+
+function ResizableProductTh({
+  label,
+  column,
+  width,
+  onResize,
+  onAutoFit,
+  color,
+  sort,
+}: {
+  label: string
+  column: ProductColumnKey
+  width: number
+  onResize: (column: ProductColumnKey, width: number) => void
+  onAutoFit: (column: ProductColumnKey) => void
+  color: string
+  sort?: { active: boolean; dir: SortDir; onClick: () => void }
+}) {
+  function startResize(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startWidth = width
+
+    function handleMove(event: MouseEvent) {
+      onResize(column, startWidth + event.clientX - startX)
+    }
+
+    function handleUp() {
+      document.removeEventListener('mousemove', handleMove)
+      document.removeEventListener('mouseup', handleUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', handleMove)
+    document.addEventListener('mouseup', handleUp)
+  }
+
+  return (
+    <th
+      data-product-col={column}
+      className={`relative px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider select-none ${sort ? 'cursor-pointer' : ''}`}
+      style={{ width }}
+      onClick={sort?.onClick}
+      onMouseEnter={(e) => { if (sort) e.currentTarget.style.color = color }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = '' }}
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        {sort && <SortIcon active={sort.active} dir={sort.dir} color={color} />}
+      </span>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Redimensionar coluna ${label || column}`}
+        title="Arraste para redimensionar · Duplo clique para autoajustar"
+        className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize group"
+        onMouseDown={startResize}
+        onDoubleClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onAutoFit(column)
+        }}
+      >
+        <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-line group-hover:w-0.5" style={{ '--tw-bg-opacity': 1 } as React.CSSProperties} />
+      </div>
+    </th>
+  )
+}
+
 async function fetchCep(cep: string, signal?: AbortSignal): Promise<ViaCepResponse | null> {
   const clean = cep.replace(/\D/g, '')
   if (clean.length !== 8) return null
@@ -560,6 +654,33 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [showNewTypeModal, setShowNewTypeModal] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
+  const [columnWidths, setColumnWidths] = useState<Record<ProductColumnKey, number>>(INITIAL_PRODUCT_COLUMN_WIDTHS)
+
+  function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
+    const width = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[column], Math.min(requestedWidth, 1600))
+    setColumnWidths((current) => ({ ...current, [column]: width }))
+  }
+
+  function autoFitColumn(column: ProductColumnKey) {
+    const cells = document.querySelectorAll<HTMLElement>(`[data-product-col="${column}"]`)
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    let contentWidth = PRODUCT_COLUMN_MIN_WIDTHS[column]
+
+    cells.forEach((cell) => {
+      const text = cell.innerText.replace(/\s+/g, ' ').trim()
+      if (!text) return
+      if (context) {
+        const style = window.getComputedStyle(cell)
+        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+        contentWidth = Math.max(contentWidth, Math.ceil(context.measureText(text).width) + 36)
+      } else {
+        contentWidth = Math.max(contentWidth, cell.scrollWidth + 8)
+      }
+    })
+
+    resizeColumn(column, contentWidth)
+  }
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
@@ -660,8 +781,6 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     }
   }
 
-  const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof Product), color }
-
   return (
     <div>
       <BatchPhotoUpload products={products ?? []} color={color} />
@@ -728,43 +847,54 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
           {/* ── Desktop table ──────────────────────────────────── */}
           <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
-            <table className="w-full text-sm">
+            <table
+              className="table-fixed text-sm"
+              style={{ width: Object.values(columnWidths).reduce((total, width) => total + width, 0) }}
+            >
+              <colgroup>
+                {(Object.keys(columnWidths) as ProductColumnKey[]).map((column) => (
+                  <col key={column} style={{ width: columnWidths[column] }} />
+                ))}
+              </colgroup>
               <thead style={{ backgroundColor: `${color}12` }}>
                 <tr>
-                  <Th label="Código" col="product_code" {...thProps} />
-                  <Th label="Descrição" col="description" {...thProps} />
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase">Dimensões</th>
-                  <Th label="Preço" col="price_lojista" {...thProps} />
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase">Opcionais</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted uppercase">Foto</th>
-                  <th className="px-4 py-3"></th>
+                  <ResizableProductTh label="Código" column="code" width={columnWidths.code} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                    sort={{ active: sortKey === 'product_code', dir: sortDir, onClick: () => toggle('product_code') }} />
+                  <ResizableProductTh label="Descrição" column="description" width={columnWidths.description} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                    sort={{ active: sortKey === 'description', dir: sortDir, onClick: () => toggle('description') }} />
+                  <ResizableProductTh label="Dimensões" column="dimensions" width={columnWidths.dimensions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label="Preço" column="price" width={columnWidths.price} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                    sort={{ active: sortKey === 'price_lojista', dir: sortDir, onClick: () => toggle('price_lojista') }} />
+                  <ResizableProductTh label="Opcionais" column="optionals" width={columnWidths.optionals} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label="Foto" column="photo" width={columnWidths.photo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label="" column="actions" width={columnWidths.actions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                 </tr>
               </thead>
               <tbody>
                 {pageItems.map((p) => (
                   <tr key={p.id} className="table-row">
-                    <td className="px-4 py-3 font-mono text-sm font-medium" style={{ color }}>{p.product_code}</td>
-                    <td className="px-4 py-3 text-ink min-w-[200px] max-w-[300px] whitespace-normal break-words align-top">{p.description}</td>
-                    <td className="px-4 py-3 text-ink-2 text-xs whitespace-nowrap">
+                    <td data-product-col="code" className="px-4 py-3 font-mono text-sm font-medium border-r border-line whitespace-normal break-words align-top" style={{ color }}>{p.product_code}</td>
+                    <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>{p.description}</td>
+                    <td data-product-col="dimensions" className="px-4 py-3 text-ink-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {isConjuntoType(p.type) ? '—' : p.is_circular
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
-                    <td className="px-4 py-3 text-sm whitespace-nowrap">
+                    <td data-product-col="price" className="px-4 py-3 text-sm border-r border-line whitespace-normal align-top">
                       <div className="text-ink font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</div>
                       <div className="text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</div>
                     </td>
-                    <td className="px-4 py-3 text-muted-2 text-xs max-w-[160px]">
+                    <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {p.optionals.length > 0 || p.all_optionals_categories
                         ? getProductOptionalsLabel(p, catLabel, ', ')
                         : '—'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-product-col="photo" className="px-4 py-3 border-r border-line align-top">
                       {p.photo_url
                         ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-line" />
                         : <ImageIcon className="w-6 h-6 text-faint" />}
                     </td>
-                    <td className="px-4 py-3">
+                    <td data-product-col="actions" className="px-4 py-3 align-top">
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
