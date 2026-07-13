@@ -24,9 +24,17 @@ def _detect_mime(data: bytes) -> Optional[str]:
 
 router = APIRouter(prefix="/api/v1/optionals", tags=["optionals"])
 
-_ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
-_ADMIN = Depends(require_roles(UserRole.admin))
-_ANY = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.cliente))
+_ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.produtos))
+_ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
+_ANY = Depends(
+    require_roles(
+        UserRole.admin,
+        UserRole.vendedor,
+        UserRole.representante,
+        UserRole.cliente,
+        UserRole.produtos,
+    )
+)
 
 
 def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
