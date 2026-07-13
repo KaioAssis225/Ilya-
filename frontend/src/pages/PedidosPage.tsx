@@ -624,6 +624,7 @@ export default function PedidosPage() {
   const [filter, setFilter] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterRep, setFilterRep] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'in_progress' | 'finalized' | ''>('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -642,12 +643,13 @@ export default function PedidosPage() {
       (o.code.toLowerCase().includes(q) || o.orc_id.toLowerCase().includes(q) || clientName.includes(q)) &&
       (!filterClient || o.client_id === filterClient) &&
       (!filterRep || o.rep_id === filterRep) &&
+      (!filterStatus || (filterStatus === 'finalized' ? o.is_finalized : !o.is_finalized)) &&
       (!filterDateFrom || o.created_at >= filterDateFrom) &&
       (!filterDateTo || o.created_at <= filterDateTo + 'T23:59:59')
     )
   })
 
-  const hasFilters = !!(filterClient || filterRep || filterDateFrom || filterDateTo)
+  const hasFilters = !!(filterClient || filterRep || filterStatus || filterDateFrom || filterDateTo)
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -687,7 +689,7 @@ export default function PedidosPage() {
 
         {/* Advanced filters */}
         {activeTab === 'orders' && showFilters && (
-          <div className="bg-white border border-line rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white border border-line rounded-xl p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             <div className="space-y-1">
               <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Cliente</label>
               <select className="input text-xs w-full" value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
@@ -703,6 +705,18 @@ export default function PedidosPage() {
               </select>
             </div>
             <div className="space-y-1">
+              <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Status</label>
+              <select
+                className="input text-xs w-full"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as 'in_progress' | 'finalized' | '')}
+              >
+                <option value="">Todos</option>
+                <option value="in_progress">Em andamento</option>
+                <option value="finalized">Finalizados</option>
+              </select>
+            </div>
+            <div className="space-y-1">
               <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Data Inicial</label>
               <input type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
             </div>
@@ -711,8 +725,8 @@ export default function PedidosPage() {
               <input type="date" className="input text-xs w-full" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
             </div>
             {hasFilters && (
-              <div className="col-span-2 md:col-span-4 flex justify-end">
-                <button onClick={() => { setFilterClient(''); setFilterRep(''); setFilterDateFrom(''); setFilterDateTo('') }} className="text-xs text-terracotta hover:text-[#8a3a2e] transition-colors">Limpar filtros</button>
+              <div className="col-span-2 md:col-span-3 xl:col-span-5 flex justify-end">
+                <button onClick={() => { setFilterClient(''); setFilterRep(''); setFilterStatus(''); setFilterDateFrom(''); setFilterDateTo('') }} className="text-xs text-terracotta hover:text-[#8a3a2e] transition-colors">Limpar filtros</button>
               </div>
             )}
           </div>
