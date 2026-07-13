@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { X, PenLine, Check } from 'lucide-react'
+import axios from 'axios'
+import { X, PenLine, Check, Eye, EyeOff, KeyRound, Trash2, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import api from '../lib/api'
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrador',
@@ -12,7 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 export default function ProfileModal({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   if (!user) return null
 
   const isCliente = user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
@@ -21,6 +23,59 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const [sigData, setSigData] = useState<string | null>(() => localStorage.getItem(profileSigKey))
   const [sigModalOpen, setSigModalOpen] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  // Bloco 93: alteração de senha
+  const [pwOpen, setPwOpen] = useState(false)
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [showCurPw, setShowCurPw] = useState(false)
+  const [showNewPw, setShowNewPw] = useState(false)
+  const [pwSaving, setPwSaving] = useState(false)
+  const [pwError, setPwError] = useState('')
+  const [pwSuccess, setPwSuccess] = useState(false)
+
+  // Bloco 93: exclusão da própria conta
+  const [delOpen, setDelOpen] = useState(false)
+  const [delBusy, setDelBusy] = useState(false)
+  const [delError, setDelError] = useState('')
+
+  async function handleChangePassword() {
+    if (!currentPw || !newPw) return
+    setPwSaving(true)
+    setPwError('')
+    try {
+      await api.post('/auth/change-password', { current_password: currentPw, new_password: newPw })
+      setPwSuccess(true)
+      setCurrentPw(''); setNewPw('')
+      setTimeout(() => { setPwSuccess(false); setPwOpen(false) }, 1800)
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setPwError('Senha atual incorreta.')
+      } else if (axios.isAxiosError(err) && typeof err.response?.data?.detail === 'string') {
+        setPwError(err.response.data.detail)
+      } else {
+        setPwError('Não foi possível alterar a senha. Tente novamente.')
+      }
+    } finally {
+      setPwSaving(false)
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDelBusy(true)
+    setDelError('')
+    try {
+      await api.delete('/auth/me')
+      await logout()
+    } catch (err) {
+      if (axios.isAxiosError(err) && typeof err.response?.data?.detail === 'string') {
+        setDelError(err.response.data.detail)
+      } else {
+        setDelError('Não foi possível excluir a conta. Tente novamente.')
+      }
+      setDelBusy(false)
+    }
+  }
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawingRef = useRef(false)
 
@@ -77,7 +132,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
 
         <div className="flex items-start justify-between mb-5">
           <div>
@@ -150,7 +205,129 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
             </button>
           )}
         </div>
+
+        {/* Segurança (Bloco 93) */}
+        <div className="border-t border-line pt-4 mt-4">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Segurança</p>
+
+          {!pwOpen ? (
+            <button
+              onClick={() => { setPwOpen(true); setPwError('') }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 border border-line text-ink-2 rounded-xl hover:bg-bg transition-colors text-sm font-medium"
+            >
+              <KeyRound className="w-4 h-4" />
+              Alterar Senha
+            </button>
+          ) : (
+            <div className="space-y-3 border border-line rounded-xl p-4 bg-bg">
+              <div>
+                <label htmlFor="pw-atual" className="text-xs text-muted block mb-1">Senha atual</label>
+                <div className="relative">
+                  <input
+                    id="pw-atual"
+                    type={showCurPw ? 'text' : 'password'}
+                    value={currentPw}
+                    onChange={(e) => setCurrentPw(e.target.value)}
+                    className="input w-full pr-11"
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
+                  <button type="button" onClick={() => setShowCurPw(s => !s)} tabIndex={-1}
+                    aria-label={showCurPw ? 'Ocultar senha' : 'Mostrar senha'}
+                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors">
+                    {showCurPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="pw-nova" className="text-xs text-muted block mb-1">Nova senha</label>
+                <div className="relative">
+                  <input
+                    id="pw-nova"
+                    type={showNewPw ? 'text' : 'password'}
+                    value={newPw}
+                    onChange={(e) => setNewPw(e.target.value)}
+                    className="input w-full pr-11"
+                    placeholder="Mín. 8 caracteres, maiúscula, minúscula e número"
+                    autoComplete="new-password"
+                  />
+                  <button type="button" onClick={() => setShowNewPw(s => !s)} tabIndex={-1}
+                    aria-label={showNewPw ? 'Ocultar senha' : 'Mostrar senha'}
+                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors">
+                    {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              {pwError && <p className="text-xs text-red-700" role="alert">{pwError}</p>}
+              {pwSuccess && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Senha alterada com sucesso!
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setPwOpen(false); setCurrentPw(''); setNewPw(''); setPwError('') }}
+                  className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-white transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleChangePassword}
+                  disabled={pwSaving || !currentPw || !newPw}
+                  className="flex-1 py-2 bg-gold text-white rounded-lg text-sm font-medium hover:bg-gold-600 transition-colors disabled:opacity-50"
+                >
+                  {pwSaving ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => { setDelOpen(true); setDelError('') }}
+            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 border border-red-200 text-red-700 rounded-xl hover:bg-red-50 transition-colors text-sm font-medium"
+          >
+            <Trash2 className="w-4 h-4" />
+            Excluir Minha Conta
+          </button>
+        </div>
       </div>
+
+      {/* Confirmação de exclusão de conta (Bloco 93) */}
+      {delOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h4 className="text-base font-semibold text-ink">Excluir sua conta?</h4>
+                <p className="text-sm text-muted-2 mt-1 leading-snug">
+                  Esta ação é <strong>permanente</strong>. Seu acesso será removido imediatamente
+                  e todas as suas sessões serão encerradas.
+                </p>
+              </div>
+            </div>
+            {delError && <p className="text-xs text-red-700 mb-3" role="alert">{delError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDelOpen(false)}
+                disabled={delBusy}
+                className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={delBusy}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {delBusy ? 'Excluindo…' : 'Excluir Conta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Canvas modal */}
       {sigModalOpen && (

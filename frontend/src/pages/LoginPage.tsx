@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 export default function LoginPage() {
@@ -8,6 +9,7 @@ export default function LoginPage() {
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -65,15 +67,26 @@ export default function LoginPage() {
               <label htmlFor="login-pw" className="block text-[11px] font-semibold text-muted uppercase tracking-wider">
                 Senha
               </label>
-              <input
-                id="login-pw"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input"
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  id="login-pw"
+                  type={showPw ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input pr-11 w-full"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(s => !s)}
+                  aria-label={showPw ? 'Ocultar senha' : 'Mostrar senha'}
+                  className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {error && (

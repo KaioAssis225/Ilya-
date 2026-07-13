@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, delete
 
 from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
 from app.core.limiter import limiter
@@ -24,6 +24,7 @@ from app.models.user import User, UserRole
 from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
+from app.models.notification import Notification
 from app.schemas.auth import LoginRequest, AccessTokenResponse, UserRead, ChangePasswordRequest
 
 logger = logging.getLogger("ilya.auth")
@@ -219,6 +220,43 @@ async def change_password(
     user.hashed_password = hash_password(body.new_password)
     user.must_change_password = False
     await db.commit()
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/minute")
+async def delete_my_account(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Bloco 93: exclusão da própria conta pelo titular.
+
+    Remove o usuário fisicamente — refresh tokens caem por CASCADE (revogação),
+    order_history.user_id vira NULL (trilha preservada) e as notificações são
+    apagadas antes (FK sem ondelete). O registro comercial de Cliente/Representante
+    vinculado NÃO é excluído; para dados pessoais há o fluxo de anonimização."""
+    if current_user.role == UserRole.admin:
+        others = await db.execute(
+            select(User).where(
+                User.role == UserRole.admin,
+                User.is_active.is_(True),
+                User.id != current_user.id,
+            )
+        )
+        if not others.scalars().first():
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Não é possível excluir o único administrador ativo do sistema.",
+            )
+
+    await db.execute(delete(Notification).where(Notification.user_id == current_user.id))
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one()
+    await db.delete(user)
+    await db.commit()
+    logger.info("Conta excluída pelo titular: user_id=%s", current_user.id)
+    _clear_refresh_cookie(response)
 
 
 @router.get("/my-data")
