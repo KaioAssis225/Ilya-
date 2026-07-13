@@ -1,12 +1,15 @@
 import asyncio
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -29,7 +32,10 @@ logger = logging.getLogger("ilya")
 async def _cleanup_tokens_background() -> None:
     try:
         async with AsyncSessionLocal() as session:
-            await cleanup_expired_tokens(session)
+            await cleanup_expired_tokens(
+                session,
+                settings.REFRESH_TOKEN_AUDIT_RETENTION_DAYS,
+            )
     except Exception:
         logger.exception("Falha na limpeza de refresh tokens expirados")
 
@@ -48,7 +54,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Projeto Ilya API",
-    version="0.1.0",
+    version=settings.APP_VERSION,
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
@@ -75,6 +81,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
+    expose_headers=["X-Request-ID"],
 )
 
 
@@ -118,6 +125,24 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        (time.perf_counter() - started) * 1000,
+    )
+    return response
+
+
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(auth_router)
@@ -137,4 +162,20 @@ app.include_router(import_router)
 
 @app.get("/health", tags=["health"])
 async def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": settings.APP_VERSION}
+
+
+@app.get("/health/live", tags=["health"])
+async def liveness_check():
+    return {"status": "ok", "version": settings.APP_VERSION}
+
+
+@app.get("/health/ready", tags=["health"])
+async def readiness_check():
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Readiness falhou ao consultar o banco")
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return {"status": "ready", "version": settings.APP_VERSION}

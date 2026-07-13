@@ -25,6 +25,7 @@ from app.models.product_group import ProductGroup
 from app.models.optional_color import OptionalColor, product_optionals
 from app.models.client import Client
 from app.models.representative import Representative
+from app.core.uploads import read_upload_limited
 
 logger = logging.getLogger("ilya.import")
 router = APIRouter(prefix="/api/v1/import", tags=["import"])
@@ -39,13 +40,11 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _read_upload(file: UploadFile) -> bytes:
-    content = await file.read()
-    if len(content) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Arquivo excede o limite de 10MB.",
-        )
-    return content
+    return await read_upload_limited(
+        file,
+        _MAX_UPLOAD_BYTES,
+        max_size_label="o limite de 10MB",
+    )
 
 def _normalize_key(key: str) -> str:
     """Ignora acentos, espaços, sublinhados e caixa alta nos cabeçalhos do CSV

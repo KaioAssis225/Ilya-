@@ -11,6 +11,7 @@ from app.models.order_history import OrderHistory
 from app.models.user import User, UserRole
 from app.models.refresh_token import RefreshToken
 from app.models.notification import Notification
+from app.models.signature_invitation import SignatureInvitation
 
 __all__ = [
     "Base",
@@ -30,4 +31,5 @@ __all__ = [
     "UserRole",
     "RefreshToken",
     "Notification",
+    "SignatureInvitation",
 ]

@@ -428,10 +428,7 @@ export async function generateOrderPDF(
   // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
   // Isolamento rígido: repSig nunca vaza para clientSig e vice-versa.
   const repSig = order.rep_signature
-    || localStorage.getItem(`signature_rep_${order.code}`)
-
   const clientSig = order.client_signature
-    || localStorage.getItem(`signature_cli_${order.code}`)
 
   if (y + 40 > 265) { doc.addPage(); y = 20 }
   y += 6

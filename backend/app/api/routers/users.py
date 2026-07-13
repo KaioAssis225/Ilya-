@@ -2,6 +2,7 @@ import re
 import secrets
 import uuid
 import unicodedata
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -89,8 +90,20 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
-    for field, value in body.model_dump(exclude_none=True).items():
+    changes = body.model_dump(exclude_none=True)
+    security_changed = any(
+        field in changes and changes[field] != getattr(user, field)
+        for field in ("role", "is_active")
+    )
+    for field, value in changes.items():
         setattr(user, field, value)
+    if security_changed:
+        user.auth_version += 1
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+        )
     await db.commit()
     await db.refresh(user)
     return user
@@ -113,6 +126,12 @@ async def reset_password(
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
     user.hashed_password = hash_password(body.new_password)
+    user.auth_version += 1
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
+        .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+    )
     await db.commit()
 
 
@@ -131,7 +150,7 @@ async def delete_user(
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked.is_(False))
-        .values(revoked=True)
+        .values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
     await db.delete(user)
     await db.commit()

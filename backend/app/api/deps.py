@@ -46,6 +46,8 @@ async def get_authenticated_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
+    if payload.get("ver") != user.auth_version:
+        raise credentials_exception
     return user
 
 

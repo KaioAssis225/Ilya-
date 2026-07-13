@@ -2,6 +2,7 @@ import { createContext, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import axios from 'axios'
 import { authApi, bindAuthHandlers } from '../lib/api'
+import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
 
@@ -97,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Tenta restaurar sessão ao montar via cookie HttpOnly
   useEffect(() => {
+    removeLegacySignatureStorage()
     refreshSession().finally(() => setIsLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -135,14 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignora falha de rede no logout
     }
-    // LGPD (L-04): remove as imagens de assinatura cacheadas no navegador —
-    // em dispositivo compartilhado, o próximo usuário não deve acessá-las.
-    // Chaves: profile_signature_<userId>, signature_cli_<code>, signature_rep_<code>
-    for (const key of Object.keys(localStorage)) {
-      if (key.startsWith('profile_signature_') || key.startsWith('signature_')) {
-        localStorage.removeItem(key)
-      }
-    }
+    clearSignatureMemory()
+    removeLegacySignatureStorage()
     clearSession()
   }, [clearSession])
 

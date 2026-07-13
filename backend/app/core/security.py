@@ -31,6 +31,8 @@ def validate_password_strength(password: str) -> None:
     Levanta ValueError com mensagem pt-BR; as rotas convertem em HTTP 422."""
     if len(password) < 8:
         raise ValueError("A senha deve ter pelo menos 8 caracteres.")
+    if len(password) > 128:
+        raise ValueError("A senha deve ter no máximo 128 caracteres.")
     if not re.search(r"[A-Z]", password):
         raise ValueError("A senha deve conter pelo menos 1 letra maiúscula.")
     if not re.search(r"[a-z]", password):
@@ -59,17 +61,18 @@ def dummy_verify() -> None:
     """Queima tempo Argon2 equivalente quando usuário não é encontrado no login."""
     try:
         _hasher.verify(_DUMMY_HASH, "nonexistent")
-    except Exception:
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
         pass
 
 
 # ── JWT Access Token ──────────────────────────────────────────────────────────
 
-def create_access_token(user_id: uuid.UUID, role: str) -> str:
+def create_access_token(user_id: uuid.UUID, role: str, auth_version: int = 0) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES)
     payload = {
         "sub": str(user_id),
         "role": role,
+        "ver": auth_version,
         "exp": expire,
         "type": "access",
     }
@@ -101,23 +104,17 @@ def refresh_token_expiry() -> datetime:
     return (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS)).replace(tzinfo=None)
 
 
-# ── Sign Token (10-min, for contract signing) ─────────────────────────────────
-# Janela curta reduz o risco de replay caso o link seja interceptado (V-S3).
-# A assinatura em si é single-use: sign_with_token rejeita (409) se já assinado.
+# ── Convite de assinatura (10 min, opaco e persistido somente como hash) ───────
 SIGN_TOKEN_TTL_MINUTES = 10
 
 
-def create_sign_token(order_id: str, client_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=SIGN_TOKEN_TTL_MINUTES)
-    payload = {"order_id": order_id, "client_id": client_id, "exp": expire, "type": "sign"}
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+def generate_sign_invitation_token() -> str:
+    return secrets.token_urlsafe(48)
 
 
-def decode_sign_token(token: str) -> Optional[dict]:
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM], leeway=timedelta(seconds=30))
-        if payload.get("type") != "sign":
-            return None
-        return payload
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-        return None
+def hash_sign_invitation_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def sign_invitation_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=SIGN_TOKEN_TTL_MINUTES)

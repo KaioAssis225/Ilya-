@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
 
 export default function TrocarSenhaPage() {
-  const { user, refreshMe } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
 
   const [newPassword, setNewPassword] = useState('')
@@ -34,8 +34,8 @@ export default function TrocarSenhaPage() {
     setLoading(true)
     try {
       await api.post('/auth/change-password', { new_password: newPassword })
-      await refreshMe()
-      navigate('/', { replace: true })
+      await logout()
+      navigate('/login', { replace: true })
     } catch {
       setError('Erro ao trocar a senha. Tente novamente.')
     } finally {

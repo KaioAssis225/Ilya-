@@ -1,10 +1,13 @@
 import logging
+import hashlib
+import json
 import uuid
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from app.api.deps import (
     get_db_session,
@@ -22,8 +25,14 @@ from app.models.product import Product
 from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
+from app.models.signature_invitation import SignatureInvitation
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
-from app.core.security import create_sign_token, decode_sign_token
+from app.core.security import (
+    SIGN_TOKEN_TTL_MINUTES,
+    generate_sign_invitation_token,
+    hash_sign_invitation_token,
+    sign_invitation_expiry,
+)
 
 logger = logging.getLogger("ilya.orders")
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -31,6 +40,42 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 _ANY = Depends(get_current_user)
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
 _ADMIN = Depends(require_roles(UserRole.admin))
+
+
+def _order_document_hash(order: Order) -> str:
+    content = {
+        "order_id": str(order.id),
+        "code": order.code,
+        "client_id": str(order.client_id),
+        "rep_id": str(order.rep_id) if order.rep_id else None,
+        "total_value": str(order.total_value),
+        "total_ipi": str(order.total_ipi),
+        "total_with_ipi": str(order.total_with_ipi),
+        "notes": order.notes,
+        "items": [
+            {
+                "product_code": item.product_code,
+                "description": item.description,
+                "qty": item.qty,
+                "unit_price": str(item.unit_price),
+                "discount": str(item.discount),
+                "ipi_rate": str(item.ipi_rate),
+                "optionals": item.opt_categories,
+            }
+            for item in sorted(order.items, key=lambda current: str(current.id))
+        ],
+    }
+    canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _invitation_is_valid(invitation: SignatureInvitation | None) -> bool:
+    if not invitation or invitation.consumed_at or invitation.revoked_at:
+        return False
+    expires_at = invitation.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at >= datetime.now(timezone.utc)
 
 
 async def _next_code(db: AsyncSession) -> tuple[str, str]:
@@ -460,13 +505,37 @@ async def generate_sign_token(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if order.client_signature:
+        raise HTTPException(status_code=409, detail="Pedido já foi assinado pelo cliente.")
 
+    if not (
+        current_user.role in {UserRole.admin, UserRole.representante}
+        or is_internal_operator(current_user)
+    ):
+        raise HTTPException(status_code=403, detail="Acesso negado.")
     if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-    if is_client_account(current_user) and order.client_id != current_user.linked_id:
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
-    token = create_sign_token(str(order.id), str(order.client_id))
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        update(SignatureInvitation)
+        .where(
+            SignatureInvitation.order_id == order.id,
+            SignatureInvitation.consumed_at.is_(None),
+            SignatureInvitation.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    token = generate_sign_invitation_token()
+    invitation = SignatureInvitation(
+        order_id=order.id,
+        client_id=order.client_id,
+        token_hash=hash_sign_invitation_token(token),
+        document_hash=_order_document_hash(order),
+        issued_by=current_user.id,
+        expires_at=sign_invitation_expiry(),
+    )
+    db.add(invitation)
     # Fragment (#) não é enviado ao servidor nem aparece em logs/Referer (V-04)
     url = f"/sign-contract#{token}"
 
@@ -480,13 +549,13 @@ async def generate_sign_token(
             user_id=client_user.id,
             message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
         ))
-        await db.commit()
+    await db.commit()
 
-    return {"token": token, "url": url, "expires_in": 600}
+    return {"token": token, "url": url, "expires_in": SIGN_TOKEN_TTL_MINUTES * 60}
 
 
 class VerifySignTokenPayload(BaseModel):
-    token: str
+    token: str = Field(..., min_length=32, max_length=512)
 
 
 # POST com token no body — token em querystring ficaria gravado nos access logs (V-04b)
@@ -497,19 +566,23 @@ async def verify_sign_token(
     body: VerifySignTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
-    payload = decode_sign_token(body.token)
-    if not payload:
+    invitation = (
+        await db.execute(
+            select(SignatureInvitation).where(
+                SignatureInvitation.token_hash == hash_sign_invitation_token(body.token)
+            )
+        )
+    ).scalar_one_or_none()
+    if not _invitation_is_valid(invitation):
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
-    try:
-        order_id = uuid.UUID(payload["order_id"])
-    except (KeyError, ValueError):
-        raise HTTPException(status_code=400, detail="Token inválido.")
-
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(select(Order).where(Order.id == invitation.order_id))
     order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if not order or invitation.document_hash != _order_document_hash(order):
+        if invitation:
+            invitation.revoked_at = datetime.now(timezone.utc)
+            await db.commit()
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
     return {
         "order_code": order.code,
@@ -535,7 +608,7 @@ class SignPayload(BaseModel):
 
 
 class SignWithTokenPayload(SignPayload):
-    token: str
+    token: str = Field(..., min_length=32, max_length=512)
 
 
 @router.post("/{order_id}/sign-representative")
@@ -553,6 +626,8 @@ async def sign_representative(
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
+    if order.rep_signature:
+        raise HTTPException(status_code=409, detail="Assinatura do representante já registrada.")
     order.rep_signature = payload.signature
     await db.commit()
     return {"success": True}
@@ -577,6 +652,8 @@ async def sign_client(
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if is_rep and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
+    if order.client_signature:
+        raise HTTPException(status_code=409, detail="Assinatura do cliente já registrada.")
     order.client_signature = payload.signature
     await db.commit()
     return {"success": True}
@@ -619,23 +696,33 @@ async def sign_with_token(
     payload: SignWithTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
-    decoded = decode_sign_token(payload.token)
-    if not decoded:
+    invitation = (
+        await db.execute(
+            select(SignatureInvitation)
+            .where(
+                SignatureInvitation.token_hash == hash_sign_invitation_token(payload.token)
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if not _invitation_is_valid(invitation):
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
-    try:
-        order_id = uuid.UUID(decoded["order_id"])
-    except (KeyError, ValueError):
-        raise HTTPException(status_code=400, detail="Token inválido.")
-
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(
+        select(Order).where(Order.id == invitation.order_id).with_for_update()
+    )
     order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if not order or invitation.client_id != order.client_id:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
+    if invitation.document_hash != _order_document_hash(order):
+        invitation.revoked_at = datetime.now(timezone.utc)
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
 
     if order.client_signature:
         raise HTTPException(status_code=409, detail="Pedido já foi assinado.")
 
     order.client_signature = payload.signature
+    invitation.consumed_at = datetime.now(timezone.utc)
     await db.commit()
     return {"success": True}

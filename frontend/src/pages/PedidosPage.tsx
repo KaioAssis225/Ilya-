@@ -13,6 +13,7 @@ import { generateOrderPDF } from '../lib/generatePDF'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
 import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
+import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 import type { Order, OrderHistory, OptionalColor, Product, Client } from '../types'
 
 function fmtDate(s: string) {
@@ -142,8 +143,7 @@ function OrderDetailModal({
   const order = orderDetail ?? orderLight
   const { data: optCategories = [] } = useOptionalCategories()
   const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
-  const isClientUser = userRole === 'cliente' || userRole === 'vendedor'
-  const sigKey = isClientUser ? `signature_cli_${order.code}` : `signature_rep_${order.code}`
+  const isClientUser = userRole === 'cliente' || (userRole === 'vendedor' && canSignContract)
   const [tab, setTab] = useState<'details' | 'history'>('details')
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   const [confirmSign, setConfirmSign] = useState(false)
@@ -165,9 +165,10 @@ function OrderDetailModal({
 
   // Representante também edita/finaliza os próprios pedidos (backend valida a posse)
   const canManage = userRole === 'admin' || userRole === 'vendedor' || userRole === 'representante'
-  const profileSig = localStorage.getItem(`profile_signature_${userId}`)
+  const profileSig = getProfileSignature(userId)
   const isContractSigned = !!(order.rep_signed || order.rep_signature)
   const isClientSigned = !!(order.client_signed || order.client_signature)
+  const canGenerateSignLink = userRole === 'admin' || userRole === 'representante' || (userRole === 'vendedor' && !canSignContract)
   const canSignAsClient = (userRole === 'representante' || userRole === 'admin') && !isClientSigned
   const showNotifyBtn = userRole === 'representante' || userRole === 'admin'
   const clientHasAccount = !!clientObj?.has_user
@@ -223,7 +224,6 @@ function OrderDetailModal({
     setClientSaving(true); setSigError(false)
     try {
       await api.post(`/orders/${order.id}/sign-client`, { signature: data })
-      localStorage.setItem(`signature_cli_${order.code}`, data)
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       setClientSigOpen(false)
     } catch {
@@ -233,16 +233,14 @@ function OrderDetailModal({
     }
   }
 
-  // Bloco 81: assina "na hora" e salva a assinatura no perfil (profile_signature_${userId})
-  // para reuso automático em próximos pedidos, sem exigir configuração prévia em Minha Conta.
+  // Mantém a assinatura somente em memória para reuso durante a sessão atual.
   async function handleSaveRepSig() {
     if (!repCanvasRef.current) return
     const data = repCanvasRef.current.toDataURL('image/png')
     setRepSaving(true); setSigError(false)
     try {
-      localStorage.setItem(`profile_signature_${userId}`, data)
       await api.post(`/orders/${order.id}/sign-representative`, { signature: data })
-      localStorage.setItem(sigKey, data)
+      setProfileSignature(userId, data)
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       setRepSigOpen(false)
     } catch {
@@ -408,7 +406,7 @@ function OrderDetailModal({
                   <span className="flex items-center gap-1 text-xs">{isContractSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">REP {isContractSigned ? 'assinado' : 'pendente'}</span></span>
                   <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
                 </div>
-                {!isClientUser && (
+                {canGenerateSignLink && !isClientSigned && (
                   <button disabled={signLinkLoading} onClick={async () => { setSignLinkLoading(true); try { const res = await api.post<{ token: string; url: string }>(`/orders/${order.id}/generate-sign-token`); setSignLink(window.location.origin + res.data.url) } catch { /* ignore */ } finally { setSignLinkLoading(false) } }} className="flex items-center gap-1.5 px-3 py-1.5 border border-gold-soft text-gold rounded-lg text-xs font-medium hover:bg-[#fdf9f0] transition-colors disabled:opacity-50">
                     <Link className="w-3.5 h-3.5" />{signLinkLoading ? 'Gerando...' : 'Gerar Link'}
                   </button>
@@ -519,7 +517,6 @@ function OrderDetailModal({
                   setIsSigning(true); setSigError(false)
                   try {
                     await api.post(isClientUser ? `/orders/${order.id}/sign-client` : `/orders/${order.id}/sign-representative`, { signature: profileSig })
-                    localStorage.setItem(sigKey, profileSig!)
                     queryClient.invalidateQueries({ queryKey: ['orders'] })
                     setConfirmSign(false)
                   } catch {

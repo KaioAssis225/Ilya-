@@ -13,7 +13,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="text-lg font-semibold text-ink tracking-wider uppercase">
             Política de Privacidade
           </h1>
-          <p className="text-xs text-muted mt-1">Última atualização: 30 de junho de 2026</p>
+          <p className="text-xs text-muted mt-1">Última atualização técnica: 13 de julho de 2026</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-line shadow-sm p-8 space-y-6 text-sm text-ink-2 leading-relaxed">
@@ -36,7 +36,7 @@ export default function PrivacyPolicyPage() {
               <li><strong>Assinatura eletrônica</strong> — formalização de aceite contratual.</li>
               <li><strong>Credenciais de acesso</strong> — autenticação e controle de privilégios no sistema.</li>
             </ul>
-            <p className="mt-2">Base legal: Execução de Contrato (Art. 7º, V da LGPD).</p>
+            <p className="mt-2">As bases legais devem ser definidas conforme cada finalidade, podendo incluir execução de contrato, cumprimento de obrigação legal e exercício regular de direitos.</p>
           </section>
 
           <section>
@@ -49,8 +49,8 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xs font-bold uppercase tracking-widest text-gold mb-2">4. Seus Direitos (Art. 18 da LGPD)</h2>
             <ul className="list-disc pl-5 space-y-1">
-              <li><strong>Acesso e confirmação</strong> — você pode consultar todos os seus dados em <em>Perfil → Meus Dados</em> ou via <code className="bg-bg px-1 rounded">GET /api/v1/auth/my-data</code>.</li>
-              <li><strong>Portabilidade</strong> — exporte seus dados em formato JSON via <code className="bg-bg px-1 rounded">GET /api/v1/auth/my-data/export</code>.</li>
+              <li><strong>Acesso e confirmação</strong> — consulte os dados ligados à sua conta em <em>Minha Conta → Baixar Meus Dados</em> ou via <code className="bg-bg px-1 rounded">GET /api/v1/auth/my-data</code>.</li>
+              <li><strong>Cópia eletrônica</strong> — exporte seus dados em formato JSON mediante nova confirmação de senha via <code className="bg-bg px-1 rounded">POST /api/v1/auth/my-data/export</code>.</li>
               <li><strong>Eliminação</strong> — solicite a anonimização dos seus dados pessoais via <code className="bg-bg px-1 rounded">POST /api/v1/auth/anonymize</code> ou pelo canal <a href="mailto:privacidade@ilya.com" className="text-gold underline">privacidade@ilya.com</a>.</li>
               <li><strong>Retificação</strong> — corrija seus dados cadastrais diretamente no sistema ou pelo canal de privacidade.</li>
             </ul>
@@ -66,7 +66,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xs font-bold uppercase tracking-widest text-gold mb-2">6. Segurança</h2>
             <p>
-              Adotamos controles técnicos como hashing de senhas com Argon2, tokens JWT de curta duração, HTTPS em produção, cabeçalhos de segurança HTTP e rate limiting em endpoints sensíveis.
+              Adotamos controles técnicos como hashing de senhas com Argon2, tokens JWT de curta duração, refresh token em cookie HttpOnly, bloqueio progressivo de login, revogação de sessões, HTTPS em produção, cabeçalhos de segurança HTTP e limites em endpoints e uploads sensíveis. Imagens de assinatura não são mantidas no armazenamento persistente do navegador.
             </p>
           </section>
 

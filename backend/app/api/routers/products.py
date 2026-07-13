@@ -14,24 +14,13 @@ from app.schemas.product import (
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
 )
 from app.core.config import settings
+from app.core.uploads import sanitize_image_upload
 
 def _is_conjunto_type(type_: Optional[str]) -> bool:
     """Bloco 74: identifica 'conjuntos' por substring case-insensitive no nome
     do tipo (ex.: 'Conjunto de Jantar', 'conjuntos'), em vez de exigir o valor
     exato 'Conjunto'."""
     return "conjunto" in (type_ or "").lower()
-
-
-def _detect_mime(data: bytes) -> Optional[str]:
-    if data[:3] == b"\xff\xd8\xff":
-        return "jpg"
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "png"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return "gif"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "webp"
-    return None
 
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
@@ -227,15 +216,12 @@ async def upload_photo(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    ext = os.path.splitext(file.filename or "")[-1].lower().lstrip(".")
-    if ext not in settings.get_allowed_extensions():
-        raise HTTPException(status_code=422, detail=f"Extensão '{ext}' não permitida.")
-    content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"Arquivo excede {settings.MAX_UPLOAD_SIZE_MB}MB.")
-    detected = _detect_mime(content)
-    if detected is None or detected not in settings.get_allowed_extensions():
-        raise HTTPException(status_code=422, detail="Conteúdo do arquivo não é uma imagem válida.")
+    content, ext = await sanitize_image_upload(
+        file,
+        max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
+        max_size_label=f"{settings.MAX_UPLOAD_SIZE_MB}MB",
+        allowed_extensions=settings.get_allowed_extensions(),
+    )
     if product.photo_path and os.path.exists(product.photo_path):
         os.remove(product.photo_path)
     filename = f"{uuid.uuid4()}.{ext}"

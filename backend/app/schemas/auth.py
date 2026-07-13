@@ -55,6 +55,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class ReauthenticationRequest(BaseModel):
+    password: str
+
+
 class UserCreateResponse(BaseModel):
     id: uuid.UUID
     username: str

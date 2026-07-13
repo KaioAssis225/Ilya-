@@ -5,7 +5,11 @@ import json
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     DATABASE_URL: str
     SECRET_KEY: str
@@ -13,6 +17,7 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_TTL_MINUTES: int = 30
     REFRESH_TOKEN_TTL_DAYS: int = 7
+    REFRESH_TOKEN_AUDIT_RETENTION_DAYS: int = 30
 
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
     UPLOAD_DIR: str = "app/static/uploads"
@@ -20,6 +25,7 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: str = "jpg,jpeg,png,webp"
 
     DEBUG: bool = False
+    APP_VERSION: str = "0.1.0"
 
     def get_cors_origins(self) -> List[str]:
         try:

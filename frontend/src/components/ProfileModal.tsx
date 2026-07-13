@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { X, PenLine, Check, Eye, EyeOff, KeyRound, Trash2, AlertTriangle } from 'lucide-react'
+import { X, PenLine, Check, Eye, EyeOff, KeyRound, Trash2, AlertTriangle, Download, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
+import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrador',
@@ -16,11 +17,10 @@ const ROLE_LABELS: Record<string, string> = {
 export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const { user, logout } = useAuth()
   if (!user) return null
+  const userId = user.id
 
   const isCliente = user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
-  const profileSigKey = `profile_signature_${user.id}`
-
-  const [sigData, setSigData] = useState<string | null>(() => localStorage.getItem(profileSigKey))
+  const [sigData, setSigData] = useState<string | null>(() => getProfileSignature(user.id))
   const [sigModalOpen, setSigModalOpen] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -32,12 +32,17 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const [showNewPw, setShowNewPw] = useState(false)
   const [pwSaving, setPwSaving] = useState(false)
   const [pwError, setPwError] = useState('')
-  const [pwSuccess, setPwSuccess] = useState(false)
 
   // Bloco 93: exclusão da própria conta
   const [delOpen, setDelOpen] = useState(false)
   const [delBusy, setDelBusy] = useState(false)
   const [delError, setDelError] = useState('')
+
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportPassword, setExportPassword] = useState('')
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const [logoutAllBusy, setLogoutAllBusy] = useState(false)
 
   async function handleChangePassword() {
     if (!currentPw || !newPw) return
@@ -45,9 +50,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
     setPwError('')
     try {
       await api.post('/auth/change-password', { current_password: currentPw, new_password: newPw })
-      setPwSuccess(true)
-      setCurrentPw(''); setNewPw('')
-      setTimeout(() => { setPwSuccess(false); setPwOpen(false) }, 1800)
+      await logout()
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 401) {
         setPwError('Senha atual incorreta.')
@@ -74,6 +77,47 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
         setDelError('Não foi possível excluir a conta. Tente novamente.')
       }
       setDelBusy(false)
+    }
+  }
+
+  async function handleExportData() {
+    if (!exportPassword) return
+    setExportBusy(true)
+    setExportError('')
+    try {
+      const response = await api.post(
+        '/auth/my-data/export',
+        { password: exportPassword },
+        { responseType: 'blob' },
+      )
+      const url = URL.createObjectURL(response.data)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'meus-dados-ilya.json'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      setExportPassword('')
+      setExportOpen(false)
+    } catch (err) {
+      setExportError(
+        axios.isAxiosError(err) && err.response?.status === 401
+          ? 'Senha incorreta.'
+          : 'Não foi possível gerar a exportação.',
+      )
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  async function handleLogoutAll() {
+    setLogoutAllBusy(true)
+    try {
+      await api.post('/auth/logout-all')
+    } finally {
+      await logout()
+      setLogoutAllBusy(false)
     }
   }
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -123,7 +167,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
 
   function confirmSig() {
     const data = canvasRef.current!.toDataURL('image/png')
-    localStorage.setItem(profileSigKey, data)
+    setProfileSignature(userId, data)
     setSigData(data)
     setSigModalOpen(false)
     setSaved(true)
@@ -185,7 +229,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               </div>
               {saved && (
                 <p className="text-xs text-green-600 flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Salva com sucesso!
+                  <Check className="w-3 h-3" /> Disponível somente nesta sessão.
                 </p>
               )}
               <button
@@ -259,11 +303,6 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
               {pwError && <p className="text-xs text-red-700" role="alert">{pwError}</p>}
-              {pwSuccess && (
-                <p className="text-xs text-green-600 flex items-center gap-1">
-                  <Check className="w-3 h-3" /> Senha alterada com sucesso!
-                </p>
-              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => { setPwOpen(false); setCurrentPw(''); setNewPw(''); setPwError('') }}
@@ -289,6 +328,58 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
             <Trash2 className="w-4 h-4" />
             Excluir Minha Conta
           </button>
+        </div>
+
+        <div className="border-t border-line pt-4 mt-4">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Privacidade e sessões</p>
+          {!exportOpen ? (
+            <button
+              onClick={() => { setExportOpen(true); setExportError('') }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 border border-line text-ink-2 rounded-xl hover:bg-bg transition-colors text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              Baixar Meus Dados
+            </button>
+          ) : (
+            <div className="space-y-3 border border-line rounded-xl p-4 bg-bg">
+              <p className="text-xs text-muted">Confirme sua senha para gerar o arquivo JSON.</p>
+              <input
+                type="password"
+                value={exportPassword}
+                onChange={(e) => setExportPassword(e.target.value)}
+                className="input w-full"
+                placeholder="Senha atual"
+                autoComplete="current-password"
+              />
+              {exportError && <p className="text-xs text-red-700" role="alert">{exportError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setExportOpen(false); setExportPassword(''); setExportError('') }}
+                  className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleExportData}
+                  disabled={exportBusy || !exportPassword}
+                  className="flex-1 py-2 bg-gold text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                >
+                  {exportBusy ? 'Gerando…' : 'Baixar'}
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={handleLogoutAll}
+            disabled={logoutAllBusy}
+            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 border border-line text-ink-2 rounded-xl hover:bg-bg transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            <LogOut className="w-4 h-4" />
+            {logoutAllBusy ? 'Encerrando…' : 'Encerrar Todas as Sessões'}
+          </button>
+          <a href="/privacy-policy" className="mt-3 block text-center text-xs text-gold underline">
+            Consultar Política de Privacidade
+          </a>
         </div>
       </div>
 

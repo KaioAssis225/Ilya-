@@ -1,6 +1,7 @@
 import uuid
 import enum
-from sqlalchemy import String, ForeignKey, Boolean, Enum as SAEnum
+from datetime import datetime
+from sqlalchemy import String, ForeignKey, Boolean, DateTime, Integer, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -27,3 +28,6 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     linked_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

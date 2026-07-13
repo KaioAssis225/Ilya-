@@ -9,7 +9,7 @@ class OrderItemCreate(BaseModel):
     product_code: str
     qty: int = Field(..., ge=1)
     discount: Decimal = Field(Decimal("0"), ge=0, le=100, decimal_places=2)
-    opt_categories: Dict[str, str] = {}
+    opt_categories: Dict[str, str] = Field(default_factory=dict)
 
 
 class OrderCreate(BaseModel):
@@ -34,7 +34,7 @@ class OrderItemRead(BaseModel):
     altura: Decimal
     largura: Decimal
     profundidade: Decimal
-    opt_categories: Dict[str, str] = {}
+    opt_categories: Dict[str, str] = Field(default_factory=dict)
     qty: int
     unit_price: Decimal
     discount: Decimal = Decimal("0")
@@ -83,7 +83,7 @@ class OrderRead(BaseModel):
     rep_signature: Optional[str] = None
     client_signature: Optional[str] = None
     items: List[OrderItemRead]
-    history: List[OrderHistoryRead] = []
+    history: List[OrderHistoryRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -107,7 +107,7 @@ class OrderListRead(BaseModel):
     rep_signed: bool = False
     client_signed: bool = False
     items: List[OrderItemRead]
-    history: List[OrderHistoryRead] = []
+    history: List[OrderHistoryRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
