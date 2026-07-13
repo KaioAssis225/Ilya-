@@ -29,7 +29,7 @@ from app.models.representative import Representative
 logger = logging.getLogger("ilya.import")
 router = APIRouter(prefix="/api/v1/import", tags=["import"])
 
-_ADMIN = Depends(require_roles(UserRole.admin))
+_ADMIN_CADASTROS = Depends(require_roles(UserRole.admin, UserRole.cadastros))
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -170,7 +170,7 @@ def _address_fields(row: dict) -> dict:
 # ── Cadastros de apoio ─────────────────────────────────────────────────────────
 
 @router.post("/product-groups")
-async def import_product_groups(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_product_groups(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Colunas: name, ipi. Upsert por name."""
     rows = _read_rows(await _read_upload(file))
     existing = {g.name: g for g in (await db.execute(select(ProductGroup))).scalars().all()}
@@ -200,7 +200,7 @@ async def import_product_groups(file: UploadFile = File(...), db: AsyncSession =
 
 
 @router.post("/product-types")
-async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Colunas: name, group (nome do grupo → FK). Upsert por name."""
     rows = _read_rows(await _read_upload(file))
     existing = {t.name: t for t in (await db.execute(select(ProductType))).scalars().all()}
@@ -237,7 +237,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
 
 
 @router.post("/optionals")
-async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Colunas: category (código), color_name. Upsert por (category, color_name)."""
     rows = _read_rows(await _read_upload(file))
     existing = {
@@ -267,7 +267,7 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
 
 
 @router.post("/representatives")
-async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Colunas: name, phone, email, cep, numero, address, city, state. Upsert por email."""
     rows = _read_rows(await _read_upload(file))
     existing = {r.email.lower(): r for r in (await db.execute(select(Representative))).scalars().all()}
@@ -297,7 +297,7 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
 
 
 @router.post("/clients")
-async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Colunas: name, phone, email, cep, numero, address, city, state, price_profile,
     rep_email (ou rep_name → FK representante). Upsert por email."""
     rows = _read_rows(await _read_upload(file))
@@ -351,7 +351,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
 # ── Catálogo de produtos em duas etapas ────────────────────────────────────────
 
 @router.post("/products")
-async def import_products(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_products(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Etapa 1 — Colunas: product_code, description, type, is_circular,
     altura, largura, profundidade, price_lojista, price_corporativo, observacao.
     Upsert por product_code (SKU)."""
@@ -399,7 +399,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
 
 
 @router.post("/product-optionals")
-async def import_product_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN):
+async def import_product_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
     """Etapa 2 — Colunas: product_code, category, color_name. Cria os vínculos
     N:N produto↔opcional (idempotente via ON CONFLICT DO NOTHING)."""
     rows = _read_rows(await _read_upload(file))

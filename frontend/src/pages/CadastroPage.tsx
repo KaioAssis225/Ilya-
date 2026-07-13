@@ -2525,6 +2525,7 @@ export default function CadastroPage() {
   const visibleTabs = TAB_CONFIG.filter(t => {
     if (isCliente) return t.key === 'opcionais'
     if (isRep) return t.key === 'clientes' || t.key === 'opcionais'
+    if (t.key === 'importacao') return user?.role === 'admin' || user?.role === 'cadastros'
     return true
   })
 
