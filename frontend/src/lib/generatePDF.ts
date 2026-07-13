@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
+import { isConjuntoType } from './productType'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const GOLD: [number, number, number] = [139, 105, 20]
@@ -208,7 +209,10 @@ export async function generateOrderPDF(
     // entre dimensões, observação, opcionais e a lista de componentes.
     const product = products.find((p) => p.product_code === item.product_code)
     const components = product?.components ?? []
-    const hasDims = item.largura !== 0 || item.altura !== 0
+    const isSetProduct = !!product && (product.is_set || isConjuntoType(product.type) || components.length > 0)
+    // O conjunto é apenas o agregador. Suas dimensões pertencem aos componentes,
+    // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
+    const hasDims = !isSetProduct && (item.largura !== 0 || item.altura !== 0)
     const optSlots = Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
       label: catLabel(cat),
       value,

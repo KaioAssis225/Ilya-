@@ -11,6 +11,7 @@ import { useOptionals } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
 import { useAuth } from '../hooks/useAuth'
+import { isConjuntoType } from '../lib/productType'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
@@ -27,6 +28,9 @@ function compFinishes(
 }
 
 function dimLabel(p: Product) {
+  // Conjunto é o agrupador comercial; as medidas pertencem exclusivamente aos
+  // componentes internos e não devem aparecer como 0 × 0 × 0 no item-pai.
+  if (p.is_set || isConjuntoType(p.type) || p.components.length > 0) return null
   return p.is_circular
     ? `Ø ${fmtM(p.largura)} × A ${fmtM(p.altura)} m`
     : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
@@ -866,7 +870,7 @@ export default function OrcamentoPage() {
                 <div className="truncate">
                   <span className="text-gold font-mono font-medium">{p.product_code}</span>
                   <span className="text-ink ml-1.5 font-medium">{p.description}</span>
-                  <div className="text-[9px] text-muted">{dimLabel(p)}</div>
+                  {dimLabel(p) && <div className="text-[9px] text-muted">{dimLabel(p)}</div>}
                 </div>
               </li>
             ))}
@@ -1029,7 +1033,9 @@ export default function OrcamentoPage() {
                                 {item._product.observacao && (
                                   <div className="text-[10px] text-gold italic mt-0.5">{item._product.observacao}</div>
                                 )}
-                                <div className="text-[10px] text-muted mt-0.5">{dimLabel(item._product)}</div>
+                                {dimLabel(item._product) && (
+                                  <div className="text-[10px] text-muted mt-0.5">{dimLabel(item._product)}</div>
+                                )}
                                 <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} catLabel={catLabel} />
                               </div>
                             </div>
