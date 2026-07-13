@@ -198,6 +198,9 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
 
   const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
+  // Respiro após a régua separadora. Sem este avanço, a próxima foto começava
+  // apenas 1 mm abaixo da linha e o topo do texto ficava visualmente cortado.
+  const ROW_SEPARATOR_GAP = 4
 
   for (const item of order.items) {
     // Bloco 79: localiza o produto pelo SKU para extrair os componentes do conjunto
@@ -369,6 +372,7 @@ export async function generateOrderPDF(
     doc.setDrawColor(...LINE)
     doc.setLineWidth(0.1)
     doc.line(20, y - 2, w - 20, y - 2)
+    y += ROW_SEPARATOR_GAP
   }
 
   // ── Rodapé de totais ───────────────────────────────────────────────────────
