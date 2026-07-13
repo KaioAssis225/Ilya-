@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw } from 'lucide-react'
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
@@ -655,6 +655,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
   const [columnWidths, setColumnWidths] = useState<Record<ProductColumnKey, number>>(INITIAL_PRODUCT_COLUMN_WIDTHS)
+  const tableContainerRef = useRef<HTMLDivElement>(null)
 
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
     const width = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[column], Math.min(requestedWidth, 1600))
@@ -662,7 +663,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   }
 
   function autoFitColumn(column: ProductColumnKey) {
-    const cells = document.querySelectorAll<HTMLElement>(`[data-product-col="${column}"]`)
+    const cells = tableContainerRef.current?.querySelectorAll<HTMLElement>(`[data-product-col="${column}"]`)
+    if (!cells) return
     const canvas = document.createElement('canvas')
     const context = canvas.getContext('2d')
     let contentWidth = PRODUCT_COLUMN_MIN_WIDTHS[column]
@@ -680,6 +682,38 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     })
 
     resizeColumn(column, contentWidth)
+  }
+
+  function fitColumnsToContainer() {
+    const availableWidth = Math.floor(tableContainerRef.current?.clientWidth ?? 0)
+    if (availableWidth <= 0) return
+
+    // Distribuição pensada para leitura: descrição e opcionais recebem mais
+    // espaço; todo texto continua visível por quebra de linha, sem reticências.
+    const ratios: Record<ProductColumnKey, number> = {
+      code: 0.11,
+      description: 0.24,
+      dimensions: 0.19,
+      price: 0.14,
+      optionals: 0.15,
+      photo: 0.09,
+      actions: 0.08,
+    }
+    const fitted = {} as Record<ProductColumnKey, number>
+    let assigned = 0
+    const columns = Object.keys(ratios) as ProductColumnKey[]
+    columns.forEach((column, index) => {
+      const width = index === columns.length - 1
+        ? availableWidth - assigned
+        : Math.floor(availableWidth * ratios[column])
+      fitted[column] = width
+      assigned += width
+    })
+    setColumnWidths(fitted)
+  }
+
+  function restoreColumnWidths() {
+    setColumnWidths({ ...INITIAL_PRODUCT_COLUMN_WIDTHS })
   }
 
   function openCreate() {
@@ -782,7 +816,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   }
 
   return (
-    <div>
+    <div className="min-w-0 max-w-full">
       <BatchPhotoUpload products={products ?? []} color={color} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -803,7 +837,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       ) : (
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
-          <div className="md:hidden flex flex-col gap-3">
+          <div className="lg:hidden flex flex-col gap-3">
             {pageItems.map((p) => (
               <div key={p.id} className="bg-[#fcfbfa] border border-line rounded-xl p-3.5 flex gap-3">
                 {p.photo_url
@@ -846,7 +880,33 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
-          <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
+          <div className="hidden lg:flex items-center justify-between gap-4 mb-2">
+            <p className="text-[11px] text-muted">
+              Arraste os divisores para redimensionar ou dê duplo clique para autoajustar.
+            </p>
+            <div className="flex items-center rounded-lg border border-line bg-[#fbfaf8] p-0.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={fitColumnsToContainer}
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-ink-2 hover:bg-white hover:text-ink transition-colors"
+                title="Distribuir as colunas dentro da largura disponível"
+              >
+                <Columns3 className="w-3.5 h-3.5" />
+                Ajustar à tela
+              </button>
+              <span className="h-4 w-px bg-line" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={restoreColumnWidths}
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-muted hover:bg-white hover:text-ink transition-colors"
+                title="Voltar às larguras padrão"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restaurar
+              </button>
+            </div>
+          </div>
+          <div ref={tableContainerRef} className="hidden lg:block w-full max-w-full min-w-0 overflow-x-auto rounded-xl border border-line overscroll-x-contain">
             <table
               className="table-fixed text-sm"
               style={{ width: Object.values(columnWidths).reduce((total, width) => total + width, 0) }}
@@ -889,12 +949,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         ? getProductOptionalsLabel(p, catLabel, ', ')
                         : '—'}
                     </td>
-                    <td data-product-col="photo" className="px-4 py-3 border-r border-line align-top">
+                    <td data-product-col="photo" className="px-2 py-3 border-r border-line align-top">
                       {p.photo_url
                         ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-line" />
                         : <ImageIcon className="w-6 h-6 text-faint" />}
                     </td>
-                    <td data-product-col="actions" className="px-4 py-3 align-top">
+                    <td data-product-col="actions" className="px-2 py-3 align-top">
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
@@ -2584,7 +2644,7 @@ export default function CadastroPage() {
           </aside>
 
           {/* ── Painel de Dados ───────────────────────────────────── */}
-          <main className="bg-white border border-line rounded-xl shadow-sm p-6"
+          <main className="min-w-0 max-w-full bg-white border border-line rounded-xl shadow-sm p-6"
             style={{ borderTop: `3px solid ${activeColor}` }}>
             {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} page={productPage} onPage={setProductPage} />}
 
