@@ -8,13 +8,24 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.config import settings
 from app.models.base import Base
 
 config = context.config
 
+# Read DATABASE_URL directly from the environment rather than through Pydantic
+# settings. During Railway's pre-deploy stage, reference variables such as
+# ${{Postgres.DATABASE_URL}} are expanded directly into the process
+# environment, but Pydantic's BaseSettings may attempt to load from a .env
+# file first and miss the injected value. Reading os.environ directly ensures
+# Alembic always sees the value Railway actually provides.
+_db_url = os.environ.get("DATABASE_URL", "")
+if not _db_url:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. Ensure it is "
+        "configured for this service (e.g. as a Railway reference variable)."
+    )
+
 # Railway provides 'postgresql://' but SQLAlchemy async requires 'postgresql+asyncpg://'
-_db_url = settings.DATABASE_URL
 if _db_url.startswith("postgresql://"):
     _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 config.set_main_option("sqlalchemy.url", _db_url)
