@@ -12,22 +12,39 @@ from app.models.base import Base
 
 config = context.config
 
-# Read DATABASE_URL directly from the environment rather than through Pydantic
-# settings. During Railway's pre-deploy stage, reference variables such as
-# ${{Postgres.DATABASE_URL}} are expanded directly into the process
-# environment, but Pydantic's BaseSettings may attempt to load from a .env
-# file first and miss the injected value. Reading os.environ directly ensures
-# Alembic always sees the value Railway actually provides.
-_db_url = os.environ.get("DATABASE_URL", "")
-if not _db_url:
+# Build the database URL from the individual Postgres environment variables
+# (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE) rather than relying on the
+# DATABASE_URL reference variable. Railway does not expand reference
+# variables such as ${{Postgres.DATABASE_URL}} until the container is fully
+# running, which is after pre-deploy commands (like `alembic upgrade head`)
+# execute. The individual PG* variables, however, are generated directly by
+# Railway's Postgres template and are available during pre-deploy, so we use
+# those to construct the connection string instead.
+_pg_host = os.environ.get("PGHOST", "")
+_pg_port = os.environ.get("PGPORT", "5432")
+_pg_user = os.environ.get("PGUSER", "")
+_pg_password = os.environ.get("PGPASSWORD", "")
+_pg_database = os.environ.get("PGDATABASE", "")
+
+_missing = [
+    name
+    for name, value in (
+        ("PGHOST", _pg_host),
+        ("PGUSER", _pg_user),
+        ("PGPASSWORD", _pg_password),
+        ("PGDATABASE", _pg_database),
+    )
+    if not value
+]
+if _missing:
     raise RuntimeError(
-        "DATABASE_URL environment variable is not set. Ensure it is "
-        "configured for this service (e.g. as a Railway reference variable)."
+        "Missing required Postgres environment variable(s): "
+        f"{', '.join(_missing)}. Ensure they are configured for this service."
     )
 
-# Railway provides 'postgresql://' but SQLAlchemy async requires 'postgresql+asyncpg://'
-if _db_url.startswith("postgresql://"):
-    _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+_db_url = (
+    f"postgresql+asyncpg://{_pg_user}:{_pg_password}@{_pg_host}:{_pg_port}/{_pg_database}"
+)
 config.set_main_option("sqlalchemy.url", _db_url)
 
 if config.config_file_name is not None:
