@@ -45,7 +45,7 @@ Ilya/
 │   ├── Dockerfile
 │   ├── requirements.txt      # Dependências Python
 │   ├── seed.py               # Popula 20 produtos padrão do catálogo
-│   └── seed_admin.py         # Popula usuário admin@ilya.com padrão
+│   └── seed_admin.py         # Cria o administrador configurado no .env
 ├── frontend/
 │   ├── src/
 │   │   ├── api/
@@ -206,7 +206,7 @@ Na raiz do monorepo, execute:
 docker compose up --build -d
 ```
 Isso iniciará:
-*   O banco PostgreSQL na porta `5432`.
+*   O banco PostgreSQL acessível somente pela rede interna do Docker.
 *   O backend FastAPI na porta `8000` (Swagger disponível em `http://localhost:8000/docs`).
 
 ### 4. Carga de Dados Inicial (Seeds)
@@ -218,9 +218,9 @@ docker compose exec backend python seed.py
 # Criar o usuário admin inicial
 docker compose exec backend python seed_admin.py
 ```
-As credenciais criadas são:
-*   **E-mail:** `admin@ilya.com`
-*   **Senha:** `Ilya@2025!`
+O administrador é criado a partir de `ADMIN_EMAIL` e `ADMIN_PASSWORD` do
+arquivo `.env`. Não existem credenciais padrão no repositório. O seed não
+redefine a senha quando o usuário já existe.
 
 ### 5. Executando o Frontend (React/Vite)
 Navegue para a pasta frontend, instale dependências e inicie o servidor:
@@ -230,3 +230,9 @@ npm install
 npm run dev
 ```
 O frontend estará acessível em `http://localhost:5173/`.
+
+## Backup e continuidade
+
+O procedimento de backup verificável, criptografia, retenção, teste de
+restauração e automação no Windows está documentado em
+[`docs/GUIA_INFRA_OPERACOES.md`](docs/GUIA_INFRA_OPERACOES.md).

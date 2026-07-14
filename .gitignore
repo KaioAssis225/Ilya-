@@ -55,3 +55,4 @@ db.sqlite3
 .impeccable/
 fotos/
 backups/
+.secrets/
