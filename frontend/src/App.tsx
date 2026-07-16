@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell, LayoutDashboard } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
 import { AuthProvider } from './contexts/AuthContext'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
 import ProtectedRoute from './components/ProtectedRoute'
 import ProfileModal from './components/ProfileModal'
+import DashboardFab from './components/DashboardFab'
 import LoginPage from './pages/LoginPage'
 import CadastroPage from './pages/CadastroPage'
 import OrcamentoPage from './pages/OrcamentoPage'
@@ -66,6 +67,19 @@ function RoleGuard({ allowed, children }: { allowed: (user: AuthUser) => boolean
   return <>{children}</>
 }
 
+// ── DashboardFabGate: mostra o FAB do Dashboard só em Produtos/Pedidos ────────
+// para quem tem acesso ao BI — substitui o link fixo no menu (Bloco 95).
+
+function DashboardFabGate() {
+  const { user } = useAuth()
+  const location = useLocation()
+  if (!user || user.must_change_password) return null
+  if (!canSeeDashboard(user)) return null
+  const onFabRoute = location.pathname.startsWith('/produtos') || location.pathname.startsWith('/pedidos')
+  if (!onFabRoute) return null
+  return <DashboardFab />
+}
+
 // ── BottomNav ─────────────────────────────────────────────────────────────────
 
 function BottomNav() {
@@ -102,12 +116,6 @@ function BottomNav() {
         <NavLink to="/cadastros" className={itemClass('/cadastros')}>
           <Users className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Cadastros</span>
-        </NavLink>
-      )}
-      {canSeeDashboard(user) && (
-        <NavLink to="/dashboard" className={itemClass('/dashboard')}>
-          <LayoutDashboard className="w-5 h-5" />
-          <span className="text-[9px] font-semibold uppercase tracking-wider">Dashboard</span>
         </NavLink>
       )}
       {canSeeAdmin(user) && (
@@ -159,7 +167,6 @@ function Nav() {
               <NavLink to="/produtos" className={linkClass}>Produtos</NavLink>
               {canSeeOrcamentoPedidos(user) && <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>}
-              {canSeeDashboard(user) && <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>}
               {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass}>Admin</NavLink>}
             </div>
           )}
@@ -290,6 +297,7 @@ export default function App() {
             </Route>
           </Routes>
           <BottomNav />
+          <DashboardFabGate />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

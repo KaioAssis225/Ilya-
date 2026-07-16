@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Download, LayoutDashboard } from 'lucide-react'
 import { useDashboardOverview } from '../hooks/useDashboard'
 import { useRepresentatives } from '../hooks/useRepresentatives'
+import DashboardIntro from '../components/DashboardIntro'
 
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
 const integer = new Intl.NumberFormat('pt-BR')
@@ -101,6 +102,10 @@ export default function DashboardPage() {
   const [activeMetric, setActiveMetric] = useState<MetricKey>('revenue_total')
   const [repsExpanded, setRepsExpanded] = useState(false)
   const [productsExpanded, setProductsExpanded] = useState(false)
+  // Bloco 95: animação de entrada toda vez que a página monta (toda vez que
+  // o usuário entra no módulo), não apenas na primeira visita da sessão.
+  const [showIntro, setShowIntro] = useState(true)
+  const hideIntro = useCallback(() => setShowIntro(false), [])
 
   const { data: reps = [] } = useRepresentatives()
   const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined })
@@ -144,6 +149,13 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-bg">
+      {showIntro && (
+        <DashboardIntro
+          revenueTotal={data ? data.metrics.revenue_total : null}
+          ordersTotal={data ? data.metrics.orders_total : null}
+          onDone={hideIntro}
+        />
+      )}
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
