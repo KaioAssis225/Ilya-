@@ -67,17 +67,16 @@ function RoleGuard({ allowed, children }: { allowed: (user: AuthUser) => boolean
   return <>{children}</>
 }
 
-// ── DashboardFabGate: mostra o FAB do Dashboard só em Produtos/Pedidos ────────
-// para quem tem acesso ao BI — substitui o link fixo no menu (Bloco 95).
+// ── DashboardFabGate: mostra o FAB do Dashboard em toda a aplicação para ──────
+// quem tem acesso ao BI (Bloco 95) — mesmo botão entra e volta do módulo.
 
 function DashboardFabGate() {
   const { user } = useAuth()
   const location = useLocation()
   if (!user || user.must_change_password) return null
   if (!canSeeDashboard(user)) return null
-  const onFabRoute = location.pathname.startsWith('/produtos') || location.pathname.startsWith('/pedidos')
-  if (!onFabRoute) return null
-  return <DashboardFab />
+  if (location.pathname.startsWith('/dashboard')) return <DashboardFab mode="exit" />
+  return <DashboardFab mode="enter" currentPath={location.pathname} />
 }
 
 // ── BottomNav ─────────────────────────────────────────────────────────────────
@@ -86,6 +85,8 @@ function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
   if (!user || user.must_change_password) return null
+  // Bloco 95: Dashboard é um módulo isolado, sem a navegação padrão do app.
+  if (location.pathname.startsWith('/dashboard')) return null
 
   const active = (path: string) => location.pathname.startsWith(path)
 
@@ -139,10 +140,13 @@ function BottomNav() {
 
 function Nav() {
   const { user, logout } = useAuth()
+  const location = useLocation()
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
   const { data: notifications = [] } = useNotifications()
   const markRead = useMarkNotificationRead()
+  // Bloco 95: Dashboard é um módulo isolado, sem o cabeçalho padrão do app.
+  if (location.pathname.startsWith('/dashboard')) return null
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `nav-link ${isActive ? 'nav-link-active' : ''}`
