@@ -338,7 +338,7 @@ export default function AdminPage() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 bg-ink text-white text-sm px-4 py-3 rounded-xl shadow-lg z-50">
+        <div role="status" aria-live="polite" className="fixed bottom-6 right-6 bg-ink text-white text-sm px-4 py-3 rounded-xl shadow-lg z-50">
           {toast}
         </div>
       )}

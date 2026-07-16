@@ -120,7 +120,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
             {!isConjuntoType(product.type) && (
               <div className="flex items-baseline gap-6 py-4 border-y border-[#efe9e1]">
                 <span className="text-[10px] uppercase tracking-[0.15em] text-muted font-semibold flex-shrink-0">Dimensões</span>
-                <span className="text-[15px] text-ink-2">{dimLabel(product)}</span>
+                <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product)}</span>
               </div>
             )}
 
@@ -146,7 +146,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
                           <p className="text-sm font-medium text-ink">{comp.description}</p>
                           <span className="text-xs font-semibold text-ink-2 whitespace-nowrap flex-shrink-0">×{comp.qty}</span>
                         </div>
-                        <p className="text-[10px] text-muted mt-0.5">{dimStr}</p>
+                        <p className="text-[10px] text-muted mt-0.5 font-mono tabular-nums">{dimStr}</p>
                         {catGroups.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {catGroups.map(cat => {

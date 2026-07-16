@@ -217,12 +217,12 @@ function Toast({ message, onDone, variant = 'success' }: { message: string; onDo
     return () => clearTimeout(t)
   }, [onDone])
   return variant === 'error' ? (
-    <div className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-red-200 text-red-700 px-5 py-3 rounded-xl shadow-xl toast max-w-sm">
+    <div role="alert" aria-live="assertive" className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-red-200 text-red-700 px-5 py-3 rounded-xl shadow-xl toast max-w-sm">
       <X className="w-5 h-5 flex-shrink-0" />
       <span className="text-sm font-medium">{message}</span>
     </div>
   ) : (
-    <div className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
+    <div role="status" aria-live="polite" className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
       <CheckCircle className="w-5 h-5" />
       <span className="text-sm font-medium">{message}</span>
     </div>

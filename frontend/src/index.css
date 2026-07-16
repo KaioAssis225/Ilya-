@@ -31,6 +31,10 @@
 
   --radius-control:    0.5rem;   /* inputs, buttons — the one true control radius */
   --radius-card:       0.75rem;  /* cards, panels, tables */
+
+  /* Substitui o monospace genérico do SO nas classes font-mono existentes
+     (códigos de produto, dimensões) por uma fonte técnica self-hosted. */
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 @layer base {
