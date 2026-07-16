@@ -6,9 +6,11 @@ class DashboardMetrics(BaseModel):
     revenue_total: float
     revenue_finalized: float
     revenue_open: float
+    revenue_cancelled: float
     orders_total: int
     orders_finalized: int
     orders_open: int
+    orders_cancelled: int
 
 
 class ChartPoint(BaseModel):

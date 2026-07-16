@@ -44,6 +44,15 @@ export function useFinalizeOrder() {
   })
 }
 
+export function useCancelOrder() {
+  const qc = useQueryClient()
+  return useMutation<Order, Error, { id: string; reason?: string }>({
+    mutationFn: ({ id, reason }) =>
+      api.post(`/orders/${id}/cancel`, { reason: reason ?? null }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
 export function useOrderHistory(orderId: string | null) {
   return useQuery<OrderHistory[]>({
     queryKey: [KEY, orderId, 'history'],

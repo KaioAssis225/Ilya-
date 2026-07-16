@@ -303,6 +303,8 @@ async def update_order(
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido já finalizado e não pode ser editado.")
+    if order.is_cancelled:
+        raise HTTPException(status_code=409, detail="Pedido cancelado e não pode ser editado.")
     if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
@@ -428,6 +430,8 @@ async def finalize_order(
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
+    if order.is_cancelled:
+        raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
     order.is_finalized = True
     if payload.external_code:
         order.external_code = payload.external_code
@@ -441,6 +445,44 @@ async def finalize_order(
     await db.commit()
     await db.refresh(order)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
+    return order
+
+
+class CancelPayload(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/{order_id}/cancel", response_model=OrderRead)
+async def cancel_order(
+    order_id: uuid.UUID,
+    payload: CancelPayload,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not (current_user.role == UserRole.admin or is_internal_operator(current_user) or current_user.role == UserRole.representante):
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    # Representante só cancela os próprios pedidos (mesma regra do update_order/finalize_order)
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
+    if order.is_finalized:
+        raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser cancelado.")
+    if order.is_cancelled:
+        raise HTTPException(status_code=409, detail="Pedido já está cancelado.")
+    order.is_cancelled = True
+    db.add(OrderHistory(
+        id=uuid.uuid4(),
+        order_id=order.id,
+        user_id=current_user.id,
+        action="cancelled",
+        details=payload.reason.strip() if payload.reason and payload.reason.strip() else None,
+    ))
+    await db.commit()
+    await db.refresh(order)
+    logger.info("Pedido cancelado: id=%s user=%s", order_id, current_user.id)
     return order
 
 

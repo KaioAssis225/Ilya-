@@ -24,6 +24,7 @@ class Order(Base, TimestampMixin):
     client_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_finalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     external_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan", lazy="selectin")

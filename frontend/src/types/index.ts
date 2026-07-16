@@ -204,6 +204,7 @@ export interface Order {
   total_ipi: number
   total_with_ipi: number
   is_finalized: boolean
+  is_cancelled: boolean
   external_code: string | null
   notes: string | null
   rep_signed?: boolean

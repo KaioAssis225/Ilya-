@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.api.deps import get_db_session, require_dashboard_access
+from app.core.regions import region_for_state
+from app.models.client import Client
 from app.models.order import Order
 from app.models.representative import Representative
 from app.models.user import User
@@ -29,6 +31,7 @@ async def get_overview(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     rep_id: uuid.UUID | None = Query(default=None),
+    region: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
     _: User = Depends(require_dashboard_access),
 ):
@@ -41,24 +44,35 @@ async def get_overview(
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
-    stmt = select(Order).where(Order.created_at >= start_dt, Order.created_at <= end_dt)
+    # Região não é campo próprio — é derivada do UF já cadastrado no cliente
+    # (Client.state), então o filtro exige join com Client em vez de WHERE direto.
+    stmt = (
+        select(Order, Client.state)
+        .join(Client, Client.id == Order.client_id)
+        .where(Order.created_at >= start_dt, Order.created_at <= end_dt)
+    )
     if rep_id:
         stmt = stmt.where(Order.rep_id == rep_id)
-    orders = (await db.execute(stmt)).scalars().all()
+    rows = (await db.execute(stmt)).all()
+    if region:
+        rows = [(o, uf) for o, uf in rows if region_for_state(uf) == region]
+    orders = [o for o, _ in rows]
 
     # ── Métricas ────────────────────────────────────────────────────────────
-    # Order só tem `is_finalized` (bool) — não existe estado "cancelado" no
-    # modelo atual, por isso as métricas cobrem só total/finalizado/em aberto.
     revenue_total = sum(float(o.total_with_ipi) for o in orders)
     finalized = [o for o in orders if o.is_finalized]
+    cancelled = [o for o in orders if o.is_cancelled]
     revenue_finalized = sum(float(o.total_with_ipi) for o in finalized)
+    revenue_cancelled = sum(float(o.total_with_ipi) for o in cancelled)
     metrics = DashboardMetrics(
         revenue_total=revenue_total,
         revenue_finalized=revenue_finalized,
-        revenue_open=revenue_total - revenue_finalized,
+        revenue_open=revenue_total - revenue_finalized - revenue_cancelled,
+        revenue_cancelled=revenue_cancelled,
         orders_total=len(orders),
         orders_finalized=len(finalized),
-        orders_open=len(orders) - len(finalized),
+        orders_open=len(orders) - len(finalized) - len(cancelled),
+        orders_cancelled=len(cancelled),
     )
 
     # ── Gráfico: granularidade adapta ao tamanho do período (dia/semana/mês) ──

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { Download, LayoutDashboard } from 'lucide-react'
-import { useDashboardOverview } from '../hooks/useDashboard'
+import { useDashboardOverview, DASHBOARD_REGIONS } from '../hooks/useDashboard'
 import { useRepresentatives } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
 
@@ -28,15 +28,17 @@ function todayISO(offsetDays = 0) {
   return d.toISOString().slice(0, 10)
 }
 
-type MetricKey = 'revenue_total' | 'revenue_finalized' | 'revenue_open' | 'orders_total' | 'orders_finalized' | 'orders_open'
+type MetricKey = 'revenue_total' | 'revenue_finalized' | 'revenue_open' | 'revenue_cancelled' | 'orders_total' | 'orders_finalized' | 'orders_open' | 'orders_cancelled'
 
 const METRIC_CONFIG: Record<MetricKey, { label: string; small: string; kind: 'revenue' | 'orders' }> = {
   revenue_total: { label: 'Receita total', small: 'Todos os pedidos', kind: 'revenue' },
   revenue_finalized: { label: 'Receita finalizada', small: 'Pedidos faturados', kind: 'revenue' },
   revenue_open: { label: 'Receita em aberto', small: 'Aguardando finalização', kind: 'revenue' },
+  revenue_cancelled: { label: 'Receita cancelada', small: 'Cancelamentos totais', kind: 'revenue' },
   orders_total: { label: 'Pedidos total', small: 'Todos os status', kind: 'orders' },
   orders_finalized: { label: 'Pedidos finalizados', small: 'Faturados', kind: 'orders' },
   orders_open: { label: 'Pedidos em aberto', small: 'Aguardando finalização', kind: 'orders' },
+  orders_cancelled: { label: 'Pedidos cancelados', small: 'Cancelados totalmente', kind: 'orders' },
 }
 
 function DashboardChart({ series, activeMetric, granularity }: {
@@ -99,6 +101,7 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState(todayISO(-29))
   const [endDate, setEndDate] = useState(todayISO())
   const [repId, setRepId] = useState('')
+  const [region, setRegion] = useState('')
   const [activeMetric, setActiveMetric] = useState<MetricKey>('revenue_total')
   const [repsExpanded, setRepsExpanded] = useState(false)
   const [productsExpanded, setProductsExpanded] = useState(false)
@@ -108,7 +111,7 @@ export default function DashboardPage() {
   const hideIntro = useCallback(() => setShowIntro(false), [])
 
   const { data: reps = [] } = useRepresentatives()
-  const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined })
+  const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined, region: region || undefined })
 
   const chartTotal = useMemo(() => {
     if (!data) return 0
@@ -120,6 +123,7 @@ export default function DashboardPage() {
     setStartDate(todayISO(-29))
     setEndDate(todayISO())
     setRepId('')
+    setRegion('')
   }
 
   function exportCsv() {
@@ -129,9 +133,11 @@ export default function DashboardPage() {
       `Receita total;${data.metrics.revenue_total}`,
       `Receita finalizada;${data.metrics.revenue_finalized}`,
       `Receita em aberto;${data.metrics.revenue_open}`,
+      `Receita cancelada;${data.metrics.revenue_cancelled}`,
       `Pedidos total;${data.metrics.orders_total}`,
       `Pedidos finalizados;${data.metrics.orders_finalized}`,
       `Pedidos em aberto;${data.metrics.orders_open}`,
+      `Pedidos cancelados;${data.metrics.orders_cancelled}`,
       '',
       'Representante;Pedidos;Receita',
       ...data.representatives.map(r => `${r.name};${r.orders};${r.revenue}`),
@@ -174,7 +180,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Filtros */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end mb-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted font-semibold">Data inicial</span>
             <input type="date" className="input" value={startDate} onChange={e => setStartDate(e.target.value)} />
@@ -182,6 +188,13 @@ export default function DashboardPage() {
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted font-semibold">Data final</span>
             <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted font-semibold">Região</span>
+            <select className="input" value={region} onChange={e => setRegion(e.target.value)}>
+              <option value="">Todas</option>
+              {DASHBOARD_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
           </label>
           <label className="flex flex-col gap-1 col-span-2 md:col-span-1">
             <span className="text-xs text-muted font-semibold">Representante</span>
@@ -195,12 +208,13 @@ export default function DashboardPage() {
         {data && (
           <p className="text-right text-[11px] text-muted mb-4">
             {new Date(data.start_date + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(data.end_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+            {region && ` · ${region}`}
             {repId && ` · ${reps.find(r => r.id === repId)?.name ?? ''}`}
           </p>
         )}
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 border border-line rounded-xl bg-white overflow-hidden mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 border border-line rounded-xl bg-white overflow-hidden mb-6">
           {(Object.keys(METRIC_CONFIG) as MetricKey[]).map((key, i) => {
             const config = METRIC_CONFIG[key]
             const value = data?.metrics[key] ?? 0
@@ -209,7 +223,7 @@ export default function DashboardPage() {
               <button
                 key={key}
                 onClick={() => setActiveMetric(key)}
-                className={`text-left p-4 border-line ${i % 3 !== 2 ? 'border-r' : ''} ${i < 3 ? 'border-b' : ''} transition-colors ${selected ? 'bg-[#fdf9f0]' : 'hover:bg-bg'}`}
+                className={`text-left p-4 border-line ${i % 4 !== 3 ? 'border-r' : ''} ${i < 4 ? 'border-b' : ''} transition-colors ${selected ? 'bg-[#fdf9f0]' : 'hover:bg-bg'}`}
                 style={selected ? { boxShadow: 'inset 0 3px #8b6914' } : undefined}
               >
                 <span className="text-xs text-muted">{config.label}</span>

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, Link, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock } from 'lucide-react'
-import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useGlobalOrderHistory } from '../hooks/useOrders'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, Link, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
+import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
 import { useClients } from '../hooks/useClients'
 import { useRepresentatives } from '../hooks/useRepresentatives'
 import { useProducts } from '../hooks/useProducts'
@@ -32,18 +32,21 @@ const ACTION_LABEL: Record<string, string> = {
   created: 'Criado',
   edited: 'Editado',
   finalized: 'Finalizado',
+  cancelled: 'Cancelado',
 }
 
 const ACTION_DOT: Record<string, string> = {
   created: 'bg-olive',
   edited: 'bg-gold',
   finalized: 'bg-[#2c5282]',
+  cancelled: 'bg-terracotta',
 }
 
 const ACTION_BADGE: Record<string, string> = {
   created: 'bg-olive/10 text-olive',
   edited: 'bg-gold/10 text-gold',
   finalized: 'bg-[#2c5282]/10 text-[#2c5282]',
+  cancelled: 'bg-terracotta/10 text-terracotta',
 }
 
 // ── Audit Timeline ─────────────────────────────────────────────────────────────
@@ -125,17 +128,66 @@ function FinalizeModal({ order, onClose }: { order: Order; onClose: () => void }
   )
 }
 
+// ── Cancel Modal ───────────────────────────────────────────────────────────────
+
+function CancelModal({ order, onClose }: { order: Order; onClose: () => void }) {
+  const [reason, setReason] = useState('')
+  const [loading, setLoading] = useState(false)
+  const cancelM = useCancelOrder()
+
+  async function handleSubmit() {
+    setLoading(true)
+    try {
+      await cancelM.mutateAsync({ id: order.id, reason: reason.trim() || undefined })
+      onClose()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-panel w-full max-w-md p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-semibold text-ink">Cancelar Pedido</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink w-9 h-9 flex items-center justify-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-ink-2 mb-4">
+          Pedido <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como cancelado e não poderá mais ser editado ou finalizado.
+        </p>
+        <label className="block space-y-1 mb-5">
+          <span className="text-xs text-muted font-medium">Motivo (opcional)</span>
+          <input
+            className="input w-full"
+            placeholder="Ex: cliente desistiu"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </label>
+        <div className="flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={onClose}>Voltar</button>
+          <button className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-lg text-sm font-semibold hover:bg-[#8a3a2e] transition-colors disabled:opacity-60" disabled={loading} onClick={handleSubmit}>
+            {loading ? 'Cancelando...' : 'Cancelar Pedido'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Modal de detalhes ─────────────────────────────────────────────────────────
 
 function OrderDetailModal({
   order: orderLight, clientName, repName, allOptionals, products,
   userId, userRole, canSignContract, clientObj,
-  onClose, onEdit, onFinalize,
+  onClose, onEdit, onFinalize, onCancel,
 }: {
   order: Order; clientName: string; repName: string
   allOptionals: OptionalColor[]; products: Product[]
   userId: string; userRole: string; canSignContract: boolean; clientObj: Client | null
-  onClose: () => void; onEdit: () => void; onFinalize: () => void
+  onClose: () => void; onEdit: () => void; onFinalize: () => void; onCancel: () => void
 }) {
   const queryClient = useQueryClient()
   // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo.
@@ -273,6 +325,8 @@ function OrderDetailModal({
               <h3 className="text-lg font-semibold text-ink">{order.code}</h3>
               {order.is_finalized
                 ? <span className="flex items-center gap-1 text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> Finalizado</span>
+                : order.is_cancelled
+                ? <span className="flex items-center gap-1 text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full"><Ban className="w-2.5 h-2.5" /> Cancelado</span>
                 : <span className="text-[10px] font-bold bg-yellow-50 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded-full">Em andamento</span>
               }
             </div>
@@ -281,10 +335,13 @@ function OrderDetailModal({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {canManage && !order.is_finalized && (
+            {canManage && !order.is_finalized && !order.is_cancelled && (
               <>
                 <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 border border-line text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
                   <PenLine className="w-3.5 h-3.5" /> Editar
+                </button>
+                <button onClick={onCancel} className="flex items-center gap-1.5 px-3 py-1.5 border border-terracotta text-terracotta rounded-lg text-xs font-semibold hover:bg-[#fbf2f0] transition-colors">
+                  <Ban className="w-3.5 h-3.5" /> Cancelar
                 </button>
                 <button onClick={onFinalize} className="flex items-center gap-1.5 px-3 py-1.5 bg-gold text-white rounded-lg text-xs font-semibold hover:bg-gold-600 transition-colors">
                   <CheckCircle className="w-3.5 h-3.5" /> Finalizar
@@ -576,9 +633,9 @@ function MobileOrderCard({
           </div>
         </div>
         <div className="mt-2">
-          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-            {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-            {order.is_finalized ? 'Finalizado' : 'Em andamento'}
+          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : order.is_cancelled ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
+            {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+            {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
           </span>
         </div>
       </div>
@@ -621,13 +678,14 @@ export default function PedidosPage() {
   const [filter, setFilter] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterRep, setFilterRep] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'in_progress' | 'finalized' | ''>('')
+  const [filterStatus, setFilterStatus] = useState<'in_progress' | 'finalized' | 'cancelled' | ''>('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [viewing, setViewing] = useState<Order | null>(null)
   const [deleting, setDeleting] = useState<Order | null>(null)
   const [finalizing, setFinalizing] = useState<Order | null>(null)
+  const [canceling, setCanceling] = useState<Order | null>(null)
 
   const clientMap = Object.fromEntries(clients.map((c) => [c.id, c.name]))
   const clientObjMap = Object.fromEntries(clients.map((c) => [c.id, c]))
@@ -640,7 +698,11 @@ export default function PedidosPage() {
       (o.code.toLowerCase().includes(q) || o.orc_id.toLowerCase().includes(q) || clientName.includes(q)) &&
       (!filterClient || o.client_id === filterClient) &&
       (!filterRep || o.rep_id === filterRep) &&
-      (!filterStatus || (filterStatus === 'finalized' ? o.is_finalized : !o.is_finalized)) &&
+      (!filterStatus || (
+        filterStatus === 'finalized' ? o.is_finalized :
+        filterStatus === 'cancelled' ? o.is_cancelled :
+        (!o.is_finalized && !o.is_cancelled)
+      )) &&
       (!filterDateFrom || o.created_at >= filterDateFrom) &&
       (!filterDateTo || o.created_at <= filterDateTo + 'T23:59:59')
     )
@@ -706,11 +768,12 @@ export default function PedidosPage() {
               <select
                 className="input text-xs w-full"
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as 'in_progress' | 'finalized' | '')}
+                onChange={(e) => setFilterStatus(e.target.value as 'in_progress' | 'finalized' | 'cancelled' | '')}
               >
                 <option value="">Todos</option>
                 <option value="in_progress">Em andamento</option>
                 <option value="finalized">Finalizados</option>
+                <option value="cancelled">Cancelados</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -796,17 +859,20 @@ export default function PedidosPage() {
                         <td className="px-4 py-3 text-right font-semibold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></td>
                         <td className="px-4 py-3 text-ink-3 text-xs">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-                            {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-                            {order.is_finalized ? 'Finalizado' : 'Em andamento'}
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : order.is_cancelled ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                            {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+                            {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1.5 items-center">
                             <button title="Ver detalhes" className="text-muted hover:text-gold transition-colors p-1" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
                             <button title="Gerar PDF" className="text-muted hover:text-blue-500 transition-colors p-1" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
-                            {canManage && !order.is_finalized && (
-                              <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
+                            {canManage && !order.is_finalized && !order.is_cancelled && (
+                              <>
+                                <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
+                                <button title="Cancelar" className="text-muted hover:text-terracotta transition-colors p-1" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
+                              </>
                             )}
                             <button title="Excluir" className="text-muted hover:text-red-500 transition-colors p-1" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                           </div>
@@ -847,10 +913,12 @@ export default function PedidosPage() {
           onClose={() => setViewing(null)}
           onEdit={() => { setViewing(null); navigate(`/orcamentos?edit=${viewing.id}`) }}
           onFinalize={() => { setFinalizing(viewing); setViewing(null) }}
+          onCancel={() => { setCanceling(viewing); setViewing(null) }}
         />
       )}
 
       {finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} />}
+      {canceling && <CancelModal order={canceling} onClose={() => setCanceling(null)} />}
 
       {deleting && (
         <div className="modal-overlay" onClick={() => setDeleting(null)}>
