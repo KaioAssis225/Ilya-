@@ -124,6 +124,12 @@ A tarefa `Projeto Ilya - Backup de Producao` roda diariamente às 02:00, começa
 assim que possível se o computador estava desligado e não inicia uma segunda
 cópia enquanto a primeira estiver em execução.
 
+Antes do backup, a rotina verifica o Docker Engine. Se estiver parado, inicia o
+Docker Desktop em segundo plano e aguarda até quatro minutos. A tarefa também
+está configurada para despertar o computador quando o Windows permitir. O
+computador precisa estar ligado à energia, conectado à internet e não pode estar
+completamente desligado.
+
 Para testar imediatamente:
 
 ```powershell

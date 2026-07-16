@@ -6,6 +6,7 @@ $LogDir = Join-Path $ProjectRoot "logs\backup"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $LogFile = Join-Path $LogDir ("production-" + (Get-Date -Format "yyyyMMdd") + ".log")
 Start-Transcript -Path $LogFile -Append | Out-Null
+. (Join-Path $PSScriptRoot "ensure-docker.ps1")
 
 if (-not (Test-Path -LiteralPath $SecretFile)) {
     throw "Segredos ausentes. Execute primeiro .\ops\set-backup-secrets.ps1"
@@ -28,6 +29,8 @@ $env:ILYA_EMAIL = $secrets.ilya_api_user
 $env:ILYA_SENHA = ConvertTo-PlainText (ConvertTo-SecureString $secrets.ilya_api_password)
 
 try {
+    Wait-DockerEngine
+
     if (Get-Command py -ErrorAction SilentlyContinue) {
         $PythonExe = "py"
         $PythonPrefix = @("-3.12")

@@ -78,6 +78,7 @@ if not settings.DEBUG and all("localhost" in o or "127.0.0.1" in o for o in _cor
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=settings.BACKEND_CORS_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],

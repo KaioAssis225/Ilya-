@@ -14,7 +14,7 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument (
 )
 $trigger = New-ScheduledTaskTrigger -Daily -At 2am
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
+    -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings `
     -Description "Backup criptografado e teste de restauracao isolada do PostgreSQL de producao."
 

@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
+. (Join-Path $PSScriptRoot "ensure-docker.ps1")
+
+Wait-DockerEngine
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
     $PythonExe = "py"
