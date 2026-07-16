@@ -17,11 +17,12 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const { user, logout } = useAuth()
-  if (!user) return null
-  const userId = user.id
+  const userId = user?.id ?? ''
 
-  const isCliente = user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
-  const [sigData, setSigData] = useState<string | null>(() => getProfileSignature(user.id))
+  const isCliente = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user.linked_id)
+  const [sigData, setSigData] = useState<string | null>(() => (
+    userId ? getProfileSignature(userId) : null
+  ))
   const [sigModalOpen, setSigModalOpen] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -135,10 +136,18 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
 
     function getXY(e: TouchEvent | MouseEvent) {
       const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
       if ('touches' in e) {
-        return { x: (e as TouchEvent).touches[0].clientX - rect.left, y: (e as TouchEvent).touches[0].clientY - rect.top }
+        return {
+          x: ((e as TouchEvent).touches[0].clientX - rect.left) * scaleX,
+          y: ((e as TouchEvent).touches[0].clientY - rect.top) * scaleY,
+        }
       }
-      return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
+      return {
+        x: ((e as MouseEvent).clientX - rect.left) * scaleX,
+        y: ((e as MouseEvent).clientY - rect.top) * scaleY,
+      }
     }
     function onStart(e: TouchEvent | MouseEvent) {
       e.preventDefault(); isDrawingRef.current = true
@@ -153,18 +162,28 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
     canvas.addEventListener('mousedown', onStart)
     canvas.addEventListener('mousemove', onMove)
     canvas.addEventListener('mouseup', onEnd)
+    canvas.addEventListener('mouseleave', onEnd)
     canvas.addEventListener('touchstart', onStart, { passive: false })
     canvas.addEventListener('touchmove', onMove, { passive: false })
     canvas.addEventListener('touchend', onEnd)
+    canvas.addEventListener('touchcancel', onEnd)
     return () => {
       canvas.removeEventListener('mousedown', onStart)
       canvas.removeEventListener('mousemove', onMove)
       canvas.removeEventListener('mouseup', onEnd)
+      canvas.removeEventListener('mouseleave', onEnd)
       canvas.removeEventListener('touchstart', onStart)
       canvas.removeEventListener('touchmove', onMove)
       canvas.removeEventListener('touchend', onEnd)
+      canvas.removeEventListener('touchcancel', onEnd)
     }
   }, [sigModalOpen])
+
+  useEffect(() => {
+    setSigData(userId ? getProfileSignature(userId) : null)
+  }, [userId])
+
+  if (!user) return null
 
   function confirmSig() {
     const data = canvasRef.current!.toDataURL('image/png')

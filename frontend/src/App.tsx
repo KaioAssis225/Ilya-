@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
@@ -10,15 +10,17 @@ import ProtectedRoute from './components/ProtectedRoute'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 import LoginPage from './pages/LoginPage'
-import CadastroPage from './pages/CadastroPage'
-import OrcamentoPage from './pages/OrcamentoPage'
-import PedidosPage from './pages/PedidosPage'
-import ProdutosPage from './pages/ProdutosPage'
-import AdminPage from './pages/AdminPage'
-import DashboardPage from './pages/DashboardPage'
-import TrocarSenhaPage from './pages/TrocarSenhaPage'
-import SignContractPage from './pages/SignContractPage'
-import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
+// Rotas além do login são code-split — reduz o bundle inicial que o usuário
+// não autenticado precisa baixar antes de ver a tela de entrada.
+const CadastroPage = lazy(() => import('./pages/CadastroPage'))
+const OrcamentoPage = lazy(() => import('./pages/OrcamentoPage'))
+const PedidosPage = lazy(() => import('./pages/PedidosPage'))
+const ProdutosPage = lazy(() => import('./pages/ProdutosPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
+const SignContractPage = lazy(() => import('./pages/SignContractPage'))
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,37 +98,38 @@ function BottomNav() {
     }`
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe">
-      <NavLink to="/produtos" className={itemClass('/produtos')}>
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe" aria-label="Navegação principal">
+      <NavLink to="/produtos" className={itemClass('/produtos')} aria-label="Produtos">
         <LayoutGrid className="w-5 h-5" />
         <span className="text-[9px] font-semibold uppercase tracking-wider">Produtos</span>
       </NavLink>
       {canSeeOrcamentoPedidos(user) && (
-        <NavLink to="/orcamentos" className={itemClass('/orcamentos')}>
+        <NavLink to="/orcamentos" className={itemClass('/orcamentos')} aria-label="Novo Orçamento">
           <ShoppingCart className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Orçamento</span>
         </NavLink>
       )}
       {canSeeOrcamentoPedidos(user) && (
-        <NavLink to="/pedidos" className={itemClass('/pedidos')}>
+        <NavLink to="/pedidos" className={itemClass('/pedidos')} aria-label="Pedidos">
           <ClipboardList className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Pedidos</span>
         </NavLink>
       )}
       {canSeeCadastros(user) && (
-        <NavLink to="/cadastros" className={itemClass('/cadastros')}>
+        <NavLink to="/cadastros" className={itemClass('/cadastros')} aria-label="Cadastros">
           <Users className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Cadastros</span>
         </NavLink>
       )}
       {canSeeAdmin(user) && (
-        <NavLink to="/admin" className={itemClass('/admin')}>
+        <NavLink to="/admin" className={itemClass('/admin')} aria-label="Admin">
           <ShieldCheck className="w-5 h-5" />
           <span className="text-[9px] font-semibold uppercase tracking-wider">Admin</span>
         </NavLink>
       )}
       <button
         onClick={logout}
+        aria-label="Sair"
         className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-muted-3 active:text-ink transition-colors"
       >
         <LogOut className="w-5 h-5" />
@@ -157,7 +160,7 @@ function Nav() {
 
   return (
     <>
-      <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+      <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label="Navegação principal">
         <div className="flex items-center gap-1">
           <h1
             className="text-base font-semibold tracking-widest mr-5 text-ink"
@@ -167,11 +170,11 @@ function Nav() {
           </h1>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
-              {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass}>Cadastros</NavLink>}
-              <NavLink to="/produtos" className={linkClass}>Produtos</NavLink>
-              {canSeeOrcamentoPedidos(user) && <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>}
-              {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>}
-              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass}>Admin</NavLink>}
+              {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label="Cadastros">Cadastros</NavLink>}
+              <NavLink to="/produtos" className={linkClass} aria-label="Produtos">Produtos</NavLink>
+              {canSeeOrcamentoPedidos(user) && <NavLink to="/orcamentos" className={linkClass} aria-label="Novo Orçamento">Novo Orçamento</NavLink>}
+              {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label="Pedidos">Pedidos</NavLink>}
+              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label="Admin">Admin</NavLink>}
             </div>
           )}
         </div>
@@ -181,6 +184,7 @@ function Nav() {
               onClick={() => setShowNotifs(v => !v)}
               className="relative text-muted-2 hover:text-gold transition-colors p-1"
               title="Notificações"
+              aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
@@ -219,6 +223,7 @@ function Nav() {
           <button
             onClick={() => setShowProfile(true)}
             className="text-right hover:opacity-70 transition-opacity cursor-pointer"
+            aria-label={`Abrir perfil de ${user.full_name}`}
           >
             <span className="block font-medium text-ink max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
             <span className="hidden sm:block text-[10px] uppercase tracking-wider text-gold/80">{user.role}</span>
@@ -238,6 +243,15 @@ function Nav() {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]" role="status" aria-live="polite">
+      <span className="sr-only">Carregando…</span>
+      <div className="w-8 h-8 rounded-full border-2 border-gold/25 border-t-gold animate-spin" aria-hidden="true" />
+    </div>
+  )
+}
+
 function RootRedirect() {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
@@ -249,57 +263,67 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
+          >
+            Pular para o conteúdo
+          </a>
           <Nav />
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/sign-contract" element={<SignContractPage />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-            <Route element={<ProtectedRoute />}>
-              <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
-              <Route path="/" element={<RootRedirect />} />
-              <Route
-                path="/cadastros"
-                element={
-                  <RoleGuard allowed={canSeeCadastros}>
-                    <CadastroPage />
-                  </RoleGuard>
-                }
-              />
-              <Route path="/produtos" element={<ProdutosPage />} />
-              <Route
-                path="/orcamentos"
-                element={
-                  <RoleGuard allowed={canSeeOrcamentoPedidos}>
-                    <OrcamentoPage />
-                  </RoleGuard>
-                }
-              />
-              <Route
-                path="/pedidos"
-                element={
-                  <RoleGuard allowed={canSeeOrcamentoPedidos}>
-                    <PedidosPage />
-                  </RoleGuard>
-                }
-              />
-              <Route
-                path="/admin"
-                element={
-                  <RoleGuard allowed={canSeeAdmin}>
-                    <AdminPage />
-                  </RoleGuard>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <RoleGuard allowed={canSeeDashboard}>
-                    <DashboardPage />
-                  </RoleGuard>
-                }
-              />
-            </Route>
-          </Routes>
+          <main id="main-content">
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/sign-contract" element={<SignContractPage />} />
+                <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
+                  <Route path="/" element={<RootRedirect />} />
+                  <Route
+                    path="/cadastros"
+                    element={
+                      <RoleGuard allowed={canSeeCadastros}>
+                        <CadastroPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route path="/produtos" element={<ProdutosPage />} />
+                  <Route
+                    path="/orcamentos"
+                    element={
+                      <RoleGuard allowed={canSeeOrcamentoPedidos}>
+                        <OrcamentoPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/pedidos"
+                    element={
+                      <RoleGuard allowed={canSeeOrcamentoPedidos}>
+                        <PedidosPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      <RoleGuard allowed={canSeeAdmin}>
+                        <AdminPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <RoleGuard allowed={canSeeDashboard}>
+                        <DashboardPage />
+                      </RoleGuard>
+                    }
+                  />
+                </Route>
+              </Routes>
+            </Suspense>
+          </main>
           <BottomNav />
           <DashboardFabGate />
         </BrowserRouter>

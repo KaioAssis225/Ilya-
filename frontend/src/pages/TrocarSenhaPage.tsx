@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { KeyRound, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
@@ -14,8 +14,7 @@ export default function TrocarSenhaPage() {
   const [loading, setLoading] = useState(false)
 
   if (user && !user.must_change_password) {
-    navigate('/', { replace: true })
-    return null
+    return <Navigate to="/" replace />
   }
 
   async function handleSubmit(e: FormEvent) {
