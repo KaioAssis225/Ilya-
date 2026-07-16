@@ -384,7 +384,8 @@ export default function ProdutosPage() {
           <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
             {/* Galeria: fotos são todas 1600×1600, então a imagem sangra até a
                 borda do card (sem moldura dupla, sem corte) com zoom sutil no
-                hover. Título em serif (h3 herda Cormorant do CSS base). */}
+                hover. O título usa Inter para manter letras, códigos e medidas
+                numericamente uniformes no catálogo comercial. */}
             {filtered.map(product => (
               <button
                 key={product.id}
@@ -418,7 +419,7 @@ export default function ProdutosPage() {
                       <span className="text-[9px] text-muted uppercase tracking-[0.14em] whitespace-nowrap">{product.type}</span>
                     )}
                   </div>
-                  <h3 className="text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
+                  <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
                     {product.description}
                   </h3>
                 </div>
