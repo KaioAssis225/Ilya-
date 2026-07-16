@@ -80,6 +80,22 @@ def is_internal_operator(user: User) -> bool:
     return user.role == UserRole.vendedor and user.linked_id is None
 
 
+def require_dashboard_access(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Bloco 95: acesso ao Dashboard BI. Role `executivo` sempre entra; qualquer
+    outra role entra somente com a flag `can_view_dashboard` habilitada pelo
+    admin (a flag não altera nenhuma outra permissão do usuário)."""
+    if current_user.role == UserRole.admin:
+        return current_user
+    if current_user.role == UserRole.executivo or current_user.can_view_dashboard:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Operação não permitida para o seu nível de acesso.",
+    )
+
+
 def require_roles(*allowed_roles: UserRole):
     def dependency(current_user: User = Depends(get_current_user)):
         if current_user.role == UserRole.admin:

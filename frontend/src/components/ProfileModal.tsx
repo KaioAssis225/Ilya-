@@ -12,6 +12,7 @@ const ROLE_LABELS: Record<string, string> = {
   cadastros: 'Cadastros',
   produtos: 'Produtos',
   cliente: 'Cliente',
+  executivo: 'Executivo',
 }
 
 export default function ProfileModal({ onClose }: { onClose: () => void }) {

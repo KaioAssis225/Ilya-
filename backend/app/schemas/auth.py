@@ -26,6 +26,7 @@ class UserRead(BaseModel):
     is_active: bool
     must_change_password: bool
     max_discount: Decimal = Decimal("0.00")
+    can_view_dashboard: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -44,6 +45,7 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     rep_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
+    can_view_dashboard: Optional[bool] = None
 
 
 class UserPasswordReset(BaseModel):

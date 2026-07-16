@@ -13,6 +13,7 @@ class UserRole(str, enum.Enum):
     cadastros = "cadastros"
     produtos = "produtos"
     cliente = "cliente"            # conta de portal do cliente-final (linked_id = client_id)
+    executivo = "executivo"        # acesso exclusivo ao Dashboard BI (Bloco 95)
 
 
 class User(Base, TimestampMixin):
@@ -31,3 +32,6 @@ class User(Base, TimestampMixin):
     auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Bloco 95: admin pode habilitar o Dashboard BI para qualquer role sem alterar
+    # as demais permissões. Role `executivo` sempre tem acesso, independente da flag.
+    can_view_dashboard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

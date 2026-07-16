@@ -6,25 +6,27 @@ export interface UserRead {
   email: string
   username: string | null
   full_name: string
-  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
+  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id: string | null
   is_active: boolean
+  can_view_dashboard: boolean
 }
 
 export interface UserCreate {
   email: string
   password: string
   full_name: string
-  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
+  role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id?: string | null
 }
 
 export interface UserUpdate {
   email?: string
   full_name?: string
-  role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
+  role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id?: string | null
   is_active?: boolean
+  can_view_dashboard?: boolean
 }
 
 export function useUsers() {

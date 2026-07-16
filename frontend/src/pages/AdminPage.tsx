@@ -11,6 +11,7 @@ const ROLE_LABEL: Record<string, string> = {
   cadastros: 'Cadastros',
   produtos: 'Produtos',
   cliente: 'Cliente',
+  executivo: 'Executivo',
 }
 
 const ROLE_COLOR: Record<string, string> = {
@@ -20,6 +21,7 @@ const ROLE_COLOR: Record<string, string> = {
   cadastros: '#7a5a9b',
   produtos: '#9b5a50',
   cliente: '#a08558',
+  executivo: '#5a7a8b',
 }
 
 type ModalMode = 'create' | 'edit' | 'password' | 'delete'
@@ -55,7 +57,7 @@ export default function AdminPage() {
   }
 
   function openEdit(u: UserRead) {
-    setEditForm({ email: u.email, full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active })
+    setEditForm({ email: u.email, full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard })
     setError(null)
     setModal({ mode: 'edit', user: u })
   }
@@ -214,6 +216,7 @@ export default function AdminPage() {
                     <option value="representante">Representante</option>
                     <option value="cadastros">Cadastros</option>
                     <option value="produtos">Produtos</option>
+                    <option value="executivo">Executivo</option>
                     <option value="admin">Administrador</option>
                   </select>
                 </label>
@@ -258,6 +261,7 @@ export default function AdminPage() {
                     <option value="representante">Representante</option>
                     <option value="cadastros">Cadastros</option>
                     <option value="produtos">Produtos</option>
+                    <option value="executivo">Executivo</option>
                     <option value="admin">Administrador</option>
                   </select>
                 </label>
@@ -274,6 +278,12 @@ export default function AdminPage() {
                   <input type="checkbox" checked={editForm.is_active ?? true} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} className="w-4 h-4 accent-gold" />
                   <span className="text-sm text-ink-2">Usuário ativo</span>
                 </label>
+                {editForm.role !== 'executivo' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={editForm.can_view_dashboard ?? false} onChange={e => setEditForm({ ...editForm, can_view_dashboard: e.target.checked })} className="w-4 h-4 accent-gold" />
+                    <span className="text-sm text-ink-2">Pode ver o Dashboard BI</span>
+                  </label>
+                )}
                 {error && <p className="text-xs text-terracotta">{error}</p>}
                 <div className="flex gap-2 pt-1">
                   <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>

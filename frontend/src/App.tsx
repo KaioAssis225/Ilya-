@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell, LayoutDashboard } from 'lucide-react'
 import { AuthProvider } from './contexts/AuthContext'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
@@ -14,6 +14,7 @@ import OrcamentoPage from './pages/OrcamentoPage'
 import PedidosPage from './pages/PedidosPage'
 import ProdutosPage from './pages/ProdutosPage'
 import AdminPage from './pages/AdminPage'
+import DashboardPage from './pages/DashboardPage'
 import TrocarSenhaPage from './pages/TrocarSenhaPage'
 import SignContractPage from './pages/SignContractPage'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
@@ -32,18 +33,25 @@ function isCliente(user: AuthUser) {
 }
 
 function canSeeOrcamentoPedidos(user: AuthUser) {
-  return user.role !== 'cadastros'
+  return user.role !== 'cadastros' && user.role !== 'executivo'
 }
 
 function canSeeCadastros(user: AuthUser) {
-  return !isCliente(user)
+  return !isCliente(user) && user.role !== 'executivo'
 }
 
 function canSeeAdmin(user: AuthUser) {
   return user.role === 'admin'
 }
 
+// Bloco 95: role executivo (ou qualquer role com a flag habilitada pelo admin)
+// só acessa a aba Dashboard.
+function canSeeDashboard(user: AuthUser) {
+  return user.role === 'admin' || user.role === 'executivo' || user.can_view_dashboard
+}
+
 function defaultRoute(user: AuthUser) {
+  if (user.role === 'executivo') return '/dashboard'
   if (user.role === 'representante') return '/orcamentos'
   if (canSeeCadastros(user)) return '/cadastros'
   return '/orcamentos'
@@ -96,6 +104,12 @@ function BottomNav() {
           <span className="text-[9px] font-semibold uppercase tracking-wider">Cadastros</span>
         </NavLink>
       )}
+      {canSeeDashboard(user) && (
+        <NavLink to="/dashboard" className={itemClass('/dashboard')}>
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[9px] font-semibold uppercase tracking-wider">Dashboard</span>
+        </NavLink>
+      )}
       {canSeeAdmin(user) && (
         <NavLink to="/admin" className={itemClass('/admin')}>
           <ShieldCheck className="w-5 h-5" />
@@ -145,6 +159,7 @@ function Nav() {
               <NavLink to="/produtos" className={linkClass}>Produtos</NavLink>
               {canSeeOrcamentoPedidos(user) && <NavLink to="/orcamentos" className={linkClass}>Novo Orçamento</NavLink>}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass}>Pedidos</NavLink>}
+              {canSeeDashboard(user) && <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>}
               {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass}>Admin</NavLink>}
             </div>
           )}
@@ -261,6 +276,14 @@ export default function App() {
                 element={
                   <RoleGuard allowed={canSeeAdmin}>
                     <AdminPage />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <RoleGuard allowed={canSeeDashboard}>
+                    <DashboardPage />
                   </RoleGuard>
                 }
               />

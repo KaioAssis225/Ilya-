@@ -4,7 +4,7 @@ import axios from 'axios'
 import { authApi, bindAuthHandlers } from '../lib/api'
 import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 
-export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente'
+export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
 
 export interface AuthUser {
   id: string
@@ -17,6 +17,7 @@ export interface AuthUser {
   is_active: boolean
   must_change_password: boolean
   max_discount: number
+  can_view_dashboard: boolean
 }
 
 interface AuthState {
