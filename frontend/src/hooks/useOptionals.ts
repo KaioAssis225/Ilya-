@@ -14,6 +14,28 @@ export function useOptionals(category?: string) {
   })
 }
 
+export function useOptionalsForCategories(categories: string[], enabled = true) {
+  const normalized = Array.from(new Set(categories)).sort()
+  return useQuery<OptionalColor[]>({
+    queryKey: [KEY, 'categories', normalized],
+    queryFn: async () => {
+      const batches = Array.from(
+        { length: Math.ceil(normalized.length / 50) },
+        (_, index) => normalized.slice(index * 50, (index + 1) * 50),
+      )
+      const responses = await Promise.all(
+        batches.map((categoryBatch) =>
+          api.get<OptionalColor[]>('/optionals', {
+            params: { categories: categoryBatch.join(','), limit: 5000 },
+          }),
+        ),
+      )
+      return responses.flatMap((response) => response.data)
+    },
+    enabled: enabled && normalized.length > 0,
+  })
+}
+
 export function useCreateOptional() {
   const qc = useQueryClient()
   return useMutation<OptionalColor, Error, OptionalColorCreate>({

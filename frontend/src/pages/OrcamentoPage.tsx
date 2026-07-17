@@ -2,12 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine } from 'lucide-react'
-import { useProducts } from '../hooks/useProducts'
+import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
-import { useClients, useCreateClient } from '../hooks/useClients'
-import { useRepresentatives, useCreateRepresentative } from '../hooks/useRepresentatives'
-import { useCreateOrder, useOrders, useUpdateOrder, useOrder } from '../hooks/useOrders'
-import { useOptionals } from '../hooks/useOptionals'
+import { useClient, useClientsPage, useCreateClient } from '../hooks/useClients'
+import { useRepresentative, useRepresentativesPage, useCreateRepresentative } from '../hooks/useRepresentatives'
+import { useCreateOrder, useUpdateOrder, useOrder } from '../hooks/useOrders'
+import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
 import { useAuth } from '../hooks/useAuth'
@@ -15,6 +15,15 @@ import { isConjuntoType } from '../lib/productType'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 // Acabamentos de um componente de conjunto: "Alumínio: Taupe · Teka: Polywood"
 function compFinishes(
@@ -39,14 +48,14 @@ function dimLabel(p: Product) {
 // ── Autocomplete ──────────────────────────────────────────────────────────────
 
 function Autocomplete<T extends { id: string }>({
-  searchPlaceholder, items, value, getLabel, getSearch, onChange, onClear, displayPlaceholder = "Nenhum", showQuickAdd, onQuickAdd
+  searchPlaceholder, items, value, query, getLabel, getSearch, onChange, onClear, displayPlaceholder = "Nenhum", showQuickAdd, onQuickAdd, onQueryChange, isLoading = false
 }: {
-  searchPlaceholder: string; items: T[]; value: T | null
+  searchPlaceholder: string; items: T[]; value: T | null; query: string
   getLabel: (item: T) => string; getSearch: (item: T) => string
   onChange: (item: T) => void; onClear: () => void; displayPlaceholder?: string
   showQuickAdd?: boolean; onQuickAdd?: () => void
+  onQueryChange: (query: string) => void; isLoading?: boolean
 }) {
-  const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -68,7 +77,15 @@ function Autocomplete<T extends { id: string }>({
             {value ? getLabel(value) : displayPlaceholder}
           </span>
           {value && (
-            <button type="button" onClick={onClear} className="text-muted hover:text-ink transition-colors w-11 h-11 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                onClear()
+                onQueryChange('')
+                setOpen(false)
+              }}
+              className="text-muted hover:text-ink transition-colors w-11 h-11 flex items-center justify-center"
+            >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
@@ -84,17 +101,30 @@ function Autocomplete<T extends { id: string }>({
           className="input w-full text-xs placeholder:text-faint border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
           placeholder={searchPlaceholder}
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+          onChange={(e) => {
+            onQueryChange(e.target.value)
+            setOpen(true)
+          }}
           onFocus={() => setOpen(true)}
         />
-        {open && filtered.length > 0 && (
+        {open && (isLoading || filtered.length > 0 || query.length > 0) && (
           <ul className="absolute z-30 w-full mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
+            {isLoading && (
+              <li className="px-3 py-2 text-xs text-muted">Buscando…</li>
+            )}
             {filtered.slice(0, 15).map((item) => (
               <li key={item.id} className="px-3 py-2 text-xs text-ink hover:bg-bg cursor-pointer transition-colors"
-                onMouseDown={() => { onChange(item); setQuery(''); setOpen(false) }}>
+                onMouseDown={() => {
+                  onChange(item)
+                  onQueryChange('')
+                  setOpen(false)
+                }}>
                 {getLabel(item)}
               </li>
             ))}
+            {!isLoading && filtered.length === 0 && (
+              <li className="px-3 py-2 text-xs text-muted">Nenhum resultado.</li>
+            )}
           </ul>
         )}
       </div>
@@ -207,6 +237,26 @@ interface CartItem {
   discount: number
   opt_categories: Partial<Record<string, string>>
   _product: Product
+}
+
+type PersistedCartItem = Omit<CartItem, '_product'>
+const EMPTY_PRODUCTS: Product[] = []
+
+function readPersistedCart(): PersistedCartItem[] {
+  try {
+    const raw = localStorage.getItem('carrinho_orcamento')
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is PersistedCartItem =>
+      !!item
+      && typeof item.product_code === 'string'
+      && Number.isFinite(Number(item.qty))
+      && typeof item.opt_categories === 'object'
+    )
+  } catch {
+    return []
+  }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -420,7 +470,9 @@ function LockedField({ label, value }: { label: string; value: string }) {
 
 function OrderForm({
   reps, clients, selectedRep, selectedClient, notes,
+  repQuery, clientQuery,
   onRepChange, onClientChange, onNotesChange,
+  onRepSearch, onClientSearch, repsLoading, clientsLoading,
   onQuickAddRep, onQuickAddClient,
   budgetCode, cart, onSubmit, isGenerating,
   repLocked, clientLocked,
@@ -428,9 +480,14 @@ function OrderForm({
 }: {
   reps: Representative[]; clients: Client[]
   selectedRep: Representative | null; selectedClient: Client | null; notes: string
+  repQuery: string; clientQuery: string
   onRepChange: (r: Representative | null) => void
   onClientChange: (c: Client | null) => void
   onNotesChange: (n: string) => void
+  onRepSearch: (query: string) => void
+  onClientSearch: (query: string) => void
+  repsLoading?: boolean
+  clientsLoading?: boolean
   onQuickAddRep: () => void; onQuickAddClient: () => void
   budgetCode: string; cart: CartItem[]
   onSubmit: () => void; isGenerating: boolean
@@ -458,10 +515,13 @@ function OrderForm({
             searchPlaceholder="Buscar representante..."
             items={reps}
             value={selectedRep}
+            query={repQuery}
             getLabel={(r) => `${r.name} — ${r.city}/${r.state}`}
             getSearch={(r) => `${r.name} ${r.email} ${r.city}`}
             onChange={onRepChange}
             onClear={() => onRepChange(null)}
+            onQueryChange={onRepSearch}
+            isLoading={repsLoading}
             displayPlaceholder="Nenhum"
             showQuickAdd
             onQuickAdd={onQuickAddRep}
@@ -474,24 +534,21 @@ function OrderForm({
       ) : (
         <div className="space-y-1">
           <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Cliente</span>
-          {repLocked && clients.length === 0 ? (
-            <div className="flex items-start gap-2 bg-[#fef3f2] border border-red-200 rounded-lg px-3 py-2.5">
-              <span className="text-[11px] text-red-700 leading-snug">Nenhum cliente vinculado à sua conta. Solicite ao administrador para associar clientes ao seu perfil.</span>
-            </div>
-          ) : (
-            <Autocomplete
-              searchPlaceholder="Buscar cliente..."
-              items={clients}
-              value={selectedClient}
-              getLabel={(c) => `${c.name} — ${c.city}/${c.state}`}
-              getSearch={(c) => `${c.name} ${c.email} ${c.city}`}
-              onChange={onClientChange}
-              onClear={() => onClientChange(null)}
-              displayPlaceholder="Selecione o cliente..."
-              showQuickAdd
-              onQuickAdd={onQuickAddClient}
-            />
-          )}
+          <Autocomplete
+            searchPlaceholder="Buscar cliente..."
+            items={clients}
+            value={selectedClient}
+            query={clientQuery}
+            getLabel={(c) => `${c.name} — ${c.city}/${c.state}`}
+            getSearch={(c) => `${c.name} ${c.email} ${c.city}`}
+            onChange={onClientChange}
+            onClear={() => onClientChange(null)}
+            onQueryChange={onClientSearch}
+            isLoading={clientsLoading}
+            displayPlaceholder="Selecione o cliente..."
+            showQuickAdd
+            onQuickAdd={onQuickAddClient}
+          />
         </div>
       )}
 
@@ -550,18 +607,6 @@ export default function OrcamentoPage() {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit')
-  const { data: products = [] } = useProducts()
-  const { data: allOptionals = [] } = useOptionals()
-  const { data: optCategories = [] } = useOptionalCategories()
-  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
-  const { data: clients = [] } = useClients()
-  const { data: reps = [] } = useRepresentatives()
-  const { data: orders = [] } = useOrders()
-  const { data: editOrder } = useOrder(editId ?? '')
-  const createOrderM = useCreateOrder()
-  const updateOrderM = useUpdateOrder()
-  const createClientM = useCreateClient()
-  const createRepM = useCreateRepresentative()
 
   // Locking flags
   const isRep = user?.role === 'representante'
@@ -571,99 +616,208 @@ export default function OrcamentoPage() {
   const clientLocked = isClientUser
 
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
-  // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62)
-  const priceProfile = selectedClient?.price_profile ?? 'lojista'
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
-  // BUG-01 (Bloco 88): a hidratação só pode acontecer DEPOIS da query de produtos
-  // carregar — no mount, products=[] fazia o filtro descartar todos os itens e o
-  // efeito de persistência gravava o carrinho vazio de volta, apagando-o no F5.
-  const cartLoadedRef = useRef(false)
+  const [persistedCart] = useState<PersistedCartItem[]>(readPersistedCart)
+  const [savedClientId, setSavedClientId] = useState(() => localStorage.getItem('orcamento_client_id') ?? '')
+  // null = nenhuma preferência gravada; vazio = remoção explícita.
+  const [savedRepId, setSavedRepId] = useState<string | null>(() => localStorage.getItem('orcamento_rep_id'))
+  const [cartHydrated, setCartHydrated] = useState(false)
+  const [productQuery, setProductQuery] = useState('')
+  const [clientQuery, setClientQuery] = useState('')
+  const [repQuery, setRepQuery] = useState('')
+  const [productOpen, setProductOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [cartFilter, setCartFilter] = useState('')
+  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
+  const [quickModal, setQuickModal] = useState<'client' | 'rep' | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const productRef = useRef<HTMLDivElement>(null)
+
+  const debouncedProductQuery = useDebouncedValue(productQuery.trim(), 300)
+  const debouncedClientQuery = useDebouncedValue(clientQuery.trim(), 300)
+  const debouncedRepQuery = useDebouncedValue(repQuery.trim(), 300)
+
+  const editOrderQuery = useOrder(editId ?? '')
+  const editOrder = editOrderQuery.data
+  const productSearch = useProductsPage({
+    skip: 0,
+    limit: 15,
+    q: debouncedProductQuery || undefined,
+    include_total: false,
+    sort_by: 'product_code',
+    sort_dir: 'asc',
+  })
+  const products = productSearch.data?.items ?? EMPTY_PRODUCTS
+  const clientSearch = useClientsPage({
+    skip: 0,
+    limit: 15,
+    q: debouncedClientQuery || undefined,
+    include_total: false,
+    sort_by: 'name',
+    sort_dir: 'asc',
+  })
+  const clients = clientSearch.data?.items ?? []
+  const repSearch = useRepresentativesPage({
+    skip: 0,
+    limit: 15,
+    q: debouncedRepQuery || undefined,
+    include_total: false,
+    sort_by: 'name',
+    sort_dir: 'asc',
+  })
+  const reps = repSearch.data?.items ?? []
+
+  const neededProductCodes = Array.from(new Set([
+    ...(!editId ? persistedCart.map((item) => item.product_code) : []),
+    ...(editOrder?.items.map((item) => item.product_code) ?? []),
+    ...cart.map((item) => item.product_code),
+  ]))
+  const resolvedProductQuery = useProductsByCodes(
+    neededProductCodes,
+    neededProductCodes.length > 0,
+  )
+  const resolvedProducts = resolvedProductQuery.data ?? EMPTY_PRODUCTS
+
+  const freeOptionalCategories = Array.from(new Set(
+    cart.flatMap((item) =>
+      (item._product.all_optionals_categories ?? '')
+        .split(',')
+        .map((category) => category.trim())
+        .filter(Boolean)
+    ),
+  ))
+  const { data: allOptionals = [] } = useOptionalsForCategories(
+    freeOptionalCategories,
+    freeOptionalCategories.length > 0,
+  )
+  const { data: optCategories = [] } = useOptionalCategories()
+  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
+
+  const targetClientId = (
+    (isClientUser ? user?.linked_id : null)
+    || editOrder?.client_id
+    || (!editId && !clientLocked ? savedClientId : '')
+    || ''
+  )
+  const resolvedClientQuery = useClient(
+    targetClientId,
+    !!targetClientId,
+  )
+  const resolvedClient = resolvedClientQuery.data
+  const targetRepId = (
+    (isRep ? user?.rep_id : null)
+    || editOrder?.rep_id
+    || (
+      !editId && !repLocked
+        ? (
+          savedRepId !== null
+            ? savedRepId
+            : selectedClient?.rep_id ?? resolvedClient?.rep_id
+        )
+        : resolvedClient?.rep_id
+    )
+    || ''
+  )
+  const resolvedRepQuery = useRepresentative(
+    targetRepId,
+    !!targetRepId,
+  )
+  const resolvedRep = resolvedRepQuery.data
+
+  const createOrderM = useCreateOrder()
+  const updateOrderM = useUpdateOrder()
+  const createClientM = useCreateClient()
+  const createRepM = useCreateRepresentative()
+
+  // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62)
+  const priceProfile = selectedClient?.price_profile ?? 'lojista'
+
+  function handleClientChange(client: Client | null) {
+    const clientId = client?.id ?? ''
+    setSelectedClient(client)
+    setSavedClientId(clientId)
+    if (!repLocked && savedRepId === null) setSelectedRep(null)
+    if (clientId) localStorage.setItem('orcamento_client_id', clientId)
+    else localStorage.removeItem('orcamento_client_id')
+  }
+
+  function handleRepChange(rep: Representative | null) {
+    const repId = rep?.id ?? ''
+    setSelectedRep(rep)
+    setSavedRepId(repId)
+    if (repId) localStorage.setItem('orcamento_rep_id', repId)
+    else localStorage.setItem('orcamento_rep_id', '')
+  }
+
+  function resetSavedSelections() {
+    setSelectedClient(null)
+    setSelectedRep(null)
+    setSavedClientId('')
+    setSavedRepId(null)
+    localStorage.removeItem('orcamento_client_id')
+    localStorage.removeItem('orcamento_rep_id')
+  }
+
+  // O carrinho salvo resolve somente os SKUs necessários, sem baixar o catálogo.
+  useEffect(() => {
+    if (cartHydrated || editId) return
+    if (persistedCart.length === 0) {
+      setCartHydrated(true)
+      return
+    }
+    if (!resolvedProductQuery.isSuccess) return
+    const productMap = new Map(
+      resolvedProducts.map((product) => [product.product_code, product]),
+    )
+    setCart(
+      persistedCart
+        .filter((item) => productMap.has(item.product_code))
+        .map((item) => ({
+          ...item,
+          _product: productMap.get(item.product_code)!,
+        })),
+    )
+    setCartHydrated(true)
+  }, [
+    cartHydrated,
+    editId,
+    persistedCart,
+    resolvedProductQuery.isSuccess,
+    resolvedProducts,
+  ])
 
   useEffect(() => {
-    if (cartLoadedRef.current || products.length === 0) return
-    cartLoadedRef.current = true
-    try {
-      const raw = localStorage.getItem('carrinho_orcamento')
-      if (!raw) return
-      const parsed = JSON.parse(raw) as CartItem[]
-      const productMap = new Map(products.map(p => [p.product_code, p]))
-      setCart(parsed.filter(i => productMap.has(i.product_code)).map(i => ({
-        ...i,
-        _product: productMap.get(i.product_code)!,
-      })))
-    } catch { /* payload corrompido — começa vazio */ }
-  }, [products])
-
-  useEffect(() => {
-    // Persiste apenas os dados próprios do carrinho; _product é derivado de products
-    // e re-hidratado no load — não deve ser a fonte da verdade persistida (V-M8).
-    // Nunca grava antes da hidratação (senão o mount sobrescreve o carrinho salvo).
-    if (!cartLoadedRef.current) return
+    if (editId || !cartHydrated) return
     const serializable = cart.map(({ _product, ...rest }) => rest)
     localStorage.setItem('carrinho_orcamento', JSON.stringify(serializable))
-  }, [cart])
+  }, [cart, cartHydrated, editId])
 
   // Sincroniza _product com dados frescos da API (garante observacao e preço atualizados)
   useEffect(() => {
-    if (products.length === 0) return
-    const productMap = new Map(products.map(p => [p.product_code, p]))
+    if (resolvedProducts.length === 0) return
+    const productMap = new Map(
+      resolvedProducts.map((product) => [product.product_code, product]),
+    )
     setCart(prev => prev.map(item => ({
       ...item,
       _product: productMap.get(item.product_code) ?? item._product,
     })))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products])
+  }, [resolvedProducts])
 
-  // Pré-preenche e trava campos conforme papel do usuário logado
+  // Pré-preenche contas vinculadas e restaura seleções por ID.
   useEffect(() => {
-    if (!user) return
-
-    if (isRep && user.rep_id && reps.length > 0) {
-      const myRep = reps.find(r => r.id === user.rep_id)
-      if (myRep) setSelectedRep(myRep)
+    if (!editId && resolvedClient && !selectedClient) {
+      setSelectedClient(resolvedClient)
     }
-
-    if (isClientUser && user.linked_id && clients.length > 0) {
-      const myClient = clients.find(c => c.id === user.linked_id)
-      if (myClient) {
-        setSelectedClient(myClient)
-        if (myClient.rep_id && reps.length > 0) {
-          const myRep = reps.find(r => r.id === myClient.rep_id)
-          if (myRep) setSelectedRep(myRep)
-        }
-      }
+    if (!editId && resolvedRep && !selectedRep) {
+      setSelectedRep(resolvedRep)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, reps, clients])
-
-  // Bloco 77: restaura cliente/representante selecionados na sessão anterior
-  // (não se aplica em modo edição, nem quando o campo já está travado pela role).
-  useEffect(() => {
-    if (editId) return
-    if (!selectedClient && !clientLocked && clients.length > 0) {
-      const savedClientId = localStorage.getItem('orcamento_client_id')
-      const c = savedClientId ? clients.find(cl => cl.id === savedClientId) : null
-      if (c) setSelectedClient(c)
-    }
-    if (!selectedRep && !repLocked && reps.length > 0) {
-      const savedRepId = localStorage.getItem('orcamento_rep_id')
-      const r = savedRepId ? reps.find(rp => rp.id === savedRepId) : null
-      if (r) setSelectedRep(r)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, reps, editId])
-
-  useEffect(() => {
-    if (selectedClient) localStorage.setItem('orcamento_client_id', selectedClient.id)
-    else localStorage.removeItem('orcamento_client_id')
-  }, [selectedClient])
-
-  useEffect(() => {
-    if (selectedRep) localStorage.setItem('orcamento_rep_id', selectedRep.id)
-    else localStorage.removeItem('orcamento_rep_id')
-  }, [selectedRep])
+  }, [editId, resolvedClient, resolvedRep, selectedClient, selectedRep])
 
   // Pre-populate cart + client + rep when editing an existing order.
   // BUG-02 (Bloco 88): refetches em background do React Query trocam a identidade
@@ -671,10 +825,13 @@ export default function OrcamentoPage() {
   // do carrinho — o ref garante que cada pedido só popule o formulário uma vez.
   const editOrderLoadedRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!editOrder || products.length === 0 || clients.length === 0) return
+    if (!editOrder || !resolvedProductQuery.isSuccess || !resolvedClient) return
+    if (editOrder.rep_id && !resolvedRep) return
     if (editOrderLoadedRef.current === editOrder.id) return
     editOrderLoadedRef.current = editOrder.id
-    const productMap = new Map(products.map(p => [p.product_code, p]))
+    const productMap = new Map(
+      resolvedProducts.map((product) => [product.product_code, product]),
+    )
     const cartItems: CartItem[] = editOrder.items
       .map(item => {
         const product = productMap.get(item.product_code)
@@ -689,26 +846,17 @@ export default function OrcamentoPage() {
       })
       .filter(Boolean) as CartItem[]
     setCart(cartItems)
-    const client = clients.find(c => c.id === editOrder.client_id)
-    if (client) setSelectedClient(client)
-    if (editOrder.rep_id) {
-      const rep = reps.find(r => r.id === editOrder.rep_id)
-      if (rep) setSelectedRep(rep)
-    }
+    setSelectedClient(resolvedClient)
+    setSelectedRep(editOrder.rep_id ? resolvedRep ?? null : null)
     setNotes(editOrder.notes ?? '')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editOrder, products, clients, reps])
-
-  const [productQuery, setProductQuery] = useState('')
-  const [productOpen, setProductOpen] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [cartFilter, setCartFilter] = useState('')
-  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
-  const [quickModal, setQuickModal] = useState<'client' | 'rep' | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const productRef = useRef<HTMLDivElement>(null)
+    setCartHydrated(true)
+  }, [
+    editOrder,
+    resolvedClient,
+    resolvedProductQuery.isSuccess,
+    resolvedProducts,
+    resolvedRep,
+  ])
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -733,7 +881,7 @@ export default function OrcamentoPage() {
   }
 
   function handleAddProductToCart() {
-    if (!selectedProduct) return
+    if (!cartHydrated || !selectedProduct) return
     const freeCats = new Set((selectedProduct.all_optionals_categories ?? '').split(',').filter(Boolean))
     const auto_categories: Partial<Record<string, string>> = {}
     for (const opt of selectedProduct.optionals) {
@@ -787,8 +935,9 @@ export default function OrcamentoPage() {
 
   const totalWithIpi = total + ipiTotal
 
-  const nextOrderNumber = orders.length + 1
-  const budgetCode = `ORC-${String(nextOrderNumber).padStart(4, '0')}`
+  // O código definitivo é atribuído atomicamente pelo PostgreSQL ao salvar.
+  // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
+  const budgetCode = 'Gerado ao salvar'
 
   const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories }) => ({
     product_code,
@@ -796,9 +945,12 @@ export default function OrcamentoPage() {
     discount: discount || 0,
     opt_categories: opt_categories as Record<string, string>,
   }))
+  const repIdForSubmit = editId
+    ? selectedRep?.id ?? null
+    : selectedRep?.id ?? (targetRepId || null)
 
   async function handleSubmit() {
-    if (!selectedClient || cart.length === 0) return
+    if (!cartHydrated || !selectedClient || cart.length === 0) return
     setIsGenerating(true)
     try {
       if (editId) {
@@ -806,7 +958,7 @@ export default function OrcamentoPage() {
           updateOrderM.mutateAsync({
             id: editId,
             data: {
-              rep_id: selectedRep?.id ?? null,
+              rep_id: repIdForSubmit,
               notes: notes || null,
               items: itemsPayload,
             },
@@ -819,7 +971,7 @@ export default function OrcamentoPage() {
         await Promise.all([
           createOrderM.mutateAsync({
             client_id: selectedClient.id,
-            rep_id: selectedRep?.id ?? null,
+            rep_id: repIdForSubmit,
             notes: notes || null,
             items: itemsPayload,
           }),
@@ -829,8 +981,8 @@ export default function OrcamentoPage() {
       }
       setCart([])
       localStorage.removeItem('carrinho_orcamento')
-      setSelectedClient(null)
-      setSelectedRep(null)
+      resetSavedSelections()
+      editOrderLoadedRef.current = null
       setNotes('')
       setDrawerOpen(false)
     } catch (err: unknown) {
@@ -845,6 +997,57 @@ export default function OrcamentoPage() {
   const productSearchCard = (
     <div className="bg-[#f5ede3] border border-[#e8dccb] rounded-xl p-4 space-y-3.5">
       <span className="text-[10px] font-bold text-gold uppercase tracking-wider block">Adicionar Produto</span>
+      {!cartHydrated && (
+        <div className="rounded-lg border border-[#e8dccb] bg-white px-3 py-2 text-xs text-muted">
+          {editId && editOrderQuery.isError ? (
+            <div className="flex items-center justify-between gap-3">
+              <span>Não foi possível carregar o pedido para edição.</span>
+              <button
+                type="button"
+                onClick={() => void editOrderQuery.refetch()}
+                className="shrink-0 font-semibold text-gold hover:underline"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : editId && resolvedClientQuery.isError ? (
+            <div className="flex items-center justify-between gap-3">
+              <span>Não foi possível carregar o cliente deste pedido.</span>
+              <button
+                type="button"
+                onClick={() => void resolvedClientQuery.refetch()}
+                className="shrink-0 font-semibold text-gold hover:underline"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : editId && resolvedRepQuery.isError ? (
+            <div className="flex items-center justify-between gap-3">
+              <span>Não foi possível carregar o representante deste pedido.</span>
+              <button
+                type="button"
+                onClick={() => void resolvedRepQuery.refetch()}
+                className="shrink-0 font-semibold text-gold hover:underline"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : resolvedProductQuery.isError ? (
+            <div className="flex items-center justify-between gap-3">
+              <span>Não foi possível restaurar os produtos. O carrinho salvo foi preservado.</span>
+              <button
+                type="button"
+                onClick={() => void resolvedProductQuery.refetch()}
+                className="shrink-0 font-semibold text-gold hover:underline"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : (
+            <span>Restaurando produtos do orçamento…</span>
+          )}
+        </div>
+      )}
       <div ref={productRef} className="relative">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
@@ -852,12 +1055,16 @@ export default function OrcamentoPage() {
             className="input pl-8 w-full text-xs bg-white border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gold"
             placeholder="Buscar produto por codigo ou desc"
             value={productQuery}
+            disabled={!cartHydrated}
             onChange={(e) => { setProductQuery(e.target.value); setProductOpen(true) }}
-            onFocus={() => setProductOpen(true)}
+            onFocus={() => { if (cartHydrated) setProductOpen(true) }}
           />
         </div>
-        {productOpen && filteredProducts.length > 0 && (
+        {cartHydrated && productOpen && (
           <ul className="absolute left-0 right-0 z-30 mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-52 overflow-y-auto">
+            {productSearch.isFetching && (
+              <li className="px-3 py-2 text-xs text-muted">Buscando…</li>
+            )}
             {filteredProducts.slice(0, 15).map((p) => (
               <li
                 key={p.id}
@@ -874,6 +1081,11 @@ export default function OrcamentoPage() {
                 </div>
               </li>
             ))}
+            {!productSearch.isFetching && filteredProducts.length === 0 && (
+              <li className="px-3 py-2 text-xs text-muted">
+                Nenhum produto encontrado.
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -898,7 +1110,7 @@ export default function OrcamentoPage() {
       <button
         type="button"
         onClick={handleAddProductToCart}
-        disabled={!selectedProduct}
+        disabled={!cartHydrated || !selectedProduct}
         style={{ touchAction: 'manipulation' }}
         className="w-full py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-gold hover:bg-[#725510] disabled:bg-faint disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
       >
@@ -916,7 +1128,15 @@ export default function OrcamentoPage() {
             Editando Pedido: <span className="font-mono">{editOrder.code}</span>
           </span>
           <button
-            onClick={() => { setSearchParams({}); setCart([]); localStorage.removeItem('carrinho_orcamento') }}
+            onClick={() => {
+              setSearchParams({})
+              setCart([])
+              setCartHydrated(true)
+              editOrderLoadedRef.current = null
+              resetSavedSelections()
+              setNotes('')
+              localStorage.removeItem('carrinho_orcamento')
+            }}
             className="ml-auto text-white/70 hover:text-white text-xs underline"
           >
             Cancelar edição
@@ -1109,16 +1329,24 @@ export default function OrcamentoPage() {
         {/* ── Desktop Sidebar (hidden on mobile) ───────────────────────── */}
         <aside className="hidden lg:block space-y-5">
           <div className="bg-white border border-line rounded-xl p-5 shadow-sm space-y-4">
-            <OrderForm
-              reps={reps} clients={clients}
-              selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
-              onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
-              onQuickAddRep={() => setQuickModal('rep')} onQuickAddClient={() => setQuickModal('client')}
-              budgetCode={budgetCode} cart={cart}
-              onSubmit={handleSubmit} isGenerating={isGenerating}
-              repLocked={repLocked} clientLocked={clientLocked}
-              editMode={!!editId} editCode={editOrder?.code}
-            />
+            <fieldset
+              disabled={!!editId && !cartHydrated}
+              className="m-0 min-w-0 border-0 p-0 disabled:opacity-60"
+            >
+              <OrderForm
+                reps={reps} clients={clients}
+                selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
+                repQuery={repQuery} clientQuery={clientQuery}
+                onRepChange={handleRepChange} onClientChange={handleClientChange} onNotesChange={setNotes}
+                onRepSearch={setRepQuery} onClientSearch={setClientQuery}
+                repsLoading={repSearch.isFetching} clientsLoading={clientSearch.isFetching}
+                onQuickAddRep={() => setQuickModal('rep')} onQuickAddClient={() => setQuickModal('client')}
+                budgetCode={budgetCode} cart={cart}
+                onSubmit={handleSubmit} isGenerating={isGenerating}
+                repLocked={repLocked} clientLocked={clientLocked}
+                editMode={!!editId} editCode={editOrder?.code}
+              />
+            </fieldset>
             {productSearchCard}
           </div>
         </aside>
@@ -1147,17 +1375,25 @@ export default function OrcamentoPage() {
 
       {/* ── Mobile bottom drawer ───────────────────────────────────────────── */}
       <BottomDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <OrderForm
-          reps={reps} clients={clients}
-          selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
-          onRepChange={setSelectedRep} onClientChange={setSelectedClient} onNotesChange={setNotes}
-          onQuickAddRep={() => { setDrawerOpen(false); setQuickModal('rep') }}
-          onQuickAddClient={() => { setDrawerOpen(false); setQuickModal('client') }}
-          budgetCode={budgetCode} cart={cart}
-          onSubmit={handleSubmit} isGenerating={isGenerating}
-          repLocked={repLocked} clientLocked={clientLocked}
-          editMode={!!editId} editCode={editOrder?.code}
-        />
+        <fieldset
+          disabled={!!editId && !cartHydrated}
+          className="m-0 min-w-0 border-0 p-0 disabled:opacity-60"
+        >
+          <OrderForm
+            reps={reps} clients={clients}
+            selectedRep={selectedRep} selectedClient={selectedClient} notes={notes}
+            repQuery={repQuery} clientQuery={clientQuery}
+            onRepChange={handleRepChange} onClientChange={handleClientChange} onNotesChange={setNotes}
+            onRepSearch={setRepQuery} onClientSearch={setClientQuery}
+            repsLoading={repSearch.isFetching} clientsLoading={clientSearch.isFetching}
+            onQuickAddRep={() => { setDrawerOpen(false); setQuickModal('rep') }}
+            onQuickAddClient={() => { setDrawerOpen(false); setQuickModal('client') }}
+            budgetCode={budgetCode} cart={cart}
+            onSubmit={handleSubmit} isGenerating={isGenerating}
+            repLocked={repLocked} clientLocked={clientLocked}
+            editMode={!!editId} editCode={editOrder?.code}
+          />
+        </fieldset>
       </BottomDrawer>
 
       {quickModal === 'client' && (

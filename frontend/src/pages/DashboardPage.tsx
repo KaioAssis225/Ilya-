@@ -1,11 +1,20 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Download, LayoutDashboard } from 'lucide-react'
 import { useDashboardOverview, DASHBOARD_REGIONS } from '../hooks/useDashboard'
-import { useRepresentatives } from '../hooks/useRepresentatives'
+import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
 
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
 const integer = new Intl.NumberFormat('pt-BR')
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 function fmtCompact(v: number) {
   if (v >= 1e6) return `R$ ${(v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`
@@ -101,6 +110,7 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState(todayISO(-29))
   const [endDate, setEndDate] = useState(todayISO())
   const [repId, setRepId] = useState('')
+  const [repQuery, setRepQuery] = useState('')
   const [region, setRegion] = useState('')
   const [activeMetric, setActiveMetric] = useState<MetricKey>('revenue_total')
   const [repsExpanded, setRepsExpanded] = useState(false)
@@ -110,7 +120,20 @@ export default function DashboardPage() {
   const [showIntro, setShowIntro] = useState(true)
   const hideIntro = useCallback(() => setShowIntro(false), [])
 
-  const { data: reps = [] } = useRepresentatives()
+  const debouncedRepQuery = useDebouncedValue(repQuery.trim(), 300)
+  const { data: repsPage, isFetching: repsLoading } = useRepresentativesPage({
+    skip: 0,
+    limit: 20,
+    q: debouncedRepQuery || undefined,
+    include_total: false,
+    sort_by: 'name',
+    sort_dir: 'asc',
+  })
+  const { data: selectedRep } = useRepresentative(repId, !!repId)
+  const reps = [
+    ...(selectedRep ? [selectedRep] : []),
+    ...(repsPage?.items ?? []).filter((rep) => rep.id !== selectedRep?.id),
+  ]
   const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined, region: region || undefined })
 
   const chartTotal = useMemo(() => {
@@ -123,6 +146,7 @@ export default function DashboardPage() {
     setStartDate(todayISO(-29))
     setEndDate(todayISO())
     setRepId('')
+    setRepQuery('')
     setRegion('')
   }
 
@@ -198,10 +222,17 @@ export default function DashboardPage() {
           </label>
           <label className="flex flex-col gap-1 col-span-2 md:col-span-1">
             <span className="text-xs text-muted font-semibold">Representante</span>
+            <input
+              className="input"
+              placeholder="Buscar..."
+              value={repQuery}
+              onChange={e => setRepQuery(e.target.value)}
+            />
             <select className="input" value={repId} onChange={e => setRepId(e.target.value)}>
               <option value="">Todos</option>
               {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
+            {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
           </label>
           <button onClick={clearFilters} className="text-xs text-gold hover:underline text-left md:text-center py-2">Limpar filtros</button>
         </div>
@@ -209,7 +240,7 @@ export default function DashboardPage() {
           <p className="text-right text-[11px] text-muted mb-4">
             {new Date(data.start_date + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(data.end_date + 'T12:00:00').toLocaleDateString('pt-BR')}
             {region && ` · ${region}`}
-            {repId && ` · ${reps.find(r => r.id === repId)?.name ?? ''}`}
+            {repId && ` · ${selectedRep?.name ?? reps.find(r => r.id === repId)?.name ?? ''}`}
           </p>
         )}
 
