@@ -3,9 +3,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw } from 'lucide-react'
-import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
-import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
-import { useRepresentatives, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
+import { useProductsPage, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
+import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
+import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
 import { useProductTypes, useCreateProductType, useUpdateProductType, useDeleteProductType } from '../hooks/useProductTypes'
 import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup } from '../hooks/useProductGroups'
@@ -20,6 +20,15 @@ import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientC
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
 type SortDir = 'asc' | 'desc'
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 const ESTADOS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
@@ -59,24 +68,6 @@ const TAB_PALETTE = {
 } as const
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-function useSortedList<T>(items: T[] | undefined, defaultKey: keyof T) {
-  const [sortKey, setSortKey] = useState<keyof T>(defaultKey)
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
-
-  function toggle(key: keyof T) {
-    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('asc') }
-  }
-
-  const sorted = [...(items ?? [])].sort((a, b) => {
-    const av = a[sortKey]; const bv = b[sortKey]
-    const cmp = String(av ?? '').localeCompare(String(bv ?? ''), 'pt-BR', { numeric: true })
-    return sortDir === 'asc' ? cmp : -cmp
-  })
-
-  return { sorted, sortKey, sortDir, toggle }
-}
 
 function SortIcon({ active, dir, color }: { active: boolean; dir: SortDir; color: string }) {
   if (!active) return <ChevronUp className="w-3 h-3 opacity-25" />
@@ -412,6 +403,7 @@ function Pagination({ page, totalPages, onPage, color }: {
 
 type BatchStatus = 'pending' | 'uploading' | 'success' | 'error'
 interface BatchItem { file: File; sku: string; product: Product; status: BatchStatus; error?: string }
+interface BatchRejection { key: string; name: string; reason: string }
 
 async function traverseFileTree(entry: FileSystemEntryLike): Promise<File[]> {
   return new Promise((resolve) => {
@@ -445,52 +437,138 @@ function skuFromFilename(name: string): string {
   return name.replace(/\.[^./\\]+$/, '').trim().toUpperCase()
 }
 
-function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', collapsible = true }: {
-  products: Product[]; color: string; title?: string; collapsible?: boolean
+function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsible = true }: {
+  color: string; title?: string; collapsible?: boolean
 }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(!collapsible)
   const [items, setItems] = useState<BatchItem[]>([])
-  const [rejected, setRejected] = useState<string[]>([])
+  const [rejected, setRejected] = useState<BatchRejection[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [resolving, setResolving] = useState(false)
+  const [lookupError, setLookupError] = useState<string | null>(null)
   const dirInputRef = useRef<HTMLInputElement>(null)
   const filesInputRef = useRef<HTMLInputElement>(null)
+  const resolutionGenerationRef = useRef(0)
 
-  function processFiles(files: File[]) {
-    const bySku = new Map(products.map((p) => [p.product_code.toUpperCase(), p]))
-    const validated: BatchItem[] = []
-    const rejectedNames: string[] = []
-    for (const file of files) {
-      if (!/\.(jpg|jpeg|png|webp)$/i.test(file.name)) continue
-      const sku = skuFromFilename(file.name)
-      const product = bySku.get(sku)
-      if (product) validated.push({ file, sku, product, status: 'pending' })
-      else rejectedNames.push(file.name)
+  useEffect(() => () => {
+    resolutionGenerationRef.current += 1
+  }, [])
+
+  function beginResolution(): number | null {
+    if (uploading || resolving) return null
+    const generation = resolutionGenerationRef.current + 1
+    resolutionGenerationRef.current = generation
+    setItems([])
+    setRejected([])
+    setLookupError(null)
+    setResolving(true)
+    return generation
+  }
+
+  async function processFiles(files: File[], generation: number) {
+    const imageFiles = files.filter((file) =>
+      /\.(jpg|jpeg|png|webp)$/i.test(file.name)
+    )
+    const codes = Array.from(
+      new Set(imageFiles.map((file) => skuFromFilename(file.name))),
+    )
+    try {
+      const products: Product[] = []
+      for (let offset = 0; offset < codes.length; offset += 100) {
+        const response = await api.post<Product[]>('/products/batch', {
+          product_codes: codes.slice(offset, offset + 100),
+        })
+        if (resolutionGenerationRef.current !== generation) return
+        products.push(...response.data)
+      }
+      const bySku = new Map(
+        products.map((product) => [
+          product.product_code.toUpperCase(),
+          product,
+        ]),
+      )
+      const validated: BatchItem[] = []
+      const rejectedItems: BatchRejection[] = []
+      const skuCounts = new Map<string, number>()
+      for (const file of imageFiles) {
+        const sku = skuFromFilename(file.name)
+        skuCounts.set(sku, (skuCounts.get(sku) ?? 0) + 1)
+      }
+      for (const [index, file] of imageFiles.entries()) {
+        const sku = skuFromFilename(file.name)
+        if ((skuCounts.get(sku) ?? 0) > 1) {
+          rejectedItems.push({
+            key: `duplicate:${sku}:${index}`,
+            name: file.name,
+            reason: `SKU ${sku} repetido na seleção`,
+          })
+          continue
+        }
+        const product = bySku.get(sku)
+        if (product) validated.push({ file, sku, product, status: 'pending' })
+        else {
+          rejectedItems.push({
+            key: `missing:${sku}:${index}`,
+            name: file.name,
+            reason: 'SKU não encontrado',
+          })
+        }
+      }
+      if (resolutionGenerationRef.current !== generation) return
+      setItems(validated)
+      setRejected(rejectedItems)
+    } catch {
+      if (resolutionGenerationRef.current !== generation) return
+      setItems([])
+      setRejected([])
+      setLookupError(
+        'Não foi possível validar os códigos dos arquivos. Tente novamente.',
+      )
+    } finally {
+      if (resolutionGenerationRef.current === generation) {
+        setResolving(false)
+      }
     }
-    setItems(validated)
-    setRejected(rejectedNames)
   }
 
   async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setDragOver(false)
+    const generation = beginResolution()
+    if (generation === null) return
     const dt = e.dataTransfer
     const dtItems = dt.items
-    if (dtItems && dtItems.length > 0 && (dtItems[0] as unknown as { webkitGetAsEntry?: unknown }).webkitGetAsEntry) {
-      const entries: FileSystemEntryLike[] = []
-      for (let i = 0; i < dtItems.length; i++) {
-        const entry = (dtItems[i] as unknown as { webkitGetAsEntry: () => FileSystemEntryLike | null }).webkitGetAsEntry()
-        if (entry) entries.push(entry)
+    try {
+      if (dtItems && dtItems.length > 0 && (dtItems[0] as unknown as { webkitGetAsEntry?: unknown }).webkitGetAsEntry) {
+        const entries: FileSystemEntryLike[] = []
+        for (let i = 0; i < dtItems.length; i++) {
+          const entry = (dtItems[i] as unknown as { webkitGetAsEntry: () => FileSystemEntryLike | null }).webkitGetAsEntry()
+          if (entry) entries.push(entry)
+        }
+        const files = (await Promise.all(entries.map((entry) => traverseFileTree(entry)))).flat()
+        await processFiles(files, generation)
+      } else {
+        await processFiles(Array.from(dt.files), generation)
       }
-      const files = (await Promise.all(entries.map((entry) => traverseFileTree(entry)))).flat()
-      processFiles(files)
-    } else {
-      processFiles(Array.from(dt.files))
+    } catch {
+      if (resolutionGenerationRef.current === generation) {
+        setItems([])
+        setRejected([])
+        setLookupError('Não foi possível ler os arquivos selecionados.')
+        setResolving(false)
+      }
     }
   }
 
+  function handleFileSelection(files: File[]) {
+    const generation = beginResolution()
+    if (generation !== null) void processFiles(files, generation)
+  }
+
   async function startUpload() {
+    if (uploading || resolving || items.length === 0) return
     setUploading(true)
     const queue = [...items]
     setItems((prev) => prev.map((i) => ({ ...i, status: 'pending' })))
@@ -541,40 +619,61 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
       {open && (
         <div className={collapsible ? 'p-4 border-t border-line space-y-4' : 'space-y-4'}>
           <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!uploading && !resolving) setDragOver(true)
+            }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            className="border-2 border-dashed rounded-xl p-6 text-center transition-colors"
+            className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${uploading || resolving ? 'opacity-60' : ''}`}
             style={{ borderColor: dragOver ? color : '#e8e0d6', backgroundColor: dragOver ? `${color}0a` : '#faf8f4' }}
           >
             <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: dragOver ? color : '#c8bdb5' }} />
             <p className="text-sm text-ink-3">Arraste uma pasta ou arquivos de fotos aqui</p>
             <p className="text-xs text-muted mt-1">O nome do arquivo deve ser o código do produto (ex.: IML0001.png)</p>
             <div className="flex items-center justify-center gap-2 mt-3">
-              <button type="button" className="btn-secondary text-xs" onClick={() => dirInputRef.current?.click()}>Selecionar pasta</button>
-              <button type="button" className="btn-secondary text-xs" onClick={() => filesInputRef.current?.click()}>Selecionar arquivos</button>
+              <button type="button" disabled={uploading || resolving} className="btn-secondary text-xs disabled:opacity-50" onClick={() => dirInputRef.current?.click()}>Selecionar pasta</button>
+              <button type="button" disabled={uploading || resolving} className="btn-secondary text-xs disabled:opacity-50" onClick={() => filesInputRef.current?.click()}>Selecionar arquivos</button>
             </div>
             <input
-              ref={dirInputRef} type="file" multiple className="hidden"
+              ref={dirInputRef} type="file" multiple disabled={uploading || resolving} className="hidden"
               {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
-              onChange={(e) => processFiles(Array.from(e.target.files ?? []))}
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files ?? [])
+                e.currentTarget.value = ''
+                handleFileSelection(files)
+              }}
             />
             <input
-              ref={filesInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden"
-              onChange={(e) => processFiles(Array.from(e.target.files ?? []))}
+              ref={filesInputRef} type="file" multiple disabled={uploading || resolving} accept="image/png,image/jpeg,image/webp" className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files ?? [])
+                e.currentTarget.value = ''
+                handleFileSelection(files)
+              }}
             />
           </div>
 
+          {resolving && (
+            <p className="text-xs text-muted">Validando códigos no catálogo…</p>
+          )}
+          {lookupError && (
+            <p className="text-xs text-red-600">{lookupError}</p>
+          )}
           {(items.length > 0 || rejected.length > 0) && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-4 text-xs">
                 <span className="flex items-center gap-1.5 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {items.length} validada(s)</span>
-                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-terracotta"><X className="w-3.5 h-3.5" /> {rejected.length} rejeitada(s) — SKU não encontrado</span>}
+                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-terracotta"><X className="w-3.5 h-3.5" /> {rejected.length} rejeitada(s)</span>}
               </div>
 
               {rejected.length > 0 && (
                 <div className="bg-[#fef3f2] border border-red-200 rounded-lg p-2.5 max-h-24 overflow-y-auto">
-                  {rejected.map((name) => <p key={name} className="text-[11px] text-terracotta font-mono">{name}</p>)}
+                  {rejected.map((item) => (
+                    <p key={item.key} className="text-[11px] text-terracotta font-mono">
+                      {item.name} — {item.reason}
+                    </p>
+                  ))}
                 </div>
               )}
 
@@ -586,8 +685,8 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
                     </div>
                   )}
                   <div className="max-h-56 overflow-y-auto border border-line rounded-lg divide-y divide-bg-2">
-                    {items.map((item) => (
-                      <div key={item.file.name} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                    {items.map((item, index) => (
+                      <div key={`${item.sku}:${item.file.webkitRelativePath || item.file.name}:${item.file.size}:${item.file.lastModified}:${index}`} className="flex items-center justify-between px-3 py-1.5 text-xs">
                         <span className="font-mono text-ink-2 truncate">{item.sku}</span>
                         <span className="text-muted truncate flex-1 px-2">{item.file.name}</span>
                         {item.status === 'pending' && <span className="text-muted">Aguardando</span>}
@@ -599,7 +698,7 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
                   </div>
                   <button
                     type="button"
-                    disabled={uploading}
+                    disabled={uploading || resolving}
                     onClick={startUpload}
                     className="btn-primary w-full disabled:opacity-60"
                     style={{ backgroundColor: color }}
@@ -617,7 +716,36 @@ function BatchPhotoUpload({ products, color, title = 'Upload de Fotos em Lote', 
 }
 
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
-  const { data: products, isLoading } = useProducts()
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search.trim(), 300)
+  const [sortKey, setSortKey] = useState<'product_code' | 'description' | 'price_lojista'>('product_code')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  function toggle(key: 'product_code' | 'description' | 'price_lojista') {
+    if (key === sortKey) setSortDir((current) => current === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+    onPage(1)
+  }
+  const { data: productsPage, isLoading } = useProductsPage({
+    skip: (page - 1) * ITEMS_PER_PAGE,
+    limit: ITEMS_PER_PAGE,
+    q: debouncedSearch || undefined,
+    sort_by: sortKey,
+    sort_dir: sortDir,
+  })
+  const products = productsPage?.items ?? []
+  const totalProducts = productsPage?.total ?? 0
+  const totalPages = productsPage
+    ? Math.max(1, Math.ceil(totalProducts / ITEMS_PER_PAGE))
+    : Math.max(1, page)
+  const safePage = productsPage
+    ? Math.min(Math.max(1, page), totalPages)
+    : page
+  useEffect(() => {
+    if (productsPage && safePage !== page) onPage(safePage)
+  }, [productsPage, safePage, page, onPage])
   const { data: allOptionals = [] } = useOptionals()
   const { data: allTypes = [] } = useProductTypes()
   const { data: optCategories = [] } = useOptionalCategories()
@@ -630,12 +758,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   // Categorias de opcionais sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
   const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
 
-  const { sorted, sortKey, sortDir, toggle } = useSortedList<Product>(products, 'product_code')
-  const [search, setSearch] = useState('')
-  const filtered = sorted.filter((p) =>
-    `${p.product_code} ${p.description}`.toLowerCase().includes(search.toLowerCase())
-  )
-  const { pageItems, totalPages, safePage } = paginate(filtered, page)
+  const pageItems = products
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
@@ -817,10 +940,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   return (
     <div className="min-w-0 max-w-full">
-      <BatchPhotoUpload products={products ?? []} color={color} />
+      <BatchPhotoUpload color={color} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <span className="text-sm text-muted whitespace-nowrap">{products?.length ?? 0} {(products?.length ?? 0) === 1 ? 'produto' : 'produtos'}</span>
+        <span className="text-sm text-muted whitespace-nowrap">{totalProducts} {totalProducts === 1 ? 'produto' : 'produtos'}</span>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
@@ -876,7 +999,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 </div>
               </div>
             ))}
-            {filtered.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</p>}
+            {pageItems.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
@@ -964,7 +1087,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {pageItems.length === 0 && (
                   <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
                 )}
               </tbody>
@@ -1489,10 +1612,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '', price_profile: 'lojista' }
 
 function PeopleTab<T extends Client | Representative>({
-  label, entityType, items, isLoading, onCreate, onUpdate, onDelete, isPending, color, page, onPage,
+  label, entityType, onCreate, onUpdate, onDelete, isPending, color, page, onPage,
 }: {
   label: string; entityType: 'client' | 'rep'
-  items: T[] | undefined; isLoading: boolean
   onCreate: (data: ClientCreate) => Promise<void>; onUpdate: (id: string, data: Partial<ClientCreate>) => Promise<void>
   onDelete: (id: string) => Promise<void>; isPending: boolean; color: string
   page: number; onPage: (p: number) => void
@@ -1503,12 +1625,41 @@ function PeopleTab<T extends Client | Representative>({
   const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
   const defaultMaxDiscount = entityType === 'client' ? 0 : 15
 
-  const { sorted, sortKey, sortDir, toggle } = useSortedList<T>(items, 'name' as keyof T)
   const [search, setSearch] = useState('')
-  const filtered = sorted.filter((item) =>
-    `${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(search.toLowerCase())
-  )
-  const { pageItems, totalPages, safePage } = paginate(filtered, page)
+  const debouncedSearch = useDebouncedValue(search.trim(), 300)
+  const [sortKey, setSortKey] = useState<'name' | 'email' | 'phone' | 'city' | 'state' | 'max_discount'>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  function toggle(key: string) {
+    const nextKey = key as typeof sortKey
+    if (nextKey === sortKey) setSortDir((current) => current === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortKey(nextKey)
+      setSortDir('asc')
+    }
+    onPage(1)
+  }
+  const pageParams = {
+    skip: (page - 1) * ITEMS_PER_PAGE,
+    limit: ITEMS_PER_PAGE,
+    q: debouncedSearch || undefined,
+    sort_by: sortKey,
+    sort_dir: sortDir,
+  }
+  const clientQuery = useClientsPage(pageParams, entityType === 'client')
+  const repQuery = useRepresentativesPage(pageParams, entityType === 'rep')
+  const activeQuery = entityType === 'client' ? clientQuery : repQuery
+  const pageItems = (activeQuery.data?.items ?? []) as T[]
+  const totalItems = activeQuery.data?.total ?? 0
+  const totalPages = activeQuery.data
+    ? Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE))
+    : Math.max(1, page)
+  const safePage = activeQuery.data
+    ? Math.min(Math.max(1, page), totalPages)
+    : page
+  const isLoading = activeQuery.isLoading
+  useEffect(() => {
+    if (activeQuery.data && safePage !== page) onPage(safePage)
+  }, [activeQuery.data, safePage, page, onPage])
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<T | null>(null)
   const [deleting, setDeleting] = useState<T | null>(null)
@@ -1575,17 +1726,17 @@ function PeopleTab<T extends Client | Representative>({
     }
   }
 
-  const thProps = { sortKey: String(sortKey), sortDir, onSort: (k: string) => toggle(k as keyof T), color }
+  const thProps = { sortKey: String(sortKey), sortDir, onSort: toggle, color }
   const createUserPending = entityType === 'client' ? createFromClient.isPending : createFromRep.isPending
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <span className="text-sm text-muted whitespace-nowrap">{items?.length ?? 0} {label.toLowerCase()} cadastrados</span>
+        <span className="text-sm text-muted whitespace-nowrap">{totalItems} {label.toLowerCase()} cadastrados</span>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-            <input className="input pl-9" placeholder="Buscar por nome, e-mail ou telefone..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
+            <input className="input pl-9" placeholder="Buscar por nome..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color }} onClick={openCreate}>
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>{label.slice(0, -1)}
@@ -1626,7 +1777,7 @@ function PeopleTab<T extends Client | Representative>({
                 </div>
               </div>
             ))}
-            {filtered.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</p>}
+            {pageItems.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
@@ -1667,7 +1818,7 @@ function PeopleTab<T extends Client | Representative>({
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {pageItems.length === 0 && (
                   <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
                 )}
               </tbody>
@@ -2445,7 +2596,6 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
 function ImportTab({ color }: { color: string }) {
   const [supportTable, setSupportTable] = useState('product-groups')
   const current = SUPPORT_TABLES.find((t) => t.value === supportTable)!
-  const { data: products = [] } = useProducts()
   return (
     <div className="space-y-6">
       <div>
@@ -2472,7 +2622,7 @@ function ImportTab({ color }: { color: string }) {
 
       <section className="space-y-3">
         <p className="text-xs text-ink-3 -mt-1">Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.</p>
-        <BatchPhotoUpload products={products} color={color} title="Importar Foto" collapsible={false} />
+        <BatchPhotoUpload color={color} title="Importar Foto" collapsible={false} />
       </section>
     </div>
   )
@@ -2548,22 +2698,20 @@ export default function CadastroPage() {
     savePersistedCadastroState({ tab, productPage, clientPage, repPage, groupPage })
   }, [tab, productPage, clientPage, repPage, groupPage])
 
-  const { data: products } = useProducts()
-  const { data: clients }  = useClients()
-  const { data: reps }     = useRepresentatives()
+  const { data: productsCount } = useProductsPage({ skip: 0, limit: 1 })
+  const { data: clientsCount } = useClientsPage({ skip: 0, limit: 1 })
+  const { data: repsCount } = useRepresentativesPage({ skip: 0, limit: 1 })
   const { data: optionals } = useOptionals()
   const { data: productGroups } = useProductGroups()
 
-  const { data: clientsData, isLoading: clientsLoading } = useClients()
   const createClient = useCreateClient(); const updateClient = useUpdateClient(); const deleteClient = useDeleteClient()
 
-  const { data: repsData, isLoading: repsLoading } = useRepresentatives()
   const createRep = useCreateRepresentative(); const updateRep = useUpdateRepresentative(); const deleteRep = useDeleteRepresentative()
 
   const counts: Record<Tab, number> = {
-    produtos:       products?.length ?? 0,
-    clientes:       clients?.length  ?? 0,
-    representantes: reps?.length     ?? 0,
+    produtos:       productsCount?.total ?? 0,
+    clientes:       clientsCount?.total  ?? 0,
+    representantes: repsCount?.total     ?? 0,
     opcionais:      optionals?.length ?? 0,
     tipos:          productGroups?.length ?? 0,
     importacao:     0,
@@ -2653,8 +2801,6 @@ export default function CadastroPage() {
               <PeopleTab
                 label="Clientes"
                 entityType="client"
-                items={clientsData}
-                isLoading={clientsLoading}
                 isPending={createClient.isPending || updateClient.isPending}
                 color={TAB_PALETTE.clientes.color}
                 onCreate={async (data) => { await createClient.mutateAsync(data) }}
@@ -2668,8 +2814,6 @@ export default function CadastroPage() {
               <PeopleTab
                 label="Representantes"
                 entityType="rep"
-                items={repsData}
-                isLoading={repsLoading}
                 isPending={createRep.isPending || updateRep.isPending}
                 color={TAB_PALETTE.representantes.color}
                 onCreate={async (data) => { await createRep.mutateAsync(data) }}

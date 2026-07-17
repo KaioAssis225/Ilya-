@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, ShoppingCart, Check, ImageIcon, Search } from 'lucide-react'
-import { useProducts } from '../hooks/useProducts'
+import { useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
 import { isConjuntoType } from '../lib/productType'
 import type { Product } from '../types'
+
+const PAGE_SIZE = 24
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 const CAT_LABEL: Record<string, string> = {
   aluminio: 'Alumínio', corda: 'Corda',
@@ -253,7 +264,6 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
 }
 
 export default function ProdutosPage() {
-  const { data: products = [], isLoading } = useProducts()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
 
@@ -261,10 +271,30 @@ export default function ProdutosPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
   const [selected, setSelected] = useState<Product | null>(null)
+  const [page, setPage] = useState(1)
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
+  const { data: productsPage, isLoading } = useProductsPage({
+    skip: (page - 1) * PAGE_SIZE,
+    limit: PAGE_SIZE,
+    q: debouncedSearch || undefined,
+    group_id: selectedGroupId || undefined,
+    type: selectedTypeName || undefined,
+    sort_by: 'product_code',
+    sort_dir: 'asc',
+  })
+  const products = productsPage?.items ?? []
+  const totalProducts = productsPage?.total ?? 0
+  const totalPages = productsPage
+    ? Math.max(1, Math.ceil(totalProducts / PAGE_SIZE))
+    : Math.max(1, page)
+  useEffect(() => {
+    if (productsPage && page > totalPages) setPage(totalPages)
+  }, [productsPage, page, totalPages])
 
   function handleGroupChange(groupId: string) {
     setSelectedGroupId(groupId)
     setSelectedTypeName('')
+    setPage(1)
   }
 
   // Types shown in subgroup dropdown cascade from selected group
@@ -272,29 +302,13 @@ export default function ProdutosPage() {
     ? productTypes.filter(t => t.group_id === selectedGroupId)
     : productTypes
 
-  // Build a fast lookup: type name → group_id
-  const typeGroupMap = new Map(productTypes.map(t => [t.name, t.group_id ?? '']))
-
-  const filtered = products.filter(p => {
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase()
-      if (!p.product_code.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false
-    }
-    if (selectedGroupId) {
-      if (typeGroupMap.get(p.type) !== selectedGroupId) return false
-    }
-    if (selectedTypeName) {
-      if (p.type !== selectedTypeName) return false
-    }
-    return true
-  })
-
   const hasFilters = searchTerm || selectedGroupId || selectedTypeName
 
   function clearFilters() {
     setSearchTerm('')
     setSelectedGroupId('')
     setSelectedTypeName('')
+    setPage(1)
   }
 
   return (
@@ -316,11 +330,14 @@ export default function ProdutosPage() {
               type="text"
               placeholder="Buscar por código ou descrição..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                setPage(1)
+              }}
               className="w-full pl-9 pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder-faint focus:outline-none focus:ring-1 focus:ring-gold transition-all"
             />
             {searchTerm && (
-              <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink">
+              <button onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -341,7 +358,10 @@ export default function ProdutosPage() {
           {/* Subgroup dropdown — cascades from group */}
           <select
             value={selectedTypeName}
-            onChange={(e) => setSelectedTypeName(e.target.value)}
+            onChange={(e) => {
+              setSelectedTypeName(e.target.value)
+              setPage(1)
+            }}
             className="w-full md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
             disabled={availableTypes.length === 0}
           >
@@ -365,15 +385,15 @@ export default function ProdutosPage() {
         {/* Result count */}
         {hasFilters && !isLoading && (
           <p className="text-xs text-muted mb-3">
-            {filtered.length === 0
+            {totalProducts === 0
               ? 'Nenhum produto encontrado.'
-              : `${filtered.length} produto${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
+              : `${totalProducts} produto${totalProducts !== 1 ? 's' : ''} encontrado${totalProducts !== 1 ? 's' : ''}`}
           </p>
         )}
 
         {isLoading ? (
           <div className="text-center text-muted py-20">Carregando catálogo…</div>
-        ) : filtered.length === 0 ? (
+        ) : products.length === 0 ? (
           <div className="flex flex-col items-center py-20 gap-3">
             <p className="text-muted">Nenhum produto encontrado.</p>
             {hasFilters && (
@@ -386,7 +406,7 @@ export default function ProdutosPage() {
                 borda do card (sem moldura dupla, sem corte) com zoom sutil no
                 hover. O título usa Inter para manter letras, códigos e medidas
                 numericamente uniformes no catálogo comercial. */}
-            {filtered.map(product => (
+            {products.map(product => (
               <button
                 key={product.id}
                 onClick={() => setSelected(product)}
@@ -425,6 +445,29 @@ export default function ProdutosPage() {
                 </div>
               </button>
             ))}
+          </div>
+        )}
+        {!isLoading && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 mt-8">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              className="px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <span className="text-sm text-muted">
+              Página <strong className="text-ink">{page}</strong> de {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              className="px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
+            >
+              Próxima
+            </button>
           </div>
         )}
       </div>

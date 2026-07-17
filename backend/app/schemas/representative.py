@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -15,6 +15,16 @@ class RepresentativeBase(BaseModel):
     city: str = Field(..., max_length=255)
     state: str = Field(..., min_length=2, max_length=2)
     max_discount: Decimal = Field(default=Decimal("15.00"), ge=0, le=100)
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def normalize_state(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("UF deve ser informada como texto.")
+        state = value.strip().upper()
+        if len(state) != 2 or not state.isascii() or not state.isalpha():
+            raise ValueError("UF deve conter exatamente 2 letras.")
+        return state
 
 
 class RepresentativeCreate(RepresentativeBase):
@@ -31,6 +41,18 @@ class RepresentativeUpdate(BaseModel):
     city: Optional[str] = Field(None, max_length=255)
     state: Optional[str] = Field(None, min_length=2, max_length=2)
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def normalize_state(cls, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("UF deve ser informada como texto.")
+        state = value.strip().upper()
+        if len(state) != 2 or not state.isascii() or not state.isalpha():
+            raise ValueError("UF deve conter exatamente 2 letras.")
+        return state
 
 
 class RepresentativeRead(RepresentativeBase):

@@ -22,4 +22,4 @@ EXPOSE 8000
 # arquivos legados criados quando o container rodava como root) — barato em
 # todo boot subsequente, ao contrário de um chown -R incondicional.
 CMD find app/static/uploads ! -user ilya -exec chown ilya:ilya {} + && \
-    runuser -u ilya -- sh -c "alembic upgrade head && python seed_admin.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+    exec runuser -u ilya -- python startup.py
