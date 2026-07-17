@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import select, or_, delete, update
 
 from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
 from app.core.limiter import limiter
@@ -92,13 +92,9 @@ async def login(
     payload: LoginRequest,
     db: AsyncSession = Depends(get_db_session),
 ):
-    normalized_identifier = payload.identifier.lower()
     result = await db.execute(
         select(User).where(
-            or_(
-                func.lower(User.email) == normalized_identifier,
-                User.username == normalized_identifier,
-            )
+            or_(User.email == payload.identifier, User.username == payload.identifier)
         )
     )
     user = result.scalar_one_or_none()

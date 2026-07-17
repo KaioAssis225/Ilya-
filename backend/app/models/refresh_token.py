@@ -1,12 +1,9 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import String, ForeignKey, DateTime, Boolean, func, delete, Index, text
+from sqlalchemy import String, ForeignKey, DateTime, Boolean, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
-
-
-_CLEANUP_LOCK_ID = 4_956_921_201
 
 
 class RefreshToken(Base):
@@ -29,28 +26,9 @@ class RefreshToken(Base):
 
     user: Mapped["User"] = relationship(lazy="selectin")
 
-    __table_args__ = (
-        Index("ix_refresh_tokens_parent_id", "parent_id"),
-        Index(
-            "ix_refresh_tokens_active_user_created",
-            "user_id",
-            "created_at",
-            postgresql_where=text("revoked = false"),
-        ),
-    )
-
 
 async def cleanup_expired_tokens(db: AsyncSession, retention_days: int = 30) -> None:
-    """Descarta tokens antigos uma única vez, mesmo com vários workers."""
-    acquired = (
-        await db.execute(
-            text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
-            {"lock_id": _CLEANUP_LOCK_ID},
-        )
-    ).scalar()
-    if not acquired:
-        await db.rollback()
-        return
+    """Descarta tokens antigos preservando a janela de detecção de reutilização."""
     cutoff = (
         datetime.now(timezone.utc)
         - timedelta(days=retention_days)

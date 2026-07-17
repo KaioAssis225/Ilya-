@@ -17,7 +17,3 @@ def region_for_state(uf: str | None) -> str | None:
     if not uf:
         return None
     return STATE_TO_REGION.get(uf.strip().upper())
-
-
-def states_for_region(region: str) -> list[str]:
-    return [state for state, current_region in STATE_TO_REGION.items() if current_region == region]

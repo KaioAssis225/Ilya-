@@ -194,27 +194,6 @@ export interface OrderHistory {
   created_at: string
 }
 
-export interface OrderSummaryItem {
-  product_code: string
-  qty: number
-}
-
-export interface OrderSummary {
-  id: string
-  code: string
-  orc_id: string
-  client_id: string
-  client_name: string
-  rep_id: string | null
-  rep_name: string | null
-  total_value: number
-  total_with_ipi: number
-  is_finalized: boolean
-  is_cancelled: boolean
-  items: OrderSummaryItem[]
-  created_at: string
-}
-
 export interface Order {
   id: string
   code: string
@@ -245,11 +224,4 @@ export interface ViaCepResponse {
   localidade: string
   uf: string
   erro?: boolean
-}
-
-export interface PageResult<T> {
-  items: T[]
-  total: number
-  hasMore: boolean
-  pageSize: number
 }

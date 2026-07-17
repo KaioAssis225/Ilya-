@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { PageResult } from '../types'
 
 export interface UserRead {
   id: string
@@ -30,29 +29,13 @@ export interface UserUpdate {
   can_view_dashboard?: boolean
 }
 
-export interface UserPageParams {
-  skip?: number
-  limit?: number
-  q?: string
-  include_total?: boolean
-  sort_by?: 'full_name' | 'email' | 'role' | 'is_active'
-  sort_dir?: 'asc' | 'desc'
-}
-
-export function useUsersPage(params: UserPageParams, enabled = true) {
-  return useQuery<PageResult<UserRead>>({
-    queryKey: ['users', 'page', params],
+export function useUsers() {
+  return useQuery<UserRead[]>({
+    queryKey: ['users'],
     queryFn: async () => {
-      const response = await api.get<UserRead[]>('/users', { params })
-      return {
-        items: response.data,
-        total: Number(response.headers['x-total-count'] ?? response.data.length),
-        hasMore: String(response.headers['x-has-more'] ?? 'false') === 'true',
-        pageSize: Number(response.headers['x-page-size'] ?? response.data.length),
-      }
+      const res = await api.get('/users')
+      return res.data
     },
-    enabled,
-    staleTime: 30_000,
   })
 }
 

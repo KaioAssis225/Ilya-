@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Table, Column, ForeignKey, Index
+from sqlalchemy import String, Table, Column, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -8,7 +8,6 @@ product_optionals = Table(
     Base.metadata,
     Column("product_id", ForeignKey("products.id", ondelete="CASCADE"), primary_key=True),
     Column("optional_id", ForeignKey("optionals.id", ondelete="CASCADE"), primary_key=True),
-    Index("ix_product_optionals_optional_id", "optional_id"),
 )
 
 
@@ -19,12 +18,3 @@ class OptionalColor(Base, TimestampMixin):
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     color_name: Mapped[str] = mapped_column(String(100), nullable=False)
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    __table_args__ = (
-        Index(
-            "ix_optionals_category_color_id",
-            "category",
-            "color_name",
-            "id",
-        ),
-    )

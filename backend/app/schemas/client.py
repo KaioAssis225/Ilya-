@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Literal
 from datetime import datetime
 
@@ -16,16 +16,6 @@ class ClientBase(BaseModel):
     state: str = Field(..., min_length=2, max_length=2)
     price_profile: Literal["lojista", "corporativo"] = "lojista"
     max_discount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
-
-    @field_validator("state", mode="before")
-    @classmethod
-    def normalize_state(cls, value: object) -> str:
-        if not isinstance(value, str):
-            raise ValueError("UF deve ser informada como texto.")
-        state = value.strip().upper()
-        if len(state) != 2 or not state.isascii() or not state.isalpha():
-            raise ValueError("UF deve conter exatamente 2 letras.")
-        return state
 
 
 class ClientCreate(ClientBase):
@@ -43,18 +33,6 @@ class ClientUpdate(BaseModel):
     state: Optional[str] = Field(None, min_length=2, max_length=2)
     price_profile: Optional[Literal["lojista", "corporativo"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
-
-    @field_validator("state", mode="before")
-    @classmethod
-    def normalize_state(cls, value: object) -> Optional[str]:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise ValueError("UF deve ser informada como texto.")
-        state = value.strip().upper()
-        if len(state) != 2 or not state.isascii() or not state.isalpha():
-            raise ValueError("UF deve conter exatamente 2 letras.")
-        return state
 
 
 class ClientRead(ClientBase):

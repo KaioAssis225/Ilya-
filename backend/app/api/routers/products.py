@@ -1,24 +1,20 @@
 import uuid
 import os
-from typing import List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, literal_column, or_, select
-from sqlalchemy.orm import load_only, noload
+from sqlalchemy import select
 
 from app.api.deps import get_db_session, get_current_user, require_roles
 from app.models.product import Product, ProductSetItem, ProductSetComponent
-from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
-    ProductBatchRequest,
 )
 from app.core.config import settings
-from app.core.search import literal_contains_pattern
-from app.core.uploads import delete_upload, persist_upload, sanitize_image_upload
+from app.core.uploads import sanitize_image_upload
 
 def _is_conjunto_type(type_: Optional[str]) -> bool:
     """Bloco 74: identifica 'conjuntos' por substring case-insensitive no nome
@@ -69,23 +65,11 @@ def _to_read(product: Product) -> ProductRead:
 async def _resolve_set_items(
     db: AsyncSession, items: list, parent_code: str
 ) -> list[ProductSetItem]:
-    codes = list(dict.fromkeys(item.product_code for item in items))
-    products = (
-        await db.execute(
-            select(Product)
-            .where(Product.product_code.in_(codes))
-            .options(
-                load_only(Product.id, Product.product_code, Product.is_set),
-                noload(Product.optionals),
-                noload(Product.set_items),
-                noload(Product.components),
-            )
-        )
-    ).scalars().all()
-    product_map = {product.product_code: product for product in products}
     result = []
     for item in items:
-        p = product_map.get(item.product_code)
+        p = (await db.execute(
+            select(Product).where(Product.product_code == item.product_code)
+        )).scalar_one_or_none()
         if not p:
             raise HTTPException(400, f"Produto '{item.product_code}' não encontrado.")
         if p.is_set:
@@ -99,22 +83,9 @@ async def _resolve_set_items(
 async def _resolve_components(
     db: AsyncSession, items: list[ProductSetComponentCreate]
 ) -> list[ProductSetComponent]:
-    optional_ids = {
-        optional_id
-        for item in items
-        for optional_id in item.optional_ids
-    }
-    optionals = (
-        await db.execute(
-            select(OptionalColor).where(OptionalColor.id.in_(optional_ids))
-        )
-    ).scalars().all() if optional_ids else []
-    optional_map = {optional.id: optional for optional in optionals}
     result = []
     for item in items:
-        missing = [optional_id for optional_id in item.optional_ids if optional_id not in optional_map]
-        if missing:
-            raise HTTPException(status_code=400, detail="Um ou mais opcionais não foram encontrados.")
+        optionals = await _resolve_optionals(db, item.optional_ids)
         comp = ProductSetComponent(
             id=uuid.uuid4(),
             description=item.description,
@@ -124,7 +95,7 @@ async def _resolve_components(
             profundidade=item.profundidade,
             qty=item.qty,
         )
-        comp.optionals = [optional_map[optional_id] for optional_id in item.optional_ids]
+        comp.optionals = optionals
         result.append(comp)
     return result
 
@@ -138,105 +109,13 @@ async def _resolve_optionals(db: AsyncSession, ids: list[uuid.UUID]) -> list[Opt
 
 @router.get("", response_model=List[ProductRead])
 async def list_products(
-    response: Response,
-    skip: int = Query(default=0, ge=0, le=1_000_000),
-    limit: int = Query(default=100, ge=1, le=1000),
-    q: Optional[str] = Query(default=None, max_length=200),
-    product_type: Optional[str] = Query(
-        default=None,
-        alias="type",
-        max_length=50,
-    ),
-    group_id: uuid.UUID | None = Query(default=None),
-    include_total: bool = Query(default=True),
-    sort_by: Literal[
-        "product_code",
-        "description",
-        "type",
-        "price_lojista",
-        "price_corporativo",
-    ] = Query(default="product_code"),
-    sort_dir: Literal["asc", "desc"] = Query(default="asc"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, le=1000),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ANY,
 ):
-    filters = []
-    search = q.strip() if q else ""
-    if search:
-        search_pattern = literal_contains_pattern(search)
-        filters.append(
-            or_(
-                Product.product_code.ilike(search_pattern, escape="\\"),
-                Product.description.ilike(search_pattern, escape="\\"),
-            )
-        )
-    if product_type:
-        filters.append(Product.type == product_type)
-    if group_id:
-        filters.append(
-            Product.type.in_(
-                select(ProductType.name).where(
-                    ProductType.group_id == group_id
-                )
-            )
-        )
-
-    sort_column = {
-        "product_code": Product.product_code,
-        # Evita um índice B-tree inseguro sobre textos de até 20 mil caracteres.
-        # Os primeiros 512 caracteres cobrem a ordenação visual do catálogo e
-        # permitem um índice pequeno e previsível.
-        "description": func.left(
-            Product.description,
-            literal_column("512"),
-        ),
-        "type": Product.type,
-        "price_lojista": Product.price_lojista,
-        "price_corporativo": Product.price_corporativo,
-    }[sort_by]
-    order_expression = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
-    id_order = Product.id.desc() if sort_dir == "desc" else Product.id.asc()
-
-    total: int | None = None
-    if include_total:
-        total = (
-            await db.execute(
-                select(func.count()).select_from(Product).where(*filters)
-            )
-        ).scalar_one()
-    result = await db.execute(
-        select(Product)
-        .where(*filters)
-        .order_by(order_expression, id_order)
-        .offset(skip)
-        .limit(limit if include_total else limit + 1)
-    )
-    loaded_products = list(result.scalars().all())
-    products = loaded_products[:limit]
-    has_more = (
-        skip + len(products) < total
-        if total is not None
-        else len(loaded_products) > limit
-    )
-    if total is not None:
-        response.headers["X-Total-Count"] = str(total)
-    response.headers["X-Has-More"] = "true" if has_more else "false"
-    response.headers["X-Page-Size"] = str(len(products))
-    return [_to_read(product) for product in products]
-
-
-@router.post("/batch", response_model=List[ProductRead])
-async def get_products_batch(
-    payload: ProductBatchRequest,
-    db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
-):
-    codes = list(dict.fromkeys(payload.product_codes))
-    products = (
-        await db.execute(select(Product).where(Product.product_code.in_(codes)))
-    ).scalars().all()
-    product_map = {product.product_code: product for product in products}
-    return [_to_read(product_map[code]) for code in codes if code in product_map]
+    result = await db.execute(select(Product).offset(skip).limit(limit))
+    return [_to_read(p) for p in result.scalars().all()]
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -320,10 +199,10 @@ async def delete_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    old_photo_path = product.photo_path
+    if product.photo_path and os.path.exists(product.photo_path):
+        os.remove(product.photo_path)
     await db.delete(product)
     await db.commit()
-    await delete_upload(old_photo_path)
 
 
 @router.post("/{product_id}/upload-photo", response_model=ProductRead)
@@ -342,18 +221,15 @@ async def upload_photo(
         max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
         max_size_label=f"{settings.MAX_UPLOAD_SIZE_MB}MB",
         allowed_extensions=settings.get_allowed_extensions(),
-        max_pixels=settings.MAX_IMAGE_PIXELS,
-        max_dimension=settings.MAX_IMAGE_DIMENSION,
     )
-    old_photo_path = product.photo_path
-    save_path = await persist_upload(content, settings.UPLOAD_DIR, ext)
+    if product.photo_path and os.path.exists(product.photo_path):
+        os.remove(product.photo_path)
+    filename = f"{uuid.uuid4()}.{ext}"
+    save_path = os.path.join(settings.UPLOAD_DIR, filename)
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    with open(save_path, "wb") as f:
+        f.write(content)
     product.photo_path = save_path
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        await delete_upload(save_path)
-        raise
-    await delete_upload(old_photo_path)
+    await db.commit()
     await db.refresh(product)
     return _to_read(product)

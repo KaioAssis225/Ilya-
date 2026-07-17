@@ -1,14 +1,13 @@
 import uuid
-from typing import List, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 
 import logging
 
 from app.api.deps import get_db_session, get_current_user, require_roles, is_client_account
-from app.core.search import literal_contains_pattern
 from app.models.client import Client, anonymize_client_fields
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
@@ -21,13 +20,7 @@ _ADMIN = Depends(require_roles(UserRole.admin))
 
 
 def _rep_guard(client: Client, current_user: User) -> None:
-    if (
-        current_user.role == UserRole.representante
-        and (
-            current_user.rep_id is None
-            or client.rep_id != current_user.rep_id
-        )
-    ):
+    if current_user.role == UserRole.representante and client.rep_id != current_user.rep_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
     if is_client_account(current_user) and client.id != current_user.linked_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
@@ -38,17 +31,10 @@ async def _user_status(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID
     if not ids:
         return {}
     result = await db.execute(
-        select(
-            User.linked_id,
-            User.must_change_password,
-            User.is_active,
-        ).where(User.linked_id.in_(ids))
+        select(User.linked_id, User.must_change_password)
+        .where(User.linked_id.in_(ids), User.is_active.is_(True))
     )
-    return {
-        row[0]: (True, bool(row[2]) and not row[1])
-        for row in result.fetchall()
-        if row[0] is not None
-    }
+    return {row[0]: (True, not row[1]) for row in result.fetchall() if row[0] is not None}
 
 
 def _with_has_user(client: Client, status_map: dict[uuid.UUID, tuple[bool, bool]]) -> ClientRead:
@@ -59,81 +45,25 @@ def _with_has_user(client: Client, status_map: dict[uuid.UUID, tuple[bool, bool]
 
 @router.get("", response_model=List[ClientRead])
 async def list_clients(
-    response: Response,
-    skip: int = Query(default=0, ge=0, le=1_000_000),
-    limit: int = Query(default=100, ge=1, le=200),
-    q: str | None = Query(default=None, max_length=200),
-    include_total: bool = Query(default=True),
-    sort_by: Literal[
-        "name",
-        "email",
-        "phone",
-        "city",
-        "state",
-        "max_discount",
-    ] = Query(default="name"),
-    sort_dir: Literal["asc", "desc"] = Query(default="asc"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, le=200),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    filters = []
     if current_user.role == UserRole.representante:
-        if not current_user.rep_id:
-            response.headers["X-Total-Count"] = "0"
-            response.headers["X-Has-More"] = "false"
-            response.headers["X-Page-Size"] = "0"
-            return []
-        filters.append(Client.rep_id == current_user.rep_id)
-    elif is_client_account(current_user):
-        filters.append(Client.id == current_user.linked_id)
-
-    search = q.strip() if q else ""
-    if search:
-        search_pattern = literal_contains_pattern(search)
-        filters.append(
-            or_(
-                Client.name.ilike(search_pattern, escape="\\"),
-                Client.email.ilike(search_pattern, escape="\\"),
-                Client.city.ilike(search_pattern, escape="\\"),
-            )
+        result = await db.execute(
+            select(Client)
+            .where(Client.rep_id == current_user.rep_id)
+            .offset(skip).limit(limit)
         )
-
-    sort_column = {
-        "name": Client.name,
-        "email": Client.email,
-        "phone": Client.phone,
-        "city": Client.city,
-        "state": Client.state,
-        "max_discount": Client.max_discount,
-    }[sort_by]
-    order_expression = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
-    id_order = Client.id.desc() if sort_dir == "desc" else Client.id.asc()
-
-    total: int | None = None
-    if include_total:
-        total = (
-            await db.execute(
-                select(func.count()).select_from(Client).where(*filters)
-            )
-        ).scalar_one()
-    result = await db.execute(
-        select(Client)
-        .where(*filters)
-        .order_by(order_expression, id_order)
-        .offset(skip)
-        .limit(limit if include_total else limit + 1)
-    )
-    loaded_clients = list(result.scalars().all())
-    clients = loaded_clients[:limit]
-    has_more = (
-        skip + len(clients) < total
-        if total is not None
-        else len(loaded_clients) > limit
-    )
-    if total is not None:
-        response.headers["X-Total-Count"] = str(total)
-    response.headers["X-Has-More"] = "true" if has_more else "false"
-    response.headers["X-Page-Size"] = str(len(clients))
+    elif is_client_account(current_user):
+        # Cliente logado (V-Bloco66-RBAC): só o próprio registro, nunca a listagem completa.
+        result = await db.execute(
+            select(Client).where(Client.id == current_user.linked_id)
+        )
+    else:
+        result = await db.execute(select(Client).offset(skip).limit(limit))
+    clients = result.scalars().all()
     linked = await _user_status(db, [c.id for c in clients])
     return [_with_has_user(c, linked) for c in clients]
 
@@ -145,40 +75,13 @@ async def create_client(
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante)),
 ):
     data = payload.model_dump()
-    duplicate_email = (
-        await db.execute(
-            select(Client.id).where(
-                func.lower(Client.email) == str(payload.email).lower()
-            ).limit(1)
-        )
-    ).scalar_one_or_none()
-    if duplicate_email:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um cliente com este e-mail.",
-        )
     if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
         data["max_discount"] = ClientCreate.model_fields["max_discount"].default
     client = Client(**data)
     if current_user.role == UserRole.representante:
-        if not current_user.rep_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "O usuário representante não possui um registro "
-                    "de representante associado."
-                ),
-            )
         client.rep_id = current_user.rep_id
     db.add(client)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um cliente com este e-mail.",
-        )
+    await db.commit()
     await db.refresh(client)
     return ClientRead.model_validate(client)
 
@@ -216,31 +119,9 @@ async def update_client(
         update_data.pop("price_profile", None)
     if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
         update_data.pop("max_discount", None)
-    new_email = update_data.get("email")
-    if new_email:
-        duplicate_email = (
-            await db.execute(
-                select(Client.id).where(
-                    func.lower(Client.email) == str(new_email).lower(),
-                    Client.id != client.id,
-                ).limit(1)
-            )
-        ).scalar_one_or_none()
-        if duplicate_email:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Já existe um cliente com este e-mail.",
-            )
     for field, value in update_data.items():
         setattr(client, field, value)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um cliente com este e-mail.",
-        )
+    await db.commit()
     await db.refresh(client)
     linked = await _user_status(db, [client.id])
     return _with_has_user(client, linked)

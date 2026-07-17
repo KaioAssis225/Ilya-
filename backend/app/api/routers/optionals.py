@@ -10,7 +10,7 @@ from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
 from app.schemas.optional import OptionalColorCreate, OptionalColorUpdate, OptionalColorRead
 from app.core.config import settings
-from app.core.uploads import delete_upload, persist_upload, sanitize_image_upload
+from app.core.uploads import sanitize_image_upload
 
 router = APIRouter(prefix="/api/v1/optionals", tags=["optionals"])
 
@@ -44,33 +44,15 @@ def _to_read(opt: OptionalColor) -> OptionalColorRead:
 @router.get("", response_model=List[OptionalColorRead])
 async def list_optionals(
     category: str | None = Query(default=None),
-    categories: str | None = Query(default=None, max_length=3000),
-    skip: int = Query(default=0, ge=0, le=1_000_000),
-    limit: int = Query(default=1000, ge=1, le=5000),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=1000, le=5000),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ANY,
 ):
     stmt = select(OptionalColor)
     if category:
         stmt = stmt.where(OptionalColor.category == category)
-    elif categories:
-        category_values = [
-            value.strip()
-            for value in categories.split(",")
-            if value.strip()
-        ][:50]
-        if category_values:
-            stmt = stmt.where(OptionalColor.category.in_(category_values))
-    result = await db.execute(
-        stmt
-        .order_by(
-            OptionalColor.category,
-            OptionalColor.color_name,
-            OptionalColor.id,
-        )
-        .offset(skip)
-        .limit(limit)
-    )
+    result = await db.execute(stmt.offset(skip).limit(limit))
     return [_to_read(o) for o in result.scalars().all()]
 
 
@@ -115,10 +97,8 @@ async def delete_optional(
     opt = result.scalar_one_or_none()
     if not opt:
         raise HTTPException(status_code=404, detail="Opcional não encontrado.")
-    old_photo_path = opt.photo_path
     await db.delete(opt)
     await db.commit()
-    await delete_upload(old_photo_path)
 
 
 @router.post("/{optional_id}/upload-photo", response_model=OptionalColorRead)
@@ -137,19 +117,16 @@ async def upload_photo(
         max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
         max_size_label=f"{settings.MAX_UPLOAD_SIZE_MB}MB",
         allowed_extensions=settings.get_allowed_extensions(),
-        max_pixels=settings.MAX_IMAGE_PIXELS,
-        max_dimension=settings.MAX_IMAGE_DIMENSION,
     )
+    if opt.photo_path and os.path.exists(opt.photo_path):
+        os.remove(opt.photo_path)
+    filename = f"{uuid.uuid4()}.{ext}"
     opt_dir = os.path.join(settings.UPLOAD_DIR, "optionals")
-    old_photo_path = opt.photo_path
-    save_path = await persist_upload(content, opt_dir, ext)
-    opt.photo_path = save_path
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        await delete_upload(save_path)
-        raise
-    await delete_upload(old_photo_path)
+    os.makedirs(opt_dir, exist_ok=True)
+    save_path = os.path.join(opt_dir, filename)
+    with open(save_path, "wb") as f:
+        f.write(content)
+    opt.photo_path = f"app/static/uploads/optionals/{filename}"
+    await db.commit()
     await db.refresh(opt)
     return _to_read(opt)

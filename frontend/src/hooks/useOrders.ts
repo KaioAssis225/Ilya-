@@ -1,48 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Order, OrderCreate, OrderUpdate, OrderHistory, OrderSummary } from '../types'
+import type { Order, OrderCreate, OrderUpdate, OrderHistory } from '../types'
 
 const KEY = 'orders'
 
-export interface OrderListFilters {
-  cursor?: string
-  limit?: number
-  q?: string
-  client_id?: string
-  rep_id?: string
-  client_name?: string
-  rep_name?: string
-  status?: 'in_progress' | 'finalized' | 'cancelled' | ''
-  date_from?: string
-  date_to?: string
-}
-
-export interface OrderListPage {
-  items: OrderSummary[]
-  nextCursor: string | null
-  hasMore: boolean
-}
-
-export interface OrderHistoryPage {
-  items: OrderHistory[]
-  nextCursor: string | null
-  hasMore: boolean
-}
-
-export function useOrders(filters: OrderListFilters = {}) {
-  return useQuery<OrderListPage>({
-    queryKey: [KEY, 'list', filters],
-    queryFn: async () => {
-      const params = Object.fromEntries(
-        Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
-      )
-      const response = await api.get<OrderSummary[]>('/orders', { params })
-      return {
-        items: response.data,
-        nextCursor: response.headers['x-next-cursor'] ?? null,
-        hasMore: response.headers['x-has-more'] === 'true',
-      }
-    },
+export function useOrders() {
+  return useQuery<Order[]>({
+    queryKey: [KEY],
+    queryFn: async () => (await api.get('/orders')).data,
   })
 }
 
@@ -96,19 +61,10 @@ export function useOrderHistory(orderId: string | null) {
   })
 }
 
-export function useGlobalOrderHistory(cursor?: string, enabled = true) {
-  return useQuery<OrderHistoryPage>({
-    queryKey: [KEY, 'history', cursor],
-    queryFn: async () => {
-      const response = await api.get<OrderHistory[]>('/orders/history', {
-        params: { cursor, limit: 100 },
-      })
-      return {
-        items: response.data,
-        nextCursor: response.headers['x-next-cursor'] ?? null,
-        hasMore: response.headers['x-has-more'] === 'true',
-      }
-    },
+export function useGlobalOrderHistory(enabled = true) {
+  return useQuery<OrderHistory[]>({
+    queryKey: [KEY, 'history'],
+    queryFn: async () => (await api.get('/orders/history')).data,
     enabled,
   })
 }

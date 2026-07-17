@@ -1,21 +1,13 @@
 import uuid
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel
 from app.models.user import UserRole
 
 
 class LoginRequest(BaseModel):
     identifier: str  # accepts email or username
     password: str
-
-    @field_validator("identifier")
-    @classmethod
-    def normalize_identifier(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Informe o e-mail ou usuário.")
-        return normalized
 
 
 class AccessTokenResponse(BaseModel):
@@ -40,7 +32,7 @@ class UserRead(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     full_name: str
     role: UserRole = UserRole.vendedor
@@ -48,7 +40,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     full_name: Optional[str] = None
     role: Optional[UserRole] = None
     rep_id: Optional[uuid.UUID] = None

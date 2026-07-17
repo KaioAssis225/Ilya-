@@ -11,22 +11,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Railway pode fornecer somente PGHOST/PGUSER/PGPASSWORD/PGDATABASE/PGPORT.
-    # A validação de que uma das duas formas está completa fica centralizada
-    # em app.db.url.resolve_async_database_url.
-    DATABASE_URL: str = ""
+    DATABASE_URL: str
     SECRET_KEY: str
     PASSWORD_PEPPER: str
-
-    # Orçamento de conexões por processo. Em produção, o total máximo é:
-    # replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW).
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 5
-    DB_POOL_TIMEOUT_SECONDS: float = 10.0
-    DB_POOL_RECYCLE_SECONDS: int = 1800
-    DB_COMMAND_TIMEOUT_SECONDS: float = 30.0
-    DB_STATEMENT_TIMEOUT_MS: int = 30_000
-    READINESS_TIMEOUT_SECONDS: float = 3.0
 
     ACCESS_TOKEN_TTL_MINUTES: int = 30
     REFRESH_TOKEN_TTL_DAYS: int = 7
@@ -40,18 +27,7 @@ class Settings(BaseSettings):
     )
     UPLOAD_DIR: str = "app/static/uploads"
     MAX_UPLOAD_SIZE_MB: int = 5
-    MAX_REQUEST_BODY_MB: int = 15
-    CSV_IMPORT_STATEMENT_TIMEOUT_MS: int = 300_000
     ALLOWED_EXTENSIONS: str = "jpg,jpeg,png,webp"
-    MAX_IMAGE_PIXELS: int = 25_000_000
-    MAX_IMAGE_DIMENSION: int = 2560
-
-    RATE_LIMIT_STORAGE_URI: str = "memory://"
-    RATE_LIMIT_DEFAULT: str = "200/minute"
-    RATE_LIMIT_REDIS_TIMEOUT_SECONDS: float = 2.0
-    GZIP_MINIMUM_SIZE: int = 1024
-    GZIP_COMPRESS_LEVEL: int = 5
-    SLOW_REQUEST_THRESHOLD_MS: float = 1000.0
 
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"

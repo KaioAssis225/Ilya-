@@ -3,16 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, Link, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
-import { useClient } from '../hooks/useClients'
-import { useProductsByCodes } from '../hooks/useProducts'
-import { useOptionalsForCategories } from '../hooks/useOptionals'
+import { useClients } from '../hooks/useClients'
+import { useRepresentatives } from '../hooks/useRepresentatives'
+import { useProducts } from '../hooks/useProducts'
+import { useOptionals } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { useAuth } from '../hooks/useAuth'
+import { generateOrderPDF } from '../lib/generatePDF'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
 import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
 import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
-import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
+import type { Order, OrderHistory, OptionalColor, Product, Client } from '../types'
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
@@ -22,17 +24,8 @@ function fmtDateTime(s: string) {
   return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function itemsSummary(order: OrderSummary) {
+function itemsSummary(order: Order) {
   return order.items.map((i) => `${i.product_code}(${i.qty})`).join(', ')
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs)
-    return () => window.clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -88,7 +81,7 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
 
 // ── Finalize Modal ─────────────────────────────────────────────────────────────
 
-function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () => void }) {
+function FinalizeModal({ order, onClose }: { order: Order; onClose: () => void }) {
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const finalizeM = useFinalizeOrder()
@@ -137,7 +130,7 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
 
 // ── Cancel Modal ───────────────────────────────────────────────────────────────
 
-function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => void }) {
+function CancelModal({ order, onClose }: { order: Order; onClose: () => void }) {
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const cancelM = useCancelOrder()
@@ -187,50 +180,19 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
 // ── Modal de detalhes ─────────────────────────────────────────────────────────
 
 function OrderDetailModal({
-  order: orderLight, clientName, repName,
-  userId, userRole, canSignContract,
+  order: orderLight, clientName, repName, allOptionals, products,
+  userId, userRole, canSignContract, clientObj,
   onClose, onEdit, onFinalize, onCancel,
 }: {
-  order: OrderSummary; clientName: string; repName: string
-  userId: string; userRole: string; canSignContract: boolean
+  order: Order; clientName: string; repName: string
+  allOptionals: OptionalColor[]; products: Product[]
+  userId: string; userRole: string; canSignContract: boolean; clientObj: Client | null
   onClose: () => void; onEdit: () => void; onFinalize: () => void; onCancel: () => void
 }) {
   const queryClient = useQueryClient()
   // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo.
-  const {
-    data: orderDetail,
-    isError: detailError,
-    refetch: retryOrderDetail,
-  } = useOrder(orderLight.id)
-  const { data: clientObj } = useClient(orderLight.client_id)
-  const order: Order = orderDetail ?? {
-    ...orderLight,
-    total_ipi: 0,
-    external_code: null,
-    notes: null,
-    rep_signed: false,
-    client_signed: false,
-    rep_signature: null,
-    client_signature: null,
-    items: [],
-    history: [],
-    updated_at: orderLight.created_at,
-  }
-  const { data: products = [] } = useProductsByCodes(
-    orderDetail?.items.map((item) => item.product_code) ?? [],
-    !!orderDetail,
-  )
-  const optionalCategories = orderDetail
-    ? Array.from(
-        new Set(
-          orderDetail.items.flatMap((item) => Object.keys(item.opt_categories)),
-        ),
-      )
-    : []
-  const { data: allOptionals = [] } = useOptionalsForCategories(
-    optionalCategories,
-    !!orderDetail,
-  )
+  const { data: orderDetail } = useOrder(orderLight.id)
+  const order = orderDetail ?? orderLight
   const { data: optCategories = [] } = useOptionalCategories()
   const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
   const isClientUser = userRole === 'cliente' || (userRole === 'vendedor' && canSignContract)
@@ -254,10 +216,7 @@ function OrderDetailModal({
   const repIsDrawingRef = useRef(false)
 
   // Representante também edita/finaliza os próprios pedidos (backend valida a posse)
-  // O papel legado "vendedor" com vínculo é uma conta de cliente, não um usuário interno.
-  const canManage = userRole === 'admin'
-    || userRole === 'representante'
-    || (userRole === 'vendedor' && !canSignContract)
+  const canManage = userRole === 'admin' || userRole === 'vendedor' || userRole === 'representante'
   const profileSig = getProfileSignature(userId)
   const isContractSigned = !!(order.rep_signed || order.rep_signature)
   const isClientSigned = !!(order.client_signed || order.client_signature)
@@ -354,37 +313,6 @@ function OrderDetailModal({
       label: `${catLabel(cat)} — ${color}`,
       swatch: allOptionals.find(o => o.category === cat && o.color_name === color)?.photo_url ?? null,
     }))
-  }
-
-  if (detailError) {
-    return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-panel w-full max-w-md p-8" onClick={(e) => e.stopPropagation()}>
-          <p className="text-sm text-terracotta text-center">
-            Não foi possível carregar os detalhes deste pedido.
-          </p>
-          <div className="flex justify-center gap-3 mt-5">
-            <button className="btn-secondary" onClick={onClose}>Fechar</button>
-            <button className="btn-primary" onClick={() => void retryOrderDetail()}>
-              Tentar novamente
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!orderDetail) {
-    return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-panel w-full max-w-2xl p-10" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-center gap-3 text-sm text-muted" role="status">
-            <span className="w-5 h-5 rounded-full border-2 border-gold/25 border-t-gold animate-spin" />
-            Carregando detalhes do pedido…
-          </div>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -684,11 +612,10 @@ function OrderDetailModal({
 // ── Mobile order card ───────────────────────────────────────────────────────
 
 function MobileOrderCard({
-  order, clientName, repName, onView, onPDF, onDelete, pdfLoading,
+  order, clientName, repName, onView, onPDF, onDelete,
 }: {
-  order: OrderSummary; clientName: string; repName: string
-  onView: () => void; onPDF: () => void; onDelete?: () => void
-  pdfLoading: boolean
+  order: Order; clientName: string; repName: string
+  onView: () => void; onPDF: () => void; onDelete: () => void
 }) {
   return (
     <div className="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
@@ -714,10 +641,8 @@ function MobileOrderCard({
       </div>
       <div className="flex border-t border-bg-2 divide-x divide-bg-2">
         <button onClick={onView} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Visualizar"><Eye className="w-4 h-4 text-gold" /> Ver</button>
-        <button disabled={pdfLoading} onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors disabled:opacity-50" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> {pdfLoading ? 'Gerando…' : 'PDF'}</button>
-        {onDelete && (
-          <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-[#fbf2f0] transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
-        )}
+        <button onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> PDF</button>
+        <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-[#fbf2f0] transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
       </div>
     </div>
   )
@@ -728,13 +653,28 @@ function MobileOrderCard({
 export default function PedidosPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const isLegacyClient = user?.role === 'vendedor' && !!user.linked_id
-  const isInternalSeller = user?.role === 'vendedor' && !user.linked_id
-  const canManage = user?.role === 'admin' || user?.role === 'representante' || isInternalSeller
-  const canViewGlobalAudit = user?.role === 'admin' || isInternalSeller
-  const canDelete = user?.role === 'admin'
+  const canManage = user?.role === 'admin' || user?.role === 'vendedor' || user?.role === 'representante'
+  const { data: orders = [], isLoading } = useOrders()
+  const { data: clients = [] } = useClients()
+  const { data: reps = [] } = useRepresentatives()
+  const { data: products = [] } = useProducts()
+  const { data: allOptionals = [] } = useOptionals()
+  const { data: optCategoriesList = [] } = useOptionalCategories()
+  const pdfCatLabel = (code: string) => optCategoriesList.find(c => c.code === code)?.name ?? code
+  const { data: globalHistory = [] } = useGlobalOrderHistory(canManage)
+  const deleteM = useDeleteOrder()
+  const canSignContract = user?.role === 'representante' || user?.role === 'cliente' || (user?.role === 'vendedor' && !!user?.linked_id)
+
+  async function handlePDF(orderLight: Order) {
+    const client = clients.find((c) => c.id === orderLight.client_id)
+    if (!client) return
+    const rep = orderLight.rep_id ? (reps.find((r) => r.id === orderLight.rep_id) ?? null) : null
+    // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo p/ o PDF.
+    const order = (await api.get<Order>(`/orders/${orderLight.id}`)).data
+    await generateOrderPDF(order, client, rep, products, pdfCatLabel)
+  }
+
   const [activeTab, setActiveTab] = useState<'orders' | 'audit'>('orders')
-  const isAuditActive = canViewGlobalAudit && activeTab === 'audit'
   const [filter, setFilter] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterRep, setFilterRep] = useState('')
@@ -742,95 +682,31 @@ export default function PedidosPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([undefined])
-  const [historyCursorStack, setHistoryCursorStack] = useState<Array<string | undefined>>([undefined])
-  const [pdfOrderId, setPdfOrderId] = useState<string | null>(null)
-  const [pdfError, setPdfError] = useState<string | null>(null)
-  const debouncedFilter = useDebouncedValue(filter.trim(), 300)
-  const debouncedClient = useDebouncedValue(filterClient.trim(), 300)
-  const debouncedRep = useDebouncedValue(filterRep.trim(), 300)
-  const currentCursor = cursorStack[cursorStack.length - 1]
-  const { data: ordersPage, isLoading } = useOrders({
-    cursor: currentCursor,
-    limit: 50,
-    q: debouncedFilter,
-    client_name: debouncedClient,
-    rep_name: debouncedRep,
-    status: filterStatus,
-    date_from: filterDateFrom,
-    date_to: filterDateTo,
+  const [viewing, setViewing] = useState<Order | null>(null)
+  const [deleting, setDeleting] = useState<Order | null>(null)
+  const [finalizing, setFinalizing] = useState<Order | null>(null)
+  const [canceling, setCanceling] = useState<Order | null>(null)
+
+  const clientMap = Object.fromEntries(clients.map((c) => [c.id, c.name]))
+  const clientObjMap = Object.fromEntries(clients.map((c) => [c.id, c]))
+  const repMap = Object.fromEntries(reps.map((r) => [r.id, r.name]))
+
+  const filtered = orders.filter((o) => {
+    const q = filter.toLowerCase()
+    const clientName = (clientMap[o.client_id] ?? '').toLowerCase()
+    return (
+      (o.code.toLowerCase().includes(q) || o.orc_id.toLowerCase().includes(q) || clientName.includes(q)) &&
+      (!filterClient || o.client_id === filterClient) &&
+      (!filterRep || o.rep_id === filterRep) &&
+      (!filterStatus || (
+        filterStatus === 'finalized' ? o.is_finalized :
+        filterStatus === 'cancelled' ? o.is_cancelled :
+        (!o.is_finalized && !o.is_cancelled)
+      )) &&
+      (!filterDateFrom || o.created_at >= filterDateFrom) &&
+      (!filterDateTo || o.created_at <= filterDateTo + 'T23:59:59')
+    )
   })
-  const orders = ordersPage?.items ?? []
-  const { data: optCategoriesList = [] } = useOptionalCategories()
-  const pdfCatLabel = (code: string) => optCategoriesList.find(c => c.code === code)?.name ?? code
-  const historyCursor = historyCursorStack[historyCursorStack.length - 1]
-  const {
-    data: globalHistoryPage,
-    isLoading: isHistoryLoading,
-  } = useGlobalOrderHistory(
-    historyCursor,
-    isAuditActive,
-  )
-  const globalHistory = globalHistoryPage?.items ?? []
-  const deleteM = useDeleteOrder()
-  const canSignContract = user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient
-
-  useEffect(() => {
-    setCursorStack([undefined])
-  }, [debouncedFilter, debouncedClient, debouncedRep, filterStatus, filterDateFrom, filterDateTo])
-
-  useEffect(() => {
-    if (!canViewGlobalAudit && activeTab === 'audit') {
-      setActiveTab('orders')
-    }
-  }, [activeTab, canViewGlobalAudit])
-
-  async function handlePDF(orderLight: OrderSummary) {
-    if (pdfOrderId) return
-    setPdfOrderId(orderLight.id)
-    setPdfError(null)
-    try {
-      const order = (await api.get<Order>(`/orders/${orderLight.id}`)).data
-      const codes = Array.from(
-        new Set(order.items.map((item) => item.product_code)),
-      )
-      const batches = Array.from(
-        { length: Math.ceil(codes.length / 100) },
-        (_, index) => codes.slice(index * 100, (index + 1) * 100),
-      )
-      const [pdfModule, clientResponse, repResponse, productsResponses] = await Promise.all([
-        import('../lib/generatePDF'),
-        api.get<Client>(`/clients/${orderLight.client_id}`),
-        orderLight.rep_id
-          ? api.get<Representative>(`/representatives/${orderLight.rep_id}`)
-          : Promise.resolve(null),
-        Promise.all(
-          batches.map((productCodes) =>
-            api.post<Product[]>('/products/batch', {
-              product_codes: productCodes,
-            }),
-          ),
-        ),
-      ])
-      // A listagem não traz os blobs de assinatura; o PDF trabalha com o detalhe completo.
-      const client = clientResponse.data
-      const rep = repResponse?.data ?? null
-      const products = productsResponses.flatMap((response) => response.data)
-      await pdfModule.generateOrderPDF(order, client, rep, products, pdfCatLabel)
-    } catch {
-      setPdfError('Não foi possível gerar o PDF. Tente novamente.')
-    } finally {
-      setPdfOrderId(null)
-    }
-  }
-
-  const [viewing, setViewing] = useState<OrderSummary | null>(null)
-  const [deleting, setDeleting] = useState<OrderSummary | null>(null)
-  const [finalizing, setFinalizing] = useState<OrderSummary | null>(null)
-  const [canceling, setCanceling] = useState<OrderSummary | null>(null)
-
-
-  const filtered = orders
 
   const hasFilters = !!(filterClient || filterRep || filterStatus || filterDateFrom || filterDateTo)
 
@@ -842,12 +718,12 @@ export default function PedidosPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-ink font-medium">
-              {isAuditActive ? 'Auditoria Geral' : 'Pedidos'}
+              {activeTab === 'orders' ? 'Pedidos' : 'Auditoria Geral'}
               <span className="ml-2 text-xs bg-bg-2 text-gold px-2 py-0.5 rounded-full">
-                Nesta página: {isAuditActive ? globalHistory.length : orders.length}
+                {activeTab === 'orders' ? orders.length : globalHistory.length}
               </span>
             </h2>
-            {canViewGlobalAudit && (
+            {canManage && (
               <div className="flex gap-1 border border-line rounded-lg p-0.5 bg-white">
                 <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>Pedidos</button>
                 <button onClick={() => setActiveTab('audit')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${activeTab === 'audit' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>
@@ -857,7 +733,7 @@ export default function PedidosPage() {
             )}
           </div>
 
-          {!isAuditActive && (
+          {activeTab === 'orders' && (
             <div className="flex items-center gap-2">
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
@@ -870,35 +746,22 @@ export default function PedidosPage() {
           )}
         </div>
 
-        {pdfError && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700" role="alert">
-            <span>{pdfError}</span>
-            <button className="text-xs font-semibold" onClick={() => setPdfError(null)}>
-              Fechar
-            </button>
-          </div>
-        )}
-
         {/* Advanced filters */}
-        {!isAuditActive && showFilters && (
+        {activeTab === 'orders' && showFilters && (
           <div className="bg-white border border-line rounded-xl p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             <div className="space-y-1">
               <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Cliente</label>
-              <input
-                className="input text-xs w-full"
-                value={filterClient}
-                onChange={(e) => setFilterClient(e.target.value)}
-                placeholder="Nome do cliente"
-              />
+              <select className="input text-xs w-full" value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
+                <option value="">Todos</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Representante</label>
-              <input
-                className="input text-xs w-full"
-                value={filterRep}
-                onChange={(e) => setFilterRep(e.target.value)}
-                placeholder="Nome do representante"
-              />
+              <select className="input text-xs w-full" value={filterRep} onChange={(e) => setFilterRep(e.target.value)}>
+                <option value="">Todos</option>
+                {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Status</label>
@@ -930,44 +793,14 @@ export default function PedidosPage() {
         )}
 
         {/* Audit tab */}
-        {isAuditActive && (
-          <>
-            <div className="bg-white border border-line rounded-xl p-5">
-              {isHistoryLoading
-                ? <p className="text-xs text-muted text-center py-6">Carregando auditoria…</p>
-                : <AuditTimeline history={globalHistory} />
-              }
-            </div>
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <span className="text-xs text-muted">
-                Página {historyCursorStack.length} · {globalHistory.length} registro{globalHistory.length === 1 ? '' : 's'}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
-                  disabled={historyCursorStack.length === 1 || isHistoryLoading}
-                  onClick={() => setHistoryCursorStack((current) => current.slice(0, -1))}
-                >
-                  Anterior
-                </button>
-                <button
-                  className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
-                  disabled={!globalHistoryPage?.hasMore || !globalHistoryPage.nextCursor || isHistoryLoading}
-                  onClick={() => {
-                    if (globalHistoryPage?.nextCursor) {
-                      setHistoryCursorStack((current) => [...current, globalHistoryPage.nextCursor!])
-                    }
-                  }}
-                >
-                  Próxima
-                </button>
-              </div>
-            </div>
-          </>
+        {activeTab === 'audit' && (
+          <div className="bg-white border border-line rounded-xl p-5">
+            <AuditTimeline history={globalHistory} />
+          </div>
         )}
 
         {/* Orders tab */}
-        {!isAuditActive && (
+        {activeTab === 'orders' && (
           isLoading ? (
             <div className="rounded-xl border border-line overflow-hidden" aria-busy="true" aria-label="Carregando pedidos">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -984,16 +817,7 @@ export default function PedidosPage() {
             <>
               <div className="flex flex-col gap-3 md:hidden">
                 {filtered.map((order) => (
-                  <MobileOrderCard
-                    key={order.id}
-                    order={order}
-                    clientName={order.client_name}
-                    repName={order.rep_name ?? '—'}
-                    onView={() => setViewing(order)}
-                    onPDF={() => handlePDF(order)}
-                    onDelete={canDelete ? () => setDeleting(order) : undefined}
-                    pdfLoading={pdfOrderId === order.id}
-                  />
+                  <MobileOrderCard key={order.id} order={order} clientName={clientMap[order.client_id] ?? order.client_id.slice(0, 8)} repName={order.rep_id ? (repMap[order.rep_id] ?? '—') : '—'} onView={() => setViewing(order)} onPDF={() => handlePDF(order)} onDelete={() => setDeleting(order)} />
                 ))}
                 {filtered.length === 0 && (
                   <div className="rounded-xl border border-line bg-white px-4 py-12 text-center">
@@ -1029,8 +853,8 @@ export default function PedidosPage() {
                       <tr key={order.id} className="table-row">
                         <td className="px-4 py-3 font-mono text-gold">{order.code}</td>
                         <td className="px-4 py-3 font-mono text-ink-3 text-xs">{order.orc_id}</td>
-                        <td className="px-4 py-3 text-ink">{order.client_name}</td>
-                        <td className="px-4 py-3 text-ink-3">{order.rep_name ?? '—'}</td>
+                        <td className="px-4 py-3 text-ink">{clientMap[order.client_id] ?? order.client_id.slice(0, 8)}</td>
+                        <td className="px-4 py-3 text-ink-3">{order.rep_id ? (repMap[order.rep_id] ?? '—') : '—'}</td>
                         <td className="px-4 py-3 text-ink-3 text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
                         <td className="px-4 py-3 text-right font-semibold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></td>
                         <td className="px-4 py-3 text-ink-3 text-xs">{fmtDate(order.created_at)}</td>
@@ -1043,16 +867,14 @@ export default function PedidosPage() {
                         <td className="px-4 py-3">
                           <div className="flex gap-1.5 items-center">
                             <button title="Ver detalhes" className="text-muted hover:text-gold transition-colors p-1" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
-                            <button disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} className="text-muted hover:text-blue-500 transition-colors p-1 disabled:opacity-40" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
+                            <button title="Gerar PDF" className="text-muted hover:text-blue-500 transition-colors p-1" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
                             {canManage && !order.is_finalized && !order.is_cancelled && (
                               <>
                                 <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
                                 <button title="Cancelar" className="text-muted hover:text-terracotta transition-colors p-1" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
                               </>
                             )}
-                            {canDelete && (
-                              <button title="Excluir" className="text-muted hover:text-red-500 transition-colors p-1" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
-                            )}
+                            <button title="Excluir" className="text-muted hover:text-red-500 transition-colors p-1" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </td>
                       </tr>
@@ -1072,31 +894,6 @@ export default function PedidosPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <span className="text-xs text-muted">
-                  Página {cursorStack.length} · {orders.length} registro{orders.length === 1 ? '' : 's'}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
-                    disabled={cursorStack.length === 1 || isLoading}
-                    onClick={() => setCursorStack((current) => current.slice(0, -1))}
-                  >
-                    Anterior
-                  </button>
-                  <button
-                    className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
-                    disabled={!ordersPage?.hasMore || !ordersPage.nextCursor || isLoading}
-                    onClick={() => {
-                      if (ordersPage?.nextCursor) {
-                        setCursorStack((current) => [...current, ordersPage.nextCursor!])
-                      }
-                    }}
-                  >
-                    Próxima
-                  </button>
-                </div>
-              </div>
             </>
           )
         )}
@@ -1105,11 +902,14 @@ export default function PedidosPage() {
       {viewing && (
         <OrderDetailModal
           order={orders.find(o => o.id === viewing.id) ?? viewing}
-          clientName={viewing.client_name}
-          repName={viewing.rep_name ?? ''}
+          clientName={clientMap[viewing.client_id] ?? viewing.client_id}
+          repName={viewing.rep_id ? (repMap[viewing.rep_id] ?? '') : ''}
+          allOptionals={allOptionals}
+          products={products}
           userId={user?.id ?? ''}
           userRole={user?.role ?? ''}
           canSignContract={!!canSignContract}
+          clientObj={clientObjMap[viewing.client_id] ?? null}
           onClose={() => setViewing(null)}
           onEdit={() => { setViewing(null); navigate(`/orcamentos?edit=${viewing.id}`) }}
           onFinalize={() => { setFinalizing(viewing); setViewing(null) }}

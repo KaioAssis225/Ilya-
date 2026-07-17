@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, KeyRound, Pencil, Plus, Search, ShieldCheck, Trash2, UserCheck, UserX, X } from 'lucide-react'
-import { useUsersPage, useCreateUser, useUpdateUser, useResetUserPassword, useDeleteUser } from '../hooks/useUsers'
+import { useState } from 'react'
+import { Plus, Pencil, Trash2, KeyRound, X, ShieldCheck, UserCheck, UserX } from 'lucide-react'
+import { useUsers, useCreateUser, useUpdateUser, useResetUserPassword, useDeleteUser } from '../hooks/useUsers'
 import type { UserRead, UserCreate, UserUpdate } from '../hooks/useUsers'
-import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
+import { useRepresentatives } from '../hooks/useRepresentatives'
 
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -30,33 +30,9 @@ const EMPTY_CREATE: UserCreate = {
   email: '', password: '', full_name: '', role: 'vendedor', rep_id: null,
 }
 
-const USERS_PER_PAGE = 25
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs)
-    return () => window.clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
-
 export default function AdminPage() {
-  const [userPage, setUserPage] = useState(1)
-  const [userQuery, setUserQuery] = useState('')
-  const debouncedUserQuery = useDebouncedValue(userQuery.trim(), 300)
-  const { data: usersPage, isLoading, isFetching } = useUsersPage({
-    skip: (userPage - 1) * USERS_PER_PAGE,
-    limit: USERS_PER_PAGE,
-    q: debouncedUserQuery || undefined,
-    sort_by: 'full_name',
-    sort_dir: 'asc',
-  })
-  const users = usersPage?.items ?? []
-  const totalUsers = usersPage?.total ?? 0
-  const totalUserPages = usersPage
-    ? Math.max(1, Math.ceil(totalUsers / USERS_PER_PAGE))
-    : Math.max(1, userPage)
+  const { data: users = [], isLoading } = useUsers()
+  const { data: reps = [] } = useRepresentatives()
   const createM = useCreateUser()
   const updateM = useUpdateUser()
   const resetPwM = useResetUserPassword()
@@ -68,35 +44,6 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [repQuery, setRepQuery] = useState('')
-  const debouncedRepQuery = useDebouncedValue(repQuery.trim(), 300)
-  const repPickerOpen = (
-    (modal?.mode === 'create' && form.role === 'representante')
-    || (modal?.mode === 'edit' && editForm.role === 'representante')
-  )
-  const { data: repsPage, isFetching: repsLoading } = useRepresentativesPage({
-    skip: 0,
-    limit: 20,
-    q: debouncedRepQuery || undefined,
-    include_total: false,
-    sort_by: 'name',
-    sort_dir: 'asc',
-  }, repPickerOpen)
-  const selectedRepId = (
-    modal?.mode === 'edit' ? editForm.rep_id : form.rep_id
-  ) ?? ''
-  const { data: selectedRep } = useRepresentative(
-    selectedRepId,
-    !!selectedRepId,
-  )
-  const reps = [
-    ...(selectedRep ? [selectedRep] : []),
-    ...(repsPage?.items ?? []).filter((rep) => rep.id !== selectedRep?.id),
-  ]
-
-  useEffect(() => {
-    if (usersPage && userPage > totalUserPages) setUserPage(totalUserPages)
-  }, [usersPage, totalUserPages, userPage])
 
   function showToast(msg: string) {
     setToast(msg)
@@ -105,14 +52,12 @@ export default function AdminPage() {
 
   function openCreate() {
     setForm(EMPTY_CREATE)
-    setRepQuery('')
     setError(null)
     setModal({ mode: 'create' })
   }
 
   function openEdit(u: UserRead) {
     setEditForm({ email: u.email, full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard })
-    setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })
   }
@@ -198,24 +143,6 @@ export default function AdminPage() {
         </div>
 
         <div className="bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full sm:max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-              <input
-                type="search"
-                value={userQuery}
-                onChange={(event) => {
-                  setUserQuery(event.target.value)
-                  setUserPage(1)
-                }}
-                placeholder="Buscar por nome, e-mail ou usuário"
-                className="input w-full pl-9"
-              />
-            </div>
-            <span className="text-xs text-muted">
-              {isFetching && !isLoading ? 'Atualizando…' : `${totalUsers} usuário(s)`}
-            </span>
-          </div>
           <table className="w-full text-sm">
             <thead className="bg-bg-2">
               <tr>
@@ -229,8 +156,6 @@ export default function AdminPage() {
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={5} className="text-center py-10 text-muted">Carregando…</td></tr>
-              ) : users.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-10 text-muted">Nenhum usuário encontrado.</td></tr>
               ) : users.map(u => (
                 <tr key={u.id} className="border-t border-line hover:bg-[#fdfcfa] transition-colors">
                   <td className="px-5 py-3 font-medium text-ink">{u.full_name}</td>
@@ -257,31 +182,6 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
-          <div className="flex items-center justify-between border-t border-line px-5 py-3">
-            <span className="text-xs text-muted">
-              Página {userPage} de {totalUserPages}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label="Página anterior"
-                disabled={userPage <= 1 || isFetching}
-                onClick={() => setUserPage((page) => Math.max(1, page - 1))}
-                className="btn-secondary flex h-9 w-9 items-center justify-center p-0 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Próxima página"
-                disabled={userPage >= totalUserPages || isFetching}
-                onClick={() => setUserPage((page) => Math.min(totalUserPages, page + 1))}
-                className="btn-secondary flex h-9 w-9 items-center justify-center p-0 disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -311,10 +211,7 @@ export default function AdminPage() {
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">Perfil *</span>
-                  <select className="input" value={form.role} onChange={e => {
-                    const role = e.target.value as UserCreate['role']
-                    setForm({ ...form, role, rep_id: role === 'representante' ? form.rep_id : null })
-                  }}>
+                  <select className="input" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as UserCreate['role'] })}>
                     <option value="vendedor">Vendedor</option>
                     <option value="representante">Representante</option>
                     <option value="cadastros">Cadastros</option>
@@ -326,17 +223,10 @@ export default function AdminPage() {
                 {form.role === 'representante' && (
                   <label className="flex flex-col gap-1">
                     <span className="text-xs text-muted">Representante vinculado</span>
-                    <input
-                      className="input"
-                      placeholder="Buscar representante..."
-                      value={repQuery}
-                      onChange={e => setRepQuery(e.target.value)}
-                    />
                     <select className="input" value={form.rep_id ?? ''} onChange={e => setForm({ ...form, rep_id: e.target.value || null })}>
                       <option value="">— Nenhum —</option>
                       {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
-                    {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
                   </label>
                 )}
                 {error && <p className="text-xs text-terracotta">{error}</p>}
@@ -366,10 +256,7 @@ export default function AdminPage() {
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">Perfil</span>
-                  <select className="input" value={editForm.role ?? 'vendedor'} onChange={e => {
-                    const role = e.target.value as UserUpdate['role']
-                    setEditForm({ ...editForm, role, rep_id: role === 'representante' ? editForm.rep_id : null })
-                  }}>
+                  <select className="input" value={editForm.role ?? 'vendedor'} onChange={e => setEditForm({ ...editForm, role: e.target.value as UserUpdate['role'] })}>
                     <option value="vendedor">Vendedor</option>
                     <option value="representante">Representante</option>
                     <option value="cadastros">Cadastros</option>
@@ -381,17 +268,10 @@ export default function AdminPage() {
                 {editForm.role === 'representante' && (
                   <label className="flex flex-col gap-1">
                     <span className="text-xs text-muted">Representante vinculado</span>
-                    <input
-                      className="input"
-                      placeholder="Buscar representante..."
-                      value={repQuery}
-                      onChange={e => setRepQuery(e.target.value)}
-                    />
                     <select className="input" value={editForm.rep_id ?? ''} onChange={e => setEditForm({ ...editForm, rep_id: e.target.value || null })}>
                       <option value="">— Nenhum —</option>
                       {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
-                    {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
                   </label>
                 )}
                 <label className="flex items-center gap-2 cursor-pointer">

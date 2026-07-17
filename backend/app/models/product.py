@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, Index, Table, Column, func
+from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, Index, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
@@ -10,7 +10,6 @@ product_set_component_optionals = Table(
     Base.metadata,
     Column("component_id", PGUUID(as_uuid=True), ForeignKey("product_set_components.id", ondelete="CASCADE"), primary_key=True),
     Column("optional_id", PGUUID(as_uuid=True), ForeignKey("optionals.id", ondelete="CASCADE"), primary_key=True),
-    Index("ix_product_set_component_optionals_optional_id", "optional_id"),
 )
 
 
@@ -46,29 +45,9 @@ class Product(Base, TimestampMixin):
     )
 
     __table_args__ = (
-        Index(
-            "ix_products_description_prefix_id",
-            func.left(description, 512),
-            "id",
-        ),
-        Index("ix_products_type_id", "type", "id"),
-        Index("ix_products_price_lojista_id", "price_lojista", "id"),
-        Index(
-            "ix_products_price_corporativo_id",
-            "price_corporativo",
-            "id",
-        ),
-        Index(
-            "ix_products_search_trgm",
-            "product_code",
-            "description",
-            postgresql_using="gin",
-            postgresql_ops={
-                "product_code": "gin_trgm_ops",
-                "description": "gin_trgm_ops",
-            },
-        ),
+        Index("ix_products_product_code", "product_code"),
     )
+
 
 class ProductSetItem(Base, TimestampMixin):
     __tablename__ = "product_set_items"
@@ -82,7 +61,6 @@ class ProductSetItem(Base, TimestampMixin):
 
     __table_args__ = (
         Index("ix_product_set_items_set_id", "set_id"),
-        Index("ix_product_set_items_product_id", "product_id"),
     )
 
 

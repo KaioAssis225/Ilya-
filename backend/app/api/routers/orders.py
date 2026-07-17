@@ -1,17 +1,13 @@
-import base64
-import binascii
 import logging
 import hashlib
 import json
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from datetime import datetime, timezone
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import or_, select, text, tuple_, update
-from sqlalchemy.orm import load_only, noload, selectinload
+from sqlalchemy import select, text, update
 
 from app.api.deps import (
     get_db_session,
@@ -21,7 +17,6 @@ from app.api.deps import (
     is_internal_operator,
 )
 from app.core.limiter import limiter
-from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
 from app.models.client import Client
@@ -45,40 +40,6 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 _ANY = Depends(get_current_user)
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
 _ADMIN = Depends(require_roles(UserRole.admin))
-
-_ZERO = Decimal("0")
-_HUNDRED = Decimal("100")
-_CENT = Decimal("0.01")
-_MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
-
-
-def _decimal(value: object) -> Decimal:
-    return value if isinstance(value, Decimal) else Decimal(str(value))
-
-
-def _money(value: object) -> Decimal:
-    return _decimal(value).quantize(_CENT, rounding=ROUND_HALF_UP)
-
-
-def _ensure_total_capacity(*values: Decimal) -> None:
-    if any(abs(value) > _MAX_ORDER_TOTAL for value in values):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Valor total do pedido excede o limite financeiro permitido.",
-        )
-
-
-def _representative_cannot_access_order(
-    current_user: User,
-    order: Order,
-) -> bool:
-    return (
-        current_user.role == UserRole.representante
-        and (
-            current_user.rep_id is None
-            or order.rep_id != current_user.rep_id
-        )
-    )
 
 
 def _order_document_hash(order: Order) -> str:
@@ -123,97 +84,45 @@ async def _next_code(db: AsyncSession) -> tuple[str, str]:
     return f"PED-{n:04d}", f"ORC-{n:04d}"
 
 
-def _encode_order_cursor(created_at: datetime, order_id: uuid.UUID) -> str:
-    timestamp = created_at
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-    raw = f"{timestamp.isoformat()}|{order_id}".encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
-def _decode_order_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
-    try:
-        padding = "=" * (-len(cursor) % 4)
-        raw = base64.urlsafe_b64decode(cursor + padding).decode()
-        timestamp_raw, order_id_raw = raw.split("|", 1)
-        timestamp = datetime.fromisoformat(timestamp_raw)
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
-        return timestamp, uuid.UUID(order_id_raw)
-    except (ValueError, UnicodeDecodeError, binascii.Error):
-        raise HTTPException(status_code=422, detail="Cursor de paginação inválido.")
-
-
 async def _load_products_and_types(
     db: AsyncSession, codes: list[str]
 ) -> tuple[dict[str, Product], dict[str, ProductType]]:
     """Carrega produtos e seus tipos em 2 queries (evita N+1 por item — V-B1)."""
     products = (await db.execute(
-        select(Product)
-        .where(Product.product_code.in_(codes))
-        .options(
-            load_only(
-                Product.id,
-                Product.product_code,
-                Product.description,
-                Product.type,
-                Product.is_circular,
-                Product.altura,
-                Product.largura,
-                Product.profundidade,
-                Product.price_lojista,
-                Product.price_corporativo,
-                Product.observacao,
-            ),
-            noload(Product.optionals),
-            noload(Product.set_items),
-            noload(Product.components),
-        )
+        select(Product).where(Product.product_code.in_(codes))
     )).scalars().all()
     product_map = {p.product_code: p for p in products}
 
     type_names = {p.type for p in products}
     types = (await db.execute(
-        select(ProductType)
-        .where(ProductType.name.in_(type_names))
-        .options(selectinload(ProductType.group))
+        select(ProductType).where(ProductType.name.in_(type_names))
     )).scalars().all() if type_names else []
     type_map = {t.name: t for t in types}
     return product_map, type_map
 
 
-def _price_for_profile(product: Product, profile: str) -> Decimal:
+def _price_for_profile(product: Product, profile: str) -> float:
     """Preço faturado conforme o perfil do cliente (V-Bloco62)."""
     if profile == "corporativo":
-        return _money(product.price_corporativo)
-    return _money(product.price_lojista)
+        return float(product.price_corporativo)
+    return float(product.price_lojista)
 
 
-def _resolve_max_discount(
-    current_user: User,
-    client: Client,
-    rep: Representative | None,
-) -> Decimal:
+def _resolve_max_discount(current_user: User, client: Client, rep: Representative | None) -> float:
     """Bloco 69: teto dinamico por Cliente/Representante em vez de limite fixo por role."""
     if current_user.role == UserRole.representante:
-        return _decimal(rep.max_discount) if rep else _ZERO
+        return float(rep.max_discount) if rep else 0.0
     # cliente-final e operador interno de vendas respeitam o teto do cliente
     if is_client_account(current_user) or current_user.role == UserRole.vendedor:
-        return _decimal(client.max_discount)
-    return _HUNDRED  # admin / produtos
+        return float(client.max_discount)
+    return 100.0  # admin / produtos
 
 
-def _validate_discount(
-    discount: Decimal | float,
-    max_discount: Decimal | float,
-    product_code: str,
-) -> None:
-    discount_value = _decimal(discount)
-    max_discount_value = _decimal(max_discount)
-    if discount_value < _ZERO or discount_value > max_discount_value:
+def _validate_discount(discount: float, max_discount: float, product_code: str) -> None:
+    if discount < 0 or discount > max_discount:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Desconto de {discount_value}% no item '{product_code}' excede o limite permitido ({max_discount_value}%) para o seu nível de acesso.",
+            detail=f"Desconto de {discount}% no item '{product_code}' excede o limite permitido ({max_discount}%) para o seu nível de acesso.",
         )
 
 
@@ -261,18 +170,6 @@ async def create_order(
     client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
-    if is_client_account(current_user):
-        # O vínculo comercial é definido pelo cadastro do cliente; a API não
-        # aceita que uma conta de cliente atribua o pedido a outro representante.
-        payload.rep_id = client.rep_id
-    if (
-        current_user.role == UserRole.representante
-        and client.rep_id != current_user.rep_id
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Representante só pode criar pedidos para clientes vinculados a ele.",
-        )
 
     rep: Representative | None = None
     if payload.rep_id:
@@ -286,27 +183,23 @@ async def create_order(
     product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
     profile = client.price_profile  # faturamento pelo perfil do cliente (V-Bloco62)
 
-    total = _ZERO
-    total_ipi = _ZERO
+    total = 0.0
+    total_ipi = 0.0
     order_items: list[OrderItem] = []
     for item_in in payload.items:
         product = product_map.get(item_in.product_code)
         if not product:
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
         unit_price = _price_for_profile(product, profile)
-        discount = _decimal(item_in.discount or _ZERO)
+        discount = float(item_in.discount or 0)
         _validate_discount(discount, max_discount, product.product_code)
-        effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
-        subtotal = _money(_decimal(item_in.qty) * effective_price)
+        effective_price = unit_price * (1 - discount / 100)
+        subtotal = float(item_in.qty) * effective_price
         total += subtotal
 
         product_type = type_map.get(product.type)
-        ipi_rate = (
-            _decimal(product_type.group.ipi)
-            if product_type and product_type.group
-            else _ZERO
-        )
-        ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
+        ipi_rate = float(product_type.group.ipi) if product_type and product_type.group else 0.0
+        ipi_value = round(subtotal * ipi_rate / 100, 2)
         total_ipi += ipi_value
 
         order_items.append(OrderItem(
@@ -326,10 +219,6 @@ async def create_order(
             observacao=product.observacao,
         ))
 
-    total = _money(total)
-    total_ipi = _money(total_ipi)
-    total_with_ipi = _money(total + total_ipi)
-    _ensure_total_capacity(total, total_ipi, total_with_ipi)
     code, orc_id = await _next_code(db)
     order = Order(
         id=uuid.uuid4(),
@@ -337,9 +226,9 @@ async def create_order(
         orc_id=orc_id,
         client_id=payload.client_id,
         rep_id=payload.rep_id,
-        total_value=total,
-        total_ipi=total_ipi,
-        total_with_ipi=total_with_ipi,
+        total_value=round(total, 2),
+        total_ipi=round(total_ipi, 2),
+        total_with_ipi=round(total + total_ipi, 2),
         notes=payload.notes,
         items=order_items,
     )
@@ -360,200 +249,41 @@ async def create_order(
 
 @router.get("", response_model=List[OrderListRead])
 async def list_orders(
-    response: Response,
-    skip: int = Query(default=0, ge=0, le=10_000),
-    limit: int = Query(default=50, ge=1, le=100),
-    cursor: str | None = Query(default=None, max_length=256),
-    q: str | None = Query(default=None, max_length=100),
-    client_id: uuid.UUID | None = Query(default=None),
-    rep_id: uuid.UUID | None = Query(default=None),
-    client_name: str | None = Query(default=None, max_length=100),
-    rep_name: str | None = Query(default=None, max_length=100),
-    order_status: Literal["in_progress", "finalized", "cancelled"] | None = Query(
-        default=None,
-        alias="status",
-    ),
-    date_from: date | None = Query(default=None),
-    date_to: date | None = Query(default=None),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, le=200),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    conditions = []
     if current_user.role == UserRole.representante:
-        if not current_user.rep_id:
-            response.headers["X-Has-More"] = "false"
-            response.headers["X-Page-Size"] = "0"
-            return []
-        conditions.append(Order.rep_id == current_user.rep_id)
-    elif is_client_account(current_user):
-        if not current_user.linked_id:
-            response.headers["X-Has-More"] = "false"
-            response.headers["X-Page-Size"] = "0"
-            return []
-        conditions.append(Order.client_id == current_user.linked_id)
-
-    if client_id:
-        conditions.append(Order.client_id == client_id)
-    if rep_id:
-        conditions.append(Order.rep_id == rep_id)
-    if client_name and client_name.strip():
-        conditions.append(
-            Client.name.ilike(
-                literal_contains_pattern(client_name.strip()),
-                escape="\\",
-            )
+        result = await db.execute(
+            select(Order).where(Order.rep_id == current_user.rep_id)
+            .order_by(Order.created_at.desc()).offset(skip).limit(limit)
         )
-    if rep_name and rep_name.strip():
-        conditions.append(
-            Representative.name.ilike(
-                literal_contains_pattern(rep_name.strip()),
-                escape="\\",
-            )
+    elif is_client_account(current_user) and current_user.linked_id:
+        result = await db.execute(
+            select(Order).where(Order.client_id == current_user.linked_id)
+            .order_by(Order.created_at.desc()).offset(skip).limit(limit)
         )
-    if q and q.strip():
-        pattern = literal_contains_pattern(q.strip())
-        conditions.append(
-            or_(
-                Order.code.ilike(pattern, escape="\\"),
-                Order.orc_id.ilike(pattern, escape="\\"),
-                Client.name.ilike(pattern, escape="\\"),
-                Representative.name.ilike(pattern, escape="\\"),
-            )
+    else:
+        result = await db.execute(
+            select(Order).order_by(Order.created_at.desc()).offset(skip).limit(limit)
         )
-    if order_status == "finalized":
-        conditions.append(Order.is_finalized.is_(True))
-    elif order_status == "cancelled":
-        conditions.append(Order.is_cancelled.is_(True))
-    elif order_status == "in_progress":
-        conditions.extend(
-            (Order.is_finalized.is_(False), Order.is_cancelled.is_(False))
-        )
-    if date_from and date_to and date_from > date_to:
-        raise HTTPException(status_code=422, detail="Data inicial não pode ser posterior à data final.")
-    if date_from:
-        conditions.append(
-            Order.created_at
-            >= datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
-        )
-    if date_to:
-        conditions.append(
-            Order.created_at
-            < datetime.combine(
-                date_to + timedelta(days=1),
-                datetime.min.time(),
-                tzinfo=timezone.utc,
-            )
-        )
-
-    stmt = (
-        select(
-            Order.id,
-            Order.code,
-            Order.orc_id,
-            Order.client_id,
-            Client.name.label("client_name"),
-            Order.rep_id,
-            Representative.name.label("rep_name"),
-            Order.total_value,
-            Order.total_with_ipi,
-            Order.is_finalized,
-            Order.is_cancelled,
-            Order.created_at,
-        )
-        .select_from(Order)
-        .join(Client, Client.id == Order.client_id)
-        .outerjoin(Representative, Representative.id == Order.rep_id)
-        .where(*conditions)
-        .order_by(Order.created_at.desc(), Order.id.desc())
-    )
-
-    if cursor:
-        cursor_created_at, cursor_id = _decode_order_cursor(cursor)
-        stmt = stmt.where(
-            tuple_(Order.created_at, Order.id) < tuple_(cursor_created_at, cursor_id)
-        )
-    elif skip:
-        # Mantém compatibilidade com consumidores antigos; a interface nova usa cursor.
-        stmt = stmt.offset(skip)
-
-    rows = (await db.execute(stmt.limit(limit + 1))).mappings().all()
-    has_more = len(rows) > limit
-    page_rows = rows[:limit]
-
-    items_by_order: dict[uuid.UUID, list[dict]] = {
-        row["id"]: [] for row in page_rows
-    }
-    if items_by_order:
-        item_rows = (
-            await db.execute(
-                select(OrderItem.order_id, OrderItem.product_code, OrderItem.qty)
-                .where(OrderItem.order_id.in_(items_by_order))
-                .order_by(OrderItem.order_id, OrderItem.created_at, OrderItem.id)
-            )
-        ).all()
-        for order_id_value, product_code, qty in item_rows:
-            items_by_order[order_id_value].append(
-                {"product_code": product_code, "qty": qty}
-            )
-
-    if has_more and page_rows:
-        last = page_rows[-1]
-        response.headers["X-Next-Cursor"] = _encode_order_cursor(
-            last["created_at"],
-            last["id"],
-        )
-    response.headers["X-Has-More"] = "true" if has_more else "false"
-    response.headers["X-Page-Size"] = str(len(page_rows))
-
-    return [
-        OrderListRead(
-            **dict(row),
-            items=items_by_order.get(row["id"], []),
-        )
-        for row in page_rows
-    ]
+    return result.scalars().all()
 
 
 @router.get("/history", response_model=List[OrderHistoryRead])
 async def list_global_history(
-    response: Response,
-    skip: int = Query(default=0, ge=0, le=10_000),
-    limit: int = Query(default=100, ge=1, le=200),
-    cursor: str | None = Query(default=None, max_length=256),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, le=500),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         raise HTTPException(status_code=403, detail="Acesso negado.")
-
-    stmt = select(OrderHistory)
-    if cursor:
-        cursor_created_at, cursor_id = _decode_order_cursor(cursor)
-        stmt = stmt.where(
-            tuple_(OrderHistory.created_at, OrderHistory.id)
-            < tuple_(cursor_created_at, cursor_id)
-        )
-    elif skip:
-        stmt = stmt.offset(skip)
-
     result = await db.execute(
-        stmt.order_by(
-            OrderHistory.created_at.desc(),
-            OrderHistory.id.desc(),
-        ).limit(limit + 1)
+        select(OrderHistory).order_by(OrderHistory.created_at.desc()).offset(skip).limit(limit)
     )
-    rows = result.scalars().all()
-    has_more = len(rows) > limit
-    page = rows[:limit]
-    if has_more and page:
-        last = page[-1]
-        response.headers["X-Next-Cursor"] = _encode_order_cursor(
-            last.created_at,
-            last.id,
-        )
-    response.headers["X-Has-More"] = "true" if has_more else "false"
-    response.headers["X-Page-Size"] = str(len(page))
-    return page
+    return result.scalars().all()
 
 
 @router.put("/{order_id}", response_model=OrderRead)
@@ -567,9 +297,7 @@ async def update_order(
     if not (current_user.role in {UserRole.admin, UserRole.representante} or is_internal_operator(current_user)):
         raise HTTPException(status_code=403, detail="Operação não permitida.")
 
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
@@ -577,7 +305,7 @@ async def update_order(
         raise HTTPException(status_code=409, detail="Pedido já finalizado e não pode ser editado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado e não pode ser editado.")
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
     changes: list[str] = []
@@ -586,31 +314,9 @@ async def update_order(
         changes.append(f"observações alteradas")
         order.notes = payload.notes
 
-    selected_rep: Representative | None = None
-    if payload.rep_id is not None:
-        if (
-            current_user.role == UserRole.representante
-            and payload.rep_id != current_user.rep_id
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail="Representante não pode transferir o pedido para outro representante.",
-            )
-        selected_rep = (
-            await db.execute(
-                select(Representative).where(
-                    Representative.id == payload.rep_id
-                )
-            )
-        ).scalar_one_or_none()
-        if not selected_rep:
-            raise HTTPException(
-                status_code=404,
-                detail="Representante não encontrado.",
-            )
-        if payload.rep_id != order.rep_id:
-            order.rep_id = payload.rep_id
-            changes.append("representante alterado")
+    if payload.rep_id is not None and payload.rep_id != order.rep_id:
+        order.rep_id = payload.rep_id
+        changes.append("representante alterado")
 
     if payload.items is not None:
         old_codes = {i.product_code for i in order.items}
@@ -629,38 +335,26 @@ async def update_order(
         )
         client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
         profile = client.price_profile if client else "lojista"  # faturamento pelo perfil (V-Bloco62)
-        rep = selected_rep
-        if rep is None and order.rep_id:
-            rep = (
-                await db.execute(
-                    select(Representative).where(
-                        Representative.id == order.rep_id
-                    )
-                )
-            ).scalar_one_or_none()
+        rep = (await db.execute(select(Representative).where(Representative.id == order.rep_id))).scalar_one_or_none() if order.rep_id else None
         max_discount = _resolve_max_discount(current_user, client, rep)
 
-        total = _ZERO
-        total_ipi = _ZERO
+        total = 0.0
+        total_ipi = 0.0
         new_items: list[OrderItem] = []
         for item_in in payload.items:
             product = product_map.get(item_in.product_code)
             if not product:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
             unit_price = _price_for_profile(product, profile)
-            discount = _decimal(item_in.discount or _ZERO)
+            discount = float(item_in.discount or 0)
             _validate_discount(discount, max_discount, product.product_code)
-            effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
-            subtotal = _money(_decimal(item_in.qty) * effective_price)
+            effective_price = unit_price * (1 - discount / 100)
+            subtotal = float(item_in.qty) * effective_price
             total += subtotal
 
             product_type = type_map.get(product.type)
-            ipi_rate = (
-                _decimal(product_type.group.ipi)
-                if product_type and product_type.group
-                else _ZERO
-            )
-            ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
+            ipi_rate = float(product_type.group.ipi) if product_type and product_type.group else 0.0
+            ipi_value = round(subtotal * ipi_rate / 100, 2)
             total_ipi += ipi_value
 
             new_items.append(OrderItem(
@@ -686,16 +380,12 @@ async def update_order(
             await db.delete(item)
         await db.flush()
 
-        total = _money(total)
-        total_ipi = _money(total_ipi)
-        total_with_ipi = _money(total + total_ipi)
-        _ensure_total_capacity(total, total_ipi, total_with_ipi)
-        old_total = _decimal(order.total_value)
-        order.total_value = total
-        order.total_ipi = total_ipi
-        order.total_with_ipi = total_with_ipi
-        if abs(old_total - total) > _CENT:
-            changes.append(f"total: R$ {old_total:.2f} → R$ {total:.2f}")
+        old_total = float(order.total_value)
+        order.total_value = round(total, 2)
+        order.total_ipi = round(total_ipi, 2)
+        order.total_with_ipi = round(total + total_ipi, 2)
+        if abs(old_total - round(total, 2)) > 0.01:
+            changes.append(f"total: R$ {old_total:.2f} → R$ {round(total, 2):.2f}")
         for item in new_items:
             db.add(item)
 
@@ -719,7 +409,7 @@ async def update_order(
 
 
 class FinalizePayload(BaseModel):
-    external_code: str | None = Field(None, max_length=100)
+    external_code: str | None = None
 
 
 @router.post("/{order_id}/finalize", response_model=OrderRead)
@@ -731,14 +421,12 @@ async def finalize_order(
 ):
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user) or current_user.role == UserRole.representante):
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     # Representante só finaliza os próprios pedidos (mesma regra do update_order)
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
@@ -761,7 +449,7 @@ async def finalize_order(
 
 
 class CancelPayload(BaseModel):
-    reason: str | None = Field(None, max_length=1000)
+    reason: str | None = None
 
 
 @router.post("/{order_id}/cancel", response_model=OrderRead)
@@ -773,14 +461,12 @@ async def cancel_order(
 ):
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user) or current_user.role == UserRole.representante):
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     # Representante só cancela os próprios pedidos (mesma regra do update_order/finalize_order)
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser cancelado.")
@@ -810,7 +496,7 @@ async def get_order_history(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
     if is_client_account(current_user) and order.client_id != current_user.linked_id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
@@ -827,7 +513,7 @@ async def get_order(
     current_user: User = Depends(get_current_user),
 ):
     order = await _get_order(db, id_or_code)
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if is_client_account(current_user) and order.client_id != current_user.linked_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
@@ -840,9 +526,7 @@ async def delete_order(
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN,
 ):
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
@@ -855,14 +539,11 @@ async def delete_order(
 @limiter.limit("5/minute")
 async def generate_sign_token(
     request: Request,
-    response: Response,
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
@@ -874,7 +555,7 @@ async def generate_sign_token(
         or is_internal_operator(current_user)
     ):
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
     now = datetime.now(timezone.utc)
@@ -924,7 +605,6 @@ class VerifySignTokenPayload(BaseModel):
 @limiter.limit("20/minute")
 async def verify_sign_token(
     request: Request,
-    response: Response,
     body: VerifySignTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -982,13 +662,11 @@ async def sign_representative(
 ):
     if current_user.role not in {UserRole.admin, UserRole.representante}:
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.rep_signature:
         raise HTTPException(status_code=409, detail="Assinatura do representante já registrada.")
@@ -1008,15 +686,13 @@ async def sign_client(
     is_rep = current_user.role == UserRole.representante
     if current_user.role != UserRole.admin and not is_client and not is_rep:
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     if is_client and order.client_id != current_user.linked_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-    if is_rep and _representative_cannot_access_order(current_user, order):
+    if is_rep and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.client_signature:
         raise HTTPException(status_code=409, detail="Assinatura do cliente já registrada.")
@@ -1037,7 +713,7 @@ async def notify_client(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, order):
+    if current_user.role == UserRole.representante and order.rep_id != current_user.rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     client_user = (await db.execute(
         select(User).where(
@@ -1059,7 +735,6 @@ async def notify_client(
 @limiter.limit("10/minute")
 async def sign_with_token(
     request: Request,
-    response: Response,
     payload: SignWithTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
