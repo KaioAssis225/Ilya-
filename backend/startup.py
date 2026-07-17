@@ -8,9 +8,13 @@ DDL concorrente.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 import sys
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("ilya.startup")
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -56,11 +60,25 @@ async def prepare_database() -> None:
                     check=True,
                     timeout=migration_timeout,
                 )
-                subprocess.run(
-                    [sys.executable, "seed_admin.py"],
-                    check=True,
-                    timeout=seed_timeout,
-                )
+                # O seed do admin é idempotente e opcional: sem ADMIN_EMAIL/
+                # ADMIN_PASSWORD no ambiente (caso normal em produção, onde o
+                # admin já existe) ele é pulado; uma falha aqui não pode
+                # derrubar a API inteira em crash-loop.
+                if os.environ.get("ADMIN_EMAIL") and os.environ.get("ADMIN_PASSWORD"):
+                    seed = subprocess.run(
+                        [sys.executable, "seed_admin.py"],
+                        timeout=seed_timeout,
+                    )
+                    if seed.returncode != 0:
+                        logger.warning(
+                            "seed_admin.py terminou com código %s; seguindo com o "
+                            "boot — verifique o admin manualmente.",
+                            seed.returncode,
+                        )
+                else:
+                    logger.info(
+                        "ADMIN_EMAIL/ADMIN_PASSWORD ausentes; seed do admin pulado."
+                    )
             finally:
                 await connection.execute(
                     text("SELECT pg_advisory_unlock(:lock_id)"),
