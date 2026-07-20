@@ -4,7 +4,21 @@ import { LayoutDashboard, X } from 'lucide-react'
 
 const RETURN_KEY = 'dashboard_return_to'
 const FALLBACK_RETURN = '/produtos'
-const ILYA_TRANSITION_MS = 850
+
+// Entrar no Dashboard: véu creme curtíssimo só para cobrir o intervalo até a
+// rota trocar. O próprio DashboardPage já abre com a assinatura de barras
+// (DashboardIntro), também creme, então a passagem é contínua — sem o antigo
+// "bloco dourado" que piscava por cima da tela.
+const ENTER_VEIL_MS = 180
+
+// Voltar para Pedidos: a assinatura ILYA fica sobre o Dashboard por um instante
+// e SEGUE montada durante a navegação, desaparecendo só depois que Pedidos já
+// está atrás dela. Isso transforma o antigo corte seco numa transição de
+// carregamento de verdade.
+const RETURN_HOLD_MS = 520
+const RETURN_FADE_MS = 480
+
+type ReturnPhase = 'idle' | 'hold' | 'out'
 
 export default function DashboardFab({
   mode,
@@ -14,38 +28,47 @@ export default function DashboardFab({
   currentPath?: string
 }) {
   const navigate = useNavigate()
-  const [switching, setSwitching] = useState(false)
-  const [ilyaTransition, setIlyaTransition] = useState(false)
+  const [entering, setEntering] = useState(false)
+  const [returnPhase, setReturnPhase] = useState<ReturnPhase>('idle')
 
   // O componente permanece montado ao trocar de rota (mesmo lugar na árvore),
-  // então o estado da transição anterior precisa ser limpo quando o modo muda,
-  // senão o clique seguinte fica travado pelo guard abaixo.
+  // então o véu de entrada precisa ser limpo quando o modo muda. O overlay de
+  // volta (returnPhase) é gerido pelo próprio fluxo abaixo — de propósito não é
+  // resetado aqui, senão sumiria no instante em que Pedidos monta.
   useEffect(() => {
-    setSwitching(false)
-    setIlyaTransition(false)
+    setEntering(false)
   }, [mode])
 
   function handleClick() {
-    if (switching) return
-    setSwitching(true)
     if (mode === 'enter') {
-      // Wipe de troca de módulo ao entrar no Dashboard.
+      if (entering) return
+      setEntering(true)
       if (currentPath) sessionStorage.setItem(RETURN_KEY, currentPath)
-      setTimeout(() => navigate('/dashboard'), 220)
+      setTimeout(() => navigate('/dashboard'), ENTER_VEIL_MS)
       return
     }
+
+    if (returnPhase !== 'idle' || entering) return
     const back = sessionStorage.getItem(RETURN_KEY) || FALLBACK_RETURN
-    // Voltar para Pedidos reaproveita a assinatura visual ILYA (mesmo
-    // overlay do login e da assinatura de pedidos), como se o módulo de
-    // Pedidos estivesse "carregando de volta" — os demais destinos usam
-    // o wipe padrão.
+
     if (back.startsWith('/pedidos')) {
-      setIlyaTransition(true)
-      setTimeout(() => navigate(back), ILYA_TRANSITION_MS)
+      // Fase 1 (hold): ILYA aparece sobre o Dashboard.
+      setReturnPhase('hold')
+      setTimeout(() => {
+        // Navega e, no mesmo tick, inicia o fade — o overlay continua montado
+        // (mesma instância do FAB) e agora desaparece revelando Pedidos.
+        navigate(back)
+        setReturnPhase('out')
+        setTimeout(() => setReturnPhase('idle'), RETURN_FADE_MS)
+      }, RETURN_HOLD_MS)
     } else {
-      setTimeout(() => navigate(back), 220)
+      // Demais destinos usam o mesmo véu creme discreto da entrada.
+      setEntering(true)
+      setTimeout(() => navigate(back), ENTER_VEIL_MS)
     }
   }
+
+  const returnVisible = returnPhase !== 'idle'
 
   return (
     <>
@@ -64,18 +87,25 @@ export default function DashboardFab({
         )}
       </button>
 
-      {switching && !ilyaTransition && (
+      {/* Véu creme de entrada — cobre o intervalo até a rota trocar e emenda no
+          DashboardIntro (mesma cor), sem flash dourado. */}
+      {entering && (
         <div
-          className="fixed inset-0 z-[110] pointer-events-none origin-left"
-          style={{
-            background: 'linear-gradient(90deg, #5a4508 0%, #8b6914 50%, #c8952e 100%)',
-            animation: 'moduleWipe 0.5s cubic-bezier(0.65, 0, 0.35, 1) forwards',
-          }}
+          className="fixed inset-0 z-[110] pointer-events-none bg-bg"
+          style={{ animation: 'moduleVeil 0.18s ease-out forwards' }}
         />
       )}
 
-      {ilyaTransition && (
-        <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-bg/95 backdrop-blur-sm">
+      {/* Assinatura ILYA ao voltar para Pedidos — segue montada durante a
+          navegação e some sobre a tela de Pedidos (bridge, não corte seco). */}
+      {returnVisible && (
+        <div
+          className={`fixed inset-0 z-[110] flex flex-col items-center justify-center bg-bg backdrop-blur-sm transition-opacity ease-out ${
+            returnPhase === 'out' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+          style={{ transitionDuration: `${RETURN_FADE_MS}ms` }}
+          aria-hidden="true"
+        >
           <div
             className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
             style={{ background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }}
@@ -98,7 +128,7 @@ export default function DashboardFab({
             Voltando aos Pedidos
           </p>
           <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
-            <div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, #5a4508, #c8952e, #5a4508)', animation: 'progressLine 3s linear forwards' }} />
+            <div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, #5a4508, #c8952e, #5a4508)', animation: 'progressLine 1s linear forwards' }} />
           </div>
         </div>
       )}

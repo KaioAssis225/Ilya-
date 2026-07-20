@@ -229,11 +229,11 @@
   100% { transform: scale(1.65); opacity: 0; }
 }
 
-/* Bloco 95: wipe de troca de módulo ao abrir o Dashboard pelo FAB */
-@keyframes moduleWipe {
-  0%   { transform: scaleX(0); opacity: 1; }
-  60%  { transform: scaleX(1); opacity: 1; }
-  100% { transform: scaleX(1); opacity: 0; }
+/* Véu creme de entrada do Dashboard pelo FAB — emenda no DashboardIntro
+   (mesma cor), substituindo o antigo wipe dourado que piscava na tela. */
+@keyframes moduleVeil {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────────────────
