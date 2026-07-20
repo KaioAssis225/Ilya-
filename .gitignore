@@ -53,6 +53,7 @@ db.sqlite3
 # Claude Code tooling (não faz parte do código do produto)
 .claude/
 .impeccable/
+.mimocode/.cron-lock
 fotos/
 backups/
 .secrets/
