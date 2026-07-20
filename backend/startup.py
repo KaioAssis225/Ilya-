@@ -36,7 +36,7 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
-async def prepare_database() -> None:
+async def prepare_database(*, include_seed: bool = True) -> None:
     lock_timeout = _positive_int("STARTUP_DB_LOCK_TIMEOUT_SECONDS", 1800)
     migration_timeout = _positive_int(
         "STARTUP_MIGRATION_TIMEOUT_SECONDS",
@@ -65,11 +65,11 @@ async def prepare_database() -> None:
                     check=True,
                     timeout=migration_timeout,
                 )
-                # O seed do admin é idempotente e opcional: sem ADMIN_EMAIL/
-                # ADMIN_PASSWORD no ambiente (caso normal em produção, onde o
-                # admin já existe) ele é pulado; uma falha aqui não pode
-                # derrubar a API inteira em crash-loop.
-                if os.environ.get("ADMIN_EMAIL") and os.environ.get("ADMIN_PASSWORD"):
+                # O seed é mantido apenas no fluxo legado para compatibilidade.
+                # A tarefa dedicada de migration nunca deve alterar usuários.
+                if not include_seed:
+                    logger.info("Modo migration-only; seed do admin pulado.")
+                elif os.environ.get("ADMIN_EMAIL") and os.environ.get("ADMIN_PASSWORD"):
                     seed = subprocess.run(
                         [sys.executable, "seed_admin.py"],
                         timeout=seed_timeout,
@@ -147,8 +147,10 @@ def main(arguments: list[str] | None = None) -> None:
         raise RuntimeError("Modo inválido. Use: all, migrate ou serve.")
 
     mode = selected[0] if selected else "all"
-    if mode in {"all", "migrate"}:
-        asyncio.run(prepare_database())
+    if mode == "all":
+        asyncio.run(prepare_database(include_seed=True))
+    elif mode == "migrate":
+        asyncio.run(prepare_database(include_seed=False))
     if mode in {"all", "serve"}:
         start_server()
 

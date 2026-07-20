@@ -64,22 +64,22 @@ def test_startup_lock_connection_uses_autocommit(monkeypatch):
 def test_migrate_mode_does_not_start_web_server(monkeypatch):
     calls = []
 
-    async def fake_prepare_database():
-        calls.append("migrate")
+    async def fake_prepare_database(*, include_seed):
+        calls.append(("migrate", include_seed))
 
     monkeypatch.setattr(startup, "prepare_database", fake_prepare_database)
     monkeypatch.setattr(startup, "start_server", lambda: calls.append("serve"))
 
     startup.main(["migrate"])
 
-    assert calls == ["migrate"]
+    assert calls == [("migrate", False)]
 
 
 def test_serve_mode_does_not_run_migrations(monkeypatch):
     calls = []
 
-    async def fake_prepare_database():
-        calls.append("migrate")
+    async def fake_prepare_database(*, include_seed):
+        calls.append(("migrate", include_seed))
 
     monkeypatch.setattr(startup, "prepare_database", fake_prepare_database)
     monkeypatch.setattr(startup, "start_server", lambda: calls.append("serve"))
@@ -92,12 +92,12 @@ def test_serve_mode_does_not_run_migrations(monkeypatch):
 def test_default_mode_preserves_current_deploy_behavior(monkeypatch):
     calls = []
 
-    async def fake_prepare_database():
-        calls.append("migrate")
+    async def fake_prepare_database(*, include_seed):
+        calls.append(("migrate", include_seed))
 
     monkeypatch.setattr(startup, "prepare_database", fake_prepare_database)
     monkeypatch.setattr(startup, "start_server", lambda: calls.append("serve"))
 
     startup.main([])
 
-    assert calls == ["migrate", "serve"]
+    assert calls == [("migrate", True), "serve"]
