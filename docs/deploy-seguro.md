@@ -43,7 +43,13 @@ Banco, inicialização do servidor, backend e frontend não devem ser alterados 
 - Não criar usuário administrador durante o boot da aplicação.
 - Antes de múltiplas réplicas, mover migrations para uma tarefa exclusiva de implantação.
 
-Enquanto `startup.py` executar migrations antes do servidor, qualquer falha de banco ainda poderá impedir o backend de iniciar. Por isso essa mudança deve ocorrer antes da expansão horizontal.
+O código aceita três modos de inicialização:
+
+- `python startup.py`: fluxo legado, migra e depois inicia a API.
+- `python startup.py migrate`: executa somente migrations e o seed opcional.
+- `python startup.py serve`: inicia somente a API.
+
+O modo legado permanece como padrão para não modificar a produção por acidente. Antes da expansão horizontal, configurar uma tarefa exclusiva com `python startup.py migrate`, validar sua conclusão e somente então configurar o serviço web com `python startup.py serve`.
 
 ## Critérios para liberar produção
 

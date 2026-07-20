@@ -94,7 +94,26 @@ jobs:
       - name: Construir a imagem de produção
         run: docker build -f backend/Dockerfile.prod -t ilya-backend-ci backend
 
-      - name: Validar migrations e boot sem seed administrativo
+      - name: Validar migrations em processo dedicado
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2329
+          cleanup() {
+            docker logs ilya-backend-smoke 2>/dev/null || true
+            docker rm -f ilya-backend-smoke 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          docker run --rm \
+            --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ilya_boot_test \
+            --env SECRET_KEY=ci-secret-key-with-at-least-32-characters \
+            --env PASSWORD_PEPPER=ci-password-pepper-not-used-in-production \
+            ilya-backend-ci \
+            python startup.py migrate
+
+      - name: Validar boot do servidor sem migration nem seed
         shell: bash
         run: |
           set -euo pipefail
@@ -114,7 +133,8 @@ jobs:
             --env PASSWORD_PEPPER=ci-password-pepper-not-used-in-production \
             --env 'BACKEND_CORS_ORIGINS=["http://localhost:5173"]' \
             --env WEB_CONCURRENCY=1 \
-            ilya-backend-ci
+            ilya-backend-ci \
+            python startup.py serve
 
           for _ in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:8000/health/ready >/dev/null; then

@@ -59,3 +59,45 @@ def test_startup_lock_connection_uses_autocommit(monkeypatch):
     assert any("pg_advisory_lock" in statement for statement in statements)
     assert any("pg_advisory_unlock" in statement for statement in statements)
     assert engine.disposed is True
+
+
+def test_migrate_mode_does_not_start_web_server(monkeypatch):
+    calls = []
+
+    async def fake_prepare_database():
+        calls.append("migrate")
+
+    monkeypatch.setattr(startup, "prepare_database", fake_prepare_database)
+    monkeypatch.setattr(startup, "start_server", lambda: calls.append("serve"))
+
+    startup.main(["migrate"])
+
+    assert calls == ["migrate"]
+
+
+def test_serve_mode_does_not_run_migrations(monkeypatch):
+    calls = []
+
+    async def fake_prepare_database():
+        calls.append("migrate")
+
+    monkeypatch.setattr(startup, "prepare_database", fake_prepare_database)
+    monkeypatch.setattr(startup, "start_server", lambda: calls.append("serve"))
+
+    startup.main(["serve"])
+
+    assert calls == ["serve"]
+
+
+def test_default_mode_preserves_current_deploy_behavior(monkeypatch):
+    calls = []
+
+    async def fake_prepare_database():
+        calls.append("migrate")
+
+    monkeypatch.setattr(startup, "prepare_database", fake_prepare_database)
+    monkeypatch.setattr(startup, "start_server", lambda: calls.append("serve"))
+
+    startup.main([])
+
+    assert calls == ["migrate", "serve"]
