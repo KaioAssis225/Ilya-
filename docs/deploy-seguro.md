@@ -46,7 +46,7 @@ Banco, inicialização do servidor, backend e frontend não devem ser alterados 
 O código aceita três modos de inicialização:
 
 - `python startup.py`: fluxo legado, migra e depois inicia a API.
-- `python startup.py migrate`: executa somente migrations e o seed opcional.
+- `python startup.py migrate`: executa somente migrations, sem alterar usuários.
 - `python startup.py serve`: inicia somente a API.
 
 O modo legado permanece como padrão para não modificar a produção por acidente. Antes da expansão horizontal, configurar uma tarefa exclusiva com `python startup.py migrate`, validar sua conclusão e somente então configurar o serviço web com `python startup.py serve`.
