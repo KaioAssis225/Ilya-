@@ -29,6 +29,10 @@ _CONTENT_TYPES = {
 }
 
 
+def _normalized_addressing_style(style: str) -> str:
+    return "virtual" if style == "virtual-host" else style
+
+
 @lru_cache(maxsize=1)
 def _object_storage_client():
     return boto3.client(
@@ -39,7 +43,11 @@ def _object_storage_client():
         region_name=settings.OBJECT_STORAGE_REGION,
         config=Config(
             signature_version="s3v4",
-            s3={"addressing_style": settings.OBJECT_STORAGE_ADDRESSING_STYLE},
+            s3={
+                "addressing_style": _normalized_addressing_style(
+                    settings.OBJECT_STORAGE_ADDRESSING_STYLE
+                )
+            },
         ),
     )
 

@@ -287,6 +287,11 @@ def test_url_de_foto_preserva_arquivo_legado_e_reconhece_objeto():
     )
 
 
+def test_estilo_de_url_da_railway_e_normalizado_para_boto():
+    assert uploads_module._normalized_addressing_style("virtual-host") == "virtual"
+    assert uploads_module._normalized_addressing_style("path") == "path"
+
+
 def test_upload_em_objeto_e_compensado_em_caso_de_rollback(monkeypatch):
     class FakeObjectStorage:
         def __init__(self):
