@@ -46,6 +46,11 @@ async def prepare_database() -> None:
     engine = create_async_engine(
         resolve_async_database_url(os.environ.get("DATABASE_URL")),
         poolclass=NullPool,
+        # O advisory lock é de sessão e não precisa de uma transação aberta.
+        # Manter esta conexão "idle in transaction" faz CREATE INDEX
+        # CONCURRENTLY esperar por ela, enquanto o startup espera o Alembic:
+        # um bloqueio circular que impede a API de iniciar em banco novo.
+        isolation_level="AUTOCOMMIT",
         connect_args={"command_timeout": lock_timeout},
     )
     try:
