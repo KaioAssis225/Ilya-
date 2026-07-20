@@ -1,0 +1,152 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend — lint e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências reproduzíveis
+        run: npm ci
+
+      - name: Validar código
+        run: npm run lint
+
+      - name: Gerar build de produção
+        run: npm run build
+
+  backend-tests:
+    name: Backend — testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ilya_test
+      SECRET_KEY: ci-secret-key-with-at-least-32-characters
+      PASSWORD_PEPPER: ci-password-pepper-not-used-in-production
+      BACKEND_CORS_ORIGINS: '["http://localhost:5173"]'
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Executar testes
+        run: python -m pytest -q
+
+  production-boot:
+    name: Container — migrations e inicialização
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ilya_boot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ilya_boot_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Construir a imagem de produção
+        run: docker build -f backend/Dockerfile.prod -t ilya-backend-ci backend
+
+      - name: Validar migrations em processo dedicado
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2329
+          cleanup() {
+            docker logs ilya-backend-smoke 2>/dev/null || true
+            docker rm -f ilya-backend-smoke 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          docker run --rm \
+            --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ilya_boot_test \
+            --env SECRET_KEY=ci-secret-key-with-at-least-32-characters \
+            --env PASSWORD_PEPPER=ci-password-pepper-not-used-in-production \
+            ilya-backend-ci \
+            python startup.py migrate
+
+      - name: Validar boot do servidor sem migration nem seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2329
+          cleanup() {
+            docker logs ilya-backend-smoke 2>/dev/null || true
+            docker rm -f ilya-backend-smoke 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name ilya-backend-smoke \
+            --network host \
+            --env PORT=8000 \
+            --env DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ilya_boot_test \
+            --env SECRET_KEY=ci-secret-key-with-at-least-32-characters \
+            --env PASSWORD_PEPPER=ci-password-pepper-not-used-in-production \
+            --env 'BACKEND_CORS_ORIGINS=["http://localhost:5173"]' \
+            --env WEB_CONCURRENCY=1 \
+            ilya-backend-ci \
+            python startup.py serve
+
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/health/ready >/dev/null; then
+              curl --fail --silent http://127.0.0.1:8000/openapi.json >/dev/null
+              exit 0
+            fi
+            if ! docker inspect --format '{{.State.Running}}' ilya-backend-smoke 2>/dev/null | grep -q true; then
+              echo "O container encerrou antes de ficar pronto."
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "A API não ficou pronta dentro do limite esperado."
+          exit 1

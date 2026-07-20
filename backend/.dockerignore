@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv/
+.coverage
 
 # Segredos e dados locais nunca devem entrar na imagem.
 .env
@@ -11,3 +13,5 @@ app/static/uploads/*
 
 # Artefatos de desenvolvimento desnecessários na imagem.
 .impeccable/
+tests/
+*.log

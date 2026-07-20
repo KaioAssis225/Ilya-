@@ -46,6 +46,11 @@ async def prepare_database() -> None:
     engine = create_async_engine(
         resolve_async_database_url(os.environ.get("DATABASE_URL")),
         poolclass=NullPool,
+        # O advisory lock é de sessão e não precisa de uma transação aberta.
+        # Manter esta conexão "idle in transaction" faz CREATE INDEX
+        # CONCURRENTLY esperar por ela, enquanto o startup espera o Alembic:
+        # um bloqueio circular que impede a API de iniciar em banco novo.
+        isolation_level="AUTOCOMMIT",
         connect_args={"command_timeout": lock_timeout},
     )
     try:
@@ -129,6 +134,24 @@ def start_server() -> None:
     os.execv(sys.executable, args)
 
 
+def main(arguments: list[str] | None = None) -> None:
+    """Executa migration, servidor ou o fluxo legado completo.
+
+    O modo padrão continua sendo ``all`` para não mudar o deploy atual. Depois
+    que a infraestrutura possuir uma tarefa de migration dedicada, use
+    ``python startup.py migrate`` nela e ``python startup.py serve`` no serviço
+    web. Isso impede uma falha de DDL de reiniciar todas as réplicas da API.
+    """
+    selected = list(sys.argv[1:] if arguments is None else arguments)
+    if len(selected) > 1 or (selected and selected[0] not in {"all", "migrate", "serve"}):
+        raise RuntimeError("Modo inválido. Use: all, migrate ou serve.")
+
+    mode = selected[0] if selected else "all"
+    if mode in {"all", "migrate"}:
+        asyncio.run(prepare_database())
+    if mode in {"all", "serve"}:
+        start_server()
+
+
 if __name__ == "__main__":
-    asyncio.run(prepare_database())
-    start_server()
+    main()
