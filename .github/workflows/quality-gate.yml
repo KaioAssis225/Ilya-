@@ -67,7 +67,7 @@ jobs:
         run: pip install --disable-pip-version-check -r requirements.txt
 
       - name: Executar testes
-        run: pytest -q
+        run: python -m pytest -q
 
   production-boot:
     name: Container — migrations e inicialização
