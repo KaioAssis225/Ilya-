@@ -1,0 +1,107 @@
+name: Monitor de produção
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-health-monitor
+  cancel-in-progress: false
+
+jobs:
+  health:
+    name: Verificar API de produção
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validar disponibilidade e prontidão
+        shell: bash
+        run: |
+          set -euo pipefail
+          for endpoint in live ready; do
+            curl \
+              --silent \
+              --show-error \
+              --fail \
+              --retry 3 \
+              --retry-delay 5 \
+              --retry-all-errors \
+              --max-time 20 \
+              --output /dev/null \
+              "https://ilya-production-7857.up.railway.app/health/${endpoint}"
+          done
+
+      - name: Abrir ou atualizar alerta
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const title = "[ALERTA] API Ilya de produção indisponível";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "O monitor automático não conseguiu validar `/health/live` e `/health/ready`.",
+              "",
+              `Execução: ${runUrl}`,
+              `Data UTC: ${new Date().toISOString()}`,
+              "",
+              "Verifique o deployment, os logs e as dependências Postgres/Redis na Railway.",
+            ].join("\n");
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existing = issues.find(
+              (issue) => !issue.pull_request && issue.title === title,
+            );
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+
+      - name: Fechar alerta após recuperação
+        if: success()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const title = "[ALERTA] API Ilya de produção indisponível";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const alerts = issues.filter(
+              (issue) => !issue.pull_request && issue.title === title,
+            );
+            for (const issue of alerts) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Serviço recuperado em ${new Date().toISOString()} (UTC).`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+              });
+            }

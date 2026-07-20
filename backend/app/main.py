@@ -23,7 +23,7 @@ from app.core.limiter import limiter
 from app.core.request_size import RequestSizeLimitMiddleware
 from app.db.session import AsyncSessionLocal, engine
 from app.models.refresh_token import cleanup_expired_tokens
-from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, optional_categories_router, users_router, notifications_router, utils_router, import_router, dashboard_router
+from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, optional_categories_router, users_router, notifications_router, utils_router, import_router, dashboard_router, media_router
 from app.api.routers.auth import router as auth_router
 
 # ── Logging estruturado ───────────────────────────────────────────────────────
@@ -48,6 +48,10 @@ async def _cleanup_tokens_background() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.object_storage_partially_configured():
+        raise RuntimeError(
+            "Configuração incompleta do armazenamento de objetos."
+        )
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     # Limpeza em background: não bloqueia a prontidão da API a cada boot
     # e um advisory lock evita trabalho duplicado entre workers/réplicas.
@@ -239,6 +243,7 @@ app.include_router(notifications_router)
 app.include_router(utils_router)
 app.include_router(import_router)
 app.include_router(dashboard_router)
+app.include_router(media_router)
 
 
 @app.get("/health", tags=["health"])

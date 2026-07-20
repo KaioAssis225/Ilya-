@@ -14,4 +14,5 @@ slowapi==0.1.9
 redis==8.0.1
 limits==5.8.0
 Pillow>=10.4.0
+boto3==1.43.51
 pytest==8.3.3
