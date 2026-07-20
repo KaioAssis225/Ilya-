@@ -1,5 +1,4 @@
 import uuid
-import os
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +17,7 @@ from app.schemas.product import (
 )
 from app.core.config import settings
 from app.core.search import literal_contains_pattern
-from app.core.uploads import delete_upload, persist_upload, sanitize_image_upload
+from app.core.uploads import build_photo_url, delete_upload, persist_upload, sanitize_image_upload
 
 def _is_conjunto_type(type_: Optional[str]) -> bool:
     """Bloco 74: identifica 'conjuntos' por substring case-insensitive no nome
@@ -35,12 +34,7 @@ _ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
 
 
 def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
-    if not photo_path:
-        return None
-    # Filesystem path (app/static/uploads/x.jpg) → web path (/static/uploads/x.jpg)
-    if photo_path.startswith("app/"):
-        return "/" + photo_path[4:]
-    return "/static/uploads/" + os.path.basename(photo_path)
+    return build_photo_url(photo_path)
 
 
 def _to_read(product: Product) -> ProductRead:

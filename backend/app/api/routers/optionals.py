@@ -10,7 +10,7 @@ from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
 from app.schemas.optional import OptionalColorCreate, OptionalColorUpdate, OptionalColorRead
 from app.core.config import settings
-from app.core.uploads import delete_upload, persist_upload, sanitize_image_upload
+from app.core.uploads import build_photo_url, delete_upload, persist_upload, sanitize_image_upload
 
 router = APIRouter(prefix="/api/v1/optionals", tags=["optionals"])
 
@@ -28,11 +28,7 @@ _ANY = Depends(
 
 
 def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
-    if not photo_path:
-        return None
-    if photo_path.startswith("app/"):
-        return "/" + photo_path[4:]
-    return "/static/uploads/" + os.path.basename(photo_path)
+    return build_photo_url(photo_path)
 
 
 def _to_read(opt: OptionalColor) -> OptionalColorRead:

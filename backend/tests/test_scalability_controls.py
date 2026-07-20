@@ -36,7 +36,9 @@ from app.core.limiter import rate_limit_key
 from app.core.request_size import RequestSizeLimitMiddleware
 from app.core.search import literal_contains_pattern
 from app.core.security import create_access_token
-from app.core.uploads import sanitize_image_upload
+from app.core import uploads as uploads_module
+from app.core.config import settings
+from app.core.uploads import build_photo_url, sanitize_image_upload
 from app.models.user import UserRole
 from app.schemas.client import ClientCreate, ClientUpdate
 from app.schemas.order import OrderListRead
@@ -275,6 +277,53 @@ def test_imagem_grande_e_reduzida_fora_do_event_loop():
     result = Image.open(io.BytesIO(sanitized))
     assert extension == "jpg"
     assert max(result.size) <= 400
+
+
+def test_url_de_foto_preserva_arquivo_legado_e_reconhece_objeto():
+    assert build_photo_url("app/static/uploads/foto.jpg") == "/static/uploads/foto.jpg"
+    assert (
+        build_photo_url("object://products/123e4567-e89b-12d3-a456-426614174000.jpg")
+        == "/api/v1/media/products/123e4567-e89b-12d3-a456-426614174000.jpg"
+    )
+
+
+def test_upload_em_objeto_e_compensado_em_caso_de_rollback(monkeypatch):
+    class FakeObjectStorage:
+        def __init__(self):
+            self.put: dict | None = None
+            self.deleted: dict | None = None
+
+        def put_object(self, **kwargs):
+            self.put = kwargs
+
+        def delete_object(self, **kwargs):
+            self.deleted = kwargs
+
+    storage = FakeObjectStorage()
+    monkeypatch.setattr(settings, "OBJECT_STORAGE_ENDPOINT", "https://storage.example")
+    monkeypatch.setattr(settings, "OBJECT_STORAGE_ACCESS_KEY_ID", "access")
+    monkeypatch.setattr(settings, "OBJECT_STORAGE_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setattr(settings, "OBJECT_STORAGE_BUCKET", "uploads")
+    monkeypatch.setattr(uploads_module, "_object_storage_client", lambda: storage)
+
+    reference = asyncio.run(
+        uploads_module.persist_upload(
+            b"imagem",
+            "app/static/uploads/optionals",
+            "webp",
+        )
+    )
+
+    assert reference.startswith("object://optionals/")
+    assert storage.put is not None
+    assert storage.put["Bucket"] == "uploads"
+    assert storage.put["ContentType"] == "image/webp"
+
+    asyncio.run(uploads_module.delete_upload(reference))
+    assert storage.deleted == {
+        "Bucket": "uploads",
+        "Key": reference.removeprefix("object://"),
+    }
 
 
 @pytest.mark.parametrize(

@@ -4,15 +4,70 @@ import os
 import tempfile
 import uuid
 import warnings
+from functools import lru_cache
+from urllib.parse import quote
 
+import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
+
+from app.core.config import settings
 
 
 _CHUNK_SIZE = 64 * 1024
 _FORMAT_TO_EXTENSION = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 _IMAGE_PROCESSING_SEMAPHORE = asyncio.Semaphore(2)
+_OBJECT_REFERENCE_PREFIX = "object://"
+_OBJECT_KEY_PREFIXES = {"products", "optionals"}
+_CONTENT_TYPES = {
+    "jpg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+}
+
+
+@lru_cache(maxsize=1)
+def _object_storage_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.OBJECT_STORAGE_ENDPOINT,
+        aws_access_key_id=settings.OBJECT_STORAGE_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+        region_name=settings.OBJECT_STORAGE_REGION,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": settings.OBJECT_STORAGE_ADDRESSING_STYLE},
+        ),
+    )
+
+
+def _object_key_from_reference(reference: str | None) -> str | None:
+    if not reference or not reference.startswith(_OBJECT_REFERENCE_PREFIX):
+        return None
+    key = reference[len(_OBJECT_REFERENCE_PREFIX):]
+    prefix, separator, filename = key.partition("/")
+    if (
+        separator != "/"
+        or prefix not in _OBJECT_KEY_PREFIXES
+        or not filename
+        or "/" in filename
+    ):
+        return None
+    return key
+
+
+def build_photo_url(photo_path: str | None) -> str | None:
+    if not photo_path:
+        return None
+    object_key = _object_key_from_reference(photo_path)
+    if object_key:
+        return "/api/v1/media/" + quote(object_key, safe="/")
+    if photo_path.startswith("app/"):
+        return "/" + photo_path[4:]
+    return "/static/uploads/" + os.path.basename(photo_path)
 
 
 async def read_upload_limited(
@@ -160,7 +215,28 @@ def _persist_upload(content: bytes, directory: str, extension: str) -> str:
         raise
 
 
+def _persist_object_upload(content: bytes, directory: str, extension: str) -> str:
+    directory_name = os.path.basename(os.path.normpath(directory))
+    prefix = "optionals" if directory_name == "optionals" else "products"
+    key = f"{prefix}/{uuid.uuid4()}.{extension}"
+    _object_storage_client().put_object(
+        Bucket=settings.OBJECT_STORAGE_BUCKET,
+        Key=key,
+        Body=content,
+        ContentType=_CONTENT_TYPES[extension],
+        CacheControl="public, max-age=31536000, immutable",
+    )
+    return _OBJECT_REFERENCE_PREFIX + key
+
+
 async def persist_upload(content: bytes, directory: str, extension: str) -> str:
+    if settings.object_storage_configured():
+        return await run_in_threadpool(
+            _persist_object_upload,
+            content,
+            directory,
+            extension,
+        )
     return await run_in_threadpool(
         _persist_upload,
         content,
@@ -172,6 +248,22 @@ async def persist_upload(content: bytes, directory: str, extension: str) -> str:
 def _delete_upload(path: str | None) -> None:
     if not path:
         return
+    object_key = _object_key_from_reference(path)
+    if object_key:
+        if not settings.object_storage_configured():
+            return
+        try:
+            _object_storage_client().delete_object(
+                Bucket=settings.OBJECT_STORAGE_BUCKET,
+                Key=object_key,
+            )
+        except (BotoCoreError, ClientError):
+            warnings.warn(
+                f"Não foi possível excluir o objeto {object_key!r}.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return
     try:
         os.remove(path)
     except OSError:
@@ -180,3 +272,34 @@ def _delete_upload(path: str | None) -> None:
 
 async def delete_upload(path: str | None) -> None:
     await run_in_threadpool(_delete_upload, path)
+
+
+def _read_object_upload(object_key: str) -> tuple[bytes, str]:
+    try:
+        result = _object_storage_client().get_object(
+            Bucket=settings.OBJECT_STORAGE_BUCKET,
+            Key=object_key,
+        )
+        return result["Body"].read(), result.get(
+            "ContentType",
+            "application/octet-stream",
+        )
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code in {"NoSuchKey", "404", "NotFound"}:
+            raise FileNotFoundError(object_key) from exc
+        raise
+
+
+async def read_object_upload(object_key: str) -> tuple[bytes, str]:
+    prefix, separator, filename = object_key.partition("/")
+    if (
+        separator != "/"
+        or prefix not in _OBJECT_KEY_PREFIXES
+        or not filename
+        or "/" in filename
+    ):
+        raise FileNotFoundError(object_key)
+    if not settings.object_storage_configured():
+        raise FileNotFoundError(object_key)
+    return await run_in_threadpool(_read_object_upload, object_key)

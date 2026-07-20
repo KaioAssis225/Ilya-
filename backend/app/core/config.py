@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     MAX_IMAGE_PIXELS: int = 25_000_000
     MAX_IMAGE_DIMENSION: int = 2560
 
+    # Armazenamento S3 compatível. Quando vazio, mantém o filesystem local.
+    OBJECT_STORAGE_ENDPOINT: str = ""
+    OBJECT_STORAGE_ACCESS_KEY_ID: str = ""
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: str = ""
+    OBJECT_STORAGE_BUCKET: str = ""
+    OBJECT_STORAGE_REGION: str = "auto"
+    OBJECT_STORAGE_ADDRESSING_STYLE: str = "virtual"
+
     RATE_LIMIT_STORAGE_URI: str = "memory://"
     RATE_LIMIT_DEFAULT: str = "200/minute"
     RATE_LIMIT_REDIS_TIMEOUT_SECONDS: float = 2.0
@@ -65,6 +73,25 @@ class Settings(BaseSettings):
 
     def get_allowed_extensions(self) -> List[str]:
         return [ext.strip() for ext in self.ALLOWED_EXTENSIONS.split(",")]
+
+    def object_storage_configured(self) -> bool:
+        return all(
+            (
+                self.OBJECT_STORAGE_ENDPOINT,
+                self.OBJECT_STORAGE_ACCESS_KEY_ID,
+                self.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+                self.OBJECT_STORAGE_BUCKET,
+            )
+        )
+
+    def object_storage_partially_configured(self) -> bool:
+        values = (
+            self.OBJECT_STORAGE_ENDPOINT,
+            self.OBJECT_STORAGE_ACCESS_KEY_ID,
+            self.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+            self.OBJECT_STORAGE_BUCKET,
+        )
+        return any(values) and not all(values)
 
 
 settings = Settings()
