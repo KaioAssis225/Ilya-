@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import type { PageResult, Product, ProductCreate, ProductUpdate } from '../types'
 
@@ -15,8 +15,8 @@ export interface ProductPageParams {
   sort_dir?: 'asc' | 'desc'
 }
 
-export function useProductsPage(params: ProductPageParams, enabled = true) {
-  return useQuery<PageResult<Product>>({
+export function productsPageQueryOptions(params: ProductPageParams) {
+  return queryOptions<PageResult<Product>>({
     queryKey: [KEY, 'page', params],
     queryFn: async () => {
       const response = await api.get<Product[]>('/products', { params })
@@ -27,8 +27,14 @@ export function useProductsPage(params: ProductPageParams, enabled = true) {
         pageSize: Number(response.headers['x-page-size'] ?? response.data.length),
       }
     },
-    enabled,
     staleTime: 30_000,
+  })
+}
+
+export function useProductsPage(params: ProductPageParams, enabled = true) {
+  return useQuery({
+    ...productsPageQueryOptions(params),
+    enabled,
   })
 }
 

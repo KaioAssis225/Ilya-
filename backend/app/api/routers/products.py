@@ -17,7 +17,7 @@ from app.schemas.product import (
 )
 from app.core.config import settings
 from app.core.search import literal_contains_pattern
-from app.core.uploads import build_photo_url, delete_upload, persist_upload, sanitize_image_upload
+from app.core.uploads import build_photo_url, build_thumbnail_url, delete_upload, persist_upload, sanitize_image_upload
 
 def _is_conjunto_type(type_: Optional[str]) -> bool:
     """Bloco 74: identifica 'conjuntos' por substring case-insensitive no nome
@@ -40,14 +40,17 @@ def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
 def _to_read(product: Product) -> ProductRead:
     data = ProductRead.model_validate(product)
     data.photo_url = _build_photo_url(product.photo_path)
+    data.thumbnail_url = build_thumbnail_url(product.photo_path)
     for opt_read, opt_orm in zip(data.optionals, product.optionals):
         opt_read.photo_url = _build_photo_url(opt_orm.photo_path)
+        opt_read.thumbnail_url = build_thumbnail_url(opt_orm.photo_path)
     data.set_items = [
         ProductSetItemRead(
             product_code=si.product.product_code,
             qty=si.qty,
             description=si.product.description,
             photo_url=_build_photo_url(si.product.photo_path),
+            thumbnail_url=build_thumbnail_url(si.product.photo_path),
         )
         for si in product.set_items
     ]
@@ -56,6 +59,7 @@ def _to_read(product: Product) -> ProductRead:
         comp_read = ProductSetComponentRead.model_validate(comp)
         for opt_read, opt_orm in zip(comp_read.optionals, comp.optionals):
             opt_read.photo_url = _build_photo_url(opt_orm.photo_path)
+            opt_read.thumbnail_url = build_thumbnail_url(opt_orm.photo_path)
         data.components.append(comp_read)
     return data
 

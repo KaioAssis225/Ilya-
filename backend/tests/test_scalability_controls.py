@@ -295,14 +295,14 @@ def test_estilo_de_url_da_railway_e_normalizado_para_boto():
 def test_upload_em_objeto_e_compensado_em_caso_de_rollback(monkeypatch):
     class FakeObjectStorage:
         def __init__(self):
-            self.put: dict | None = None
-            self.deleted: dict | None = None
+            self.put: list[dict] = []
+            self.deleted: list[dict] = []
 
         def put_object(self, **kwargs):
-            self.put = kwargs
+            self.put.append(kwargs)
 
         def delete_object(self, **kwargs):
-            self.deleted = kwargs
+            self.deleted.append(kwargs)
 
     storage = FakeObjectStorage()
     monkeypatch.setattr(settings, "OBJECT_STORAGE_ENDPOINT", "https://storage.example")
@@ -310,6 +310,7 @@ def test_upload_em_objeto_e_compensado_em_caso_de_rollback(monkeypatch):
     monkeypatch.setattr(settings, "OBJECT_STORAGE_SECRET_ACCESS_KEY", "secret")
     monkeypatch.setattr(settings, "OBJECT_STORAGE_BUCKET", "uploads")
     monkeypatch.setattr(uploads_module, "_object_storage_client", lambda: storage)
+    monkeypatch.setattr(uploads_module, "_make_thumbnail_bytes", lambda _: b"thumbnail")
 
     reference = asyncio.run(
         uploads_module.persist_upload(
@@ -320,15 +321,19 @@ def test_upload_em_objeto_e_compensado_em_caso_de_rollback(monkeypatch):
     )
 
     assert reference.startswith("object://optionals/")
-    assert storage.put is not None
-    assert storage.put["Bucket"] == "uploads"
-    assert storage.put["ContentType"] == "image/webp"
+    assert len(storage.put) == 2
+    assert {item["Bucket"] for item in storage.put} == {"uploads"}
+    assert {item["ContentType"] for item in storage.put} == {"image/webp"}
 
     asyncio.run(uploads_module.delete_upload(reference))
-    assert storage.deleted == {
-        "Bucket": "uploads",
-        "Key": reference.removeprefix("object://"),
-    }
+    original_key = reference.removeprefix("object://")
+    assert storage.deleted == [
+        {"Bucket": "uploads", "Key": original_key},
+        {
+            "Bucket": "uploads",
+            "Key": uploads_module._thumbnail_key_for_original(original_key),
+        },
+    ]
 
 
 @pytest.mark.parametrize(
