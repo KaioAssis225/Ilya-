@@ -9,8 +9,6 @@ Nenhum evento de negócio é emitido aqui. O `test.ping` existe só para exercit
 assinatura, entrega e idempotência sem depender de um pedido ou produto real.
 """
 
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
