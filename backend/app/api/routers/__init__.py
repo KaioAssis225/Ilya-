@@ -13,5 +13,6 @@ from app.api.routers.utils import router as utils_router
 from app.api.routers.import_csv import router as import_router
 from app.api.routers.dashboard import router as dashboard_router
 from app.api.routers.media import router as media_router
+from app.api.routers.integrations import router as integrations_router
 
-__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router"]
+__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router"]

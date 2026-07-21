@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     GZIP_COMPRESS_LEVEL: int = 5
     SLOW_REQUEST_THRESHOLD_MS: float = 1000.0
 
+    # Integração com o Ilya Estoque (webhooks assinados via Outbox).
+    # TODAS com default de propósito: uma variável obrigatória aqui derrubaria
+    # o boot da API se faltasse no ambiente. Sem WEBHOOK_ENABLED=true, nada é
+    # enviado e a feature fica inerte.
+    WEBHOOK_ENABLED: bool = False
+    WEBHOOK_URL: str = ""
+    WEBHOOK_SECRET: str = ""
+    WEBHOOK_TIMEOUT_SECONDS: float = 10.0
+    WEBHOOK_MAX_ATTEMPTS: int = 7
+
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"
 
