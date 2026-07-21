@@ -20,5 +20,6 @@ class OptionalColorUpdate(BaseModel):
 class OptionalColorRead(OptionalColorBase):
     id: uuid.UUID
     photo_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
     model_config = {"from_attributes": True}

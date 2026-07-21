@@ -21,7 +21,19 @@ _CHUNK_SIZE = 64 * 1024
 _FORMAT_TO_EXTENSION = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 _IMAGE_PROCESSING_SEMAPHORE = asyncio.Semaphore(2)
 _OBJECT_REFERENCE_PREFIX = "object://"
-_OBJECT_KEY_PREFIXES = {"products", "optionals"}
+_ORIGINAL_OBJECT_KEY_PREFIXES = {"products", "optionals"}
+_THUMBNAIL_PREFIX_BY_ORIGINAL = {
+    "products": "product-thumbnails",
+    "optionals": "optional-thumbnails",
+}
+_ORIGINAL_PREFIX_BY_THUMBNAIL = {
+    thumbnail: original
+    for original, thumbnail in _THUMBNAIL_PREFIX_BY_ORIGINAL.items()
+}
+_OBJECT_KEY_PREFIXES = (
+    _ORIGINAL_OBJECT_KEY_PREFIXES | set(_ORIGINAL_PREFIX_BY_THUMBNAIL)
+)
+_THUMBNAIL_DIMENSION = 320
 _CONTENT_TYPES = {
     "jpg": "image/jpeg",
     "png": "image/png",
@@ -59,7 +71,7 @@ def _object_key_from_reference(reference: str | None) -> str | None:
     prefix, separator, filename = key.partition("/")
     if (
         separator != "/"
-        or prefix not in _OBJECT_KEY_PREFIXES
+        or prefix not in _ORIGINAL_OBJECT_KEY_PREFIXES
         or not filename
         or "/" in filename
     ):
@@ -76,6 +88,74 @@ def build_photo_url(photo_path: str | None) -> str | None:
     if photo_path.startswith("app/"):
         return "/" + photo_path[4:]
     return "/static/uploads/" + os.path.basename(photo_path)
+
+
+def _thumbnail_key_for_original(object_key: str) -> str | None:
+    prefix, separator, filename = object_key.partition("/")
+    thumbnail_prefix = _THUMBNAIL_PREFIX_BY_ORIGINAL.get(prefix)
+    if not separator or not thumbnail_prefix or not filename or "/" in filename:
+        return None
+    return f"{thumbnail_prefix}/{filename}.webp"
+
+
+def _original_key_for_thumbnail(thumbnail_key: str) -> str | None:
+    prefix, separator, filename = thumbnail_key.partition("/")
+    original_prefix = _ORIGINAL_PREFIX_BY_THUMBNAIL.get(prefix)
+    if (
+        not separator
+        or not original_prefix
+        or not filename.endswith(".webp")
+        or "/" in filename
+    ):
+        return None
+    return f"{original_prefix}/{filename[:-5]}"
+
+
+def _local_thumbnail_path(photo_path: str) -> str:
+    return os.path.join(
+        os.path.dirname(photo_path),
+        "thumbnails",
+        os.path.basename(photo_path) + ".webp",
+    )
+
+
+def build_thumbnail_url(photo_path: str | None) -> str | None:
+    """Retorna miniatura persistente; imagens legadas são geradas sob demanda."""
+    if not photo_path:
+        return None
+    object_key = _object_key_from_reference(photo_path)
+    if object_key:
+        thumbnail_key = _thumbnail_key_for_original(object_key)
+        if thumbnail_key:
+            return "/api/v1/media/" + quote(thumbnail_key, safe="/")
+    thumbnail_path = _local_thumbnail_path(photo_path)
+    if os.path.isfile(thumbnail_path):
+        return build_photo_url(thumbnail_path)
+    return build_photo_url(photo_path)
+
+
+def _make_thumbnail_bytes(content: bytes) -> bytes:
+    with Image.open(io.BytesIO(content)) as image:
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail(
+            (_THUMBNAIL_DIMENSION, _THUMBNAIL_DIMENSION),
+            Image.Resampling.LANCZOS,
+        )
+        canvas = Image.new(
+            "RGB",
+            (_THUMBNAIL_DIMENSION, _THUMBNAIL_DIMENSION),
+            "white",
+        )
+        canvas.paste(
+            image,
+            (
+                (_THUMBNAIL_DIMENSION - image.width) // 2,
+                (_THUMBNAIL_DIMENSION - image.height) // 2,
+            ),
+        )
+        output = io.BytesIO()
+        canvas.save(output, format="WEBP", quality=76, method=6)
+        return output.getvalue()
 
 
 async def read_upload_limited(
@@ -203,18 +283,16 @@ async def sanitize_image_upload(
         )
 
 
-def _persist_upload(content: bytes, directory: str, extension: str) -> str:
+def _write_atomic(path: str, content: bytes, *, prefix: str) -> None:
+    directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
-    filename = f"{uuid.uuid4()}.{extension}"
-    final_path = os.path.join(directory, filename)
-    descriptor, temporary_path = tempfile.mkstemp(prefix=".upload-", dir=directory)
+    descriptor, temporary_path = tempfile.mkstemp(prefix=prefix, dir=directory)
     try:
         with os.fdopen(descriptor, "wb") as temporary_file:
             temporary_file.write(content)
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
-        os.replace(temporary_path, final_path)
-        return final_path
+        os.replace(temporary_path, path)
     except Exception:
         try:
             os.remove(temporary_path)
@@ -223,17 +301,59 @@ def _persist_upload(content: bytes, directory: str, extension: str) -> str:
         raise
 
 
+def _persist_upload(content: bytes, directory: str, extension: str) -> str:
+    os.makedirs(directory, exist_ok=True)
+    filename = f"{uuid.uuid4()}.{extension}"
+    final_path = os.path.join(directory, filename)
+    thumbnail_path = _local_thumbnail_path(final_path)
+    thumbnail = _make_thumbnail_bytes(content)
+    try:
+        _write_atomic(final_path, content, prefix=".upload-")
+        _write_atomic(thumbnail_path, thumbnail, prefix=".thumbnail-")
+        return final_path
+    except Exception:
+        for candidate in (final_path, thumbnail_path):
+            try:
+                os.remove(candidate)
+            except OSError:
+                pass
+        raise
+
+
 def _persist_object_upload(content: bytes, directory: str, extension: str) -> str:
     directory_name = os.path.basename(os.path.normpath(directory))
     prefix = "optionals" if directory_name == "optionals" else "products"
     key = f"{prefix}/{uuid.uuid4()}.{extension}"
-    _object_storage_client().put_object(
-        Bucket=settings.OBJECT_STORAGE_BUCKET,
-        Key=key,
-        Body=content,
-        ContentType=_CONTENT_TYPES[extension],
-        CacheControl="public, max-age=31536000, immutable",
-    )
+    thumbnail_key = _thumbnail_key_for_original(key)
+    if not thumbnail_key:
+        raise RuntimeError("Não foi possível derivar a chave da miniatura.")
+    client = _object_storage_client()
+    thumbnail = _make_thumbnail_bytes(content)
+    try:
+        client.put_object(
+            Bucket=settings.OBJECT_STORAGE_BUCKET,
+            Key=key,
+            Body=content,
+            ContentType=_CONTENT_TYPES[extension],
+            CacheControl="public, max-age=31536000, immutable",
+        )
+        client.put_object(
+            Bucket=settings.OBJECT_STORAGE_BUCKET,
+            Key=thumbnail_key,
+            Body=thumbnail,
+            ContentType="image/webp",
+            CacheControl="public, max-age=31536000, immutable",
+        )
+    except Exception:
+        for candidate in (key, thumbnail_key):
+            try:
+                client.delete_object(
+                    Bucket=settings.OBJECT_STORAGE_BUCKET,
+                    Key=candidate,
+                )
+            except (BotoCoreError, ClientError):
+                pass
+        raise
     return _OBJECT_REFERENCE_PREFIX + key
 
 
@@ -260,22 +380,27 @@ def _delete_upload(path: str | None) -> None:
     if object_key:
         if not settings.object_storage_configured():
             return
-        try:
-            _object_storage_client().delete_object(
-                Bucket=settings.OBJECT_STORAGE_BUCKET,
-                Key=object_key,
-            )
-        except (BotoCoreError, ClientError):
-            warnings.warn(
-                f"Não foi possível excluir o objeto {object_key!r}.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+        thumbnail_key = _thumbnail_key_for_original(object_key)
+        for candidate in (object_key, thumbnail_key):
+            if not candidate:
+                continue
+            try:
+                _object_storage_client().delete_object(
+                    Bucket=settings.OBJECT_STORAGE_BUCKET,
+                    Key=candidate,
+                )
+            except (BotoCoreError, ClientError):
+                warnings.warn(
+                    f"Não foi possível excluir o objeto {candidate!r}.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         return
-    try:
-        os.remove(path)
-    except OSError:
-        pass
+    for candidate in (path, _local_thumbnail_path(path)):
+        try:
+            os.remove(candidate)
+        except OSError:
+            pass
 
 
 async def delete_upload(path: str | None) -> None:
@@ -283,8 +408,9 @@ async def delete_upload(path: str | None) -> None:
 
 
 def _read_object_upload(object_key: str) -> tuple[bytes, str]:
+    client = _object_storage_client()
     try:
-        result = _object_storage_client().get_object(
+        result = client.get_object(
             Bucket=settings.OBJECT_STORAGE_BUCKET,
             Key=object_key,
         )
@@ -295,7 +421,28 @@ def _read_object_upload(object_key: str) -> tuple[bytes, str]:
     except ClientError as exc:
         error_code = exc.response.get("Error", {}).get("Code")
         if error_code in {"NoSuchKey", "404", "NotFound"}:
-            raise FileNotFoundError(object_key) from exc
+            original_key = _original_key_for_thumbnail(object_key)
+            if not original_key:
+                raise FileNotFoundError(object_key) from exc
+            try:
+                original = client.get_object(
+                    Bucket=settings.OBJECT_STORAGE_BUCKET,
+                    Key=original_key,
+                )["Body"].read()
+            except ClientError as original_exc:
+                original_error = original_exc.response.get("Error", {}).get("Code")
+                if original_error in {"NoSuchKey", "404", "NotFound"}:
+                    raise FileNotFoundError(original_key) from original_exc
+                raise
+            thumbnail = _make_thumbnail_bytes(original)
+            client.put_object(
+                Bucket=settings.OBJECT_STORAGE_BUCKET,
+                Key=object_key,
+                Body=thumbnail,
+                ContentType="image/webp",
+                CacheControl="public, max-age=31536000, immutable",
+            )
+            return thumbnail, "image/webp"
         raise
 
 

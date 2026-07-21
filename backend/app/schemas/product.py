@@ -17,6 +17,7 @@ class ProductSetItemRead(BaseModel):
     qty: int
     description: str
     photo_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 
 class ProductSetComponentCreate(BaseModel):
@@ -97,6 +98,7 @@ class ProductBatchRequest(BaseModel):
 class ProductRead(ProductBase):
     id: uuid.UUID
     photo_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     optionals: List[OptionalColorRead] = []
     set_items: List[ProductSetItemRead] = []
     components: List[ProductSetComponentRead] = []

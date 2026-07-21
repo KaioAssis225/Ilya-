@@ -1,12 +1,87 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search } from 'lucide-react'
-import { useProductsPage } from '../hooks/useProducts'
+import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
 import { isConjuntoType } from '../lib/productType'
-import type { Product } from '../types'
+import type { PageResult, Product } from '../types'
 
 const PAGE_SIZE = 24
+
+function CatalogImage({ product }: { product: Product }) {
+  const frameRef = useRef<HTMLDivElement>(null)
+  const [nearViewport, setNearViewport] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [thumbnailFailed, setThumbnailFailed] = useState(false)
+  const thumbnail = product.thumbnail_url ?? product.photo_url
+  const source = thumbnailFailed ? product.photo_url : thumbnail
+
+  useEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return
+        setNearViewport(true)
+        observer.disconnect()
+      },
+      { rootMargin: '1000px 0px' },
+    )
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div ref={frameRef} className="relative w-full h-full">
+      {!loaded && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-bg via-white to-bg-2" />}
+      {nearViewport && source && (
+        <img
+          src={source}
+          alt={product.description}
+          width={320}
+          height={320}
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            if (!thumbnailFailed && product.photo_url && source !== product.photo_url) {
+              setThumbnailFailed(true)
+            }
+          }}
+          className={`w-full h-full object-contain transition-[opacity,transform] duration-500 ease-out group-hover:scale-[1.04] ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
+    </div>
+  )
+}
+
+function FullProductImage({ product }: { product: Product }) {
+  const [originalLoaded, setOriginalLoaded] = useState(false)
+  const preview = product.thumbnail_url ?? product.photo_url
+
+  return (
+    <div className="relative w-full h-[40vh] md:h-full">
+      {preview && !originalLoaded && (
+        <img
+          src={preview}
+          alt=""
+          decoding="async"
+          className="absolute inset-0 w-full h-full object-contain blur-[1px]"
+        />
+      )}
+      {product.photo_url && (
+        <img
+          src={product.photo_url}
+          alt={product.description}
+          decoding="async"
+          fetchPriority="high"
+          onLoad={() => setOriginalLoaded(true)}
+          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 ${originalLoaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
+    </div>
+  )
+}
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -108,7 +183,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
         {/* Foto: metade esquerda no desktop, topo no mobile */}
         <div className="md:w-[55%] md:h-full flex-shrink-0 bg-bg flex items-center justify-center p-6 md:p-14">
           {product.photo_url
-            ? <img src={product.photo_url} alt={product.description} className="w-full h-[40vh] md:h-full object-contain" />
+            ? <FullProductImage product={product} />
             : <div className="w-full h-[40vh] md:h-full flex items-center justify-center">
                 <span className="text-faint text-sm tracking-widest uppercase">Sem foto</span>
               </div>
@@ -164,7 +239,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
                               const opt = comp.optionals.find(o => o.category === cat)!
                               return (
                                 <div key={cat} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-line bg-white">
-                                  {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3 h-3 rounded object-cover" />}
+                                  {opt.photo_url && <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-3 h-3 rounded object-cover" />}
                                   <span className="text-[9px] text-ink-2">{CAT_LABEL[cat] ?? cat}: {opt.color_name}</span>
                                 </div>
                               )
@@ -186,7 +261,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
                   {product.set_items.map((item) => (
                     <div key={item.product_code} className="flex items-center gap-3 p-3 rounded-xl border border-line bg-bg">
                       {item.photo_url
-                        ? <img src={item.photo_url} alt={item.description} className="w-10 h-10 rounded-lg object-cover border border-line flex-shrink-0" />
+                        ? <img src={item.thumbnail_url ?? item.photo_url} alt={item.description} decoding="async" className="w-10 h-10 rounded-lg object-cover border border-line flex-shrink-0" />
                         : <div className="w-10 h-10 rounded-lg bg-bg-2 flex items-center justify-center flex-shrink-0"><ImageIcon className="w-4 h-4 text-faint" /></div>
                       }
                       <div className="flex-1 min-w-0">
@@ -211,19 +286,20 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
                         {opt.photo_url ? (
                           <>
                             <img
-                              src={opt.photo_url}
+                              src={opt.thumbnail_url ?? opt.photo_url}
                               alt={opt.color_name}
+                              decoding="async"
                               className="w-14 h-14 rounded-xl object-cover border border-line cursor-zoom-in hidden md:block"
                             />
                             <div className="hidden group-hover:block absolute z-50 bottom-16 left-1/2 -translate-x-1/2 w-44 h-44 rounded-xl overflow-hidden shadow-2xl border border-line pointer-events-none">
-                              <img src={opt.photo_url} alt={opt.color_name} className="w-full h-full object-cover" />
+                              <img src={opt.photo_url} alt={opt.color_name} decoding="async" className="w-full h-full object-cover" />
                             </div>
                             <button
                               className="md:hidden w-14 h-14 rounded-xl overflow-hidden border border-line active:opacity-70 transition-opacity"
                               style={{ touchAction: 'manipulation' }}
                               onClick={() => setMobileOptModal({ photo_url: opt.photo_url!, label: `${CAT_LABEL[cat] ?? cat}: ${opt.color_name}` })}
                             >
-                              <img src={opt.photo_url} alt={opt.color_name} className="w-full h-full object-cover" />
+                              <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-full h-full object-cover" />
                             </button>
                           </>
                         ) : (
@@ -264,6 +340,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
 }
 
 export default function ProdutosPage() {
+  const queryClient = useQueryClient()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
 
@@ -290,6 +367,40 @@ export default function ProdutosPage() {
   useEffect(() => {
     if (productsPage && page > totalPages) setPage(totalPages)
   }, [productsPage, page, totalPages])
+
+  useEffect(() => {
+    if (!productsPage || page >= totalPages) return
+    const options = productsPageQueryOptions({
+      skip: page * PAGE_SIZE,
+      limit: PAGE_SIZE,
+      q: debouncedSearch || undefined,
+      group_id: selectedGroupId || undefined,
+      type: selectedTypeName || undefined,
+      sort_by: 'product_code',
+      sort_dir: 'asc',
+    })
+    const timer = window.setTimeout(() => {
+      void queryClient.prefetchQuery(options).then(() => {
+        const nextPage = queryClient.getQueryData<PageResult<Product>>(options.queryKey)
+        nextPage?.items.slice(0, 8).forEach((product) => {
+          const source = product.thumbnail_url ?? product.photo_url
+          if (!source) return
+          const image = new Image()
+          image.decoding = 'async'
+          image.src = source
+        })
+      })
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [
+    debouncedSearch,
+    page,
+    productsPage,
+    queryClient,
+    selectedGroupId,
+    selectedTypeName,
+    totalPages,
+  ])
 
   function handleGroupChange(groupId: string) {
     setSelectedGroupId(groupId)
@@ -421,12 +532,7 @@ export default function ProdutosPage() {
                     nas bordas da própria foto. */}
                 <div className="w-full aspect-square overflow-hidden bg-white p-3 md:p-4">
                   {product.photo_url
-                    ? <img
-                        src={product.photo_url}
-                        alt={product.description}
-                        loading="lazy"
-                        className="w-full h-full object-contain transition-transform duration-500 ease-out group-hover:scale-[1.04]"
-                      />
+                    ? <CatalogImage product={product} />
                     : <div className="w-full h-full flex items-center justify-center">
                         <span className="text-faint text-[11px] uppercase tracking-widest">Sem foto</span>
                       </div>

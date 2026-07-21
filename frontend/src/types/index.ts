@@ -14,6 +14,7 @@ export interface OptionalColor {
   category: string
   color_name: string
   photo_url: string | null
+  thumbnail_url?: string | null
 }
 
 export interface OptionalColorCreate {
@@ -28,6 +29,7 @@ export interface ProductSetItem {
   qty: number
   description: string
   photo_url: string | null
+  thumbnail_url?: string | null
 }
 
 export interface ProductSetItemCreate {
@@ -75,6 +77,7 @@ export interface Product {
   set_items: ProductSetItem[]
   components: ProductSetComponent[]
   photo_url: string | null
+  thumbnail_url?: string | null
   created_at: string
   updated_at: string
 }
