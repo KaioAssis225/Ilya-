@@ -422,6 +422,21 @@ export default function ProdutosPage() {
     setPage(1)
   }
 
+  function changePage(nextPage: number) {
+    const boundedPage = Math.min(totalPages, Math.max(1, nextPage))
+    if (boundedPage === page) return
+
+    setPage(boundedPage)
+    window.requestAnimationFrame(() => {
+      window.scrollTo({
+        top: 0,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'auto'
+          : 'smooth',
+      })
+    })
+  }
+
   return (
     <div className="min-h-screen bg-bg pb-24 md:pb-8">
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
@@ -558,7 +573,7 @@ export default function ProdutosPage() {
             <button
               type="button"
               disabled={page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              onClick={() => changePage(page - 1)}
               className="px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
               Anterior
@@ -569,7 +584,7 @@ export default function ProdutosPage() {
             <button
               type="button"
               disabled={page >= totalPages}
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              onClick={() => changePage(page + 1)}
               className="px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
               Próxima
