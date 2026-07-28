@@ -40,6 +40,9 @@ jobs:
       - name: Gerar build de produção
         run: npm run build
 
+      - name: Auditar dependências (CVEs de alta severidade)
+        run: npm audit --audit-level=high
+
   backend-tests:
     name: Backend — testes
     runs-on: ubuntu-latest
@@ -65,6 +68,11 @@ jobs:
 
       - name: Instalar dependências
         run: pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Auditar dependências (CVEs conhecidas)
+        run: |
+          pip install --disable-pip-version-check pip-audit
+          pip-audit -r requirements.txt
 
       - name: Executar testes
         run: python -m pytest -q

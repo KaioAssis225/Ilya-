@@ -151,7 +151,13 @@ if settings.DEBUG:
         "style-src 'self' 'unsafe-inline'; "
         "font-src 'self'; "
         "script-src 'self'; "
-        "connect-src 'self';"
+        "connect-src 'self'; "
+        # base-uri/form-action NÃO herdam de default-src — precisam ser
+        # explícitos mesmo com a política restritiva (achado #2/CSP do
+        # relatório de segurança 2026-07-28).
+        "base-uri 'none'; "
+        "form-action 'none'; "
+        "object-src 'none';"
     )
 else:
     _SECURITY_HEADERS["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
@@ -160,6 +166,9 @@ else:
     _SECURITY_HEADERS["Content-Security-Policy"] = (
         "default-src 'none'; "
         "img-src 'self' data:; "
+        "base-uri 'none'; "
+        "form-action 'none'; "
+        "object-src 'none'; "
         "frame-ancestors 'none';"
     )
 
