@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
 import { AuthProvider } from './contexts/AuthContext'

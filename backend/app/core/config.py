@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # Deployments de produção/preview do projeto Ilya na conta Vercel indicada.
     # Mantém escopo restrito ao projeto; não equivale a liberar *.vercel.app.
     BACKEND_CORS_ORIGIN_REGEX: str = (
-        r"^https://(?:ilya-rust|ilya-[a-z0-9]+-kaioassis225s-projects)\.vercel\.app$"
+        r"^https://(?:ilya-rust|ilya-[a-z0-9-]+-kaioassis225s-projects)\.vercel\.app$"
     )
     UPLOAD_DIR: str = "app/static/uploads"
     MAX_UPLOAD_SIZE_MB: int = 5

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { LayoutDashboard, X } from 'lucide-react'
 
 const RETURN_KEY = 'dashboard_return_to'

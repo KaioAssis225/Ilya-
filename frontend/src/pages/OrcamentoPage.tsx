@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'

@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, or_, select, update
 
 from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
 from app.core.limiter import limiter
+from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.security import (
     verify_password,
     dummy_verify,
@@ -73,27 +74,6 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         max_age=_COOKIE_MAX_AGE,
         path="/api/v1/auth",
     )
-
-
-def _reject_cross_origin_cookie_requests(request: Request) -> None:
-    """CSRF (achado #3 do relatório de segurança 2026-07-28): bloqueia POST
-    autenticado pelo cookie de refresh quando a origem declarada não está na
-    allowlist do CORS.
-
-    O cookie usa SameSite=None porque frontend (Vercel) e backend (Railway)
-    ficam em domínios registráveis diferentes — por isso o navegador o envia
-    mesmo em requisições cross-site, e o Sec-Fetch-Site de uma chamada
-    LEGÍTIMA também seria "cross-site" (não dá pra usar esse cabeçalho para
-    distinguir tráfego real de ataque nesta arquitetura). A defesa real é
-    conferir o Origin, que o navegador anexa de forma não forjável por
-    JavaScript em POSTs cross-origin, contra a mesma allowlist do CORS.
-    """
-    origin = request.headers.get("origin")
-    if origin is not None and origin not in settings.get_cors_origins():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Origem não permitida.",
-        )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
@@ -188,7 +168,7 @@ async def refresh(
     response: Response,
     db: AsyncSession = Depends(get_db_session),
     refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
-    _origin_guard: None = Depends(_reject_cross_origin_cookie_requests),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
 ):
     invalid_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -259,7 +239,7 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db_session),
     refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
-    _origin_guard: None = Depends(_reject_cross_origin_cookie_requests),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
 ):
     if refresh_token:
         result = await db.execute(
