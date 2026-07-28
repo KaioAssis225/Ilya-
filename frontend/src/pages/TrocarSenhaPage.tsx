@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router'
 import { KeyRound, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
