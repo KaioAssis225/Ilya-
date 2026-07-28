@@ -8,6 +8,13 @@ updates:
     labels:
       - "dependencies"
       - "backend"
+    groups:
+      pip-patch-minor:
+        update-types:
+          - "minor"
+          - "patch"
+    # Atualizações major (possíveis breaking changes, ex.: fastapi/starlette)
+    # ficam fora do grupo — cada uma vira um PR isolado para revisão dedicada.
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -17,6 +24,11 @@ updates:
     labels:
       - "dependencies"
       - "frontend"
+    groups:
+      npm-patch-minor:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -26,3 +38,8 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    groups:
+      actions-patch-minor:
+        update-types:
+          - "minor"
+          - "patch"
