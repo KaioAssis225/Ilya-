@@ -31,6 +31,12 @@ class TestIsTrustedOrigin:
             "https://ilya-atyyjocxe-kaioassis225s-projects.vercel.app"
         ) is True
 
+    def test_vercel_branch_preview_with_hyphens_allowed_by_regex(self):
+        assert is_trusted_origin(
+            "https://ilya-git-fix-seguranca-revisao-in-38f70e-"
+            "kaioassis225s-projects.vercel.app"
+        ) is True
+
     def test_attacker_domain_rejected(self):
         assert is_trusted_origin("https://attacker.evil") is False
 
@@ -86,6 +92,17 @@ class TestRequireTrustedCookieOrigin:
             {"origin": "https://ilya-atyyjocxe-kaioassis225s-projects.vercel.app"}
         )
         require_trusted_cookie_origin(request)  # não deve levantar
+
+    def test_legitimate_branch_preview_with_hyphens_passes(self):
+        request = _request(
+            {
+                "origin": (
+                    "https://ilya-git-fix-seguranca-revisao-in-38f70e-"
+                    "kaioassis225s-projects.vercel.app"
+                )
+            }
+        )
+        require_trusted_cookie_origin(request)
 
     def test_referer_fallback_with_legitimate_domain_passes(self):
         request = _request(
