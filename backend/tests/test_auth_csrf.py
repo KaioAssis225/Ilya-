@@ -36,7 +36,7 @@ class _SpySession:
         self.calls.append("add")
 
 
-def _client_with_spy_session():
+def _client_with_spy_session(*, with_cookie: bool = True):
     spy = _SpySession()
 
     async def _override():
@@ -44,7 +44,8 @@ def _client_with_spy_session():
 
     app.dependency_overrides[get_db_session] = _override
     client = TestClient(app)
-    client.cookies.set("ilya_refresh", _FAKE_REFRESH_COOKIE)
+    if with_cookie:
+        client.cookies.set("ilya_refresh", _FAKE_REFRESH_COOKIE)
     return client, spy
 
 
@@ -53,6 +54,18 @@ def _reset_overrides():
 
 
 class TestRefreshOriginGuard:
+    def test_anonymous_session_returns_204_without_touching_db(self):
+        client, spy = _client_with_spy_session(with_cookie=False)
+        try:
+            response = client.post(
+                "/api/v1/auth/refresh",
+                headers={"Origin": _LEGITIMATE_ORIGIN},
+            )
+            assert response.status_code == 204
+            assert spy.calls == []
+        finally:
+            _reset_overrides()
+
     def test_malicious_origin_rejected_and_db_never_touched(self):
         client, spy = _client_with_spy_session()
         try:

@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, user } = useAuth()
   const navigate = useNavigate()
 
   const [identifier, setIdentifier] = useState('')
@@ -12,6 +12,10 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (user) navigate('/', { replace: true })
+  }, [navigate, user])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -38,7 +42,7 @@ export default function LoginPage() {
           >
             ILYA
           </h1>
-          <p className="mt-3 text-[11px] text-muted-2 tracking-[0.4em] uppercase">
+          <p className="mt-3 text-xs text-muted-2 tracking-[0.4em] uppercase">
             Sistema de Orçamentos
           </p>
           <div className="gold-rule mt-5" />
@@ -48,7 +52,7 @@ export default function LoginPage() {
         <div className="bg-surface rounded-2xl shadow-sm border border-line px-8 py-9">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
-              <label htmlFor="login-id" className="block text-[11px] font-semibold text-muted uppercase tracking-wider">
+              <label htmlFor="login-id" className="block text-xs font-semibold text-muted uppercase tracking-wider">
                 E-mail ou Usuário
               </label>
               <input
@@ -64,7 +68,7 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="login-pw" className="block text-[11px] font-semibold text-muted uppercase tracking-wider">
+              <label htmlFor="login-pw" className="block text-xs font-semibold text-muted uppercase tracking-wider">
                 Senha
               </label>
               <div className="relative">
