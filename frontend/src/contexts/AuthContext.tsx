@@ -60,6 +60,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshingRef.current = authApi
       .post<{ access_token: string }>('/auth/refresh')
       .then(async (res) => {
+        if (res.status === 204) {
+          clearSession()
+          return null
+        }
         const { access_token } = res.data
         const me = await authApi.get<AuthUser>('/auth/me', {
           headers: { Authorization: `Bearer ${access_token}` },

@@ -22,6 +22,8 @@ coverage.xml
 *,cover
 .hypothesis/
 .pytest_cache/
+.tmp*/
+lighthouse-*.json
 backend/app/static/uploads/*
 !backend/app/static/uploads/.gitkeep
 

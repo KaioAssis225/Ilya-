@@ -10,11 +10,12 @@ export interface AppNotification {
 
 const KEY = ['notifications']
 
-export function useNotifications() {
+export function useNotifications(enabled = true) {
   return useQuery<AppNotification[]>({
     queryKey: KEY,
     queryFn: () => api.get<AppNotification[]>('/notifications').then(r => r.data),
     refetchInterval: 30_000,
+    enabled,
   })
 }
 

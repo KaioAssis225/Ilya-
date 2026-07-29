@@ -175,7 +175,10 @@ async def refresh(
         detail="Refresh token inválido ou expirado.",
     )
     if not refresh_token:
-        raise invalid_exc
+        # Ausência de cookie representa uma sessão anônima normal, não uma
+        # tentativa inválida. O 204 evita um erro de rede no console sem
+        # revelar qualquer informação de sessão.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     token_hash = hash_refresh_token(refresh_token)
     result = await db.execute(
