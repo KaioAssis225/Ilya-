@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search } from 'lucide-react'
 import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
@@ -8,6 +8,39 @@ import { isConjuntoType } from '../lib/productType'
 import type { PageResult, Product } from '../types'
 
 const PAGE_SIZE = 24
+const FULL_IMAGE_WARMUP_COUNT = 4
+
+const loadedFullImages = new Set<string>()
+const pendingFullImages = new Map<string, Promise<void>>()
+
+function preloadFullImage(source: string | null | undefined, priority: 'high' | 'low' = 'low') {
+  if (!source || loadedFullImages.has(source)) return Promise.resolve()
+
+  const pending = pendingFullImages.get(source)
+  if (pending) return pending
+
+  const request = new Promise<void>((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.fetchPriority = priority
+    image.onload = () => {
+      loadedFullImages.add(source)
+      resolve()
+    }
+    image.onerror = () => reject(new Error(`Não foi possível pré-carregar ${source}`))
+    image.src = source
+  }).finally(() => {
+    pendingFullImages.delete(source)
+  })
+
+  pendingFullImages.set(source, request)
+  return request
+}
+
+function warmProductImage(product: Product, priority: 'high' | 'low' = 'high') {
+  if (!product.photo_url || product.photo_url === product.thumbnail_url) return
+  void preloadFullImage(product.photo_url, priority).catch(() => undefined)
+}
 
 function CatalogImage({ product }: { product: Product }) {
   const frameRef = useRef<HTMLDivElement>(null)
@@ -56,27 +89,50 @@ function CatalogImage({ product }: { product: Product }) {
 }
 
 function FullProductImage({ product }: { product: Product }) {
-  const [originalLoaded, setOriginalLoaded] = useState(false)
   const preview = product.thumbnail_url ?? product.photo_url
+  const original = product.photo_url
+  const hasDistinctPreview = Boolean(preview && original && preview !== original)
+  const [originalLoaded, setOriginalLoaded] = useState(
+    () => Boolean(original && loadedFullImages.has(original)),
+  )
+
+  useEffect(() => {
+    setOriginalLoaded(Boolean(original && loadedFullImages.has(original)))
+    if (original) {
+      void preloadFullImage(original, 'high').catch(() => undefined)
+    }
+  }, [original])
 
   return (
-    <div className="relative w-full h-[40vh] md:h-full">
-      {preview && !originalLoaded && (
+    <div className="relative w-full h-[40vh] md:h-full overflow-hidden">
+      {preview && (
         <img
           src={preview}
           alt=""
           decoding="async"
-          className="absolute inset-0 w-full h-full object-contain blur-[1px]"
+          aria-hidden="true"
+          className={`absolute inset-0 w-full h-full object-contain transition-[opacity,filter,transform] duration-700 ease-out ${
+            originalLoaded
+              ? 'opacity-0 blur-0 scale-100'
+              : hasDistinctPreview
+                ? 'opacity-100 blur-[0.4px] scale-[1.008]'
+                : 'opacity-100 blur-0 scale-100'
+          }`}
         />
       )}
-      {product.photo_url && (
+      {original && (
         <img
-          src={product.photo_url}
+          src={original}
           alt={product.description}
           decoding="async"
           fetchPriority="high"
-          onLoad={() => setOriginalLoaded(true)}
-          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 ${originalLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => {
+            loadedFullImages.add(original)
+            setOriginalLoaded(true)
+          }}
+          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-700 ease-out ${
+            originalLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
         />
       )}
     </div>
@@ -359,11 +415,31 @@ export default function ProdutosPage() {
     sort_by: 'product_code',
     sort_dir: 'asc',
   })
-  const products = productsPage?.items ?? []
+  const products = useMemo(() => productsPage?.items ?? [], [productsPage])
   const totalProducts = productsPage?.total ?? 0
   const totalPages = productsPage
     ? Math.max(1, Math.ceil(totalProducts / PAGE_SIZE))
     : Math.max(1, page)
+
+  useEffect(() => {
+    if (products.length === 0) return
+
+    const connection = (
+      navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string }
+      }
+    ).connection
+    if (connection?.saveData || connection?.effectiveType?.includes('2g')) return
+
+    const timer = window.setTimeout(() => {
+      products
+        .slice(0, FULL_IMAGE_WARMUP_COUNT)
+        .forEach(product => warmProductImage(product, 'low'))
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+  }, [products])
+
   useEffect(() => {
     if (productsPage && page > totalPages) setPage(totalPages)
   }, [productsPage, page, totalPages])
@@ -536,6 +612,9 @@ export default function ProdutosPage() {
               <button
                 key={product.id}
                 onClick={() => setSelected(product)}
+                onPointerEnter={() => warmProductImage(product)}
+                onPointerDown={() => warmProductImage(product)}
+                onFocus={() => warmProductImage(product)}
                 className="group bg-white border border-line rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:shadow-ink/8 hover:-translate-y-1 active:scale-[0.99] transition-all duration-300"
                 style={{ touchAction: 'manipulation' }}
               >
