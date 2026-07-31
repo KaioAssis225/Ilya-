@@ -32,7 +32,10 @@ BASE = API.removesuffix("/api/v1")
 ROOT = Path(__file__).resolve().parent
 CREATED_AT = datetime.now()
 BACKUP_DIR = ROOT / "backups" / f"ilya-site-{CREATED_AT.strftime('%Y%m%dT%H%M%S')}"
-PAGE_SIZE = 200
+# Use o menor limite aceito pelas rotas exportadas. A listagem de pedidos
+# permite no máximo 100 itens; usar 200 fazia a API responder 422 e transformava
+# o backup lógico inteiro em parcial antes da cópia externa.
+PAGE_SIZE = 100
 
 ENTITIES = {
     "products": "produtos",
@@ -78,7 +81,11 @@ def get_all(endpoint: str, token: str):
 def collect_photo_urls(value, urls: set[str]) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if isinstance(child, str) and "photo" in key and child.startswith(("/static/", "http")):
+            if (
+                isinstance(child, str)
+                and "photo" in key
+                and child.startswith(("/static/", "/api/v1/media/", "http"))
+            ):
                 urls.add(child)
             else:
                 collect_photo_urls(child, urls)

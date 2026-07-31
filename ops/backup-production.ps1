@@ -41,8 +41,21 @@ try {
         throw "Python 3 nao foi encontrado."
     }
 
-    & $PythonExe @PythonPrefix .\ops\backup_database.py --target production
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $DatabaseBackupSucceeded = $false
+    for ($Attempt = 1; $Attempt -le 3; $Attempt++) {
+        & $PythonExe @PythonPrefix .\ops\backup_database.py --target production
+        if ($LASTEXITCODE -eq 0) {
+            $DatabaseBackupSucceeded = $true
+            break
+        }
+        if ($Attempt -lt 3) {
+            Write-Warning "Backup do banco falhou na tentativa $Attempt de 3; nova tentativa em 20 segundos."
+            Start-Sleep -Seconds 20
+        }
+    }
+    if (-not $DatabaseBackupSucceeded) {
+        throw "Backup do banco falhou apos 3 tentativas."
+    }
 
     $latest = Get-ChildItem .\backups\database\ilya-production-*.dump.enc -File |
         Sort-Object LastWriteTime -Descending |
