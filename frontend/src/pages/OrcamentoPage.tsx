@@ -10,6 +10,7 @@ import { useCreateOrder, useUpdateOrder, useOrder } from '../hooks/useOrders'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
+import { NumberField } from '../components/NumberField'
 import { useAuth } from '../hooks/useAuth'
 import { isConjuntoType } from '../lib/productType'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
@@ -346,7 +347,11 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
 // Preço efetivo conforme o perfil de faturamento do cliente (Bloco 62).
 // Sem cliente selecionado, usa o preço de lojista por padrão.
 function effectivePrice(product: Product, profile: string | undefined): number {
-  return profile === 'corporativo' ? product.price_corporativo : product.price_lojista
+  // Bloco 96: a API omite (null) o preço que a role logada não pode ver. O
+  // perfil pedido aqui é sempre o que o servidor liberou, então o `?? 0` só
+  // protege a prévia de quebrar — o valor faturado é recalculado no backend.
+  const price = profile === 'corporativo' ? product.price_corporativo : product.price_lojista
+  return price ?? 0
 }
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
@@ -1272,13 +1277,13 @@ export default function OrcamentoPage() {
                             <SafePrice value={effectivePrice(item._product, priceProfile)} />
                           </td>
                           <td className="px-4 py-3.5 align-middle">
-                            <input
-                              type="number" min={0} max={user?.max_discount ?? 0}
+                            <NumberField
+                              min={0} max={user?.max_discount ?? 0}
                               className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
-                              value={item.discount === 0 ? '' : item.discount}
+                              value={item.discount}
                               placeholder="0"
-                              onChange={(e) => {
-                                const val = Math.min(user?.max_discount ?? 0, Math.max(0, Number(e.target.value) || 0))
+                              onValueChange={(v) => {
+                                const val = Math.min(user?.max_discount ?? 0, Math.max(0, v))
                                 setCart((prev) => prev.map((i) => i.product_code === item.product_code ? { ...i, discount: val } : i))
                               }}
                             />

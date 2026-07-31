@@ -97,6 +97,12 @@ class ProductBatchRequest(BaseModel):
 
 class ProductRead(ProductBase):
     id: uuid.UUID
+    # Bloco 96: preço que a role logada não pode ver sai como null em vez de
+    # trafegar até o browser. Conta de cliente-final recebe apenas o preço do
+    # próprio perfil de faturamento (lojista OU corporativo).
+    price: Optional[Decimal] = None
+    price_lojista: Optional[Decimal] = None
+    price_corporativo: Optional[Decimal] = None
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     optionals: List[OptionalColorRead] = []

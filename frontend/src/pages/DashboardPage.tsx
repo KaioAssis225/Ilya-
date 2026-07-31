@@ -39,15 +39,17 @@ function todayISO(offsetDays = 0) {
 
 type MetricKey = 'revenue_total' | 'revenue_finalized' | 'revenue_open' | 'revenue_cancelled' | 'orders_total' | 'orders_finalized' | 'orders_open' | 'orders_cancelled'
 
+// As chaves seguem o contrato da API (`revenue_*` / `orders_*`); só os rótulos
+// mudam — no vocabulário comercial da Ilya é "Orçamento" e "Valor".
 const METRIC_CONFIG: Record<MetricKey, { label: string; small: string; kind: 'revenue' | 'orders' }> = {
-  revenue_total: { label: 'Receita total', small: 'Todos os pedidos', kind: 'revenue' },
-  revenue_finalized: { label: 'Receita finalizada', small: 'Pedidos faturados', kind: 'revenue' },
-  revenue_open: { label: 'Receita em aberto', small: 'Aguardando finalização', kind: 'revenue' },
-  revenue_cancelled: { label: 'Receita cancelada', small: 'Cancelamentos totais', kind: 'revenue' },
-  orders_total: { label: 'Pedidos total', small: 'Todos os status', kind: 'orders' },
-  orders_finalized: { label: 'Pedidos finalizados', small: 'Faturados', kind: 'orders' },
-  orders_open: { label: 'Pedidos em aberto', small: 'Aguardando finalização', kind: 'orders' },
-  orders_cancelled: { label: 'Pedidos cancelados', small: 'Cancelados totalmente', kind: 'orders' },
+  revenue_total: { label: 'Valor total', small: 'Todos os orçamentos', kind: 'revenue' },
+  revenue_finalized: { label: 'Valor finalizado', small: 'Orçamentos faturados', kind: 'revenue' },
+  revenue_open: { label: 'Valor em aberto', small: 'Aguardando finalização', kind: 'revenue' },
+  revenue_cancelled: { label: 'Valor cancelado', small: 'Cancelamentos totais', kind: 'revenue' },
+  orders_total: { label: 'Orçamentos total', small: 'Todos os status', kind: 'orders' },
+  orders_finalized: { label: 'Orçamentos finalizados', small: 'Faturados', kind: 'orders' },
+  orders_open: { label: 'Orçamentos em aberto', small: 'Aguardando finalização', kind: 'orders' },
+  orders_cancelled: { label: 'Orçamentos cancelados', small: 'Cancelados totalmente', kind: 'orders' },
 }
 
 function DashboardChart({ series, activeMetric, granularity }: {
@@ -61,7 +63,7 @@ function DashboardChart({ series, activeMetric, granularity }: {
   const width = 1000, height = 260, left = 64, top = 20
 
   if (series.length === 0) {
-    return <p className="py-16 text-center text-sm text-muted">Nenhum pedido encontrado para os filtros selecionados.</p>
+    return <p className="py-16 text-center text-sm text-muted">Nenhum orçamento encontrado para os filtros selecionados.</p>
   }
 
   const step = series.length === 1 ? width : width / (series.length - 1)
@@ -154,19 +156,19 @@ export default function DashboardPage() {
     if (!data) return
     const lines = [
       'Métrica;Valor',
-      `Receita total;${data.metrics.revenue_total}`,
-      `Receita finalizada;${data.metrics.revenue_finalized}`,
-      `Receita em aberto;${data.metrics.revenue_open}`,
-      `Receita cancelada;${data.metrics.revenue_cancelled}`,
-      `Pedidos total;${data.metrics.orders_total}`,
-      `Pedidos finalizados;${data.metrics.orders_finalized}`,
-      `Pedidos em aberto;${data.metrics.orders_open}`,
-      `Pedidos cancelados;${data.metrics.orders_cancelled}`,
+      `Valor total;${data.metrics.revenue_total}`,
+      `Valor finalizado;${data.metrics.revenue_finalized}`,
+      `Valor em aberto;${data.metrics.revenue_open}`,
+      `Valor cancelado;${data.metrics.revenue_cancelled}`,
+      `Orçamentos total;${data.metrics.orders_total}`,
+      `Orçamentos finalizados;${data.metrics.orders_finalized}`,
+      `Orçamentos em aberto;${data.metrics.orders_open}`,
+      `Orçamentos cancelados;${data.metrics.orders_cancelled}`,
       '',
-      'Representante;Pedidos;Receita',
+      'Representante;Orçamentos;Valor',
       ...data.representatives.map(r => `${r.name};${r.orders};${r.revenue}`),
       '',
-      'Código;Descrição;Quantidade;Receita',
+      'Código;Descrição;Quantidade;Valor',
       ...data.products.map(p => `${p.product_code};${p.description};${p.quantity};${p.revenue}`),
     ]
     const blob = new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv' })
@@ -192,7 +194,7 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
               <LayoutDashboard className="w-6 h-6 text-gold" /> Dashboard BI Comercial
             </h2>
-            <p className="text-sm text-muted mt-1">Receitas e pedidos consolidados</p>
+            <p className="text-sm text-muted mt-1">Valores e orçamentos consolidados</p>
           </div>
           <button
             onClick={exportCsv}
@@ -273,11 +275,11 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-base font-semibold text-ink">{METRIC_CONFIG[activeMetric].label}</h3>
               <p className="text-xs text-muted mt-0.5">
-                Evolução {data?.granularity === 'day' ? 'diária' : data?.granularity === 'week' ? 'semanal' : 'mensal'} em {METRIC_CONFIG[activeMetric].kind === 'revenue' ? 'reais' : 'número de pedidos'}
+                Evolução {data?.granularity === 'day' ? 'diária' : data?.granularity === 'week' ? 'semanal' : 'mensal'} em {METRIC_CONFIG[activeMetric].kind === 'revenue' ? 'reais' : 'número de orçamentos'}
               </p>
             </div>
             <span className="text-gold font-bold text-base whitespace-nowrap">
-              {METRIC_CONFIG[activeMetric].kind === 'revenue' ? currency.format(chartTotal) : `${integer.format(chartTotal)} pedidos`}
+              {METRIC_CONFIG[activeMetric].kind === 'revenue' ? currency.format(chartTotal) : `${integer.format(chartTotal)} orçamentos`}
             </span>
           </div>
           {isLoading ? (
@@ -293,7 +295,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-ink">Desempenho por Representante</h3>
-                <p className="text-[11px] text-muted mt-0.5">Pedidos e receita no período filtrado</p>
+                <p className="text-[11px] text-muted mt-0.5">Orçamentos e valor no período filtrado</p>
               </div>
               {(data?.representatives.length ?? 0) > 5 && (
                 <button onClick={() => setRepsExpanded(v => !v)} className="text-xs text-gold hover:underline flex-shrink-0">
@@ -306,8 +308,8 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="text-left text-[11px] text-muted uppercase tracking-wider">
                     <th className="py-2">Nome</th>
-                    <th className="py-2 text-right">Pedidos</th>
-                    <th className="py-2 text-right">Receita</th>
+                    <th className="py-2 text-right">Orçamentos</th>
+                    <th className="py-2 text-right">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -330,7 +332,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-ink">Desempenho por Produto</h3>
-                <p className="text-[11px] text-muted mt-0.5">Quantidade e receita no período filtrado</p>
+                <p className="text-[11px] text-muted mt-0.5">Quantidade e valor no período filtrado</p>
               </div>
               {(data?.products.length ?? 0) > 5 && (
                 <button onClick={() => setProductsExpanded(v => !v)} className="text-xs text-gold hover:underline flex-shrink-0">
@@ -345,7 +347,7 @@ export default function DashboardPage() {
                     <th className="py-2">Código</th>
                     <th className="py-2">Descrição</th>
                     <th className="py-2 text-right">Qtd.</th>
-                    <th className="py-2 text-right">Receita</th>
+                    <th className="py-2 text-right">Valor</th>
                   </tr>
                 </thead>
                 <tbody>

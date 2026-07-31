@@ -5,6 +5,7 @@ import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
 import { isConjuntoType } from '../lib/productType'
+import { SafePrice } from '../components/SafePrice'
 import type { PageResult, Product } from '../types'
 
 const PAGE_SIZE = 24
@@ -139,6 +140,78 @@ function FullProductImage({ product }: { product: Product }) {
   )
 }
 
+// ── Preços do catálogo ────────────────────────────────────────────────────────
+// Quem enxerga cada tabela de preço é decidido no servidor (Bloco 96): a API
+// devolve `null` no preço que a role logada não pode ver. Operadores internos e
+// representantes recebem lojista + corporativo; a conta do cliente-final recebe
+// só o preço do próprio perfil de faturamento — por isso aqui basta renderizar
+// o que veio, sem nenhum guard de role no frontend.
+
+function visiblePrices(product: Product) {
+  const prices: { label: string; value: number }[] = []
+  if (product.price_lojista != null) prices.push({ label: 'Lojista', value: product.price_lojista })
+  if (product.price_corporativo != null) prices.push({ label: 'Corporativo', value: product.price_corporativo })
+  return prices
+}
+
+// No card o preço fica velado e aparece ao passar o mouse pela descrição. O
+// espaço dele é reservado desde o início (opacidade, não display), então nada
+// se desloca no hover e a grade continua alinhada.
+//
+// `[@media(hover:hover)]` só esconde onde existe mouse de verdade: em telas de
+// toque não há hover, então o preço nasce visível — e o `group-focus-visible`
+// (o card inteiro é um botão) cobre quem navega por teclado.
+const REVEAL_ON_HOVER =
+  'transition-opacity duration-200 ease-out ' +
+  '[@media(hover:hover)]:opacity-0 group-hover/price:opacity-100 group-focus-visible:opacity-100'
+
+function CardPrice({ product }: { product: Product }) {
+  const prices = visiblePrices(product)
+  if (prices.length === 0) return null
+
+  // Preço único (cliente-final): sem rótulo de tabela, só o valor em destaque.
+  if (prices.length === 1) {
+    return (
+      <p className={`mt-2 text-[15px] md:text-base font-semibold text-ink tabular-nums ${REVEAL_ON_HOVER}`}>
+        <SafePrice value={prices[0].value} />
+      </p>
+    )
+  }
+
+  return (
+    <dl className={`mt-2 space-y-0.5 ${REVEAL_ON_HOVER}`}>
+      {prices.map(({ label, value }) => (
+        <div key={label} className="flex items-baseline justify-between gap-2">
+          <dt className="text-[9px] uppercase tracking-[0.12em] text-muted">{label}</dt>
+          <dd className="text-[13px] md:text-sm font-semibold text-ink tabular-nums">
+            <SafePrice value={value} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function DetailPrice({ product }: { product: Product }) {
+  const prices = visiblePrices(product)
+  if (prices.length === 0) return null
+
+  return (
+    <div className="py-4 border-y border-[#efe9e1] space-y-2">
+      {prices.map(({ label, value }) => (
+        <div key={label} className="flex items-baseline justify-between gap-6">
+          <span className="text-[10px] uppercase tracking-[0.15em] text-muted font-semibold flex-shrink-0">
+            {prices.length === 1 ? 'Preço' : label}
+          </span>
+          <span className="text-lg text-ink font-semibold tabular-nums">
+            <SafePrice value={value} />
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -259,8 +332,10 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
               <div className="w-12 h-px bg-gold/50" />
             </div>
 
+            <DetailPrice product={product} />
+
             {!isConjuntoType(product.type) && (
-              <div className="flex items-baseline gap-6 py-4 border-y border-[#efe9e1]">
+              <div className="flex items-baseline gap-6 py-4 border-b border-[#efe9e1]">
                 <span className="text-[10px] uppercase tracking-[0.15em] text-muted font-semibold flex-shrink-0">Dimensões</span>
                 <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product)}</span>
               </div>
@@ -632,7 +707,9 @@ export default function ProdutosPage() {
                       </div>
                   }
                 </div>
-                <div className="px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
+                {/* `group/price`: o hover que revela o preço é o da área de
+                    texto (código + descrição), não o do card inteiro. */}
+                <div className="group/price px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-[10px] font-mono font-semibold text-gold tracking-wide">{product.product_code}</span>
                     {selectedGroupId === '' && product.type && (
@@ -642,6 +719,7 @@ export default function ProdutosPage() {
                   <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
                     {product.description}
                   </h3>
+                  <CardPrice product={product} />
                 </div>
               </button>
             ))}

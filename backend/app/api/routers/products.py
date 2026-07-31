@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
-from app.api.deps import get_db_session, get_current_user, require_roles
+from app.api.deps import get_db_session, get_current_user, is_client_account, require_roles
+from app.models.client import Client
 from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
@@ -37,8 +38,32 @@ def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
     return build_photo_url(photo_path)
 
 
-def _to_read(product: Product) -> ProductRead:
+async def _visible_price_profile(db: AsyncSession, user: User) -> Optional[str]:
+    """Bloco 96: qual tabela de preço a role logada pode enxergar no catálogo.
+
+    `None` = vê as duas (admin, produtos, cadastros, vendedor interno,
+    representante e executivo). Conta de cliente-final vê apenas o preço do
+    próprio perfil de faturamento — o preço da outra tabela nem sai da API.
+    """
+    if not is_client_account(user):
+        return None
+    if not user.linked_id:
+        return "lojista"
+    profile = (
+        await db.execute(
+            select(Client.price_profile).where(Client.id == user.linked_id)
+        )
+    ).scalar_one_or_none()
+    return profile or "lojista"
+
+
+def _to_read(product: Product, visible_profile: Optional[str] = None) -> ProductRead:
     data = ProductRead.model_validate(product)
+    if visible_profile == "corporativo":
+        data.price_lojista = None
+        data.price = None  # coluna legada espelha o preço lojista (Bloco 62)
+    elif visible_profile == "lojista":
+        data.price_corporativo = None
     data.photo_url = _build_photo_url(product.photo_path)
     data.thumbnail_url = build_thumbnail_url(product.photo_path)
     for opt_read, opt_orm in zip(data.optionals, product.optionals):
@@ -156,7 +181,7 @@ async def list_products(
     ] = Query(default="product_code"),
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = _ANY,
 ):
     filters = []
     search = q.strip() if q else ""
@@ -220,21 +245,27 @@ async def list_products(
         response.headers["X-Total-Count"] = str(total)
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(products))
-    return [_to_read(product) for product in products]
+    visible_profile = await _visible_price_profile(db, current_user)
+    return [_to_read(product, visible_profile) for product in products]
 
 
 @router.post("/batch", response_model=List[ProductRead])
 async def get_products_batch(
     payload: ProductBatchRequest,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = _ANY,
 ):
     codes = list(dict.fromkeys(payload.product_codes))
     products = (
         await db.execute(select(Product).where(Product.product_code.in_(codes)))
     ).scalars().all()
     product_map = {product.product_code: product for product in products}
-    return [_to_read(product_map[code]) for code in codes if code in product_map]
+    visible_profile = await _visible_price_profile(db, current_user)
+    return [
+        _to_read(product_map[code], visible_profile)
+        for code in codes
+        if code in product_map
+    ]
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -265,13 +296,13 @@ async def create_product(
 async def get_product(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = _ANY,
 ):
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    return _to_read(product)
+    return _to_read(product, await _visible_price_profile(db, current_user))
 
 
 @router.patch("/{product_id}", response_model=ProductRead)

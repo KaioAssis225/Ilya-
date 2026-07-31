@@ -117,12 +117,12 @@ export default function DashboardIntro({
         <div className="flex items-center gap-8 mt-1 tabular-nums">
           <div className="text-center">
             <span className="block text-xl font-semibold text-ink">{currency.format(revenue)}</span>
-            <span className="block text-[10px] uppercase tracking-wider text-muted mt-0.5">Receita</span>
+            <span className="block text-[10px] uppercase tracking-wider text-muted mt-0.5">Valor</span>
           </div>
           <div className="w-px h-8 bg-line" />
           <div className="text-center">
             <span className="block text-xl font-semibold text-ink">{integer.format(orders)}</span>
-            <span className="block text-[10px] uppercase tracking-wider text-muted mt-0.5">Pedidos</span>
+            <span className="block text-[10px] uppercase tracking-wider text-muted mt-0.5">Orçamentos</span>
           </div>
         </div>
       </div>

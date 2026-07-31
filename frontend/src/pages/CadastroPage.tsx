@@ -16,6 +16,7 @@ import type { OptionalCategory } from '../hooks/useOptionalCategories'
 import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
 import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
+import { NumberField } from '../components/NumberField'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
@@ -989,8 +990,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </span>
                     <span className="text-right">
-                      <span className="block text-sm font-bold text-ink">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</span>
-                      <span className="block text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</span>
+                      <span className="block text-sm font-bold text-ink">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista ?? 0)}</span>
+                      <span className="block text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo ?? 0)}</span>
                     </span>
                   </div>
                   {(p.optionals.length > 0 || p.all_optionals_categories) && (
@@ -1064,8 +1065,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
                     <td data-product-col="price" className="px-4 py-3 text-sm border-r border-line whitespace-normal align-top">
-                      <div className="text-ink font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista)}</div>
-                      <div className="text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo)}</div>
+                      <div className="text-ink font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista ?? 0)}</div>
+                      <div className="text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo ?? 0)}</div>
                     </td>
                     <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {p.optionals.length > 0 || p.all_optionals_categories
@@ -1140,11 +1141,11 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted">Preço Lojista (R$) *</span>
-                <input className="input" type="number" min="0" step="0.01" value={form.price_lojista ?? 0} onChange={(e) => setForm({ ...form, price_lojista: Number(e.target.value) })} required />
+                <NumberField className="input" min="0" step="0.01" value={form.price_lojista} onValueChange={(v) => setForm({ ...form, price_lojista: v })} required />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted">Preço Corporativo (R$) *</span>
-                <input className="input" type="number" min="0" step="0.01" value={form.price_corporativo ?? 0} onChange={(e) => setForm({ ...form, price_corporativo: Number(e.target.value) })} required />
+                <NumberField className="input" min="0" step="0.01" value={form.price_corporativo} onValueChange={(v) => setForm({ ...form, price_corporativo: v })} required />
               </label>
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-muted">Descrição *</span>
@@ -1194,31 +1195,31 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   <>
                     <label className="flex flex-col gap-1 col-span-2">
                       <span className="text-xs text-muted">Diâmetro Ø (m) *</span>
-                      <input className="input" type="number" min="0" step="0.01" value={form.largura}
-                        onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
+                      <NumberField className="input" min="0" step="0.01" value={form.largura}
+                        onValueChange={(v) => setForm({ ...form, largura: v })} required />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted">Altura A (m) *</span>
-                      <input className="input" type="number" min="0" step="0.01" value={form.altura}
-                        onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
+                      <NumberField className="input" min="0" step="0.01" value={form.altura}
+                        onValueChange={(v) => setForm({ ...form, altura: v })} required />
                     </label>
                   </>
                 ) : (
                   <>
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted">Largura L (m) *</span>
-                      <input className="input" type="number" min="0" step="0.01" value={form.largura}
-                        onChange={(e) => setForm({ ...form, largura: Number(e.target.value) })} required />
+                      <NumberField className="input" min="0" step="0.01" value={form.largura}
+                        onValueChange={(v) => setForm({ ...form, largura: v })} required />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted">Prof. P (m) *</span>
-                      <input className="input" type="number" min="0" step="0.01" value={form.profundidade}
-                        onChange={(e) => setForm({ ...form, profundidade: Number(e.target.value) })} required />
+                      <NumberField className="input" min="0" step="0.01" value={form.profundidade}
+                        onValueChange={(v) => setForm({ ...form, profundidade: v })} required />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted">Altura A (m) *</span>
-                      <input className="input" type="number" min="0" step="0.01" value={form.altura}
-                        onChange={(e) => setForm({ ...form, altura: Number(e.target.value) })} required />
+                      <NumberField className="input" min="0" step="0.01" value={form.altura}
+                        onValueChange={(v) => setForm({ ...form, altura: v })} required />
                     </label>
                   </>
                 )}
@@ -1288,31 +1289,31 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1 col-span-2">
                         <span className="text-xs text-muted">Diâmetro Ø (m)</span>
-                        <input className="input" type="number" min="0" step="0.01" value={compForm.largura}
-                          onChange={e => setCompForm(f => ({ ...f, largura: Number(e.target.value) }))} />
+                        <NumberField className="input" min="0" step="0.01" value={compForm.largura}
+                          onValueChange={v => setCompForm(f => ({ ...f, largura: v }))} />
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-muted">Altura A (m)</span>
-                        <input className="input" type="number" min="0" step="0.01" value={compForm.altura}
-                          onChange={e => setCompForm(f => ({ ...f, altura: Number(e.target.value) }))} />
+                        <NumberField className="input" min="0" step="0.01" value={compForm.altura}
+                          onValueChange={v => setCompForm(f => ({ ...f, altura: v }))} />
                       </label>
                     </div>
                   ) : (
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-muted">L (m)</span>
-                        <input className="input" type="number" min="0" step="0.01" value={compForm.largura}
-                          onChange={e => setCompForm(f => ({ ...f, largura: Number(e.target.value) }))} />
+                        <NumberField className="input" min="0" step="0.01" value={compForm.largura}
+                          onValueChange={v => setCompForm(f => ({ ...f, largura: v }))} />
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-muted">P (m)</span>
-                        <input className="input" type="number" min="0" step="0.01" value={compForm.profundidade}
-                          onChange={e => setCompForm(f => ({ ...f, profundidade: Number(e.target.value) }))} />
+                        <NumberField className="input" min="0" step="0.01" value={compForm.profundidade}
+                          onValueChange={v => setCompForm(f => ({ ...f, profundidade: v }))} />
                       </label>
                       <label className="flex flex-col gap-1">
                         <span className="text-xs text-muted">A (m)</span>
-                        <input className="input" type="number" min="0" step="0.01" value={compForm.altura}
-                          onChange={e => setCompForm(f => ({ ...f, altura: Number(e.target.value) }))} />
+                        <NumberField className="input" min="0" step="0.01" value={compForm.altura}
+                          onValueChange={v => setCompForm(f => ({ ...f, altura: v }))} />
                       </label>
                     </div>
                   )}
@@ -1923,10 +1924,10 @@ function PeopleTab<T extends Client | Representative>({
             {canEditDiscount && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">Desconto Máximo (%)</span>
-                <input
-                  type="number" min={0} max={100} step={0.5} className="input"
+                <NumberField
+                  min={0} max={100} step={0.5} className="input"
                   value={form.max_discount ?? defaultMaxDiscount}
-                  onChange={(e) => setForm({ ...form, max_discount: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  onValueChange={(v) => setForm({ ...form, max_discount: v })}
                 />
               </div>
             )}
@@ -2293,7 +2294,9 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
   const [tName, setTName] = useState('')
   const [tGroupId, setTGroupId] = useState<string | null>(null)
 
-  function openNewGroup() { setGName(''); setGIpi('0.00'); setErr(''); setModal({ kind: 'new-group' }) }
+  // Campo começa vazio (e não em "0.00") para o zero não grudar na digitação;
+  // `handleGroupSubmit` já trata string vazia como 0.
+  function openNewGroup() { setGName(''); setGIpi(''); setErr(''); setModal({ kind: 'new-group' }) }
   function openEditGroup(g: ProductGroup) { setGName(g.name); setGIpi(Number(g.ipi).toFixed(2)); setErr(''); setModal({ kind: 'edit-group', group: g }) }
   function openNewType(groupId: string) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
   function openEditType(t: ProductType) { setTName(t.name); setTGroupId(t.group_id); setErr(''); setModal({ kind: 'edit-type', type: t }) }

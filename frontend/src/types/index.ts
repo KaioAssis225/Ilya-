@@ -68,9 +68,11 @@ export interface Product {
   altura: number
   largura: number
   profundidade: number
-  price: number
-  price_lojista: number
-  price_corporativo: number
+  // Bloco 96: a API devolve null no preço que a role logada não pode ver
+  // (conta de cliente-final recebe só o preço do próprio perfil).
+  price: number | null
+  price_lojista: number | null
+  price_corporativo: number | null
   observacao: string | null
   all_optionals_categories: string | null
   optionals: OptionalColor[]
