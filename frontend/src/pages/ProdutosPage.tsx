@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus } from 'lucide-react'
+import { CART_KEY, notifyCartChanged } from '../lib/cart'
+import { useCartQuantities } from '../hooks/useCart'
 import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
@@ -311,7 +313,7 @@ function dimLabel(p: Product) {
 }
 
 function addToCart(product: Product) {
-  const raw = localStorage.getItem('carrinho_orcamento')
+  const raw = localStorage.getItem(CART_KEY)
   const cart = raw ? JSON.parse(raw) : []
   const existing = cart.find((i: { product_code: string }) => i.product_code === product.product_code)
   if (existing) {
@@ -331,7 +333,8 @@ function addToCart(product: Product) {
       _product: product,
     })
   }
-  localStorage.setItem('carrinho_orcamento', JSON.stringify(cart))
+  localStorage.setItem(CART_KEY, JSON.stringify(cart))
+  notifyCartChanged()
 }
 
 // ── Mini modal para zoom de opcional no mobile ────────────────────────────────
@@ -390,7 +393,7 @@ function ProductFullView({
           {product.photo_url
             ? <FullProductImage product={product} />
             : <div className="w-full h-[40vh] md:h-full flex items-center justify-center">
-                <span className="text-faint text-sm tracking-widest uppercase">Sem foto</span>
+                <span className="text-muted text-sm tracking-widest uppercase">Sem foto</span>
               </div>
           }
         </div>
@@ -560,6 +563,7 @@ export default function ProdutosPage() {
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
   const [hasDualPricing, setHasDualPricing] = useState(false)
+  const cartQuantities = useCartQuantities()
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
   const { data: productsPage, isLoading } = useProductsPage({
@@ -779,13 +783,20 @@ export default function ProdutosPage() {
                 hover. O título usa Inter para manter letras, códigos e medidas
                 numericamente uniformes no catálogo comercial. */}
             {products.map(product => (
-              <button
+              // Wrapper: o botão de adicionar é IRMÃO do card, não filho —
+              // <button> dentro de <button> é HTML inválido. Por isso a sombra e
+              // o levantar no hover moram aqui, não no card: como irmão, o botão
+              // não acompanharia a transform e os dois se descolariam.
+              <div
                 key={product.id}
+                className="group relative rounded-2xl shadow-sm hover:shadow-lg hover:shadow-ink/8 hover:-translate-y-1 transition-all duration-300"
+              >
+              <button
                 onClick={() => setSelected(product)}
                 onPointerEnter={() => warmProductImage(product)}
                 onPointerDown={() => warmProductImage(product)}
                 onFocus={() => warmProductImage(product)}
-                className="group bg-white border border-line rounded-2xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:shadow-ink/8 hover:-translate-y-1 active:scale-[0.99] transition-all duration-300"
+                className="w-full bg-white border border-line rounded-2xl overflow-hidden text-left active:scale-[0.99] transition-transform duration-300"
                 style={{ touchAction: 'manipulation' }}
               >
                 {/* object-contain sobre fundo BRANCO: fotos de estúdio têm fundo
@@ -798,7 +809,7 @@ export default function ProdutosPage() {
                   {product.photo_url
                     ? <CatalogImage product={product} />
                     : <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-faint text-[11px] uppercase tracking-widest">Sem foto</span>
+                        <span className="text-muted text-[11px] uppercase tracking-widest">Sem foto</span>
                       </div>
                   }
                 </div>
@@ -812,6 +823,28 @@ export default function ProdutosPage() {
                   <CardText product={product} priceTable={priceTable} />
                 </div>
               </button>
+
+              {/* Adicionar sem abrir a ficha: o representante em pé no showroom
+                  registra "essa, essa e essa" sem quebrar a conversa. Toque
+                  repetido incrementa (é o que addToCart já faz), e o número
+                  mostra o que esse produto tem no orçamento — sem ele o
+                  incremento seria silencioso. */}
+              <button
+                type="button"
+                onClick={() => addToCart(product)}
+                aria-label={`Adicionar ${product.description} ao orçamento`}
+                style={{ touchAction: 'manipulation' }}
+                className="absolute top-2 right-2 w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
+                           flex items-center justify-center transition-transform duration-150
+                           hover:bg-gold-600 active:scale-90"
+              >
+                {cartQuantities[product.product_code] ? (
+                  <span className="text-sm font-semibold tabular-nums">{cartQuantities[product.product_code]}</span>
+                ) : (
+                  <Plus className="w-5 h-5" strokeWidth={2.5} />
+                )}
+              </button>
+              </div>
             ))}
           </div>
         )}

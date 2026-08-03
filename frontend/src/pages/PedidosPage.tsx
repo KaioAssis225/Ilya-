@@ -507,12 +507,12 @@ function OrderDetailModal({
                         <td className="px-3 py-2 text-right align-middle">
                           {Number(item.discount) > 0 ? (
                             <span className="text-[9px] bg-[#fdf0d0] text-gold border border-[#e8d8a0] px-1 py-0.5 rounded font-medium">-{Number(item.discount)}%</span>
-                          ) : <span className="text-xs text-faint">—</span>}
+                          ) : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right align-middle whitespace-nowrap">
                           {Number(item.ipi_rate) > 0
                             ? <span className="text-xs font-semibold text-gold">{Number(item.ipi_rate)}%</span>
-                            : <span className="text-xs text-faint">—</span>}
+                            : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right font-bold text-ink whitespace-nowrap">
                           <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} />

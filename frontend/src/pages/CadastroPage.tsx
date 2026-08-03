@@ -1346,7 +1346,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         )
                       })}
                       {optCategories.length === 0 && (
-                        <p className="col-span-full text-xs text-faint">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                        <p className="col-span-full text-xs text-muted">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
                       )}
                     </div>
                     {compActiveCategories.length > 0 && (
@@ -1461,7 +1461,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <span className="hidden sm:inline">Add</span>
                   </button>
                 </div>
-                <p className="text-[10px] text-faint mt-1.5">Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.</p>
+                <p className="text-[10px] text-muted mt-1.5">Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.</p>
               </div>
             ) : (
               <div>
@@ -1494,7 +1494,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     )
                   })}
                   {optCategories.length === 0 && (
-                    <p className="col-span-full text-xs text-faint">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                    <p className="col-span-full text-xs text-muted">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
                   )}
                 </div>
 
@@ -1541,7 +1541,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           ) : (
                             <div>
                               {catItems.length === 0 ? (
-                                <span className="text-xs text-faint italic">Nenhuma cor cadastrada nesta categoria.</span>
+                                <span className="text-xs text-muted italic">Nenhuma cor cadastrada nesta categoria.</span>
                               ) : (
                                 <select
                                   multiple
@@ -1559,7 +1559,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                   ))}
                                 </select>
                               )}
-                              <p className="text-[10px] text-faint mt-1">Ctrl+clique para selecionar múltiplas cores.</p>
+                              <p className="text-[10px] text-muted mt-1">Ctrl+clique para selecionar múltiplas cores.</p>
                             </div>
                           )}
                         </div>
@@ -2116,7 +2116,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                 )}
               </div>
               {items.length === 0 ? (
-                <p className="px-4 py-3 text-xs text-faint">Nenhuma cor cadastrada.</p>
+                <p className="px-4 py-3 text-xs text-muted">Nenhuma cor cadastrada.</p>
               ) : (
               <table className="w-full text-sm">
                 <tbody>
@@ -2235,7 +2235,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Código (identificador único) *</span>
               <input className="input font-mono text-sm" value={groupForm.code} onChange={(e) => setGroupForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} required placeholder="ex: aluminio" />
-              <span className="text-[10px] text-faint">Apenas letras minúsculas, números e underscores.</span>
+              <span className="text-[10px] text-muted">Apenas letras minúsculas, números e underscores.</span>
             </label>
             {groupErr && <p className="text-xs text-red-500">{groupErr}</p>}
             <div className="flex gap-2 pt-1">
@@ -2762,7 +2762,7 @@ export default function CadastroPage() {
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
             <div className="bg-white border border-line rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
-              <p className="text-[10px] font-semibold text-faint uppercase tracking-widest px-3 pb-2">Cadastros</p>
+              <p className="text-[10px] font-semibold text-muted uppercase tracking-widest px-3 pb-2">Cadastros</p>
               {visibleTabs.map(({ key, label, Icon }) => {
                 const { color } = TAB_PALETTE[key]
                 const isActive = tab === key

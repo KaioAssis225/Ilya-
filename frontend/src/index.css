@@ -15,6 +15,11 @@
   --color-muted:       #75685f;
   --color-muted-2:     #6f6259;
   --color-muted-3:     #766a61;
+  /* DECORATIVO APENAS — 1.84:1 sobre branco, 1.57:1 sobre bg-2. Reprova WCAG AA
+     (mínimo 4.5:1). Use só em ícones, separadores e controles desabilitados
+     (o critério 1.4.3 isenta desabilitados). Para TEXTO — dica de formulário,
+     estado vazio, placeholder, rótulo — use `text-muted`, que passa nas três
+     superfícies (5.38 branco / 4.99 bg / 4.57 bg-2). */
   --color-faint:       #c8bdb5;
   --color-bg-2:        #f0ece6;
   --color-scrim:       #1a1410;
