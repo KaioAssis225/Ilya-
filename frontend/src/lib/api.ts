@@ -1,12 +1,10 @@
 import axios from 'axios'
 
-// Prioriza VITE_API_URL (configurável no Vercel); sem ela, cai no backend Railway
-// em produção ou no proxy local /api/v1 em dev.
-const API_BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api/v1`
-  : import.meta.env.DEV
-    ? '/api/v1'
-    : 'https://ilya-production-7857.up.railway.app/api/v1'
+// Mantém as chamadas no mesmo domínio do frontend. Em desenvolvimento, o Vite
+// encaminha /api para o backend local; em produção, a Vercel encaminha /api/v1
+// ao Railway. Assim, uma falha de DNS do Railway no computador do cliente não
+// impede login, refresh de sessão ou demais operações da aplicação.
+const API_BASE_URL = '/api/v1'
 
 const baseConfig = {
   baseURL: API_BASE_URL,
