@@ -144,42 +144,132 @@ function FullProductImage({ product }: { product: Product }) {
 // Quem enxerga cada tabela de preço é decidido no servidor (Bloco 96): a API
 // devolve `null` no preço que a role logada não pode ver. Operadores internos e
 // representantes recebem lojista + corporativo; a conta do cliente-final recebe
-// só o preço do próprio perfil de faturamento — por isso aqui basta renderizar
-// o que veio, sem nenhum guard de role no frontend.
+// só o preço do próprio perfil de faturamento — por isso aqui não há guard de
+// role, só o que veio do servidor.
+//
+// Quem recebe as DUAS tabelas escolhe qual fica na tela: o representante em
+// visita não pode deixar as duas visíveis ao mesmo tempo na frente do cliente.
+// "Ambos" continua existindo para comparativo interno, mas é opt-in explícito.
+// A escolha é só de EXIBIÇÃO — o valor aplicado no orçamento segue resolvido no
+// servidor pelo perfil do cliente, nunca por esse seletor.
 
-function visiblePrices(product: Product) {
-  const prices: { label: string; value: number }[] = []
-  if (product.price_lojista != null) prices.push({ label: 'Lojista', value: product.price_lojista })
-  if (product.price_corporativo != null) prices.push({ label: 'Corporativo', value: product.price_corporativo })
-  return prices
+type PriceTable = 'lojista' | 'corporativo' | 'ambos'
+
+const PRICE_TABLE_KEY = 'catalogo_tabela_preco'
+const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
+  { value: 'lojista', label: 'Lojista' },
+  { value: 'corporativo', label: 'Corporativo' },
+  { value: 'ambos', label: 'Ambos' },
+]
+
+// Padrão é uma tabela só: sem escolha salva, o catálogo nunca nasce expondo as
+// duas de uma vez.
+function readPriceTable(): PriceTable {
+  const saved = localStorage.getItem(PRICE_TABLE_KEY)
+  return saved === 'corporativo' || saved === 'ambos' ? saved : 'lojista'
 }
 
-// No card o preço fica velado e aparece ao passar o mouse pela descrição. O
-// espaço dele é reservado desde o início (opacidade, não display), então nada
-// se desloca no hover e a grade continua alinhada.
+type VisiblePrice = { key: Exclude<PriceTable, 'ambos'>; label: string; value: number }
+
+function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
+  const prices: VisiblePrice[] = []
+  if (product.price_lojista != null) {
+    prices.push({ key: 'lojista', label: 'Lojista', value: product.price_lojista })
+  }
+  if (product.price_corporativo != null) {
+    prices.push({ key: 'corporativo', label: 'Corporativo', value: product.price_corporativo })
+  }
+  if (table === 'ambos') return prices
+
+  // A conta do cliente-final recebe uma tabela só. Se a escolhida não for a que
+  // o servidor liberou, mostra a que existe em vez de esconder o preço: o
+  // seletor só restringe quando há de fato duas para escolher.
+  const picked = prices.filter(price => price.key === table)
+  return picked.length > 0 ? picked : prices
+}
+
+function PriceTableToggle({ value, onChange }: { value: PriceTable; onChange: (next: PriceTable) => void }) {
+  return (
+    <div
+      role="group"
+      aria-label="Tabela de preço exibida"
+      className="flex w-full md:w-auto flex-shrink-0 items-center gap-0.5 p-0.5 bg-bg border border-line rounded-lg"
+    >
+      {PRICE_TABLE_OPTIONS.map(({ value: option, label }) => {
+        const active = option === value
+        return (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onChange(option)}
+            aria-pressed={active}
+            className={`flex-1 md:flex-none px-2.5 py-1.5 text-[11px] font-medium rounded-md whitespace-nowrap transition-colors ${
+              active ? 'bg-white text-ink shadow-sm ring-1 ring-gold-soft' : 'text-muted hover:text-ink'
+            }`}
+            style={{ touchAction: 'manipulation' }}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// No card o preço não fica ABAIXO da descrição: ele ocupa o lugar dela no hover.
+// Os dois são o mesmo bloco, com altura mínima reservada (duas linhas do
+// título), então a troca não desloca nada e a grade continua alinhada.
 //
-// `[@media(hover:hover)]` só esconde onde existe mouse de verdade: em telas de
-// toque não há hover, então o preço nasce visível — e o `group-focus-visible`
-// (o card inteiro é um botão) cobre quem navega por teclado.
-const REVEAL_ON_HOVER =
+// `[@media(hover:hover)]` limita a troca a onde existe mouse de verdade. Em tela
+// de toque não há hover: lá o preço volta a ser uma linha estática abaixo da
+// descrição, porque sem mouse não haveria como revelá-lo. O
+// `group-focus-visible` (o card inteiro é um botão) cobre quem navega por
+// teclado.
+const SWAP_OUT =
   'transition-opacity duration-200 ease-out ' +
-  '[@media(hover:hover)]:opacity-0 group-hover/price:opacity-100 group-focus-visible:opacity-100'
+  '[@media(hover:hover)]:group-hover/price:opacity-0 [@media(hover:hover)]:group-focus-visible:opacity-0'
 
-function CardPrice({ product }: { product: Product }) {
-  const prices = visiblePrices(product)
-  if (prices.length === 0) return null
+const SWAP_IN =
+  'transition-opacity duration-200 ease-out mt-2 ' +
+  '[@media(hover:hover)]:mt-0 [@media(hover:hover)]:absolute [@media(hover:hover)]:inset-0 ' +
+  '[@media(hover:hover)]:flex [@media(hover:hover)]:flex-col [@media(hover:hover)]:justify-center ' +
+  '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/price:opacity-100 ' +
+  '[@media(hover:hover)]:group-focus-visible:opacity-100'
 
-  // Preço único (cliente-final): sem rótulo de tabela, só o valor em destaque.
+function CardText({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
+  const prices = visiblePrices(product, priceTable)
+
+  return (
+    <div className="relative mt-1.5 min-h-[42px] md:min-h-[47px]">
+      <h3
+        className={`font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug line-clamp-2 ${
+          prices.length > 0 ? SWAP_OUT : ''
+        }`}
+      >
+        {product.description}
+      </h3>
+      {prices.length > 0 && <CardPrice prices={prices} />}
+    </div>
+  )
+}
+
+function CardPrice({ prices }: { prices: VisiblePrice[] }) {
+  // Uma tabela: o valor entra em destaque no lugar do título, com o rótulo
+  // pequeno embaixo dizendo de qual tabela ele é.
   if (prices.length === 1) {
     return (
-      <p className={`mt-2 text-[15px] md:text-base font-semibold text-ink tabular-nums ${REVEAL_ON_HOVER}`}>
-        <SafePrice value={prices[0].value} />
-      </p>
+      <div className={SWAP_IN}>
+        <p className="text-[15px] md:text-base font-semibold text-ink tabular-nums leading-tight">
+          <SafePrice value={prices[0].value} />
+        </p>
+        <p className="text-[9px] uppercase tracking-[0.12em] text-muted mt-0.5">{prices[0].label}</p>
+      </div>
     )
   }
 
+  // Duas tabelas (comparativo interno): rótulo à esquerda, valor à direita.
   return (
-    <dl className={`mt-2 space-y-0.5 ${REVEAL_ON_HOVER}`}>
+    <dl className={`space-y-0.5 ${SWAP_IN}`}>
       {prices.map(({ label, value }) => (
         <div key={label} className="flex items-baseline justify-between gap-2">
           <dt className="text-[9px] uppercase tracking-[0.12em] text-muted">{label}</dt>
@@ -192,8 +282,8 @@ function CardPrice({ product }: { product: Product }) {
   )
 }
 
-function DetailPrice({ product }: { product: Product }) {
-  const prices = visiblePrices(product)
+function DetailPrice({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
+  const prices = visiblePrices(product, priceTable)
   if (prices.length === 0) return null
 
   return (
@@ -282,7 +372,11 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
 // ── Detalhe do produto em tela inteira ────────────────────────────────────────
 // Desktop: foto grande à esquerda + detalhes à direita. Mobile: coluna única.
 
-function ProductFullView({ product, onClose }: { product: Product; onClose: () => void }) {
+function ProductFullView({
+  product,
+  priceTable,
+  onClose,
+}: { product: Product; priceTable: PriceTable; onClose: () => void }) {
   const [added, setAdded] = useState(false)
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
 
@@ -332,7 +426,7 @@ function ProductFullView({ product, onClose }: { product: Product; onClose: () =
               <div className="w-12 h-px bg-gold/50" />
             </div>
 
-            <DetailPrice product={product} />
+            <DetailPrice product={product} priceTable={priceTable} />
 
             {!isConjuntoType(product.type) && (
               <div className="flex items-baseline gap-6 py-4 border-b border-[#efe9e1]">
@@ -479,6 +573,11 @@ export default function ProdutosPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
   const [selected, setSelected] = useState<Product | null>(null)
+  const [priceTable, setPriceTable] = useState<PriceTable>(readPriceTable)
+  // Só quem recebe as duas tabelas do servidor vê o seletor. Uma vez detectado,
+  // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
+  // página em que nenhum produto tem as duas colunas preenchidas.
+  const [hasDualPricing, setHasDualPricing] = useState(false)
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
   const { data: productsPage, isLoading } = useProductsPage({
@@ -495,6 +594,16 @@ export default function ProdutosPage() {
   const totalPages = productsPage
     ? Math.max(1, Math.ceil(totalProducts / PAGE_SIZE))
     : Math.max(1, page)
+
+  useEffect(() => {
+    localStorage.setItem(PRICE_TABLE_KEY, priceTable)
+  }, [priceTable])
+
+  useEffect(() => {
+    const hasLojista = products.some(product => product.price_lojista != null)
+    const hasCorporativo = products.some(product => product.price_corporativo != null)
+    if (hasLojista && hasCorporativo) setHasDualPricing(true)
+  }, [products])
 
   useEffect(() => {
     if (products.length === 0) return
@@ -648,6 +757,10 @@ export default function ProdutosPage() {
             ))}
           </select>
 
+          {/* Seletor de tabela: fica sempre à vista para o representante
+              conferir o estado de relance ANTES de virar a tela para o cliente. */}
+          {hasDualPricing && <PriceTableToggle value={priceTable} onChange={setPriceTable} />}
+
           {hasFilters && (
             <button
               onClick={clearFilters}
@@ -707,8 +820,8 @@ export default function ProdutosPage() {
                       </div>
                   }
                 </div>
-                {/* `group/price`: o hover que revela o preço é o da área de
-                    texto (código + descrição), não o do card inteiro. */}
+                {/* `group/price`: o hover que troca descrição por preço é o da
+                    área de texto (código + descrição), não o do card inteiro. */}
                 <div className="group/price px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-[10px] font-mono font-semibold text-gold tracking-wide">{product.product_code}</span>
@@ -716,10 +829,7 @@ export default function ProdutosPage() {
                       <span className="text-[9px] text-muted uppercase tracking-[0.14em] whitespace-nowrap">{product.type}</span>
                     )}
                   </div>
-                  <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
-                    {product.description}
-                  </h3>
-                  <CardPrice product={product} />
+                  <CardText product={product} priceTable={priceTable} />
                 </div>
               </button>
             ))}
@@ -750,7 +860,9 @@ export default function ProdutosPage() {
         )}
       </div>
 
-      {selected && <ProductFullView product={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <ProductFullView product={selected} priceTable={priceTable} onClose={() => setSelected(null)} />
+      )}
     </div>
   )
 }
