@@ -16,6 +16,7 @@ from sqlalchemy.orm import load_only, noload, selectinload
 from app.api.deps import (
     get_db_session,
     get_current_user,
+    require_order_access,
     require_roles,
     is_client_account,
     is_internal_operator,
@@ -376,7 +377,7 @@ async def list_orders(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_order_access),
 ):
     conditions = []
     if current_user.role == UserRole.representante:
@@ -804,7 +805,7 @@ async def cancel_order(
 async def get_order_history(
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_order_access),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
@@ -824,7 +825,7 @@ async def get_order_history(
 async def get_order(
     id_or_code: str,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_order_access),
 ):
     order = await _get_order(db, id_or_code)
     if _representative_cannot_access_order(current_user, order):

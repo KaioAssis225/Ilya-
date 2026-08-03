@@ -7,7 +7,13 @@ from sqlalchemy import func, or_, select
 
 import logging
 
-from app.api.deps import get_db_session, get_current_user, require_roles, is_client_account
+from app.api.deps import (
+    get_db_session,
+    get_current_user,
+    require_directory_access,
+    require_roles,
+    is_client_account,
+)
 from app.core.search import literal_contains_pattern
 from app.models.client import Client, anonymize_client_fields
 from app.models.user import User, UserRole
@@ -74,7 +80,7 @@ async def list_clients(
     ] = Query(default="name"),
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_directory_access),
 ):
     filters = []
     if current_user.role == UserRole.representante:
@@ -187,7 +193,7 @@ async def create_client(
 async def get_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_directory_access),
 ):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
@@ -203,7 +209,7 @@ async def update_client(
     client_id: uuid.UUID,
     payload: ClientUpdate,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_directory_access),
 ):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
