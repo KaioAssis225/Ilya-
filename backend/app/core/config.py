@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str = ""
     WEBHOOK_TIMEOUT_SECONDS: float = 10.0
     WEBHOOK_MAX_ATTEMPTS: int = 7
+    WEBHOOK_RETRY_AFTER_MAX_SECONDS: int = 86_400
+    WEBHOOK_RESPONSE_BODY_MAX_BYTES: int = 4_096
 
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"

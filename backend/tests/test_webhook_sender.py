@@ -42,22 +42,41 @@ def _row(attempts: int = 0) -> SimpleNamespace:
 class _FakeClient:
     """Duble do httpx.AsyncClient: devolve resposta fixa ou levanta erro."""
 
-    def __init__(self, *, status_code=None, headers=None, exc=None):
+    def __init__(self, *, status_code=None, headers=None, body=b"detalhe", exc=None):
         self.status_code = status_code
         self.headers = headers or {}
+        self.body = body
         self.exc = exc
         self.calls = []
 
-    async def post(self, url, content=None, headers=None, timeout=None):
-        self.calls.append({"url": url, "content": content, "headers": headers})
-        if self.exc:
-            raise self.exc
-        return httpx.Response(
-            status_code=self.status_code,
-            headers=self.headers,
-            text="detalhe",
-            request=httpx.Request("POST", url or "http://x"),
+    def stream(self, method, url, content=None, headers=None, timeout=None):
+        self.calls.append(
+            {"method": method, "url": url, "content": content, "headers": headers}
         )
+        client = self
+
+        class _ByteStream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield client.body
+
+            async def aclose(self):
+                return None
+
+        class _StreamContext:
+            async def __aenter__(self):
+                if client.exc:
+                    raise client.exc
+                return httpx.Response(
+                    status_code=client.status_code,
+                    headers=client.headers,
+                    stream=_ByteStream(),
+                    request=httpx.Request(method, url or "http://x"),
+                )
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        return _StreamContext()
 
 
 # ── classificacao de resposta (secao 11 do contrato) ─────────────────────────
@@ -162,6 +181,59 @@ def test_429_respeita_retry_after(monkeypatch):
     assert row.status == "pending"
     # Reagendou pelo Retry-After (120s), nao pelos 60s da escada.
     assert row.next_attempt_at is not None
+
+
+def test_retry_after_excessivo_e_limitado(monkeypatch):
+    monkeypatch.setattr(
+        w.settings,
+        "WEBHOOK_RETRY_AFTER_MAX_SECONDS",
+        300,
+        raising=False,
+    )
+    response = httpx.Response(
+        429,
+        headers={"Retry-After": str(10**100)},
+        request=httpx.Request("POST", "http://receptor/hook"),
+    )
+    assert w._retry_after_seconds(response) == 300
+
+
+@pytest.mark.parametrize("value", ["-1", "invalido"])
+def test_retry_after_invalido_usa_escada_local(monkeypatch, value):
+    monkeypatch.setattr(
+        w.settings,
+        "WEBHOOK_RETRY_AFTER_MAX_SECONDS",
+        300,
+        raising=False,
+    )
+    response = httpx.Response(
+        429,
+        headers={"Retry-After": value},
+        request=httpx.Request("POST", "http://receptor/hook"),
+    )
+    assert w._retry_after_seconds(response) is None
+
+
+def test_resposta_de_erro_le_somente_prefixo_configurado(monkeypatch):
+    monkeypatch.setattr(w.settings, "WEBHOOK_SECRET", "segredo", raising=False)
+    monkeypatch.setattr(
+        w.settings,
+        "WEBHOOK_URL",
+        "http://receptor/hook",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        w.settings,
+        "WEBHOOK_RESPONSE_BODY_MAX_BYTES",
+        32,
+        raising=False,
+    )
+    row = _row()
+
+    _run(w.deliver_one(_FakeClient(status_code=400, body=b"x" * 10_000), row))
+
+    assert row.status == "dead_letter"
+    assert row.last_error == "HTTP 400: " + ("x" * 32)
 
 
 def test_corpo_enviado_bate_com_a_assinatura(monkeypatch):

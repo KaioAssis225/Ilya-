@@ -75,14 +75,36 @@ def _truncate_error(message: str, limit: int = 500) -> str:
 
 
 def _retry_after_seconds(response: httpx.Response) -> int | None:
-    """Respeita o cabeçalho Retry-After num 429, quando ele vem em segundos."""
+    """Respeita Retry-After em segundos dentro do limite operacional."""
     raw = response.headers.get("Retry-After")
     if not raw:
         return None
     try:
-        return max(0, int(raw))
+        delay = int(raw)
     except (TypeError, ValueError):
         return None
+    if delay < 0:
+        return None
+    return min(delay, settings.WEBHOOK_RETRY_AFTER_MAX_SECONDS)
+
+
+async def _read_response_prefix(response: httpx.Response, limit: int) -> str:
+    """Lê no máximo ``limit`` bytes brutos para diagnóstico.
+
+    A leitura bruta evita que uma resposta comprimida pequena seja expandida
+    sem limite pelo decoder antes da truncagem.
+    """
+    if limit <= 0:
+        return ""
+    prefix = bytearray()
+    async for chunk in response.aiter_raw(chunk_size=min(limit, 64 * 1024)):
+        remaining = limit - len(prefix)
+        if remaining <= 0:
+            break
+        prefix.extend(chunk[:remaining])
+        if len(prefix) >= limit:
+            break
+    return bytes(prefix).decode("utf-8", errors="replace")
 
 
 async def _claim_batch(session, limit: int = BATCH_SIZE) -> list[IntegrationOutbox]:
@@ -115,39 +137,49 @@ async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None
     row.attempts = (row.attempts or 0) + 1
 
     try:
-        response = await client.post(
+        async with client.stream(
+            "POST",
             settings.WEBHOOK_URL,
             content=body,
             headers=headers,
             timeout=settings.WEBHOOK_TIMEOUT_SECONDS,
-        )
+        ) as response:
+            outcome = classify_response(response.status_code)
+
+            if outcome == DELIVERED:
+                row.status = "delivered"
+                row.delivered_at = datetime.now(timezone.utc)
+                row.last_error = None
+                return
+
+            response_prefix = await _read_response_prefix(
+                response,
+                settings.WEBHOOK_RESPONSE_BODY_MAX_BYTES,
+            )
+            error = _truncate_error(
+                f"HTTP {response.status_code}: {response_prefix}"
+            )
+
+            if outcome == DEAD_LETTER:
+                row.status = "dead_letter"
+                row.last_error = error
+                logger.error(
+                    "Evento %s (%s) em dead_letter: HTTP %s",
+                    row.event_id,
+                    row.event_type,
+                    response.status_code,
+                )
+                return
+
+            _schedule_retry(
+                row,
+                error,
+                override_delay=_retry_after_seconds(response),
+            )
     except httpx.HTTPError as exc:
         # Rede fora, DNS, timeout: sempre retentável.
         _schedule_retry(row, _truncate_error(f"{type(exc).__name__}: {exc}"))
         return
-
-    outcome = classify_response(response.status_code)
-
-    if outcome == DELIVERED:
-        row.status = "delivered"
-        row.delivered_at = datetime.now(timezone.utc)
-        row.last_error = None
-        return
-
-    error = _truncate_error(f"HTTP {response.status_code}: {response.text}")
-
-    if outcome == DEAD_LETTER:
-        row.status = "dead_letter"
-        row.last_error = error
-        logger.error(
-            "Evento %s (%s) em dead_letter: HTTP %s",
-            row.event_id,
-            row.event_type,
-            response.status_code,
-        )
-        return
-
-    _schedule_retry(row, error, override_delay=_retry_after_seconds(response))
 
 
 def _schedule_retry(
