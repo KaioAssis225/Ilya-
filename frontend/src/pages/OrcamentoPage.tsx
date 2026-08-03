@@ -646,6 +646,9 @@ export default function OrcamentoPage() {
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [persistedCart] = useState<PersistedCartItem[]>(readPersistedCart)
+  // sessionStorage (não localStorage): sobrevive a trocar de aba dentro do app
+  // e a um F5, mas some quando a aba fecha — não volta pré-preenchido amanhã.
+  const [savedClientId, setSavedClientId] = useState(() => sessionStorage.getItem('orcamento_client_id') ?? '')
   // null = nenhuma preferência gravada; vazio = remoção explícita.
   const [savedRepId, setSavedRepId] = useState<string | null>(() => localStorage.getItem('orcamento_rep_id'))
   const [cartHydrated, setCartHydrated] = useState(false)
@@ -725,6 +728,7 @@ export default function OrcamentoPage() {
   const targetClientId = (
     (isClientUser ? user?.linked_id : null)
     || editOrder?.client_id
+    || (!editId && !clientLocked ? savedClientId : '')
     || ''
   )
   const resolvedClientQuery = useClient(
@@ -761,8 +765,12 @@ export default function OrcamentoPage() {
   const priceProfile = selectedClient?.price_profile ?? 'lojista'
 
   function handleClientChange(client: Client | null) {
+    const clientId = client?.id ?? ''
     setSelectedClient(client)
+    setSavedClientId(clientId)
     if (!repLocked && savedRepId === null) setSelectedRep(null)
+    if (clientId) sessionStorage.setItem('orcamento_client_id', clientId)
+    else sessionStorage.removeItem('orcamento_client_id')
   }
 
   function handleRepChange(rep: Representative | null) {
@@ -776,7 +784,9 @@ export default function OrcamentoPage() {
   function resetSavedSelections() {
     setSelectedClient(null)
     setSelectedRep(null)
+    setSavedClientId('')
     setSavedRepId(null)
+    sessionStorage.removeItem('orcamento_client_id')
     localStorage.removeItem('orcamento_rep_id')
   }
 
