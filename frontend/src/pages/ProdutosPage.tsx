@@ -216,49 +216,31 @@ function PriceTableToggle({ value, onChange }: { value: PriceTable; onChange: (n
   )
 }
 
-// No card o preço não fica ABAIXO da descrição: ele ocupa o lugar dela no hover.
-// Os dois são o mesmo bloco, com altura mínima reservada (duas linhas do
-// título), então a troca não desloca nada e a grade continua alinhada.
-//
-// `[@media(hover:hover)]` limita a troca a onde existe mouse de verdade. Em tela
-// de toque não há hover: lá o preço volta a ser uma linha estática abaixo da
-// descrição, porque sem mouse não haveria como revelá-lo. O
-// `group-focus-visible` (o card inteiro é um botão) cobre quem navega por
-// teclado.
-const SWAP_OUT =
-  'transition-opacity duration-200 ease-out ' +
-  '[@media(hover:hover)]:group-hover/price:opacity-0 [@media(hover:hover)]:group-focus-visible:opacity-0'
-
-const SWAP_IN =
-  'transition-opacity duration-200 ease-out mt-2 ' +
-  '[@media(hover:hover)]:mt-0 [@media(hover:hover)]:absolute [@media(hover:hover)]:inset-0 ' +
-  '[@media(hover:hover)]:flex [@media(hover:hover)]:flex-col [@media(hover:hover)]:justify-center ' +
-  '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/price:opacity-100 ' +
-  '[@media(hover:hover)]:group-focus-visible:opacity-100'
+// Preço sempre visível, abaixo da descrição — mesmo no desktop e no mobile.
+// (Chegou a existir uma versão em que o hover trocava a descrição pelo preço
+// no desktop; foi revertida para o preço não depender de passar o mouse,
+// igual já era no mobile por não ter hover.)
 
 function CardText({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
   const prices = visiblePrices(product, priceTable)
 
   return (
-    <div className="relative mt-1.5 min-h-[42px] md:min-h-[47px]">
-      <h3
-        className={`font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug line-clamp-2 ${
-          prices.length > 0 ? SWAP_OUT : ''
-        }`}
-      >
+    <>
+      <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
         {product.description}
       </h3>
       {prices.length > 0 && <CardPrice prices={prices} />}
-    </div>
+    </>
   )
 }
 
 function CardPrice({ prices }: { prices: VisiblePrice[] }) {
-  // Uma tabela: o valor entra em destaque no lugar do título, com o rótulo
-  // pequeno embaixo dizendo de qual tabela ele é.
+  // Uma tabela: o valor em destaque, com o rótulo pequeno embaixo dizendo de
+  // qual tabela é — importante quando o produto tem as duas e o representante
+  // restringiu a visualização a uma só.
   if (prices.length === 1) {
     return (
-      <div className={SWAP_IN}>
+      <div className="mt-2">
         <p className="text-[15px] md:text-base font-semibold text-ink tabular-nums leading-tight">
           <SafePrice value={prices[0].value} />
         </p>
@@ -269,7 +251,7 @@ function CardPrice({ prices }: { prices: VisiblePrice[] }) {
 
   // Duas tabelas (comparativo interno): rótulo à esquerda, valor à direita.
   return (
-    <dl className={`space-y-0.5 ${SWAP_IN}`}>
+    <dl className="mt-2 space-y-0.5">
       {prices.map(({ label, value }) => (
         <div key={label} className="flex items-baseline justify-between gap-2">
           <dt className="text-[9px] uppercase tracking-[0.12em] text-muted">{label}</dt>
@@ -820,9 +802,7 @@ export default function ProdutosPage() {
                       </div>
                   }
                 </div>
-                {/* `group/price`: o hover que troca descrição por preço é o da
-                    área de texto (código + descrição), não o do card inteiro. */}
-                <div className="group/price px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
+                <div className="px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-[10px] font-mono font-semibold text-gold tracking-wide">{product.product_code}</span>
                     {selectedGroupId === '' && product.type && (
