@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 
 import { AuthProvider, type AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
+import { ELECTRONIC_SIGNATURES_ENABLED } from './lib/features'
 import LoginPage from './pages/LoginPage'
 
 const PrivateApp = lazy(() => import('./PrivateApp'))
@@ -61,7 +62,10 @@ export default function App() {
           <Routes>
             <Route path="/" element={<RootPage />} />
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/sign-contract" element={<SignContractPage />} />
+            <Route
+              path="/sign-contract"
+              element={ELECTRONIC_SIGNATURES_ENABLED ? <SignContractPage /> : <Navigate to="/login" replace />}
+            />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route element={<PrivateGate />}>
               <Route path="/*" element={<PrivateApp />} />

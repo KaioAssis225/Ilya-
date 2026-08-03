@@ -16,10 +16,12 @@ from sqlalchemy.orm import load_only, noload, selectinload
 from app.api.deps import (
     get_db_session,
     get_current_user,
+    require_order_access,
     require_roles,
     is_client_account,
     is_internal_operator,
 )
+from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
@@ -50,6 +52,17 @@ _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
+
+
+def _require_electronic_signatures_enabled() -> None:
+    if not settings.ELECTRONIC_SIGNATURES_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Assinatura eletrônica temporariamente indisponível. "
+                "Utilize os campos de assinatura manual do PDF."
+            ),
+        )
 
 
 def _decimal(value: object) -> Decimal:
@@ -376,7 +389,7 @@ async def list_orders(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_order_access),
 ):
     conditions = []
     if current_user.role == UserRole.representante:
@@ -804,7 +817,7 @@ async def cancel_order(
 async def get_order_history(
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_order_access),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
@@ -824,7 +837,7 @@ async def get_order_history(
 async def get_order(
     id_or_code: str,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_order_access),
 ):
     order = await _get_order(db, id_or_code)
     if _representative_cannot_access_order(current_user, order):
@@ -860,6 +873,7 @@ async def generate_sign_token(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
+    _require_electronic_signatures_enabled()
     result = await db.execute(
         select(Order).where(Order.id == order_id).with_for_update()
     )
@@ -928,6 +942,7 @@ async def verify_sign_token(
     body: VerifySignTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
+    _require_electronic_signatures_enabled()
     invitation = (
         await db.execute(
             select(SignatureInvitation).where(
@@ -980,6 +995,7 @@ async def sign_representative(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
+    _require_electronic_signatures_enabled()
     if current_user.role not in {UserRole.admin, UserRole.representante}:
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
@@ -1004,6 +1020,7 @@ async def sign_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
+    _require_electronic_signatures_enabled()
     is_client = is_client_account(current_user)
     is_rep = current_user.role == UserRole.representante
     if current_user.role != UserRole.admin and not is_client and not is_rep:
@@ -1031,6 +1048,7 @@ async def notify_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
+    _require_electronic_signatures_enabled()
     if current_user.role not in {UserRole.admin, UserRole.representante}:
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(select(Order).where(Order.id == order_id))
@@ -1063,6 +1081,7 @@ async def sign_with_token(
     payload: SignWithTokenPayload,
     db: AsyncSession = Depends(get_db_session),
 ):
+    _require_electronic_signatures_enabled()
     invitation = (
         await db.execute(
             select(SignatureInvitation)

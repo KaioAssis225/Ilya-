@@ -11,6 +11,7 @@ import { useAuth } from '../hooks/useAuth'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
 import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
+import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
 import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
 
@@ -261,9 +262,13 @@ function OrderDetailModal({
   const profileSig = getProfileSignature(userId)
   const isContractSigned = !!(order.rep_signed || order.rep_signature)
   const isClientSigned = !!(order.client_signed || order.client_signature)
-  const canGenerateSignLink = userRole === 'admin' || userRole === 'representante' || (userRole === 'vendedor' && !canSignContract)
-  const canSignAsClient = (userRole === 'representante' || userRole === 'admin') && !isClientSigned
-  const showNotifyBtn = userRole === 'representante' || userRole === 'admin'
+  const canGenerateSignLink = ELECTRONIC_SIGNATURES_ENABLED
+    && (userRole === 'admin' || userRole === 'representante' || (userRole === 'vendedor' && !canSignContract))
+  const canSignAsClient = ELECTRONIC_SIGNATURES_ENABLED
+    && (userRole === 'representante' || userRole === 'admin')
+    && !isClientSigned
+  const showNotifyBtn = ELECTRONIC_SIGNATURES_ENABLED
+    && (userRole === 'representante' || userRole === 'admin')
   const clientHasAccount = !!clientObj?.has_user
 
   useEffect(() => {
@@ -527,8 +532,8 @@ function OrderDetailModal({
               </table>
             </div>
 
-            {/* Assinaturas */}
-            <div className="mt-5 pt-4 border-t border-line">
+            {/* Assinaturas — preservadas, mas temporariamente ocultas por feature flag */}
+            {ELECTRONIC_SIGNATURES_ENABLED && <div className="mt-5 pt-4 border-t border-line">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted uppercase tracking-wider font-semibold">Assinaturas</span>
@@ -567,9 +572,9 @@ function OrderDetailModal({
                   }
                 </div>
               )}
-            </div>
+            </div>}
 
-            {canSignContract && (isClientUser ? !isClientSigned : !isContractSigned) && (
+            {ELECTRONIC_SIGNATURES_ENABLED && canSignContract && (isClientUser ? !isClientSigned : !isContractSigned) && (
               <div className="mt-5 pt-4 border-t border-line">
                 {profileSig
                   ? <button onClick={() => { setSigError(false); setConfirmSign(true) }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-gold text-white rounded-xl hover:bg-gold-600 transition-colors text-sm font-semibold shadow-sm">
@@ -584,7 +589,7 @@ function OrderDetailModal({
               </div>
             )}
 
-            {(order.rep_signature || order.client_signature) && (
+            {ELECTRONIC_SIGNATURES_ENABLED && (order.rep_signature || order.client_signature) && (
               <div className="mt-5 pt-4 border-t border-line">
                 <p className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">Assinaturas do Contrato</p>
                 <div className="flex gap-4">
@@ -603,7 +608,7 @@ function OrderDetailModal({
         )}
 
         {/* Canvas assinatura cliente */}
-        {clientSigOpen && (
+        {ELECTRONIC_SIGNATURES_ENABLED && clientSigOpen && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Assinatura do Cliente</h4><button onClick={() => setClientSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
@@ -619,7 +624,7 @@ function OrderDetailModal({
         )}
 
         {/* Bloco 81: canvas de assinatura "na hora" para representante sem perfil configurado */}
-        {repSigOpen && (
+        {ELECTRONIC_SIGNATURES_ENABLED && repSigOpen && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Sua Assinatura</h4><button onClick={() => setRepSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
@@ -634,7 +639,7 @@ function OrderDetailModal({
           </div>
         )}
 
-        {confirmSign && (
+        {ELECTRONIC_SIGNATURES_ENABLED && confirmSign && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
               <h4 className="text-base font-semibold text-ink mb-2">Confirmar Assinatura</h4>
@@ -659,7 +664,7 @@ function OrderDetailModal({
           </div>
         )}
 
-        {isSigning && (
+        {ELECTRONIC_SIGNATURES_ENABLED && isSigning && (
           <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-bg/90 backdrop-blur-sm">
             <div className="absolute w-[520px] h-[520px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }} />
             <p className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", backgroundImage: 'linear-gradient(90deg, #5a4508 0%, #8b6914 25%, #c8952e 50%, #8b6914 75%, #5a4508 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', animation: 'lightSweep 2.4s linear infinite' }}>ILYA</p>
@@ -773,7 +778,8 @@ export default function PedidosPage() {
   )
   const globalHistory = globalHistoryPage?.items ?? []
   const deleteM = useDeleteOrder()
-  const canSignContract = user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient
+  const canSignContract = ELECTRONIC_SIGNATURES_ENABLED
+    && (user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient)
 
   useEffect(() => {
     setCursorStack([undefined])

@@ -5,7 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select
 
-from app.api.deps import get_db_session, get_current_user, require_roles, is_client_account, is_internal_operator
+from app.api.deps import (
+    get_db_session,
+    get_current_user,
+    require_directory_access,
+    require_roles,
+    is_client_account,
+    is_internal_operator,
+)
 from app.core.search import literal_contains_pattern
 from app.models.client import Client
 from app.models.representative import Representative
@@ -48,7 +55,7 @@ async def list_representatives(
     ] = Query(default="name"),
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_directory_access),
 ):
     filters = []
     if current_user.role == UserRole.representante:
@@ -172,7 +179,7 @@ async def create_representative(
 async def get_representative(
     rep_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_directory_access),
 ):
     if current_user.role == UserRole.representante and current_user.rep_id != rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este representante.")

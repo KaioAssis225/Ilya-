@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
+import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
 import { isConjuntoType } from './productType'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
@@ -427,8 +428,10 @@ export async function generateOrderPDF(
 
   // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
   // Isolamento rígido: repSig nunca vaza para clientSig e vice-versa.
-  const repSig = order.rep_signature
-  const clientSig = order.client_signature
+  // Enquanto a assinatura eletrônica estiver desativada, o PDF mantém apenas
+  // as linhas em branco para assinatura manual. Os dados existentes não mudam.
+  const repSig = ELECTRONIC_SIGNATURES_ENABLED ? order.rep_signature : null
+  const clientSig = ELECTRONIC_SIGNATURES_ENABLED ? order.client_signature : null
 
   if (y + 40 > 265) { doc.addPage(); y = 20 }
   y += 6

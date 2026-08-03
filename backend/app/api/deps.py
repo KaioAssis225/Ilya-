@@ -80,6 +80,54 @@ def is_internal_operator(user: User) -> bool:
     return user.role == UserRole.vendedor and user.linked_id is None
 
 
+def _enforce_roles(current_user: User, allowed_roles: frozenset[UserRole]) -> User:
+    if current_user.role == UserRole.admin:
+        return current_user
+    effective_role = (
+        UserRole.cliente if is_client_account(current_user) else current_user.role
+    )
+    if effective_role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operação não permitida para o seu nível de acesso.",
+        )
+    return current_user
+
+
+_DIRECTORY_ROLES = frozenset(
+    {
+        UserRole.vendedor,
+        UserRole.representante,
+        UserRole.cadastros,
+        UserRole.produtos,
+        UserRole.cliente,
+    }
+)
+
+_ORDER_ROLES = frozenset(
+    {
+        UserRole.vendedor,
+        UserRole.representante,
+        UserRole.produtos,
+        UserRole.cliente,
+    }
+)
+
+
+def require_directory_access(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Acesso aos diretórios comerciais; papéis novos são negados por padrão."""
+    return _enforce_roles(current_user, _DIRECTORY_ROLES)
+
+
+def require_order_access(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Acesso a pedidos; o papel executivo permanece exclusivo do Dashboard."""
+    return _enforce_roles(current_user, _ORDER_ROLES)
+
+
 def require_dashboard_access(
     current_user: User = Depends(get_current_user),
 ) -> User:
@@ -98,17 +146,7 @@ def require_dashboard_access(
 
 def require_roles(*allowed_roles: UserRole):
     def dependency(current_user: User = Depends(get_current_user)):
-        if current_user.role == UserRole.admin:
-            return current_user
-        # SEC-01: uma conta de cliente-final nunca deve receber permissão de
-        # operador interno. Se estiver com a role legada `vendedor`+linked_id,
-        # rebaixamos para `cliente` na verificação — assim endpoints que aceitam
-        # `vendedor` (ex.: catálogo) a rejeitam até a migração 0028 concluir.
-        effective_role = UserRole.cliente if is_client_account(current_user) else current_user.role
-        if effective_role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Operação não permitida para o seu nível de acesso."
-            )
-        return current_user
+        # SEC-01: contas legadas `vendedor`+linked_id são avaliadas como
+        # `cliente`, nunca como operador interno.
+        return _enforce_roles(current_user, frozenset(allowed_roles))
     return dependency

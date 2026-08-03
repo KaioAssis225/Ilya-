@@ -14,7 +14,13 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.api.deps import require_roles, is_client_account, is_internal_operator
+from app.api.deps import (
+    require_directory_access,
+    require_order_access,
+    require_roles,
+    is_client_account,
+    is_internal_operator,
+)
 from app.models.user import UserRole
 
 
@@ -32,6 +38,9 @@ CLIENTE_LEGADO = _user(UserRole.vendedor, linked_id=_CLIENT_ID)
 VENDEDOR_INTERNO = _user(UserRole.vendedor)
 REPRESENTANTE = _user(UserRole.representante, linked_id=_REP_ID, rep_id=_REP_ID)
 ADMIN = _user(UserRole.admin)
+CADASTROS = _user(UserRole.cadastros)
+PRODUTOS = _user(UserRole.produtos)
+EXECUTIVO = _user(UserRole.executivo)
 
 
 class TestClassificacaoDeConta:
@@ -114,3 +123,47 @@ class TestAdminOnlyBloqueiaTodosMenosAdmin:
 
     def test_admin_permitido(self):
         assert self.admin_dep(current_user=ADMIN) is ADMIN
+
+
+class TestAcessoAosDiretoriosComerciais:
+    @pytest.mark.parametrize(
+        "user",
+        [
+            ADMIN,
+            VENDEDOR_INTERNO,
+            REPRESENTANTE,
+            CLIENTE_NOVO,
+            CLIENTE_LEGADO,
+            CADASTROS,
+            PRODUTOS,
+        ],
+    )
+    def test_papeis_comerciais_permitidos(self, user):
+        assert require_directory_access(current_user=user) is user
+
+    def test_executivo_bloqueado(self):
+        with pytest.raises(HTTPException) as exc:
+            require_directory_access(current_user=EXECUTIVO)
+        assert exc.value.status_code == 403
+
+
+class TestAcessoAPedidos:
+    @pytest.mark.parametrize(
+        "user",
+        [
+            ADMIN,
+            VENDEDOR_INTERNO,
+            REPRESENTANTE,
+            CLIENTE_NOVO,
+            CLIENTE_LEGADO,
+            PRODUTOS,
+        ],
+    )
+    def test_papeis_de_pedidos_permitidos(self, user):
+        assert require_order_access(current_user=user) is user
+
+    @pytest.mark.parametrize("user", [EXECUTIVO, CADASTROS])
+    def test_papeis_sem_acesso_bloqueados(self, user):
+        with pytest.raises(HTTPException) as exc:
+            require_order_access(current_user=user)
+        assert exc.value.status_code == 403

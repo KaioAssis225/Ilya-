@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_TTL_MINUTES: int = 30
     REFRESH_TOKEN_TTL_DAYS: int = 7
     REFRESH_TOKEN_AUDIT_RETENTION_DAYS: int = 30
+    # Temporariamente desativado: mantém código e dados de assinatura intactos,
+    # mas bloqueia criação, validação e aplicação de assinaturas eletrônicas.
+    ELECTRONIC_SIGNATURES_ENABLED: bool = False
 
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
     # Deployments de produção/preview do projeto Ilya na conta Vercel indicada.
@@ -70,6 +73,8 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str = ""
     WEBHOOK_TIMEOUT_SECONDS: float = 10.0
     WEBHOOK_MAX_ATTEMPTS: int = 7
+    WEBHOOK_RETRY_AFTER_MAX_SECONDS: int = 86_400
+    WEBHOOK_RESPONSE_BODY_MAX_BYTES: int = 4_096
 
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"
