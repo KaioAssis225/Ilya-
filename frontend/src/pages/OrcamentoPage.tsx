@@ -140,8 +140,8 @@ const EMPTY_PERSON: ClientCreate = {
   cep: '', numero: '', address: '', city: '', state: '',
 }
 
-function QuickRegisterModal({ title, onSave, onClose }: {
-  title: string; onSave: (data: ClientCreate) => Promise<void>; onClose: () => void
+function QuickRegisterModal({ title, entityType, onSave, onClose }: {
+  title: string; entityType: 'client' | 'rep'; onSave: (data: ClientCreate) => Promise<void>; onClose: () => void
 }) {
   const [form, setForm] = useState<ClientCreate>(EMPTY_PERSON)
   const [saving, setSaving] = useState(false)
@@ -220,6 +220,27 @@ function QuickRegisterModal({ title, onSave, onClose }: {
             <span className="text-xs text-muted">UF *</span>
             <input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required />
           </label>
+          {entityType === 'client' && (
+            <div className="col-span-2 flex flex-col gap-1.5">
+              <span className="text-xs text-muted">Perfil de faturamento *</span>
+              <div className="flex gap-2">
+                {(['lojista', 'corporativo'] as const).map((profile) => (
+                  <button
+                    key={profile}
+                    type="button"
+                    onClick={() => setForm({ ...form, price_profile: profile })}
+                    className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${
+                      (form.price_profile ?? 'lojista') === profile
+                        ? 'bg-gold text-white border-gold'
+                        : 'border-line text-ink-3 hover:border-faint'
+                    }`}
+                  >
+                    {profile}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="col-span-2 flex justify-end gap-3 pt-1">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={saving}>Salvar</button>
@@ -1404,6 +1425,7 @@ export default function OrcamentoPage() {
       {quickModal === 'client' && (
         <QuickRegisterModal
           title="Novo Cliente"
+          entityType="client"
           onSave={async (data) => { await createClientM.mutateAsync(data) }}
           onClose={() => setQuickModal(null)}
         />
@@ -1411,6 +1433,7 @@ export default function OrcamentoPage() {
       {quickModal === 'rep' && !isRep && (
         <QuickRegisterModal
           title="Novo Representante"
+          entityType="rep"
           onSave={async (data) => { await createRepM.mutateAsync(data) }}
           onClose={() => setQuickModal(null)}
         />
