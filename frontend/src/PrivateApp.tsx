@@ -5,6 +5,8 @@ import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Be
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
+import { useCartQuantities } from './hooks/useCart'
+import { countCartUnits } from './lib/cart'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
@@ -81,6 +83,8 @@ function DashboardFabGate() {
 function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
+  const cartUnits = countCartUnits(useCartQuantities())
   if (!user || user.must_change_password) return null
   // Bloco 95: Dashboard é um módulo isolado, sem a navegação padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
@@ -99,8 +103,21 @@ function BottomNav() {
         <span className="text-[9px] font-semibold uppercase tracking-wider">Produtos</span>
       </NavLink>
       {canSeeOrcamentoPedidos(user) && (
-        <NavLink to="/orcamentos" className={itemClass('/orcamentos')} aria-label="Novo Orçamento">
-          <ShoppingCart className="w-5 h-5" />
+        <NavLink
+          to="/orcamentos"
+          className={itemClass('/orcamentos')}
+          aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}
+        >
+          <span className="relative">
+            <ShoppingCart className="w-5 h-5" />
+            {/* Única confirmação de que o "+" do catálogo funcionou: sem ela o
+                item entra no orçamento sem nenhum sinal na tela. */}
+            {cartUnits > 0 && (
+              <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-gold text-white text-[9px] font-bold flex items-center justify-center tabular-nums">
+                {cartUnits > 99 ? '99+' : cartUnits}
+              </span>
+            )}
+          </span>
           <span className="text-[9px] font-semibold uppercase tracking-wider">Orçamento</span>
         </NavLink>
       )}
@@ -143,6 +160,7 @@ function Nav() {
   const [showNotifs, setShowNotifs] = useState(false)
   const { data: notifications = [] } = useNotifications(Boolean(user))
   const markRead = useMarkNotificationRead()
+  const cartUnits = countCartUnits(useCartQuantities())
   // Bloco 95: Dashboard é um módulo isolado, sem o cabeçalho padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
 
@@ -167,7 +185,16 @@ function Nav() {
             <div className="hidden md:flex items-center gap-1">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label="Cadastros">Cadastros</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label="Produtos">Produtos</NavLink>
-              {canSeeOrcamentoPedidos(user) && <NavLink to="/orcamentos" className={linkClass} aria-label="Novo Orçamento">Novo Orçamento</NavLink>}
+              {canSeeOrcamentoPedidos(user) && (
+              <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
+                Novo Orçamento
+                {cartUnits > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-gold text-white text-[10px] font-bold tabular-nums align-middle">
+                    {cartUnits > 99 ? '99+' : cartUnits}
+                  </span>
+                )}
+              </NavLink>
+            )}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label="Pedidos">Pedidos</NavLink>}
               {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label="Admin">Admin</NavLink>}
             </div>

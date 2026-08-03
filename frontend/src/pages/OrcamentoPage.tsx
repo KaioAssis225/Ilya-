@@ -13,6 +13,7 @@ import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
 import { useAuth } from '../hooks/useAuth'
 import { isConjuntoType } from '../lib/productType'
+import { CART_KEY, notifyCartChanged } from '../lib/cart'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
@@ -99,7 +100,7 @@ function Autocomplete<T extends { id: string }>({
       </div>
       <div className="relative">
         <input
-          className="input w-full text-xs placeholder:text-faint border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
+          className="input w-full text-xs placeholder:text-muted border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
           placeholder={searchPlaceholder}
           value={query}
           onChange={(e) => {
@@ -266,7 +267,7 @@ const EMPTY_PRODUCTS: Product[] = []
 
 function readPersistedCart(): PersistedCartItem[] {
   try {
-    const raw = localStorage.getItem('carrinho_orcamento')
+    const raw = localStorage.getItem(CART_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -432,7 +433,7 @@ function MobileCartCard({
             </div>
             <button
               onClick={() => onRemove(item.product_code)}
-              className="text-faint active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
+              className="text-muted active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
               style={{ touchAction: 'manipulation' }}
             >
               <Trash2 className="w-4 h-4" />
@@ -466,7 +467,7 @@ function MobileCartCard({
         {/* Pricing */}
         <div className="text-right">
           {hasDiscount && (
-            <p className="text-[10px] text-faint line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} /></p>
+            <p className="text-[10px] text-muted line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} /></p>
           )}
           {hasDiscount && (
             <span className="text-[10px] bg-gold/10 text-gold font-semibold px-1.5 py-0.5 rounded-full">
@@ -811,7 +812,8 @@ export default function OrcamentoPage() {
   useEffect(() => {
     if (editId || !cartHydrated) return
     const serializable = cart.map(({ _product, ...rest }) => rest)
-    localStorage.setItem('carrinho_orcamento', JSON.stringify(serializable))
+    localStorage.setItem(CART_KEY, JSON.stringify(serializable))
+    notifyCartChanged()
   }, [cart, cartHydrated, editId])
 
   // Sincroniza _product com dados frescos da API (garante observacao e preço atualizados)
@@ -998,7 +1000,8 @@ export default function OrcamentoPage() {
         setToast({ message: 'Orçamento finalizado com sucesso!', variant: 'success' })
       }
       setCart([])
-      localStorage.removeItem('carrinho_orcamento')
+      localStorage.removeItem(CART_KEY)
+      notifyCartChanged()
       resetSavedSelections()
       editOrderLoadedRef.current = null
       setNotes('')
@@ -1153,7 +1156,8 @@ export default function OrcamentoPage() {
               editOrderLoadedRef.current = null
               resetSavedSelections()
               setNotes('')
-              localStorage.removeItem('carrinho_orcamento')
+              localStorage.removeItem(CART_KEY)
+              notifyCartChanged()
             }}
             className="ml-auto text-white/70 hover:text-white text-xs underline"
           >
@@ -1175,7 +1179,7 @@ export default function OrcamentoPage() {
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
-                  onClick={() => { setCart([]); localStorage.removeItem('carrinho_orcamento') }}
+                  onClick={() => { setCart([]); localStorage.removeItem(CART_KEY); notifyCartChanged() }}
                   className="text-xs text-terracotta hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >
@@ -1309,14 +1313,14 @@ export default function OrcamentoPage() {
                           <td className="px-4 py-3.5 text-right align-middle whitespace-nowrap">
                             {ipiRate > 0
                               ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
-                              : <span className="text-xs text-faint">—</span>
+                              : <span className="text-xs text-muted">—</span>
                             }
                           </td>
                           <td className="px-4 py-3.5 text-right text-xs font-bold text-ink align-middle whitespace-nowrap">
                             <SafePrice value={subtotalWithIpi} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.product_code)} className="text-faint hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto">
+                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>
@@ -1370,8 +1374,13 @@ export default function OrcamentoPage() {
         </aside>
       </div>
 
-      {/* ── Mobile fixed bottom bar ────────────────────────────────────────── */}
-      <div className="lg:hidden fixed bottom-16 inset-x-0 z-30 px-4 pb-2">
+      {/* ── Mobile fixed bottom bar ──────────────────────────────────────────
+          Vai até `lg` porque a sidebar do formulário só aparece em 1024px: entre
+          768 e 1023 esta barra é o ÚNICO acesso ao pedido. Já o `bottom-16`
+          existe só para desviar do nav inferior, que é `md:hidden` — a partir de
+          768px não há nav embaixo, e sem o `md:bottom-4` a barra ficaria
+          flutuando sobre um vão vazio de 64px no tablet. */}
+      <div className="lg:hidden fixed bottom-16 md:bottom-4 inset-x-0 z-30 px-4 pb-2">
         <button
           onClick={() => setDrawerOpen(true)}
           style={{ touchAction: 'manipulation' }}
