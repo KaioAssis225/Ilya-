@@ -3,6 +3,7 @@ import axios from 'axios'
 import { X, PenLine, Check, Eye, EyeOff, KeyRound, Trash2, AlertTriangle, Download, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
+import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
 import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -239,8 +240,8 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        {/* Signature */}
-        <div className="border-t border-line pt-4">
+        {/* Signature — preservada, mas temporariamente oculta por feature flag */}
+        {ELECTRONIC_SIGNATURES_ENABLED && <div className="border-t border-line pt-4">
           <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Assinatura Pessoal</p>
           {sigData ? (
             <div className="flex flex-col items-center gap-2">
@@ -268,7 +269,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               Adicionar Assinatura
             </button>
           )}
-        </div>
+        </div>}
 
         {/* Segurança (Bloco 93) */}
         <div className="border-t border-line pt-4 mt-4">
@@ -441,7 +442,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
       )}
 
       {/* Canvas modal */}
-      {sigModalOpen && (
+      {ELECTRONIC_SIGNATURES_ENABLED && sigModalOpen && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
