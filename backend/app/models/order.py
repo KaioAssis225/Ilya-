@@ -1,6 +1,6 @@
 import uuid
 from typing import TYPE_CHECKING
-from sqlalchemy import CheckConstraint, String, Text, Numeric, Integer, Boolean, ForeignKey, Index, JSON, text
+from sqlalchemy import CheckConstraint, String, Text, Numeric, Integer, Boolean, ForeignKey, Index, JSON, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -12,7 +12,10 @@ class Order(Base, TimestampMixin):
     __tablename__ = "orders"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    # O código PED é sequencial dentro do usuário que criou o pedido.
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    number_owner_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    order_number: Mapped[int] = mapped_column(Integer, nullable=False)
     orc_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), nullable=False)
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id"), nullable=True)
@@ -35,6 +38,16 @@ class Order(Base, TimestampMixin):
             "NOT (is_finalized AND is_cancelled)",
             name="ck_orders_single_terminal_status",
         ),
+        CheckConstraint(
+            "order_number > 0",
+            name="ck_orders_order_number_positive",
+        ),
+        UniqueConstraint(
+            "number_owner_id",
+            "order_number",
+            name="uq_orders_number_owner_order_number",
+        ),
+        Index("ix_orders_number_owner_id", "number_owner_id"),
         Index(
             "ix_orders_code_trgm",
             "code",

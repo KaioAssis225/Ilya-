@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus } from 'lucide-react'
-import { CART_KEY, notifyCartChanged } from '../lib/cart'
+import { cartStorageKey, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
+import { useAuth } from '../hooks/useAuth'
 import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
@@ -312,8 +313,9 @@ function dimLabel(p: Product) {
     : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
 }
 
-function addToCart(product: Product) {
-  const raw = localStorage.getItem(CART_KEY)
+function addToCart(product: Product, userId: string) {
+  const storageKey = cartStorageKey(userId)
+  const raw = localStorage.getItem(storageKey)
   const cart = raw ? JSON.parse(raw) : []
   const existing = cart.find((i: { product_code: string }) => i.product_code === product.product_code)
   if (existing) {
@@ -333,7 +335,7 @@ function addToCart(product: Product) {
       _product: product,
     })
   }
-  localStorage.setItem(CART_KEY, JSON.stringify(cart))
+  localStorage.setItem(storageKey, JSON.stringify(cart))
   notifyCartChanged()
 }
 
@@ -360,13 +362,14 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
 function ProductFullView({
   product,
   priceTable,
+  userId,
   onClose,
-}: { product: Product; priceTable: PriceTable; onClose: () => void }) {
+}: { product: Product; priceTable: PriceTable; userId: string; onClose: () => void }) {
   const [added, setAdded] = useState(false)
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
 
   function handleAdd() {
-    addToCart(product)
+    addToCart(product, userId)
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
@@ -550,6 +553,7 @@ function ProductFullView({
 }
 
 export default function ProdutosPage() {
+  const { user } = useAuth()
   const queryClient = useQueryClient()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
@@ -563,7 +567,8 @@ export default function ProdutosPage() {
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
   const [hasDualPricing, setHasDualPricing] = useState(false)
-  const cartQuantities = useCartQuantities()
+  const cartQuantities = useCartQuantities(user?.id)
+
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
   const { data: productsPage, isLoading } = useProductsPage({
@@ -831,7 +836,7 @@ export default function ProdutosPage() {
                   incremento seria silencioso. */}
               <button
                 type="button"
-                onClick={() => addToCart(product)}
+                onClick={() => user && addToCart(product, user.id)}
                 aria-label={`Adicionar ${product.description} ao orçamento`}
                 style={{ touchAction: 'manipulation' }}
                 className="absolute top-2 right-2 w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
@@ -873,8 +878,13 @@ export default function ProdutosPage() {
         )}
       </div>
 
-      {selected && (
-        <ProductFullView product={selected} priceTable={priceTable} onClose={() => setSelected(null)} />
+      {selected && user && (
+        <ProductFullView
+          product={selected}
+          priceTable={priceTable}
+          userId={user.id}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   )

@@ -17,6 +17,7 @@ import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers
 import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import { NumberField } from '../components/NumberField'
+import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
@@ -202,15 +203,6 @@ async function fetchCep(cep: string, signal?: AbortSignal): Promise<ViaCepRespon
 
 // ── Address form fields ──────────────────────────────────────────────────────
 
-function formatPhone(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 11)
-  if (d.length === 0) return ''
-  if (d.length <= 2) return `(${d}`
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
-}
-
 function formatCep(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 8)
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
@@ -251,11 +243,11 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">Telefone *</span>
-        <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} required />
+        <input className="input" value={form.phone} maxLength={PHONE_INPUT_MAX_LENGTH} onChange={(e) => setForm({ ...form, phone: formatBrazilianPhone(e.target.value) })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">E-mail *</span>
-        <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+        <span className="text-xs text-muted">E-mail</span>
+        <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
       </label>
       <label className="flex flex-col gap-1 relative">
         <span className="text-xs text-muted">CEP *</span>
@@ -1624,7 +1616,8 @@ function PeopleTab<T extends Client | Representative>({
   const isAdmin = authUser?.role === 'admin'
   const isRep = authUser?.role === 'representante'
   const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
-  const defaultMaxDiscount = entityType === 'client' ? 0 : 15
+  const defaultMaxDiscount = entityType === 'client' ? 0 : 30
+  const canViewCreator = !isRep && authUser?.role !== 'cliente'
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)
@@ -1676,7 +1669,7 @@ function PeopleTab<T extends Client | Representative>({
 
   function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
-    setForm({ name: item.name, phone: item.phone, email: item.email, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
+    setForm({ name: item.name, phone: item.phone, email: item.email ?? '', cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
     setEditing(item); setFormError(null); setShowForm(true)
   }
   function openView(item: T) {
@@ -1689,7 +1682,7 @@ function PeopleTab<T extends Client | Representative>({
     const cleaned: ClientCreate = {
       ...form,
       name: form.name.trim(),
-      email: form.email.trim(),
+      email: form.email?.trim() || null,
       city: form.city.trim(),
       address: form.address.trim(),
       state: form.state.trim().toUpperCase(),
@@ -1774,7 +1767,12 @@ function PeopleTab<T extends Client | Representative>({
                 </div>
                 <div className="mt-2 space-y-0.5 text-xs text-ink-2">
                   <p>{item.phone}</p>
-                  <p className="truncate text-muted-2">{item.email}</p>
+                  <p className="truncate text-muted-2">{item.email || 'Sem e-mail'}</p>
+                  {canViewCreator && (
+                    <p className="truncate text-muted-2">
+                      Criado por: {item.created_by_name || 'cadastro anterior'}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
@@ -1792,6 +1790,11 @@ function PeopleTab<T extends Client | Representative>({
                   <Th label="Cidade" col="city" {...thProps} />
                   <Th label="UF" col="state" {...thProps} />
                   <Th label="Desc. Máx." col="max_discount" {...thProps} />
+                  {canViewCreator && (
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">
+                      Criado por
+                    </th>
+                  )}
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -1800,10 +1803,15 @@ function PeopleTab<T extends Client | Representative>({
                   <tr key={item.id} className="table-row">
                     <td className="px-4 py-3 text-ink font-medium">{item.name}</td>
                     <td className="px-4 py-3 text-ink-2">{item.phone}</td>
-                    <td className="px-4 py-3 text-ink-2">{item.email}</td>
+                    <td className="px-4 py-3 text-ink-2">{item.email || '—'}</td>
                     <td className="px-4 py-3 text-ink-2">{item.city}</td>
                     <td className="px-4 py-3 text-muted-2">{item.state}</td>
                     <td className="px-4 py-3 text-muted-2">{item.max_discount}%</td>
+                    {canViewCreator && (
+                      <td className="px-4 py-3 text-muted-2">
+                        {item.created_by_name || 'Cadastro anterior'}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => openView(item)} title="Visualizar" aria-label="Visualizar" className="text-muted transition-colors"
@@ -1820,7 +1828,7 @@ function PeopleTab<T extends Client | Representative>({
                   </tr>
                 ))}
                 {pageItems.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
+                  <tr><td colSpan={canViewCreator ? 8 : 7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1837,10 +1845,16 @@ function PeopleTab<T extends Client | Representative>({
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <div><span className="text-xs text-muted block">Nome</span><span className="text-ink font-medium">{viewing.name}</span></div>
               <div><span className="text-xs text-muted block">Telefone</span><span className="text-ink-2">{viewing.phone}</span></div>
-              <div className="col-span-2"><span className="text-xs text-muted block">E-mail</span><span className="text-ink-2">{viewing.email}</span></div>
+              <div className="col-span-2"><span className="text-xs text-muted block">E-mail</span><span className="text-ink-2">{viewing.email || 'Não informado'}</span></div>
               <div><span className="text-xs text-muted block">Cidade</span><span className="text-ink-2">{viewing.city}</span></div>
               <div><span className="text-xs text-muted block">Estado</span><span className="text-ink-2">{viewing.state}</span></div>
               <div className="col-span-2"><span className="text-xs text-muted block">Endereço</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — CEP {viewing.cep}</span></div>
+              {canViewCreator && (
+                <div className="col-span-2">
+                  <span className="text-xs text-muted block">Criado por</span>
+                  <span className="text-ink-2">{viewing.created_by_name || 'Cadastro anterior ao rastreamento'}</span>
+                </div>
+              )}
             </div>
 
             {(isAdmin || (isRep && entityType === 'client')) && <div className="border-t border-line pt-4">
@@ -2521,8 +2535,8 @@ const SUPPORT_TABLES: { value: string; label: string; columns: string }[] = [
   { value: 'product-groups',  label: 'Grupos de Produto',  columns: 'name, ipi' },
   { value: 'product-types',   label: 'Tipos de Produto',   columns: 'name, group' },
   { value: 'optionals',       label: 'Opcionais',          columns: 'category, color_name' },
-  { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email, cep, numero, address, city, state' },
-  { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email, cep, numero, address, city, state, price_profile, rep_email' },
+  { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email (opcional), cep, numero, address, city, state' },
+  { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email (opcional), cep, numero, address, city, state, price_profile, rep_email' },
 ]
 
 function ImportUploader({ endpoint, label, hint, columns, color }: {

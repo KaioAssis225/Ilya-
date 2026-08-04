@@ -33,9 +33,31 @@ async def _linked_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
     return {row[0] for row in result.fetchall() if row[0] is not None}
 
 
-def _with_has_user(rep: Representative, linked: set[uuid.UUID]) -> RepresentativeRead:
+async def _creator_names(
+    db: AsyncSession,
+    creator_ids: list[uuid.UUID | None],
+) -> dict[uuid.UUID, str]:
+    ids = [creator_id for creator_id in creator_ids if creator_id is not None]
+    if not ids:
+        return {}
+    result = await db.execute(
+        select(User.id, User.full_name).where(User.id.in_(ids))
+    )
+    return dict(result.all())
+
+
+def _with_metadata(
+    rep: Representative,
+    linked: set[uuid.UUID],
+    creator_names: dict[uuid.UUID, str],
+) -> RepresentativeRead:
     r = RepresentativeRead.model_validate(rep)
-    return r.model_copy(update={"has_user": rep.id in linked})
+    return r.model_copy(
+        update={
+            "has_user": rep.id in linked,
+            "created_by_name": creator_names.get(rep.created_by_user_id),
+        }
+    )
 
 
 @router.get("", response_model=List[RepresentativeRead])
@@ -139,29 +161,40 @@ async def list_representatives(
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(reps))
     linked = await _linked_ids(db, [r.id for r in reps])
-    return [_with_has_user(r, linked) for r in reps]
+    creator_names = (
+        await _creator_names(db, [r.created_by_user_id for r in reps])
+        if current_user.role not in (UserRole.representante, UserRole.cliente)
+        and not is_client_account(current_user)
+        else {}
+    )
+    return [_with_metadata(r, linked, creator_names) for r in reps]
 
 
 @router.post("", response_model=RepresentativeRead, status_code=status.HTTP_201_CREATED)
 async def create_representative(
     payload: RepresentativeCreate,
     db: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_roles(UserRole.admin)),
+    current_user: User = Depends(require_roles(UserRole.admin)),
 ):
-    duplicate_email = (
-        await db.execute(
-            select(Representative.id).where(
-                func.lower(Representative.email)
-                == str(payload.email).lower()
-            ).limit(1)
-        )
-    ).scalar_one_or_none()
+    duplicate_email = None
+    if payload.email:
+        duplicate_email = (
+            await db.execute(
+                select(Representative.id).where(
+                    func.lower(Representative.email)
+                    == str(payload.email).lower()
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
     if duplicate_email:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe um representante com este e-mail.",
         )
-    rep = Representative(**payload.model_dump())
+    rep = Representative(
+        **payload.model_dump(),
+        created_by_user_id=current_user.id,
+    )
     db.add(rep)
     try:
         await db.commit()
@@ -172,7 +205,11 @@ async def create_representative(
             detail="Já existe um representante com este e-mail.",
         )
     await db.refresh(rep)
-    return RepresentativeRead.model_validate(rep)
+    return _with_metadata(
+        rep,
+        set(),
+        {current_user.id: current_user.full_name},
+    )
 
 
 @router.get("/{rep_id}", response_model=RepresentativeRead)
@@ -204,7 +241,13 @@ async def get_representative(
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
     linked = await _linked_ids(db, [rep.id])
-    return _with_has_user(rep, linked)
+    creator_names = (
+        await _creator_names(db, [rep.created_by_user_id])
+        if current_user.role not in (UserRole.representante, UserRole.cliente)
+        and not is_client_account(current_user)
+        else {}
+    )
+    return _with_metadata(rep, linked, creator_names)
 
 
 @router.patch("/{rep_id}", response_model=RepresentativeRead)
@@ -254,7 +297,13 @@ async def update_representative(
         )
     await db.refresh(rep)
     linked = await _linked_ids(db, [rep.id])
-    return _with_has_user(rep, linked)
+    creator_names = (
+        await _creator_names(db, [rep.created_by_user_id])
+        if current_user.role not in (UserRole.representante, UserRole.cliente)
+        and not is_client_account(current_user)
+        else {}
+    )
+    return _with_metadata(rep, linked, creator_names)
 
 
 @router.delete("/{rep_id}", status_code=status.HTTP_204_NO_CONTENT)

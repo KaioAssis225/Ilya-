@@ -84,7 +84,7 @@ function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
   // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
-  const cartUnits = countCartUnits(useCartQuantities())
+  const cartUnits = countCartUnits(useCartQuantities(user?.id))
   if (!user || user.must_change_password) return null
   // Bloco 95: Dashboard é um módulo isolado, sem a navegação padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
@@ -160,7 +160,7 @@ function Nav() {
   const [showNotifs, setShowNotifs] = useState(false)
   const { data: notifications = [] } = useNotifications(Boolean(user))
   const markRead = useMarkNotificationRead()
-  const cartUnits = countCartUnits(useCartQuantities())
+  const cartUnits = countCartUnits(useCartQuantities(user?.id))
   // Bloco 95: Dashboard é um módulo isolado, sem o cabeçalho padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
 

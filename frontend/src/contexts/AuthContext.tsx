@@ -2,6 +2,7 @@ import { createContext, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import axios from 'axios'
 import { authApi, bindAuthHandlers } from '../lib/api'
+import { removeUnsafeLegacyCart } from '../lib/cart'
 import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
@@ -47,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const accessTokenRef = useRef<string | null>(null)
 
   const setSession = useCallback((accessToken: string, user: AuthUser) => {
+    removeUnsafeLegacyCart()
     setState({ user, accessToken })
   }, [])
 

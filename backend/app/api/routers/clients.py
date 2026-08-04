@@ -57,10 +57,33 @@ async def _user_status(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID
     }
 
 
-def _with_has_user(client: Client, status_map: dict[uuid.UUID, tuple[bool, bool]]) -> ClientRead:
+async def _creator_names(
+    db: AsyncSession,
+    creator_ids: list[uuid.UUID | None],
+) -> dict[uuid.UUID, str]:
+    ids = [creator_id for creator_id in creator_ids if creator_id is not None]
+    if not ids:
+        return {}
+    result = await db.execute(
+        select(User.id, User.full_name).where(User.id.in_(ids))
+    )
+    return dict(result.all())
+
+
+def _with_metadata(
+    client: Client,
+    status_map: dict[uuid.UUID, tuple[bool, bool]],
+    creator_names: dict[uuid.UUID, str],
+) -> ClientRead:
     has_user, user_validated = status_map.get(client.id, (False, False))
     r = ClientRead.model_validate(client)
-    return r.model_copy(update={"has_user": has_user, "user_validated": user_validated})
+    return r.model_copy(
+        update={
+            "has_user": has_user,
+            "user_validated": user_validated,
+            "created_by_name": creator_names.get(client.created_by_user_id),
+        }
+    )
 
 
 @router.get("", response_model=List[ClientRead])
@@ -141,7 +164,13 @@ async def list_clients(
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(clients))
     linked = await _user_status(db, [c.id for c in clients])
-    return [_with_has_user(c, linked) for c in clients]
+    creator_names = (
+        await _creator_names(db, [c.created_by_user_id for c in clients])
+        if current_user.role not in (UserRole.representante, UserRole.cliente)
+        and not is_client_account(current_user)
+        else {}
+    )
+    return [_with_metadata(c, linked, creator_names) for c in clients]
 
 
 @router.post("", response_model=ClientRead, status_code=status.HTTP_201_CREATED)
@@ -151,13 +180,15 @@ async def create_client(
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante)),
 ):
     data = payload.model_dump()
-    duplicate_email = (
-        await db.execute(
-            select(Client.id).where(
-                func.lower(Client.email) == str(payload.email).lower()
-            ).limit(1)
-        )
-    ).scalar_one_or_none()
+    duplicate_email = None
+    if payload.email:
+        duplicate_email = (
+            await db.execute(
+                select(Client.id).where(
+                    func.lower(Client.email) == str(payload.email).lower()
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
     if duplicate_email:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -165,7 +196,7 @@ async def create_client(
         )
     if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
         data["max_discount"] = ClientCreate.model_fields["max_discount"].default
-    client = Client(**data)
+    client = Client(**data, created_by_user_id=current_user.id)
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
             raise HTTPException(
@@ -186,7 +217,11 @@ async def create_client(
             detail="Já existe um cliente com este e-mail.",
         )
     await db.refresh(client)
-    return ClientRead.model_validate(client)
+    return _with_metadata(
+        client,
+        {client.id: (False, False)},
+        {current_user.id: current_user.full_name},
+    )
 
 
 @router.get("/{client_id}", response_model=ClientRead)
@@ -201,7 +236,13 @@ async def get_client(
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     _rep_guard(client, current_user)
     linked = await _user_status(db, [client.id])
-    return _with_has_user(client, linked)
+    creator_names = (
+        await _creator_names(db, [client.created_by_user_id])
+        if current_user.role not in (UserRole.representante, UserRole.cliente)
+        and not is_client_account(current_user)
+        else {}
+    )
+    return _with_metadata(client, linked, creator_names)
 
 
 @router.patch("/{client_id}", response_model=ClientRead)
@@ -249,7 +290,13 @@ async def update_client(
         )
     await db.refresh(client)
     linked = await _user_status(db, [client.id])
-    return _with_has_user(client, linked)
+    creator_names = (
+        await _creator_names(db, [client.created_by_user_id])
+        if current_user.role not in (UserRole.representante, UserRole.cliente)
+        and not is_client_account(current_user)
+        else {}
+    )
+    return _with_metadata(client, linked, creator_names)
 
 
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

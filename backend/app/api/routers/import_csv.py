@@ -21,7 +21,7 @@ from sqlalchemy.orm import load_only, noload
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_db_session, require_roles
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 from app.models.product import Product
 from app.models.product_type import ProductType
 from app.models.product_group import ProductGroup
@@ -246,12 +246,20 @@ def _dec(
     return d
 
 
-def _email(row: dict) -> str:
+def _email(row: dict) -> str | None:
     email = (
-        _bounded(_first(row, "email", "e-mail"), "email", 255) or ""
+        _bounded(
+            _first(row, "email", "e-mail"),
+            "email",
+            255,
+            required=False,
+        )
+        or ""
     ).lower()
+    if not email:
+        return None
     if not _EMAIL_RE.match(email):
-        raise ValueError(f"E-mail inválido: '{email or '(vazio)'}'.")
+        raise ValueError(f"E-mail inválido: '{email}'.")
     return email
 
 
@@ -303,7 +311,7 @@ def _address_fields(row: dict) -> dict:
         "phone": _bounded(
             _first(row, "phone", "telefone", "fone"),
             "phone",
-            50,
+            20,
         ),
         "email": _email(row),
         "cep": _bounded(_first(row, "cep"), "cep", 20),
@@ -506,8 +514,8 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
 
 
 @router.post("/representatives")
-async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
-    """Colunas: name, phone, email, cep, numero, address, city, state. Upsert por email."""
+async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
+    """E-mail é opcional. Com e-mail faz upsert; sem e-mail cria novo registro."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
     email_values = [
@@ -533,24 +541,28 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
     for i, row in enumerate(rows, start=2):
         try:
             f = _address_fields(row)
-            if f["email"] in duplicate_input_emails:
+            if f["email"] and f["email"] in duplicate_input_emails:
                 raise ValueError(
                     f"E-mail '{f['email']}' aparece mais de uma vez no CSV."
                 )
-            if f["email"] in ambiguous_existing_emails:
+            if f["email"] and f["email"] in ambiguous_existing_emails:
                 raise ValueError(
                     f"Há mais de um representante cadastrado com o e-mail '{f['email']}'."
                 )
-            r = existing.get(f["email"])
+            r = existing.get(f["email"]) if f["email"] else None
             if r:
                 for k, v in f.items():
                     setattr(r, k, v)
                 is_update = True
             else:
-                r = Representative(**f)
+                r = Representative(
+                    **f,
+                    created_by_user_id=current_user.id,
+                )
                 db.add(r)
                 is_update = False
-            existing[f["email"]] = r
+            if f["email"]:
+                existing[f["email"]] = r
             updated += 1 if is_update else 0
             created += 0 if is_update else 1
         except Exception as e:
@@ -560,9 +572,11 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
 
 
 @router.post("/clients")
-async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
-    """Colunas: name, phone, email, cep, numero, address, city, state, price_profile,
-    rep_email (ou rep_name → FK representante). Upsert por email."""
+async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
+    """E-mail é opcional. Com e-mail faz upsert; sem e-mail cria novo registro.
+
+    O representante pode ser informado por rep_email ou rep_name.
+    """
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
     email_values = [
@@ -617,7 +631,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
     )
     reps = list(reps_by_id.values())
     reps_by_email, ambiguous_rep_emails = _unambiguous_lookup(
-        reps,
+        [representative for representative in reps if representative.email],
         lambda representative: representative.email.lower(),
     )
     reps_by_name, ambiguous_rep_names = _unambiguous_lookup(
@@ -629,11 +643,11 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
     for i, row in enumerate(rows, start=2):
         try:
             f = _address_fields(row)
-            if f["email"] in duplicate_input_emails:
+            if f["email"] and f["email"] in duplicate_input_emails:
                 raise ValueError(
                     f"E-mail '{f['email']}' aparece mais de uma vez no CSV."
                 )
-            if f["email"] in ambiguous_existing_emails:
+            if f["email"] and f["email"] in ambiguous_existing_emails:
                 raise ValueError(
                     f"Há mais de um cliente cadastrado com o e-mail '{f['email']}'."
                 )
@@ -663,7 +677,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                 if not rep:
                     raise ValueError(f"Representante '{rep_name}' não encontrado.")
                 rep_id = rep.id
-            c = existing.get(f["email"])
+            c = existing.get(f["email"]) if f["email"] else None
             if c:
                 for k, v in f.items():
                     setattr(c, k, v)
@@ -671,10 +685,16 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                 c.rep_id = rep_id
                 is_update = True
             else:
-                c = Client(**f, price_profile=profile, rep_id=rep_id)
+                c = Client(
+                    **f,
+                    price_profile=profile,
+                    rep_id=rep_id,
+                    created_by_user_id=current_user.id,
+                )
                 db.add(c)
                 is_update = False
-            existing[f["email"]] = c
+            if f["email"]:
+                existing[f["email"]] = c
             updated += 1 if is_update else 0
             created += 0 if is_update else 1
         except Exception as e:

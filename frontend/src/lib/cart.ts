@@ -1,22 +1,32 @@
 // Fonte única da chave do carrinho e do sinal de "carrinho mudou".
 //
 // O carrinho vive em localStorage e é escrito por duas telas (catálogo e
-// orçamento) sem nenhum estado React compartilhado. Para o contador do nav
-// reagir sem prop drilling nem store nova, quem escreve chama
-// `notifyCartChanged()`; quem exibe escuta pelo hook `useCartQuantities`.
+// orçamento) sem nenhum estado React compartilhado. Cada usuário recebe uma
+// chave própria para que trocar de login no mesmo browser nunca compartilhe um
+// orçamento em andamento.
 //
 // O evento `storage` do navegador NÃO cobre isso sozinho: ele só dispara em
 // OUTRAS abas, nunca na aba que fez a escrita. Daí o CustomEvent próprio.
 
-export const CART_KEY = 'carrinho_orcamento'
+const CART_KEY_PREFIX = 'carrinho_orcamento'
 export const CART_EVENT = 'ilya:cart-changed'
 
 type StoredCartItem = { product_code: string; qty: number }
 
 /** Quantidade por SKU: `{ IAC0000: 2 }`. Vazio se não houver carrinho ou o JSON estiver corrompido. */
-export function readCartQuantities(): Record<string, number> {
+export function cartStorageKey(userId: string): string {
+  return `${CART_KEY_PREFIX}:${userId}`
+}
+
+/** Remove o formato antigo, que era compartilhado entre todas as contas. */
+export function removeUnsafeLegacyCart(): void {
+  localStorage.removeItem(CART_KEY_PREFIX)
+}
+
+export function readCartQuantities(userId?: string | null): Record<string, number> {
+  if (!userId) return {}
   try {
-    const raw = localStorage.getItem(CART_KEY)
+    const raw = localStorage.getItem(cartStorageKey(userId))
     if (!raw) return {}
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return {}

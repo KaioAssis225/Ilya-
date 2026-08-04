@@ -14,6 +14,7 @@ from starlette.requests import Request
 
 from app.api.routers.dashboard import get_overview
 from app.api.routers.import_csv import (
+    _address_fields,
     _bounded,
     _dec,
     _duplicate_values,
@@ -99,6 +100,32 @@ def test_uf_invalida_e_rejeitada():
         ClientCreate(**_contact_payload("S1"))
     with pytest.raises(ValidationError):
         ClientCreate(**{**_contact_payload("SP"), "state": 1})
+
+
+def test_email_de_contato_e_opcional_e_telefone_tem_limite():
+    payload = _contact_payload("SP")
+    payload.pop("email")
+    assert ClientCreate(**payload).email is None
+    assert RepresentativeCreate(**payload).email is None
+    assert RepresentativeCreate(**payload).max_discount == Decimal("30.00")
+
+    with pytest.raises(ValidationError):
+        ClientCreate(**{**payload, "phone": "1" * 21})
+
+
+def test_csv_aceita_email_de_contato_vazio():
+    fields = _address_fields(
+        {
+            "name": "Sem e-mail",
+            "phone": "(11) 99999-9999",
+            "email": "",
+            "cep": "01001-000",
+            "address": "Praça da Sé",
+            "city": "São Paulo",
+            "state": "SP",
+        }
+    )
+    assert fields["email"] is None
 
 
 def test_csv_exige_utf8():

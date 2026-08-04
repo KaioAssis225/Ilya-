@@ -13,7 +13,8 @@ import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
 import { useAuth } from '../hooks/useAuth'
 import { isConjuntoType } from '../lib/productType'
-import { CART_KEY, notifyCartChanged } from '../lib/cart'
+import { cartStorageKey, notifyCartChanged } from '../lib/cart'
+import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
@@ -193,11 +194,11 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">Telefone *</span>
-            <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+            <input className="input" value={form.phone} maxLength={PHONE_INPUT_MAX_LENGTH} onChange={(e) => setForm({ ...form, phone: formatBrazilianPhone(e.target.value) })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">E-mail *</span>
-            <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+            <span className="text-xs text-muted">E-mail</span>
+            <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value || null })} />
           </label>
           <label className="flex flex-col gap-1 relative">
             <span className="text-xs text-muted">CEP *</span>
@@ -265,9 +266,10 @@ interface CartItem {
 type PersistedCartItem = Omit<CartItem, '_product'>
 const EMPTY_PRODUCTS: Product[] = []
 
-function readPersistedCart(): PersistedCartItem[] {
+function readPersistedCart(userId?: string): PersistedCartItem[] {
+  if (!userId) return []
   try {
-    const raw = localStorage.getItem(CART_KEY)
+    const raw = localStorage.getItem(cartStorageKey(userId))
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -632,6 +634,10 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 
 export default function OrcamentoPage() {
   const { user } = useAuth()
+  const userId = user?.id ?? ''
+  const cartKey = cartStorageKey(userId)
+  const clientStorageKey = `orcamento_client_id:${userId}`
+  const repStorageKey = `orcamento_rep_id:${userId}`
   const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit')
 
@@ -646,12 +652,18 @@ export default function OrcamentoPage() {
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
-  const [persistedCart] = useState<PersistedCartItem[]>(readPersistedCart)
+  const [persistedCart] = useState<PersistedCartItem[]>(
+    () => readPersistedCart(user?.id),
+  )
   // sessionStorage (não localStorage): sobrevive a trocar de aba dentro do app
   // e a um F5, mas some quando a aba fecha — não volta pré-preenchido amanhã.
-  const [savedClientId, setSavedClientId] = useState(() => sessionStorage.getItem('orcamento_client_id') ?? '')
+  const [savedClientId, setSavedClientId] = useState(
+    () => sessionStorage.getItem(clientStorageKey) ?? '',
+  )
   // null = nenhuma preferência gravada; vazio = remoção explícita.
-  const [savedRepId, setSavedRepId] = useState<string | null>(() => localStorage.getItem('orcamento_rep_id'))
+  const [savedRepId, setSavedRepId] = useState<string | null>(
+    () => localStorage.getItem(repStorageKey),
+  )
   const [cartHydrated, setCartHydrated] = useState(false)
   const [productQuery, setProductQuery] = useState('')
   const [clientQuery, setClientQuery] = useState('')
@@ -770,16 +782,16 @@ export default function OrcamentoPage() {
     setSelectedClient(client)
     setSavedClientId(clientId)
     if (!repLocked && savedRepId === null) setSelectedRep(null)
-    if (clientId) sessionStorage.setItem('orcamento_client_id', clientId)
-    else sessionStorage.removeItem('orcamento_client_id')
+    if (clientId) sessionStorage.setItem(clientStorageKey, clientId)
+    else sessionStorage.removeItem(clientStorageKey)
   }
 
   function handleRepChange(rep: Representative | null) {
     const repId = rep?.id ?? ''
     setSelectedRep(rep)
     setSavedRepId(repId)
-    if (repId) localStorage.setItem('orcamento_rep_id', repId)
-    else localStorage.setItem('orcamento_rep_id', '')
+    if (repId) localStorage.setItem(repStorageKey, repId)
+    else localStorage.setItem(repStorageKey, '')
   }
 
   function resetSavedSelections() {
@@ -787,8 +799,8 @@ export default function OrcamentoPage() {
     setSelectedRep(null)
     setSavedClientId('')
     setSavedRepId(null)
-    sessionStorage.removeItem('orcamento_client_id')
-    localStorage.removeItem('orcamento_rep_id')
+    sessionStorage.removeItem(clientStorageKey)
+    localStorage.removeItem(repStorageKey)
   }
 
   // O carrinho salvo resolve somente os SKUs necessários, sem baixar o catálogo.
@@ -822,9 +834,9 @@ export default function OrcamentoPage() {
   useEffect(() => {
     if (editId || !cartHydrated) return
     const serializable = cart.map(({ _product, ...rest }) => rest)
-    localStorage.setItem(CART_KEY, JSON.stringify(serializable))
+    localStorage.setItem(cartKey, JSON.stringify(serializable))
     notifyCartChanged()
-  }, [cart, cartHydrated, editId])
+  }, [cart, cartHydrated, cartKey, editId])
 
   // Sincroniza _product com dados frescos da API (garante observacao e preço atualizados)
   useEffect(() => {
@@ -1010,7 +1022,7 @@ export default function OrcamentoPage() {
         setToast({ message: 'Orçamento finalizado com sucesso!', variant: 'success' })
       }
       setCart([])
-      localStorage.removeItem(CART_KEY)
+      localStorage.removeItem(cartKey)
       notifyCartChanged()
       resetSavedSelections()
       editOrderLoadedRef.current = null
@@ -1166,7 +1178,7 @@ export default function OrcamentoPage() {
               editOrderLoadedRef.current = null
               resetSavedSelections()
               setNotes('')
-              localStorage.removeItem(CART_KEY)
+              localStorage.removeItem(cartKey)
               notifyCartChanged()
             }}
             className="ml-auto text-white/70 hover:text-white text-xs underline"
@@ -1189,7 +1201,7 @@ export default function OrcamentoPage() {
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
-                  onClick={() => { setCart([]); localStorage.removeItem(CART_KEY); notifyCartChanged() }}
+                  onClick={() => { setCart([]); localStorage.removeItem(cartKey); notifyCartChanged() }}
                   className="text-xs text-terracotta hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >

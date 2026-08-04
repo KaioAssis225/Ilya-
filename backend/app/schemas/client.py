@@ -7,8 +7,8 @@ from datetime import datetime
 
 class ClientBase(BaseModel):
     name: str = Field(..., max_length=255)
-    phone: str = Field(..., max_length=50)
-    email: EmailStr
+    phone: str = Field(..., max_length=20)
+    email: EmailStr | None = None
     cep: str = Field(..., max_length=20)
     numero: Optional[str] = Field(None, max_length=50)
     address: str = Field(..., max_length=255)
@@ -34,7 +34,7 @@ class ClientCreate(ClientBase):
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
-    phone: Optional[str] = Field(None, max_length=50)
+    phone: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
     cep: Optional[str] = Field(None, max_length=20)
     numero: Optional[str] = Field(None, max_length=50)
@@ -64,5 +64,6 @@ class ClientRead(ClientBase):
     updated_at: datetime
     has_user: bool = False
     user_validated: bool = False
+    created_by_name: str | None = None
 
     model_config = {"from_attributes": True}

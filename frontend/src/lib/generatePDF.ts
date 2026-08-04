@@ -151,7 +151,7 @@ export async function generateOrderPDF(
     doc.setFontSize(8)
     doc.setTextColor(...MUTED)
     doc.text(rep.phone, bx, y + 17)
-    doc.text(rep.email, bx, y + 22)
+    doc.text(rep.email || 'E-mail não informado', bx, y + 22)
     const repAddr = `${rep.address}${rep.numero ? ', ' + rep.numero : ''} — ${rep.city}/${rep.state}`
     doc.text(doc.splitTextToSize(repAddr, boxW - 8).slice(0, 2), bx, y + 27)
   }
@@ -169,7 +169,7 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
   doc.text(client.phone, rx, y + 17)
-  doc.text(client.email, rx, y + 22)
+  doc.text(client.email || 'E-mail não informado', rx, y + 22)
   const clientAddr = `${client.address}${client.numero ? ', ' + client.numero : ''} — ${client.city}/${client.state}`
   doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 27)
 

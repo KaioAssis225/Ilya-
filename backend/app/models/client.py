@@ -10,8 +10,8 @@ class Client(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    phone: Mapped[str] = mapped_column(String(50), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cep: Mapped[str] = mapped_column(String(20), nullable=False)
     numero: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -20,6 +20,10 @@ class Client(Base, TimestampMixin):
     price_profile: Mapped[str] = mapped_column(String(20), nullable=False, default="lojista")
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id", ondelete="SET NULL"), nullable=True)
     max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("0.00"))
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -27,6 +31,7 @@ class Client(Base, TimestampMixin):
             name="ck_clients_state_uf",
         ),
         Index("ix_clients_rep_id", "rep_id"),
+        Index("ix_clients_created_by_user_id", "created_by_user_id"),
         Index("ix_clients_state_id", "state", "id"),
         Index("ix_clients_name_id", "name", "id"),
         Index("ix_clients_email_id", "email", "id"),

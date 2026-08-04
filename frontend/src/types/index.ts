@@ -109,7 +109,7 @@ export interface Client {
   id: string
   name: string
   phone: string
-  email: string
+  email: string | null
   cep: string
   numero: string | null
   address: string
@@ -122,12 +122,13 @@ export interface Client {
   updated_at: string
   has_user?: boolean
   user_validated?: boolean
+  created_by_name?: string | null
 }
 
 export interface ClientCreate {
   name: string
   phone: string
-  email: string
+  email?: string | null
   cep: string
   numero?: string | null
   address: string

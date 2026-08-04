@@ -130,10 +130,41 @@ def _invitation_is_valid(invitation: SignatureInvitation | None) -> bool:
     return expires_at >= datetime.now(timezone.utc)
 
 
-async def _next_code(db: AsyncSession) -> tuple[str, str]:
-    # nextval é atômico no PostgreSQL — elimina race condition de COUNT(*) (V-01)
-    n = (await db.execute(text("SELECT nextval('order_seq')"))).scalar()
-    return f"PED-{n:04d}", f"ORC-{n:04d}"
+async def _next_codes(
+    db: AsyncSession,
+    number_owner_id: uuid.UUID,
+) -> tuple[str, str, int]:
+    # O UPSERT bloqueia atomicamente apenas o contador deste usuário e não
+    # reutiliza números de pedidos apagados. O ORC segue na sequence global.
+    order_number = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO order_number_counters (
+                    number_owner_id,
+                    next_value
+                )
+                VALUES (:number_owner_id, 2)
+                ON CONFLICT (number_owner_id) DO UPDATE
+                SET
+                    next_value = order_number_counters.next_value + 1,
+                    updated_at = NOW()
+                RETURNING next_value - 1
+                """
+            ),
+            {"number_owner_id": str(number_owner_id)},
+        )
+    ).scalar_one()
+    orc_number = (
+        await db.execute(
+            text("SELECT nextval('order_seq')")
+        )
+    ).scalar_one()
+    return (
+        f"PED-{order_number:04d}",
+        f"ORC-{orc_number:04d}",
+        order_number,
+    )
 
 
 def _encode_order_cursor(created_at: datetime, order_id: uuid.UUID) -> str:
@@ -234,13 +265,26 @@ async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
     try:
         oid = uuid.UUID(id_or_code)
         result = await db.execute(select(Order).where(Order.id == oid))
+        order = result.scalar_one_or_none()
     except ValueError:
         upper = id_or_code.upper()
         if upper.startswith("ORC"):
             result = await db.execute(select(Order).where(Order.orc_id == upper))
+            order = result.scalar_one_or_none()
         else:
-            result = await db.execute(select(Order).where(Order.code == upper))
-    order = result.scalar_one_or_none()
+            result = await db.execute(
+                select(Order).where(Order.code == upper).limit(2)
+            )
+            matches = result.scalars().all()
+            if len(matches) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Código de pedido ambíguo entre usuários. "
+                        "Informe o código ORC ou o identificador do pedido."
+                    ),
+                )
+            order = matches[0] if matches else None
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     return order
@@ -343,10 +387,12 @@ async def create_order(
     total_ipi = _money(total_ipi)
     total_with_ipi = _money(total + total_ipi)
     _ensure_total_capacity(total, total_ipi, total_with_ipi)
-    code, orc_id = await _next_code(db)
+    code, orc_id, order_number = await _next_codes(db, current_user.id)
     order = Order(
         id=uuid.uuid4(),
         code=code,
+        number_owner_id=current_user.id,
+        order_number=order_number,
         orc_id=orc_id,
         client_id=payload.client_id,
         rep_id=payload.rep_id,
