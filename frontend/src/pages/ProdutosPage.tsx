@@ -609,6 +609,7 @@ export default function ProdutosPage() {
   // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
   // virando um mosaico de painéis abertos ao mesmo tempo.
   const [expandedOptionalsCode, setExpandedOptionalsCode] = useState<string | null>(null)
+  const [zoomOptional, setZoomOptional] = useState<{ photo_url: string; label: string } | null>(null)
 
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
@@ -893,18 +894,40 @@ export default function ProdutosPage() {
                             sólida quando não há foto) pra grade não desalinhar
                             entre opcionais com e sem imagem. */}
                         <div className="grid grid-cols-2 gap-1.5 content-start">
-                          {groupOptionalsByCategory(product.optionals).map(opt => (
-                            <div key={opt.category} className="flex items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-1.5 py-1">
-                              {opt.photo_url
-                                ? <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-5 h-5 rounded-full object-cover border border-line flex-shrink-0" />
-                                : <span className="w-5 h-5 rounded-full bg-gold/10 border border-line flex-shrink-0" aria-hidden="true" />
-                              }
+                          {groupOptionalsByCategory(product.optionals).map(opt => {
+                            const label = `${CAT_LABEL[opt.category] ?? opt.category}: ${opt.color_name}`
+                            const swatch = opt.photo_url
+                              ? <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-5 h-5 rounded-full object-cover border border-line flex-shrink-0" />
+                              : <span className="w-5 h-5 rounded-full bg-gold/10 border border-line flex-shrink-0" aria-hidden="true" />
+                            const text = (
                               <span className="min-w-0 leading-tight">
                                 <span className="block text-[7px] uppercase tracking-wide text-muted truncate">{CAT_LABEL[opt.category] ?? opt.category}</span>
                                 <span className="block text-[9.5px] font-medium text-ink truncate">{opt.color_name}</span>
                               </span>
-                            </div>
-                          ))}
+                            )
+                            // Só vira botão quando há foto pra ampliar — sem
+                            // isso não há o que mostrar num zoom maior que o
+                            // próprio swatch já exibe.
+                            return opt.photo_url ? (
+                              <button
+                                key={opt.category}
+                                type="button"
+                                onClick={() => setZoomOptional({ photo_url: opt.photo_url!, label })}
+                                aria-label={`Ampliar ${label}`}
+                                style={{ touchAction: 'manipulation' }}
+                                className="flex items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-1.5 py-1 text-left
+                                           transition-[transform,border-color] duration-150 hover:border-gold/40 active:scale-95"
+                              >
+                                {swatch}
+                                {text}
+                              </button>
+                            ) : (
+                              <div key={opt.category} className="flex items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-1.5 py-1">
+                                {swatch}
+                                {text}
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     )}
@@ -1006,6 +1029,14 @@ export default function ProdutosPage() {
           priceTable={priceTable}
           userId={user.id}
           onClose={() => setSelected(null)}
+        />
+      )}
+
+      {zoomOptional && (
+        <OptionalZoomModal
+          photo_url={zoomOptional.photo_url}
+          label={zoomOptional.label}
+          onClose={() => setZoomOptional(null)}
         />
       )}
     </div>
