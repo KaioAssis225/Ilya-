@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown } from 'lucide-react'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
@@ -303,6 +303,17 @@ const CAT_LABEL: Record<string, string> = {
   couro_soleta: 'Couro Soleta', couro_pele: 'Couro Pele',
 }
 
+function groupOptionalsByCategory(optionals: Product['optionals']) {
+  const seen = new Set<string>()
+  const groups: Product['optionals'] = []
+  for (const opt of optionals) {
+    if (seen.has(opt.category)) continue
+    seen.add(opt.category)
+    groups.push(opt)
+  }
+  return groups
+}
+
 function fmtM(v: number) {
   return Number(v).toFixed(2).replace('.', ',')
 }
@@ -595,6 +606,9 @@ export default function ProdutosPage() {
   // página em que nenhum produto tem as duas colunas preenchidas.
   const [hasDualPricing, setHasDualPricing] = useState(false)
   const cartQuantities = useCartQuantities(user?.id)
+  // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
+  // virando um mosaico de painéis abertos ao mesmo tempo.
+  const [expandedOptionalsCode, setExpandedOptionalsCode] = useState<string | null>(null)
 
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
@@ -855,6 +869,51 @@ export default function ProdutosPage() {
                   <CardText product={product} priceTable={priceTable} />
                 </div>
               </button>
+
+              {/* Seta de opcionais: irmã do botão pela mesma razão do +/- logo
+                  abaixo (botão dentro de botão é inválido). O wrapper replica
+                  exatamente a caixa da foto (mesmo aspect-square + padding do
+                  <div> dentro do botão) para que a seta e o painel fiquem
+                  ancorados na imagem, não no card inteiro; pointer-events-none
+                  no wrapper deixa a foto por baixo clicável normalmente. */}
+              {product.optionals.length > 0 && (
+                <div className="absolute top-0 left-0 right-0 aspect-square p-3 md:p-4 pointer-events-none">
+                  <div className="relative w-full h-full">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedOptionalsCode(current => current === product.product_code ? null : product.product_code)}
+                      aria-label={expandedOptionalsCode === product.product_code ? 'Ocultar opcionais' : 'Ver opcionais'}
+                      aria-expanded={expandedOptionalsCode === product.product_code}
+                      style={{ touchAction: 'manipulation' }}
+                      className="pointer-events-auto absolute bottom-1.5 left-1/2 -translate-x-1/2 z-10 w-8 h-8 rounded-full bg-white text-gold border border-line shadow-md shadow-ink/10
+                                 flex items-center justify-center transition-transform duration-150 hover:bg-bg active:scale-90"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform duration-200 ${expandedOptionalsCode === product.product_code ? 'rotate-180' : ''}`}
+                        strokeWidth={2.5}
+                      />
+                    </button>
+
+                    {expandedOptionalsCode === product.product_code && (
+                      <div
+                        className="pointer-events-auto absolute inset-x-0 bottom-0 h-1/2 bg-white/95 backdrop-blur-sm border-t border-line p-2.5 overflow-y-auto"
+                        style={{ animation: 'slideUp 0.2s ease-out' }}
+                      >
+                        <div className="flex flex-wrap content-start gap-1.5">
+                          {groupOptionalsByCategory(product.optionals).map(opt => (
+                            <div key={opt.category} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-line bg-white">
+                              {opt.photo_url && (
+                                <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-3.5 h-3.5 rounded object-cover" />
+                              )}
+                              <span className="text-[9px] text-ink-2">{CAT_LABEL[opt.category] ?? opt.category}: {opt.color_name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Adicionar sem abrir a ficha: o representante em pé no showroom
                   registra "essa, essa e essa" sem quebrar a conversa. Toque
