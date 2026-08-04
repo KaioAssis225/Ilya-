@@ -2690,13 +2690,13 @@ export default function CadastroPage() {
   const isLimited = isRep || isCliente
 
   const visibleTabs = TAB_CONFIG.filter(t => {
-    if (isCliente) return t.key === 'opcionais'
-    if (isRep) return t.key === 'clientes' || t.key === 'opcionais'
+    if (isCliente) return false
+    if (isRep) return t.key === 'clientes'
     if (t.key === 'importacao') return user?.role === 'admin' || user?.role === 'cadastros'
     return true
   })
 
-  const defaultTab: Tab = isCliente ? 'opcionais' : isRep ? 'clientes' : 'produtos'
+  const defaultTab: Tab = isRep ? 'clientes' : 'produtos'
 
   // Bloco 77: restaura aba e paginação da última visita, com TTL de 5 minutos —
   // depois disso, volta silenciosamente aos valores padrão.
