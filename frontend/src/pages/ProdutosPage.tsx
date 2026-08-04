@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus } from 'lucide-react'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
@@ -334,6 +334,33 @@ function addToCart(product: Product, userId: string) {
       opt_categories,
       _product: product,
     })
+  }
+  localStorage.setItem(storageKey, JSON.stringify(cart))
+  notifyCartChanged()
+}
+
+// Uma unidade a menos; some do carrinho ao chegar a 0 em vez de deixar qty: 0
+// pendurado (o resto do app assume que todo item presente no carrinho tem
+// qty > 0 — é o mesmo contrato que readCartQuantities já aplica na leitura).
+function decrementCart(product: Product, userId: string) {
+  const storageKey = cartStorageKey(userId)
+  const raw = localStorage.getItem(storageKey)
+  if (!raw) return
+  let cart: { product_code: string; qty: number }[]
+  try {
+    cart = JSON.parse(raw)
+  } catch {
+    return
+  }
+  if (!Array.isArray(cart)) return
+
+  const index = cart.findIndex(item => item.product_code === product.product_code)
+  if (index === -1) return
+
+  if (cart[index].qty > 1) {
+    cart[index].qty -= 1
+  } else {
+    cart.splice(index, 1)
   }
   localStorage.setItem(storageKey, JSON.stringify(cart))
   notifyCartChanged()
@@ -833,22 +860,39 @@ export default function ProdutosPage() {
                   registra "essa, essa e essa" sem quebrar a conversa. Toque
                   repetido incrementa (é o que addToCart já faz), e o número
                   mostra o que esse produto tem no orçamento — sem ele o
-                  incremento seria silencioso. */}
-              <button
-                type="button"
-                onClick={() => user && addToCart(product, user.id)}
-                aria-label={`Adicionar ${product.description} ao orçamento`}
-                style={{ touchAction: 'manipulation' }}
-                className="absolute top-2 right-2 w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
-                           flex items-center justify-center transition-transform duration-150
-                           hover:bg-gold-600 active:scale-90"
-              >
-                {cartQuantities[product.product_code] ? (
-                  <span className="text-sm font-semibold tabular-nums">{cartQuantities[product.product_code]}</span>
-                ) : (
-                  <Plus className="w-5 h-5" strokeWidth={2.5} />
+                  incremento seria silencioso. O "-" só nasce quando há
+                  quantidade a tirar; flex (não offset calculado) empurra o "+"
+                  para a direita sozinho quando o irmão aparece. */}
+              <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                {cartQuantities[product.product_code] > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => user && decrementCart(product, user.id)}
+                    aria-label={`Diminuir quantidade de ${product.description} no orçamento`}
+                    style={{ touchAction: 'manipulation' }}
+                    className="w-11 h-11 rounded-full bg-white text-ink border border-line shadow-md shadow-ink/10
+                               flex items-center justify-center transition-transform duration-150
+                               hover:bg-bg active:scale-90"
+                  >
+                    <Minus className="w-5 h-5" strokeWidth={2.5} />
+                  </button>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => user && addToCart(product, user.id)}
+                  aria-label={`Adicionar ${product.description} ao orçamento`}
+                  style={{ touchAction: 'manipulation' }}
+                  className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
+                             flex items-center justify-center transition-transform duration-150
+                             hover:bg-gold-600 active:scale-90"
+                >
+                  {cartQuantities[product.product_code] ? (
+                    <span className="text-sm font-semibold tabular-nums">{cartQuantities[product.product_code]}</span>
+                  ) : (
+                    <Plus className="w-5 h-5" strokeWidth={2.5} />
+                  )}
+                </button>
+              </div>
               </div>
             ))}
           </div>
