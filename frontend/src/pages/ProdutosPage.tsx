@@ -885,13 +885,24 @@ export default function ProdutosPage() {
                         className="pointer-events-auto absolute inset-x-0 bottom-0 h-1/2 bg-white/95 backdrop-blur-sm p-3 overflow-y-auto"
                         style={{ animation: 'slideUp 0.18s cubic-bezier(0.25,1,0.5,1)' }}
                       >
-                        <div className="flex flex-wrap content-start gap-1.5">
+                        {/* Grade 2 colunas: rótulo da categoria (mudo, pequeno)
+                            em cima e cor embaixo (peso médio, ink) — separar
+                            as duas linhas evita o "ALUMÍNIO: TAUPE UNIQUE"
+                            corrido que antes virava um bloco só de maiúsculas
+                            difícil de escanear. Swatch sempre presente (cor
+                            sólida quando não há foto) pra grade não desalinhar
+                            entre opcionais com e sem imagem. */}
+                        <div className="grid grid-cols-2 gap-1.5 content-start">
                           {groupOptionalsByCategory(product.optionals).map(opt => (
-                            <div key={opt.category} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-line bg-white">
-                              {opt.photo_url && (
-                                <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-3.5 h-3.5 rounded object-cover" />
-                              )}
-                              <span className="text-[9px] text-ink-2">{CAT_LABEL[opt.category] ?? opt.category}: {opt.color_name}</span>
+                            <div key={opt.category} className="flex items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-1.5 py-1">
+                              {opt.photo_url
+                                ? <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-5 h-5 rounded-full object-cover border border-line flex-shrink-0" />
+                                : <span className="w-5 h-5 rounded-full bg-gold/10 border border-line flex-shrink-0" aria-hidden="true" />
+                              }
+                              <span className="min-w-0 leading-tight">
+                                <span className="block text-[7px] uppercase tracking-wide text-muted truncate">{CAT_LABEL[opt.category] ?? opt.category}</span>
+                                <span className="block text-[9.5px] font-medium text-ink truncate">{opt.color_name}</span>
+                              </span>
                             </div>
                           ))}
                         </div>
