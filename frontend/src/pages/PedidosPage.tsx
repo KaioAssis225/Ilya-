@@ -689,10 +689,10 @@ function OrderDetailModal({
 // ── Mobile order card ───────────────────────────────────────────────────────
 
 function MobileOrderCard({
-  order, clientName, repName, onView, onPDF, onDelete, pdfLoading,
+  order, clientName, repName, onView, onPDF, onFinalize, onDelete, pdfLoading,
 }: {
   order: OrderSummary; clientName: string; repName: string
-  onView: () => void; onPDF: () => void; onDelete?: () => void
+  onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void
   pdfLoading: boolean
 }) {
   return (
@@ -720,6 +720,9 @@ function MobileOrderCard({
       <div className="flex border-t border-bg-2 divide-x divide-bg-2">
         <button onClick={onView} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Visualizar"><Eye className="w-4 h-4 text-gold" /> Ver</button>
         <button disabled={pdfLoading} onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors disabled:opacity-50" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> {pdfLoading ? 'Gerando…' : 'PDF'}</button>
+        {onFinalize && (
+          <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-green-700 active:bg-green-50 transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar pedido"><CheckCircle className="w-4 h-4" /> Finalizar</button>
+        )}
         {onDelete && (
           <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-[#fbf2f0] transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
         )}
@@ -997,6 +1000,7 @@ export default function PedidosPage() {
                     repName={order.rep_name ?? '—'}
                     onView={() => setViewing(order)}
                     onPDF={() => handlePDF(order)}
+                    onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
                     onDelete={canDelete ? () => setDeleting(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                   />
@@ -1050,6 +1054,9 @@ export default function PedidosPage() {
                           <div className="flex gap-1.5 items-center">
                             <button title="Ver detalhes" className="text-muted hover:text-gold transition-colors p-1" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
                             <button disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} className="text-muted hover:text-blue-500 transition-colors p-1 disabled:opacity-40" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
+                            {canManage && !order.is_finalized && !order.is_cancelled && (
+                              <button title="Finalizar pedido" aria-label="Finalizar pedido" className="text-muted hover:text-green-600 transition-colors p-1" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
+                            )}
                             {canManage && !order.is_finalized && !order.is_cancelled && (
                               <>
                                 <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
