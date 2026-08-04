@@ -872,32 +872,18 @@ export default function ProdutosPage() {
 
               {/* Seta de opcionais: irmã do botão pela mesma razão do +/- logo
                   abaixo (botão dentro de botão é inválido). O wrapper replica
-                  exatamente a caixa da foto (mesmo aspect-square + padding do
-                  <div> dentro do botão) para que a seta e o painel fiquem
-                  ancorados na imagem, não no card inteiro; pointer-events-none
-                  no wrapper deixa a foto por baixo clicável normalmente. */}
+                  a caixa cheia da foto (mesmo aspect-square, SEM o padding do
+                  <div> interno) para que sua borda inferior caia exatamente na
+                  costura entre foto e ficha — é aí que a aba fica ancorada,
+                  não solta no meio da imagem. pointer-events-none no wrapper
+                  deixa a foto por baixo clicável normalmente. */}
               {product.optionals.length > 0 && (
-                <div className="absolute top-0 left-0 right-0 aspect-square p-3 md:p-4 pointer-events-none">
+                <div className="absolute top-0 left-0 right-0 aspect-square pointer-events-none">
                   <div className="relative w-full h-full">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedOptionalsCode(current => current === product.product_code ? null : product.product_code)}
-                      aria-label={expandedOptionalsCode === product.product_code ? 'Ocultar opcionais' : 'Ver opcionais'}
-                      aria-expanded={expandedOptionalsCode === product.product_code}
-                      style={{ touchAction: 'manipulation' }}
-                      className="pointer-events-auto absolute bottom-1.5 left-1/2 -translate-x-1/2 z-10 w-8 h-8 rounded-full bg-white text-gold border border-line shadow-md shadow-ink/10
-                                 flex items-center justify-center transition-transform duration-150 hover:bg-bg active:scale-90"
-                    >
-                      <ChevronDown
-                        className={`w-4 h-4 transition-transform duration-200 ${expandedOptionalsCode === product.product_code ? 'rotate-180' : ''}`}
-                        strokeWidth={2.5}
-                      />
-                    </button>
-
                     {expandedOptionalsCode === product.product_code && (
                       <div
-                        className="pointer-events-auto absolute inset-x-0 bottom-0 h-1/2 bg-white/95 backdrop-blur-sm border-t border-line p-2.5 overflow-y-auto"
-                        style={{ animation: 'slideUp 0.2s ease-out' }}
+                        className="pointer-events-auto absolute inset-x-0 bottom-0 h-1/2 bg-white/95 backdrop-blur-sm p-3 overflow-y-auto"
+                        style={{ animation: 'slideUp 0.18s cubic-bezier(0.25,1,0.5,1)' }}
                       >
                         <div className="flex flex-wrap content-start gap-1.5">
                           {groupOptionalsByCategory(product.optionals).map(opt => (
@@ -911,6 +897,28 @@ export default function ProdutosPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* Aba "puxador": metade sobre a foto, metade sobre a
+                        ficha — a costura entre as duas já é uma linha real
+                        (border-t do bloco de texto), então a aba fica presa
+                        num ponto fixo em vez de flutuar sem referência sobre
+                        o fundo branco da foto. */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedOptionalsCode(current => current === product.product_code ? null : product.product_code)}
+                      aria-label={expandedOptionalsCode === product.product_code ? 'Ocultar opcionais' : 'Ver opcionais'}
+                      aria-expanded={expandedOptionalsCode === product.product_code}
+                      style={{ touchAction: 'manipulation' }}
+                      className="pointer-events-auto absolute bottom-0 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 translate-y-1/2 items-center justify-center
+                                 rounded-full border border-line bg-white text-gold shadow-md shadow-ink/10
+                                 transition-[transform,box-shadow,border-color] duration-200 [transition-timing-function:cubic-bezier(0.25,1,0.5,1)]
+                                 hover:scale-110 hover:border-gold/40 hover:shadow-lg active:scale-90"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform duration-200 [transition-timing-function:cubic-bezier(0.25,1,0.5,1)] ${expandedOptionalsCode === product.product_code ? 'rotate-180' : ''}`}
+                        strokeWidth={2.5}
+                      />
+                    </button>
                   </div>
                 </div>
               )}
