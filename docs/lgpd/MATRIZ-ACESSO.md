@@ -15,6 +15,10 @@
 | `produtos` | todos | todos em leitura | todos | sem administração | somente com flag | acesso amplo foi solicitado como “quase administrador”; falta justificativa formal por finalidade |
 | `executivo` | sem diretório | sem diretório | sem pedidos | sem administração | sim | visão agregada; respostas não devem expor PII desnecessária |
 
+Somente `admin` acessa a governança de retenção, cria/libera legal holds,
+aprova simulações e registra o encerramento do vínculo de representantes. O
+encerramento exige reautenticação e revoga os acessos vinculados.
+
 ## Decisão necessária para `produtos`
 
 O código atual concede a `produtos` acesso aos diretórios completos e a todos os

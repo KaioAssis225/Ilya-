@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, or_, select, update
 
 from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
 from app.core.limiter import limiter
+from app.core.lifecycle import touch_client_activity
 from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.privacy_audit import record_privacy_event
 from app.core.security import (
@@ -178,6 +179,8 @@ async def login(
         expires_at=refresh_token_expiry(),
         family_id=family_id,
     ))
+    if user.role == UserRole.cliente and user.linked_id is not None:
+        await touch_client_activity(db, user.linked_id, now)
     await db.commit()
 
     _set_refresh_cookie(response, raw_refresh)

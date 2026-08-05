@@ -50,10 +50,9 @@ investigação ou obrigação legal, aplica-se legal hold até o encerramento.
 - prazo da trilha de solicitações/operações de privacidade;
 - confirmação de expiração dos arquivos na cópia off-site.
 
-Os jobs de clientes, representantes, orçamentos, pedidos e assinaturas só devem
-ser criados na fase de implementação após definição de:
+Os marcos canônicos de atividade do cliente, encerramento do representante e
+finalização/cancelamento do pedido já estão registrados pelo sistema. Os jobs
+de descarte continuam proibidos até a definição de:
 
-- qual evento/timestamp representa “último contato” e “encerramento”;
-- como registrar legal hold;
 - como anonimizar sem quebrar chaves e histórico;
 - como impedir que restauração de backup reintroduza dado já eliminado.

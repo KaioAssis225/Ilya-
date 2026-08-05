@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import CheckConstraint, String, Text, Numeric, Integer, Boolean, ForeignKey, Index, JSON, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, DateTime, String, Text, Numeric, Integer, Boolean, ForeignKey, Index, JSON, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -28,6 +29,8 @@ class Order(Base, TimestampMixin):
 
     is_finalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     external_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan", lazy="selectin")
@@ -37,6 +40,14 @@ class Order(Base, TimestampMixin):
         CheckConstraint(
             "NOT (is_finalized AND is_cancelled)",
             name="ck_orders_single_terminal_status",
+        ),
+        CheckConstraint(
+            "is_finalized = (finalized_at IS NOT NULL)",
+            name="ck_orders_finalized_timestamp",
+        ),
+        CheckConstraint(
+            "is_cancelled = (cancelled_at IS NOT NULL)",
+            name="ck_orders_cancelled_timestamp",
         ),
         CheckConstraint(
             "order_number > 0",
@@ -96,12 +107,16 @@ class Order(Base, TimestampMixin):
             ),
         ),
         Index(
-            "ix_orders_retention_closed_updated_id",
-            "updated_at",
+            "ix_orders_retention_finalized_at_id",
+            "finalized_at",
             "id",
-            postgresql_where=text(
-                "is_finalized = true OR is_cancelled = true"
-            ),
+            postgresql_where=text("is_finalized = true"),
+        ),
+        Index(
+            "ix_orders_retention_cancelled_at_id",
+            "cancelled_at",
+            "id",
+            postgresql_where=text("is_cancelled = true"),
         ),
     )
 

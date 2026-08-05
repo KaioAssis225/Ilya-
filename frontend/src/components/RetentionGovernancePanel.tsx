@@ -6,6 +6,7 @@ import {
   Plus,
   ShieldAlert,
   UnlockKeyhole,
+  UserRoundX,
   X,
 } from 'lucide-react'
 import api from '../lib/api'
@@ -116,6 +117,10 @@ export default function RetentionGovernancePanel() {
   const [password, setPassword] = useState('')
   const [releaseReason, setReleaseReason] = useState('')
   const [saving, setSaving] = useState(false)
+  const [endRelationship, setEndRelationship] = useState(false)
+  const [representativeId, setRepresentativeId] = useState('')
+  const [relationshipEndedAt, setRelationshipEndedAt] = useState('')
+  const [relationshipReason, setRelationshipReason] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -244,6 +249,34 @@ export default function RetentionGovernancePanel() {
     }
   }
 
+  async function closeRepresentativeRelationship(event: React.FormEvent) {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      const response = await api.post<{
+        deactivated_users: number
+      }>(`/privacy/representatives/${representativeId}/relationship-end`, {
+        ended_at: new Date(relationshipEndedAt).toISOString(),
+        reason: relationshipReason,
+        password,
+      })
+      setEndRelationship(false)
+      setRepresentativeId('')
+      setRelationshipEndedAt('')
+      setRelationshipReason('')
+      setPassword('')
+      await load()
+      showNotice(
+        `Vínculo encerrado. ${response.data.deactivated_users} acesso(s) revogado(s).`,
+      )
+    } catch (requestError) {
+      setError(errorDetail(requestError, 'Não foi possível encerrar o vínculo.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <section className="mt-8 space-y-4" aria-labelledby="retention-heading">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -257,6 +290,17 @@ export default function RetentionGovernancePanel() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEndRelationship(true)
+              setPassword('')
+              setError(null)
+            }}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <UserRoundX className="h-4 w-4" /> Encerrar vínculo
+          </button>
           <button type="button" onClick={() => openHold()} className="btn-secondary flex items-center gap-2">
             <Plus className="h-4 w-4" /> Legal hold
           </button>
@@ -357,7 +401,7 @@ export default function RetentionGovernancePanel() {
                       <p className="text-xs font-semibold text-ink">{CATEGORY_LABEL[key] ?? key}</p>
                       {category.status === 'evaluated' ? (
                         <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                          <div><strong className="block text-base text-ink">{category.due ?? 0}</strong><span className="text-[10px] text-muted">No prazo</span></div>
+                          <div><strong className="block text-base text-ink">{category.due ?? 0}</strong><span className="text-[10px] text-muted">Vencidos</span></div>
                           <div><strong className="block text-base text-gold">{category.blocked_by_legal_hold ?? 0}</strong><span className="text-[10px] text-muted">Bloqueados</span></div>
                           <div><strong className="block text-base text-mineral">{category.candidates}</strong><span className="text-[10px] text-muted">Candidatos</span></div>
                         </div>
@@ -491,6 +535,41 @@ export default function RetentionGovernancePanel() {
             <div className="flex gap-2">
               <button type="button" onClick={() => setHoldModal(null)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Salvando…' : 'Criar hold'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {endRelationship && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 px-4 backdrop-blur-sm">
+          <form onSubmit={closeRepresentativeRelationship} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-ink">Encerrar vínculo do representante</h3>
+              <button type="button" onClick={() => setEndRelationship(false)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="text-sm text-ink-2">
+              A ação registra o marco de retenção e desativa imediatamente os acessos vinculados.
+            </p>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">ID do representante</span>
+              <input className="input font-mono text-xs" value={representativeId} onChange={(event) => setRepresentativeId(event.target.value)} required />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Data e hora do encerramento</span>
+              <input className="input" type="datetime-local" max={new Date().toISOString().slice(0, 16)} value={relationshipEndedAt} onChange={(event) => setRelationshipEndedAt(event.target.value)} required />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Justificativa</span>
+              <textarea className="input min-h-20" value={relationshipReason} onChange={(event) => setRelationshipReason(event.target.value)} minLength={5} maxLength={2000} required />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Sua senha atual</span>
+              <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={128} required autoComplete="current-password" />
+            </label>
+            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setEndRelationship(false)} className="btn-secondary flex-1">Cancelar</button>
+              <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Encerrando…' : 'Encerrar vínculo'}</button>
             </div>
           </form>
         </div>

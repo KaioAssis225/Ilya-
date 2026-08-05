@@ -59,6 +59,7 @@ class RepresentativeRead(RepresentativeBase):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    relationship_ended_at: datetime | None = None
     has_user: bool = False
     created_by_name: str | None = None
 

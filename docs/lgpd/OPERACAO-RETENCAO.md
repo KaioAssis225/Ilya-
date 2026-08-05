@@ -1,6 +1,6 @@
 # Operação segura de retenção e legal hold
 
-**Versão:** 0.1 — fundação não destrutiva
+**Versão:** 0.2 — marcos canônicos não destrutivos
 **Data:** 05/08/2026
 
 ## Objetivo
@@ -30,16 +30,17 @@ outros dados pessoais desnecessários para o campo livre.
 O endpoint administrativo `POST /api/v1/privacy/retention-reviews/dry-run`
 gera uma fotografia auditável:
 
-| Categoria | Prazo | Referência provisória | Ação apenas proposta |
+| Categoria | Prazo | Referência canônica | Ação apenas proposta |
 |---|---:|---|---|
-| Cliente sem pedido | 730 dias | `clients.updated_at` | excluir se continuar sem vínculo |
+| Cliente sem pedido | 730 dias | `clients.last_activity_at` | excluir se continuar sem vínculo |
 | Orçamento/pedido aberto | 730 dias | `orders.updated_at` | revisão manual |
-| Pedido finalizado/cancelado | 3.650 dias | `orders.updated_at` | anonimizar após revisão |
-| Representante | 5 anos após encerramento | indisponível | não avaliado |
+| Pedido finalizado/cancelado | 3.650 dias | `orders.finalized_at` ou `orders.cancelled_at` | anonimizar após revisão |
+| Representante | 5 anos após encerramento | `representatives.relationship_ended_at` | anonimizar após revisão |
 
-`updated_at` é uma aproximação conservadora enquanto não existem
-`last_activity_at`, `finalized_at`, `cancelled_at` e
-`relationship_ended_at`. O relatório declara essa limitação.
+Os registros históricos recebem backfill conservador a partir de `updated_at`
+ou `created_at`. Novas operações passam a registrar os marcos no momento em que
+ocorrem. A data de atividade do cliente é renovada quando seu cadastro ou pedido
+é criado/alterado, finalizado, cancelado, notificado ou assinado.
 
 Legal holds ativos são excluídos da lista de candidatos e contabilizados
 separadamente. Holds de cliente/representante são herdados pelos pedidos.
@@ -66,16 +67,17 @@ A seção **Admin → Governança de retenção** permite:
 - criar um legal hold diretamente a partir de um candidato;
 - consultar e liberar holds ativos;
 - aprovar o relatório mediante senha atual.
+- encerrar o vínculo de um representante mediante senha e justificativa,
+  registrando o marco de retenção e revogando suas sessões ativas.
 
 A interface repete de forma explícita que aprovação não executa descarte e não
 apresenta botões de exclusão ou execução no painel de retenção.
 
 ## Próximos requisitos antes de qualquer descarte
 
-1. Criar timestamps canônicos para atividade e encerramento.
-2. Definir os prazos ainda pendentes na matriz.
-3. Paginar candidatos em tabela própria para volumes acima de 5.000.
-4. Implementar dupla confirmação e revalidação transacional.
-5. Criar modo canário com limite pequeno e rollback lógico.
-6. Validar restauração de backup sem reintrodução operacional.
-7. Autorizar cada categoria separadamente após revisão jurídica/contábil.
+1. Definir os prazos ainda pendentes na matriz.
+2. Paginar candidatos em tabela própria para volumes acima de 5.000.
+3. Implementar dupla confirmação e revalidação transacional.
+4. Criar modo canário com limite pequeno e rollback lógico.
+5. Validar restauração de backup sem reintrodução operacional.
+6. Autorizar cada categoria separadamente após revisão jurídica/contábil.

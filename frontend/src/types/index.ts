@@ -120,6 +120,7 @@ export interface Client {
   rep_id: string | null
   created_at: string
   updated_at: string
+  last_activity_at: string
   has_user?: boolean
   user_validated?: boolean
   created_by_name?: string | null
@@ -140,10 +141,11 @@ export interface ClientCreate {
 
 export interface ClientUpdate extends Partial<ClientCreate> {}
 
-export interface Representative extends Omit<Client, 'id' | 'created_at' | 'updated_at'> {
+export interface Representative extends Omit<Client, 'id' | 'created_at' | 'updated_at' | 'last_activity_at'> {
   id: string
   created_at: string
   updated_at: string
+  relationship_ended_at: string | null
   has_user?: boolean
 }
 
@@ -217,6 +219,8 @@ export interface OrderSummary {
   total_with_ipi: number
   is_finalized: boolean
   is_cancelled: boolean
+  finalized_at: string | null
+  cancelled_at: string | null
   items: OrderSummaryItem[]
   created_at: string
 }
@@ -232,6 +236,8 @@ export interface Order {
   total_with_ipi: number
   is_finalized: boolean
   is_cancelled: boolean
+  finalized_at: string | null
+  cancelled_at: string | null
   external_code: string | null
   notes: string | null
   rep_signed?: boolean

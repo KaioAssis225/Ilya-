@@ -23,6 +23,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.lifecycle import touch_client_activity
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
@@ -404,6 +405,7 @@ async def create_order(
     )
     try:
         db.add(order)
+        await touch_client_activity(db, client.id)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -517,6 +519,8 @@ async def list_orders(
             Order.total_with_ipi,
             Order.is_finalized,
             Order.is_cancelled,
+            Order.finalized_at,
+            Order.cancelled_at,
             Order.created_at,
         )
         .select_from(Order)
@@ -766,6 +770,7 @@ async def update_order(
         action="edited",
         details=detail,
     ))
+    await touch_client_activity(db, order.client_id)
     try:
         await db.commit()
     except Exception:
@@ -803,7 +808,9 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
+    terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
+    order.finalized_at = terminal_at
     if payload.external_code:
         order.external_code = payload.external_code
     db.add(OrderHistory(
@@ -813,6 +820,7 @@ async def finalize_order(
         action="finalized",
         details=f"código externo: {payload.external_code}" if payload.external_code else None,
     ))
+    await touch_client_activity(db, order.client_id, terminal_at)
     await db.commit()
     await db.refresh(order)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
@@ -845,7 +853,9 @@ async def cancel_order(
         raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser cancelado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido já está cancelado.")
+    terminal_at = datetime.now(timezone.utc)
     order.is_cancelled = True
+    order.cancelled_at = terminal_at
     db.add(OrderHistory(
         id=uuid.uuid4(),
         order_id=order.id,
@@ -853,6 +863,7 @@ async def cancel_order(
         action="cancelled",
         details=payload.reason.strip() if payload.reason and payload.reason.strip() else None,
     ))
+    await touch_client_activity(db, order.client_id, terminal_at)
     await db.commit()
     await db.refresh(order)
     logger.info("Pedido cancelado: id=%s user=%s", order_id, current_user.id)
@@ -905,6 +916,7 @@ async def delete_order(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    await touch_client_activity(db, order.client_id)
     await db.delete(order)
     await db.commit()
     logger.warning("Pedido excluído: id=%s", order_id)
@@ -970,6 +982,7 @@ async def generate_sign_token(
             user_id=client_user.id,
             message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
         ))
+    await touch_client_activity(db, order.client_id, now)
     await db.commit()
 
     return {"token": token, "url": url, "expires_in": SIGN_TOKEN_TTL_MINUTES * 60}
@@ -1055,6 +1068,7 @@ async def sign_representative(
     if order.rep_signature:
         raise HTTPException(status_code=409, detail="Assinatura do representante já registrada.")
     order.rep_signature = payload.signature
+    await touch_client_activity(db, order.client_id)
     await db.commit()
     return {"success": True}
 
@@ -1084,6 +1098,7 @@ async def sign_client(
     if order.client_signature:
         raise HTTPException(status_code=409, detail="Assinatura do cliente já registrada.")
     order.client_signature = payload.signature
+    await touch_client_activity(db, order.client_id)
     await db.commit()
     return {"success": True}
 
@@ -1116,6 +1131,7 @@ async def notify_client(
         user_id=client_user.id,
         message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
     ))
+    await touch_client_activity(db, order.client_id)
     await db.commit()
 
 
@@ -1156,5 +1172,6 @@ async def sign_with_token(
 
     order.client_signature = payload.signature
     invitation.consumed_at = datetime.now(timezone.utc)
+    await touch_client_activity(db, order.client_id, invitation.consumed_at)
     await db.commit()
     return {"success": True}

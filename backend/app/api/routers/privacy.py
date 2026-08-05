@@ -10,7 +10,7 @@ from fastapi import (
     Response,
     status,
 )
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_roles
@@ -19,6 +19,7 @@ from app.core.privacy_audit import record_privacy_event
 from app.core.security import verify_password
 from app.models.client import Client
 from app.models.order import Order
+from app.models.refresh_token import RefreshToken
 from app.models.representative import Representative
 from app.models.retention import LegalHold, RetentionReview
 from app.models.user import User, UserRole
@@ -29,12 +30,14 @@ from app.schemas.retention import (
     RetentionApprovalRequest,
     RetentionDryRunRequest,
     RetentionReviewRead,
+    RepresentativeRelationshipEndRead,
+    RepresentativeRelationshipEndRequest,
 )
 
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
 _ADMIN = Depends(require_roles(UserRole.admin))
 
-_POLICY_VERSION = "2026-08-05-v1"
+_POLICY_VERSION = "2026-08-05-v2"
 _MAX_SNAPSHOT_CANDIDATES = 5_000
 
 
@@ -230,18 +233,107 @@ async def _candidate_rows(
     db: AsyncSession,
     model,
     condition,
+    reference_column,
     remaining: int,
 ):
     if remaining <= 0:
         return []
     return (
         await db.execute(
-            select(model.id, model.updated_at)
+            select(model.id, reference_column.label("reference_at"))
             .where(condition)
-            .order_by(model.updated_at, model.id)
+            .order_by(reference_column, model.id)
             .limit(remaining)
         )
     ).all()
+
+
+@router.post(
+    "/representatives/{representative_id}/relationship-end",
+    response_model=RepresentativeRelationshipEndRead,
+)
+@limiter.limit("10/hour")
+async def end_representative_relationship(
+    representative_id: uuid.UUID,
+    payload: RepresentativeRelationshipEndRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+):
+    now = datetime.now(timezone.utc)
+    if payload.ended_at > now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A data de encerramento não pode estar no futuro.",
+        )
+    if not verify_password(payload.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Senha inválida.",
+        )
+    representative = (
+        await db.execute(
+            select(Representative)
+            .where(Representative.id == representative_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if representative is None:
+        raise HTTPException(status_code=404, detail="Representante não encontrado.")
+
+    previous_end = representative.relationship_ended_at
+    representative.relationship_ended_at = payload.ended_at
+    linked_users = (
+        await db.execute(
+            select(User).where(
+                User.role == UserRole.representante,
+                or_(
+                    User.rep_id == representative_id,
+                    User.linked_id == representative_id,
+                ),
+                User.is_active.is_(True),
+            )
+        )
+    ).scalars().all()
+    user_ids: list[uuid.UUID] = []
+    for user in linked_users:
+        user.is_active = False
+        user.auth_version += 1
+        user_ids.append(user.id)
+    if user_ids:
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id.in_(user_ids),
+                RefreshToken.revoked.is_(False),
+            )
+            .values(revoked=True, revoked_at=now)
+        )
+
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="representative",
+        subject_id=representative.id,
+        action="representative_relationship_ended",
+        request=request,
+        legal_basis="LGPD Arts. 15 e 16",
+        context={
+            "ended_at": payload.ended_at.isoformat(),
+            "previous_end": (
+                previous_end.isoformat() if previous_end is not None else None
+            ),
+            "reason": payload.reason,
+            "deactivated_users": len(user_ids),
+        },
+    )
+    await db.commit()
+    return RepresentativeRelationshipEndRead(
+        representative_id=representative.id,
+        relationship_ended_at=payload.ended_at,
+        deactivated_users=len(user_ids),
+    )
 
 
 @router.post(
@@ -263,6 +355,7 @@ async def create_retention_dry_run(
         "clients": now - timedelta(days=730),
         "open_orders": now - timedelta(days=730),
         "closed_orders": now - timedelta(days=3650),
+        "representatives": now - timedelta(days=1825),
     }
     summary: dict = {}
     candidates: list[dict] = []
@@ -270,8 +363,14 @@ async def create_retention_dry_run(
 
     if "clients" in payload.categories:
         due = (
-            (Client.updated_at < cutoffs["clients"])
+            (Client.last_activity_at < cutoffs["clients"])
             & ~exists(select(Order.id).where(Order.client_id == Client.id))
+            & ~exists(
+                select(User.id).where(
+                    User.linked_id == Client.id,
+                    User.is_active.is_(True),
+                )
+            )
         )
         held = due & _hold_exists("client", Client.id, now)
         eligible = due & ~_hold_exists("client", Client.id, now)
@@ -282,7 +381,7 @@ async def create_retention_dry_run(
         summary["clients"] = {
             "status": "evaluated",
             "retention_days": 730,
-            "reference_field": "updated_at",
+            "reference_field": "last_activity_at",
             "due": due_count,
             "blocked_by_legal_hold": held_count,
             "candidates": candidate_count,
@@ -292,13 +391,14 @@ async def create_retention_dry_run(
             db,
             Client,
             eligible,
+            Client.last_activity_at,
             _MAX_SNAPSHOT_CANDIDATES - len(candidates),
         ):
             candidates.append(
                 {
                     "subject_type": "client",
                     "subject_id": str(row.id),
-                    "reference_at": row.updated_at.isoformat(),
+                    "reference_at": row.reference_at.isoformat(),
                     "proposed_action": "delete_if_still_unlinked",
                 }
             )
@@ -329,21 +429,23 @@ async def create_retention_dry_run(
             db,
             Order,
             eligible,
+            Order.updated_at,
             _MAX_SNAPSHOT_CANDIDATES - len(candidates),
         ):
             candidates.append(
                 {
                     "subject_type": "order",
                     "subject_id": str(row.id),
-                    "reference_at": row.updated_at.isoformat(),
+                    "reference_at": row.reference_at.isoformat(),
                     "proposed_action": "manual_review",
                     "category": "open_orders",
                 }
             )
 
     if "closed_orders" in payload.categories:
+        closed_at = func.coalesce(Order.finalized_at, Order.cancelled_at)
         due = (
-            (Order.updated_at < cutoffs["closed_orders"])
+            (closed_at < cutoffs["closed_orders"])
             & or_(
                 Order.is_finalized.is_(True),
                 Order.is_cancelled.is_(True),
@@ -358,7 +460,7 @@ async def create_retention_dry_run(
         summary["closed_orders"] = {
             "status": "evaluated",
             "retention_days": 3650,
-            "reference_field": "updated_at",
+            "reference_field": "finalized_at/cancelled_at",
             "due": due_count,
             "blocked_by_legal_hold": held_count,
             "candidates": candidate_count,
@@ -368,25 +470,63 @@ async def create_retention_dry_run(
             db,
             Order,
             eligible,
+            closed_at,
             _MAX_SNAPSHOT_CANDIDATES - len(candidates),
         ):
             candidates.append(
                 {
                     "subject_type": "order",
                     "subject_id": str(row.id),
-                    "reference_at": row.updated_at.isoformat(),
+                    "reference_at": row.reference_at.isoformat(),
                     "proposed_action": "anonymize_after_manual_review",
                     "category": "closed_orders",
                 }
             )
 
     if "representatives" in payload.categories:
+        due = (
+            Representative.relationship_ended_at
+            < cutoffs["representatives"]
+        )
+        held = due & _hold_exists(
+            "representative",
+            Representative.id,
+            now,
+        )
+        eligible = due & ~_hold_exists(
+            "representative",
+            Representative.id,
+            now,
+        )
+        due_count = await _count(db, Representative, due)
+        held_count = await _count(db, Representative, held)
+        candidate_count = due_count - held_count
+        total_candidates += candidate_count
         summary["representatives"] = {
-            "status": "not_evaluated",
-            "reason": "missing_relationship_end_date",
+            "status": "evaluated",
             "retention_years_after_end": 5,
-            "candidates": 0,
+            "reference_field": "relationship_ended_at",
+            "due": due_count,
+            "blocked_by_legal_hold": held_count,
+            "candidates": candidate_count,
+            "proposed_action": "anonymize_after_manual_review",
         }
+        for row in await _candidate_rows(
+            db,
+            Representative,
+            eligible,
+            Representative.relationship_ended_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "representative",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "anonymize_after_manual_review",
+                    "category": "representatives",
+                }
+            )
 
     review = RetentionReview(
         policy_version=_POLICY_VERSION,

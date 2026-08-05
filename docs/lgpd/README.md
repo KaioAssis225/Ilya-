@@ -44,6 +44,10 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
   administradores; aprovar um relatório não executa descarte.
 - o painel **Admin → Governança de retenção** permite gerar, revisar, bloquear
   e aprovar as fotografias sem disponibilizar ações destrutivas.
+- clientes, representantes e pedidos possuem marcos canônicos de ciclo de vida;
+  a simulação não depende mais de timestamps técnicos para registros encerrados.
+- o encerramento administrativo do representante exige senha e justificativa,
+  desativa os acessos vinculados e revoga seus refresh tokens.
 
 ## Regra de manutenção
 

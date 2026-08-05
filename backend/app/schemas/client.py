@@ -62,6 +62,7 @@ class ClientRead(ClientBase):
     rep_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
+    last_activity_at: datetime
     has_user: bool = False
     user_validated: bool = False
     created_by_name: str | None = None

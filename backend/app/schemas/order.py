@@ -95,6 +95,8 @@ class OrderRead(BaseModel):
     total_with_ipi: Decimal = Decimal("0")
     is_finalized: bool = False
     is_cancelled: bool = False
+    finalized_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
     external_code: Optional[str] = None
     notes: Optional[str]
     rep_signed: bool = False
@@ -132,5 +134,7 @@ class OrderListRead(BaseModel):
     total_with_ipi: Decimal = Decimal("0")
     is_finalized: bool = False
     is_cancelled: bool = False
+    finalized_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
     items: List[OrderListItemRead] = Field(default_factory=list)
     created_at: datetime

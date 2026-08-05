@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
@@ -78,6 +79,10 @@ def _with_metadata(
     creator_names: dict[uuid.UUID, str],
 ) -> ClientRead:
     has_user, user_validated = status_map.get(client.id, (False, False))
+    # Objetos ainda não persistidos (usados também em testes/serviços internos)
+    # não recebem o server_default antes do flush.
+    if client.last_activity_at is None:
+        client.last_activity_at = client.updated_at or client.created_at
     r = ClientRead.model_validate(client)
     return r.model_copy(
         update={
@@ -279,6 +284,7 @@ async def update_client(
             )
     for field, value in update_data.items():
         setattr(client, field, value)
+    client.last_activity_at = datetime.now(timezone.utc)
     try:
         await db.commit()
     except IntegrityError:

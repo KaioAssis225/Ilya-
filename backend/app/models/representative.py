@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import CheckConstraint, String, Numeric, ForeignKey, Index, func
+from sqlalchemy import CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -20,6 +21,10 @@ class Representative(Base, TimestampMixin):
     max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("30.00"))
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    relationship_ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     __table_args__ = (
@@ -43,6 +48,12 @@ class Representative(Base, TimestampMixin):
         Index("ix_representatives_phone_id", "phone", "id"),
         Index("ix_representatives_city_id", "city", "id"),
         Index("ix_representatives_state_id", "state", "id"),
+        Index(
+            "ix_representatives_retention_end_id",
+            "relationship_ended_at",
+            "id",
+            postgresql_where=text("relationship_ended_at IS NOT NULL"),
+        ),
         Index(
             "ix_representatives_max_discount_id",
             "max_discount",

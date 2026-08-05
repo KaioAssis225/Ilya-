@@ -83,6 +83,33 @@ class RetentionApprovalRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RepresentativeRelationshipEndRequest(BaseModel):
+    ended_at: datetime
+    reason: str = Field(min_length=5, max_length=2000)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("ended_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("A data de encerramento precisa incluir o fuso horário.")
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 5:
+            raise ValueError("Informe um motivo com pelo menos 5 caracteres.")
+        return normalized
+
+
+class RepresentativeRelationshipEndRead(BaseModel):
+    representative_id: uuid.UUID
+    relationship_ended_at: datetime
+    deactivated_users: int
+
+
 class RetentionReviewRead(BaseModel):
     id: uuid.UUID
     status: str

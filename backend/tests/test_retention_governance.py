@@ -11,12 +11,14 @@ from app.api.routers.privacy import (
     approve_retention_review,
     create_legal_hold,
     create_retention_dry_run,
+    end_representative_relationship,
     release_legal_hold,
 )
 from app.main import app
 from app.schemas.retention import (
     LegalHoldCreate,
     LegalHoldRelease,
+    RepresentativeRelationshipEndRequest,
     RetentionDryRunRequest,
 )
 
@@ -48,6 +50,21 @@ def test_liberacao_de_legal_hold_exige_senha_e_justificativa():
 def test_categorias_do_dry_run_nao_podem_repetir():
     with pytest.raises(ValidationError, match="repetidas"):
         RetentionDryRunRequest(categories=["clients", "clients"])
+
+
+def test_encerramento_de_representante_exige_fuso_e_justificativa():
+    with pytest.raises(ValidationError, match="fuso"):
+        RepresentativeRelationshipEndRequest(
+            ended_at=datetime(2026, 8, 5, 12, 0),
+            reason="Fim do contrato comercial",
+            password="SenhaForte1",
+        )
+    with pytest.raises(ValidationError):
+        RepresentativeRelationshipEndRequest(
+            ended_at=datetime.now(timezone.utc),
+            reason="   ",
+            password="SenhaForte1",
+        )
 
 
 def test_estado_ativo_do_legal_hold_considera_expiracao_e_liberacao():
@@ -99,6 +116,10 @@ def test_api_de_retencao_nao_expoe_execucao_ou_exclusao():
     assert "/api/v1/privacy/legal-holds" in privacy_paths
     assert "/api/v1/privacy/retention-reviews/dry-run" in privacy_paths
     assert (
+        "/api/v1/privacy/representatives/{representative_id}/relationship-end"
+        in privacy_paths
+    )
+    assert (
         "/api/v1/privacy/retention-reviews/{review_id}/approve"
         in privacy_paths
     )
@@ -121,6 +142,7 @@ def test_endpoints_limitados_recebem_response_para_headers_do_rate_limit():
         release_legal_hold,
         create_retention_dry_run,
         approve_retention_review,
+        end_representative_relationship,
     ):
         assert "request" in inspect.signature(endpoint).parameters
         assert "response" in inspect.signature(endpoint).parameters

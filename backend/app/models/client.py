@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import CheckConstraint, String, ForeignKey, Numeric, Index, func
+from sqlalchemy import CheckConstraint, DateTime, String, ForeignKey, Numeric, Index, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -24,6 +25,11 @@ class Client(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -43,7 +49,7 @@ class Client(Base, TimestampMixin):
         Index("ix_clients_phone_id", "phone", "id"),
         Index("ix_clients_city_id", "city", "id"),
         Index("ix_clients_max_discount_id", "max_discount", "id"),
-        Index("ix_clients_retention_updated_id", "updated_at", "id"),
+        Index("ix_clients_retention_activity_id", "last_activity_at", "id"),
         Index(
             "ix_clients_name_trgm",
             "name",
