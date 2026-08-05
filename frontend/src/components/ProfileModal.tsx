@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
-import { X, PenLine, Check, Eye, EyeOff, KeyRound, Trash2, AlertTriangle, Download, LogOut } from 'lucide-react'
+import { X, PenLine, Check, Eye, EyeOff, KeyRound, Trash2, AlertTriangle, Download, LogOut, UserX } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
 import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
@@ -40,12 +40,18 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const [delOpen, setDelOpen] = useState(false)
   const [delBusy, setDelBusy] = useState(false)
   const [delError, setDelError] = useState('')
+  const [delPassword, setDelPassword] = useState('')
 
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPassword, setExportPassword] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
   const [exportError, setExportError] = useState('')
   const [logoutAllBusy, setLogoutAllBusy] = useState(false)
+  const [anonOpen, setAnonOpen] = useState(false)
+  const [anonPassword, setAnonPassword] = useState('')
+  const [anonBusy, setAnonBusy] = useState(false)
+  const [anonError, setAnonError] = useState('')
+  const canAnonymize = isCliente || user?.role === 'representante'
 
   async function handleChangePassword() {
     if (!currentPw || !newPw) return
@@ -68,18 +74,40 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   }
 
   async function handleDeleteAccount() {
+    if (!delPassword) return
     setDelBusy(true)
     setDelError('')
     try {
-      await api.delete('/auth/me')
+      await api.delete('/auth/me', { data: { password: delPassword } })
       await logout()
     } catch (err) {
-      if (axios.isAxiosError(err) && typeof err.response?.data?.detail === 'string') {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setDelError('Senha atual incorreta.')
+      } else if (axios.isAxiosError(err) && typeof err.response?.data?.detail === 'string') {
         setDelError(err.response.data.detail)
       } else {
-        setDelError('Não foi possível excluir a conta. Tente novamente.')
+        setDelError('Não foi possível remover o acesso. Tente novamente.')
       }
       setDelBusy(false)
+    }
+  }
+
+  async function handleAnonymizeData() {
+    if (!anonPassword) return
+    setAnonBusy(true)
+    setAnonError('')
+    try {
+      await api.post('/auth/anonymize', { password: anonPassword })
+      await logout()
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setAnonError('Senha atual incorreta.')
+      } else if (axios.isAxiosError(err) && typeof err.response?.data?.detail === 'string') {
+        setAnonError(err.response.data.detail)
+      } else {
+        setAnonError('Não foi possível anonimizar os dados. Tente novamente.')
+      }
+      setAnonBusy(false)
     }
   }
 
@@ -347,7 +375,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
             className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 border border-red-200 text-red-700 rounded-xl hover:bg-red-50 transition-colors text-sm font-medium"
           >
             <Trash2 className="w-4 h-4" />
-            Excluir Minha Conta
+            Remover Meu Acesso
           </button>
         </div>
 
@@ -390,6 +418,19 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           )}
+          {canAnonymize && (
+            <button
+              onClick={() => {
+                setAnonOpen(true)
+                setAnonPassword('')
+                setAnonError('')
+              }}
+              className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 border border-line text-ink-2 rounded-xl hover:bg-bg transition-colors text-sm font-medium"
+            >
+              <UserX className="w-4 h-4" />
+              Solicitar Anonimização
+            </button>
+          )}
           <button
             onClick={handleLogoutAll}
             disabled={logoutAllBusy}
@@ -404,7 +445,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {/* Confirmação de exclusão de conta (Bloco 93) */}
+      {/* Confirmação de remoção da conta de acesso (Bloco 93) */}
       {delOpen && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
@@ -413,28 +454,104 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h4 className="text-base font-semibold text-ink">Excluir sua conta?</h4>
+                <h4 className="text-base font-semibold text-ink">Remover seu acesso?</h4>
                 <p className="text-sm text-muted-2 mt-1 leading-snug">
-                  Esta ação é <strong>permanente</strong>. Seu acesso será removido imediatamente
-                  e todas as suas sessões serão encerradas.
+                  Esta ação é <strong>permanente</strong>. Sua conta de acesso será removida
+                  imediatamente e todas as sessões serão encerradas. Cadastros comerciais,
+                  pedidos e documentos sujeitos a obrigações legais não são apagados por esta ação.
+                </p>
+                <p className="text-xs text-muted mt-2">
+                  Para solicitar acesso, correção ou anonimização de dados pessoais, consulte a
+                  Política de Privacidade e use o canal informado nela.
                 </p>
               </div>
             </div>
             {delError && <p className="text-xs text-red-700 mb-3" role="alert">{delError}</p>}
+            <label htmlFor="del-password" className="text-xs text-muted block mb-1">
+              Confirme sua senha atual
+            </label>
+            <input
+              id="del-password"
+              type="password"
+              value={delPassword}
+              onChange={(event) => setDelPassword(event.target.value)}
+              className="input w-full mb-3"
+              placeholder="Senha atual"
+              autoComplete="current-password"
+              maxLength={128}
+            />
             <div className="flex gap-2">
               <button
-                onClick={() => setDelOpen(false)}
+                onClick={() => {
+                  setDelOpen(false)
+                  setDelPassword('')
+                  setDelError('')
+                }}
                 disabled={delBusy}
                 className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors disabled:opacity-50"
               >
                 Cancelar
               </button>
-              <button
-                onClick={handleDeleteAccount}
-                disabled={delBusy}
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={delBusy || !delPassword}
                 className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                {delBusy ? 'Excluindo…' : 'Excluir Conta'}
+                {delBusy ? 'Removendo…' : 'Remover Acesso'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {anonOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <UserX className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <h4 className="text-base font-semibold text-ink">Anonimizar seus dados?</h4>
+                <p className="text-sm text-muted-2 mt-1 leading-snug">
+                  Seus identificadores diretos serão substituídos e sua conta será
+                  desativada. Pedidos e registros sujeitos à política de retenção
+                  continuarão preservados sem uso para novas finalidades.
+                </p>
+              </div>
+            </div>
+            <label htmlFor="anon-password" className="text-xs text-muted block mb-1">
+              Confirme sua senha atual
+            </label>
+            <input
+              id="anon-password"
+              type="password"
+              value={anonPassword}
+              onChange={(event) => setAnonPassword(event.target.value)}
+              className="input w-full"
+              placeholder="Senha atual"
+              autoComplete="current-password"
+              maxLength={128}
+            />
+            {anonError && <p className="text-xs text-red-700 mt-2" role="alert">{anonError}</p>}
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => {
+                  setAnonOpen(false)
+                  setAnonPassword('')
+                  setAnonError('')
+                }}
+                disabled={anonBusy}
+                className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAnonymizeData}
+                disabled={anonBusy || !anonPassword}
+                className="flex-1 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-50"
+              >
+                {anonBusy ? 'Anonimizando…' : 'Anonimizar Dados'}
               </button>
             </div>
           </div>

@@ -236,3 +236,10 @@ O frontend estará acessível em `http://localhost:5173/`.
 O procedimento de backup verificável, criptografia, retenção, teste de
 restauração e automação no Windows está documentado em
 [`docs/GUIA_INFRA_OPERACOES.md`](docs/GUIA_INFRA_OPERACOES.md).
+
+## Privacidade e LGPD
+
+O inventário de tratamento, retenção, acesso, incidentes e pendências
+organizacionais está centralizado em [`docs/lgpd/`](docs/lgpd/README.md).
+Mudanças que coletem, compartilhem, exponham ou retenham dados pessoais devem
+atualizar esses documentos antes do deploy.

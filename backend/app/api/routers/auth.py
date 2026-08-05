@@ -9,6 +9,7 @@ from sqlalchemy import delete, func, or_, select, update
 from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
 from app.core.limiter import limiter
 from app.core.origin_guard import require_trusted_cookie_origin
+from app.core.privacy_audit import record_privacy_event
 from app.core.security import (
     verify_password,
     dummy_verify,
@@ -24,10 +25,12 @@ from decimal import Decimal
 from app.core.config import settings
 from app.models.user import User, UserRole
 from app.models.client import Client, anonymize_client_fields
-from app.models.representative import Representative
+from app.models.representative import Representative, anonymize_representative_fields
 from app.models.refresh_token import RefreshToken
 from app.models.notification import Notification
 from app.models.order import Order
+from app.models.order_history import OrderHistory
+from app.models.privacy_event import PrivacyEvent
 from app.models.signature_invitation import SignatureInvitation
 from app.schemas.auth import (
     LoginRequest,
@@ -57,6 +60,26 @@ async def _revoke_user_sessions(
     await db.execute(
         stmt.values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
+
+
+def _require_reauthentication(
+    body: ReauthenticationRequest,
+    current_user: User,
+) -> None:
+    """Exige a senha atual antes de uma operação irreversível."""
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Senha incorreta.")
+
+
+def _anonymize_user_fields(user: User) -> None:
+    """Remove identificadores diretos e torna impossível novo login."""
+    user.email = f"anonimizado_{user.id}@excluido.ilya"
+    user.username = None
+    user.full_name = "USUÁRIO ANONIMIZADO"
+    user.hashed_password = hash_password(generate_refresh_token())
+    user.is_active = False
+    user.must_change_password = False
+    user.auth_version += 1
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -376,6 +399,7 @@ async def logout_all(
 async def delete_my_account(
     request: Request,
     response: Response,
+    body: ReauthenticationRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -385,6 +409,8 @@ async def delete_my_account(
     order_history.user_id vira NULL (trilha preservada) e as notificações são
     apagadas antes (FK sem ondelete). O registro comercial de Cliente/Representante
     vinculado NÃO é excluído; para dados pessoais há o fluxo de anonimização."""
+    _require_reauthentication(body, current_user)
+
     if current_user.role == UserRole.admin:
         others = await db.execute(
             select(User).where(
@@ -402,6 +428,16 @@ async def delete_my_account(
     await db.execute(delete(Notification).where(Notification.user_id == current_user.id))
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
+    record_privacy_event(
+        db,
+        actor_user_id=user.id,
+        subject_type="user",
+        subject_id=user.id,
+        action="account_access_removed",
+        request=request,
+        legal_basis="LGPD Art. 18",
+        context={"commercial_record_preserved": True},
+    )
     await db.delete(user)
     await db.commit()
     logger.info("Conta excluída pelo titular: user_id=%s", current_user.id)
@@ -451,7 +487,13 @@ async def my_data(
             "email": current_user.email,
             "username": current_user.username,
             "role": current_user.role.value,
+            "representante_id": str(current_user.rep_id) if current_user.rep_id else None,
+            "cadastro_vinculado_id": str(current_user.linked_id) if current_user.linked_id else None,
             "ativo": current_user.is_active,
+            "troca_de_senha_pendente": current_user.must_change_password,
+            "tentativas_de_login_falhas": current_user.failed_login_attempts,
+            "bloqueado_ate": current_user.locked_until,
+            "acesso_dashboard": current_user.can_view_dashboard,
             "criado_em": current_user.created_at,
             "atualizado_em": current_user.updated_at,
         },
@@ -460,6 +502,10 @@ async def my_data(
         "pedidos": [],
         "notificacoes": [],
         "sessoes": [],
+        "acoes_em_pedidos": [],
+        "cadastros_criados": [],
+        "convites_de_assinatura_emitidos": [],
+        "operacoes_de_privacidade": [],
     }
     if current_user.linked_id and is_client_account(current_user):
         client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
@@ -533,8 +579,6 @@ async def my_data(
             select(RefreshToken)
             .where(
                 RefreshToken.user_id == current_user.id,
-                RefreshToken.revoked.is_(False),
-                RefreshToken.expires_at >= now_naive,
             )
             .order_by(RefreshToken.created_at.desc())
         )
@@ -544,8 +588,108 @@ async def my_data(
             "id": str(session.id),
             "criada_em": session.created_at,
             "expira_em": session.expires_at,
+            "ativa": (
+                not session.revoked
+                and session.expires_at >= now_naive
+            ),
+            "revogada": session.revoked,
+            "usada_em": session.used_at,
+            "revogada_em": session.revoked_at,
         }
         for session in sessions
+    ]
+
+    order_actions = (
+        await db.execute(
+            select(OrderHistory)
+            .where(OrderHistory.user_id == current_user.id)
+            .order_by(OrderHistory.created_at.desc())
+        )
+    ).scalars().all()
+    payload["acoes_em_pedidos"] = [
+        {
+            "id": str(action.id),
+            "pedido_id": str(action.order_id),
+            "acao": action.action,
+            "detalhes": action.details,
+            "criada_em": action.created_at,
+        }
+        for action in order_actions
+    ]
+
+    created_clients = (
+        await db.execute(
+            select(Client.id, Client.created_at)
+            .where(Client.created_by_user_id == current_user.id)
+            .order_by(Client.created_at.desc())
+        )
+    ).all()
+    created_representatives = (
+        await db.execute(
+            select(Representative.id, Representative.created_at)
+            .where(Representative.created_by_user_id == current_user.id)
+            .order_by(Representative.created_at.desc())
+        )
+    ).all()
+    payload["cadastros_criados"] = [
+        {"tipo": "cliente", "id": str(row.id), "criado_em": row.created_at}
+        for row in created_clients
+    ] + [
+        {
+            "tipo": "representante",
+            "id": str(row.id),
+            "criado_em": row.created_at,
+        }
+        for row in created_representatives
+    ]
+
+    invitations = (
+        await db.execute(
+            select(SignatureInvitation)
+            .where(SignatureInvitation.issued_by == current_user.id)
+            .order_by(SignatureInvitation.created_at.desc())
+        )
+    ).scalars().all()
+    payload["convites_de_assinatura_emitidos"] = [
+        {
+            "id": str(invitation.id),
+            "pedido_id": str(invitation.order_id),
+            "criado_em": invitation.created_at,
+            "expira_em": invitation.expires_at,
+            "consumido_em": invitation.consumed_at,
+            "revogado_em": invitation.revoked_at,
+        }
+        for invitation in invitations
+    ]
+
+    subject_ids = [current_user.id]
+    if current_user.linked_id:
+        subject_ids.append(current_user.linked_id)
+    if current_user.rep_id:
+        subject_ids.append(current_user.rep_id)
+    privacy_events = (
+        await db.execute(
+            select(PrivacyEvent)
+            .where(
+                or_(
+                    PrivacyEvent.actor_user_id == current_user.id,
+                    PrivacyEvent.subject_id.in_(subject_ids),
+                )
+            )
+            .order_by(PrivacyEvent.created_at.desc())
+        )
+    ).scalars().all()
+    payload["operacoes_de_privacidade"] = [
+        {
+            "id": str(event.id),
+            "tipo_titular": event.subject_type,
+            "acao": event.action,
+            "resultado": event.outcome,
+            "fundamento": event.legal_basis,
+            "contexto": event.context,
+            "criada_em": event.created_at,
+        }
+        for event in privacy_events
     ]
     return payload
 
@@ -562,6 +706,17 @@ async def my_data_export(
     if not verify_password(body.password, current_user.hashed_password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Senha incorreta.")
     data = await my_data(db=db, current_user=current_user)
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="user",
+        subject_id=current_user.id,
+        action="personal_data_exported",
+        request=request,
+        legal_basis="LGPD Art. 18, V",
+        context={"format": "json"},
+    )
+    await db.commit()
     import json
     content = json.dumps(jsonable_encoder(data), ensure_ascii=False, indent=2)
     return Response(
@@ -576,39 +731,78 @@ async def my_data_export(
 
 
 @router.post("/anonymize", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/minute")
 async def anonymize_my_data(
+    request: Request,
     response: Response,
+    body: ReauthenticationRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    """ACT-03: anonimiza os dados PII do titular e desativa a conta (Art. 18, IV e VI)."""
-    if not is_client_account(current_user) or not current_user.linked_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Operação disponível apenas para usuários clientes.")
+    """Anonimiza cliente/representante vinculado e desativa a conta."""
+    _require_reauthentication(body, current_user)
 
-    client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
-    if client:
-        anonymize_client_fields(client)
+    client_id: uuid.UUID | None = None
+    representative_id: uuid.UUID | None = None
+    if is_client_account(current_user) and current_user.linked_id:
+        client_id = current_user.linked_id
+        client = (
+            await db.execute(select(Client).where(Client.id == client_id))
+        ).scalar_one_or_none()
+        if client:
+            anonymize_client_fields(client)
+    elif current_user.role == UserRole.representante and current_user.rep_id:
+        representative_id = current_user.rep_id
+        representative = (
+            await db.execute(
+                select(Representative).where(
+                    Representative.id == representative_id
+                )
+            )
+        ).scalar_one_or_none()
+        if representative:
+            anonymize_representative_fields(representative)
+    else:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Operação disponível apenas para clientes e representantes vinculados.",
+        )
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
-    user.email = f"anonimizado_{user.id}@excluido.ilya"
-    user.username = None
-    user.full_name = "USUÁRIO ANONIMIZADO"
-    user.hashed_password = hash_password(generate_refresh_token())
-    user.is_active = False
-    user.auth_version += 1
+    _anonymize_user_fields(user)
     await _revoke_user_sessions(db, user.id)
     await db.execute(delete(Notification).where(Notification.user_id == user.id))
+    invitation_filters = [SignatureInvitation.issued_by == user.id]
+    if client_id:
+        invitation_filters.append(SignatureInvitation.client_id == client_id)
     await db.execute(
         update(SignatureInvitation)
         .where(
-            SignatureInvitation.client_id == current_user.linked_id,
+            or_(*invitation_filters),
             SignatureInvitation.consumed_at.is_(None),
             SignatureInvitation.revoked_at.is_(None),
         )
         .values(revoked_at=datetime.now(timezone.utc))
     )
+    record_privacy_event(
+        db,
+        actor_user_id=user.id,
+        subject_type=(
+            "client" if client_id else "representative"
+        ),
+        subject_id=client_id or representative_id,
+        action="personal_data_anonymized",
+        request=request,
+        legal_basis="LGPD Art. 18, IV",
+        context={"account_disabled": True, "self_service": True},
+    )
 
     await db.commit()
-    logger.info("Anonimização solicitada: user_id=%s client_id=%s", current_user.id, current_user.linked_id)
+    logger.info(
+        "Anonimização solicitada: user_id=%s client_id=%s representative_id=%s",
+        current_user.id,
+        client_id,
+        representative_id,
+    )
     _clear_refresh_cookie(response)

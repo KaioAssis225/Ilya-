@@ -202,6 +202,11 @@ Em caso de suspeita de invasão, perda ou corrupção:
 5. Avalie dados pessoais afetados e acione o responsável por LGPD.
 6. Restaure somente depois de identificar a causa do incidente.
 
+Quando houver ou puder haver dados pessoais, siga também o
+[`PLAYBOOK-INCIDENTES-LGPD.md`](lgpd/PLAYBOOK-INCIDENTES-LGPD.md). Ele contém
+responsáveis, avaliação de risco, registro de evidências e o prazo regulatório
+de até 3 dias úteis para comunicação à ANPD e aos titulares quando aplicável.
+
 ## 11. Responsabilidades externas
 
 O código não consegue decidir ou executar sozinho:

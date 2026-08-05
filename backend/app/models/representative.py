@@ -22,7 +22,6 @@ class Representative(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-
     __table_args__ = (
         CheckConstraint(
             "state ~ '^[A-Z]{2}$'",
@@ -68,3 +67,15 @@ class Representative(Base, TimestampMixin):
             postgresql_ops={"city": "gin_trgm_ops"},
         ),
     )
+
+
+def anonymize_representative_fields(representative: Representative) -> None:
+    """Remove PII sem quebrar pedidos e clientes historicamente vinculados."""
+    representative.name = "REPRESENTANTE ANONIMIZADO"
+    representative.phone = "(00) 00000-0000"
+    representative.email = f"anonimizado_{representative.id}@excluido.ilya"
+    representative.cep = "00000-000"
+    representative.numero = None
+    representative.address = "ENDEREÇO ANONIMIZADO"
+    representative.city = "NÃO INFORMADO"
+    representative.state = "EX"

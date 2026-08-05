@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select
@@ -14,8 +14,9 @@ from app.api.deps import (
     is_internal_operator,
 )
 from app.core.search import literal_contains_pattern
+from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client
-from app.models.representative import Representative
+from app.models.representative import Representative, anonymize_representative_fields
 from app.models.user import User, UserRole
 from app.schemas.representative import RepresentativeCreate, RepresentativeUpdate, RepresentativeRead
 
@@ -317,4 +318,54 @@ async def delete_representative(
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
     await db.delete(rep)
+    await db.commit()
+
+
+@router.post("/{rep_id}/anonymize", status_code=status.HTTP_204_NO_CONTENT)
+async def anonymize_representative(
+    rep_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+):
+    """Anonimiza o cadastro comercial e desativa eventual conta vinculada."""
+    rep = (
+        await db.execute(
+            select(Representative).where(Representative.id == rep_id)
+        )
+    ).scalar_one_or_none()
+    if not rep:
+        raise HTTPException(
+            status_code=404,
+            detail="Representante não encontrado.",
+        )
+
+    anonymize_representative_fields(rep)
+    linked_users = (
+        await db.execute(
+            select(User).where(
+                or_(
+                    User.rep_id == rep_id,
+                    User.linked_id == rep_id,
+                ),
+                User.is_active.is_(True),
+            )
+        )
+    ).scalars().all()
+    for linked_user in linked_users:
+        linked_user.is_active = False
+
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="representative",
+        subject_id=rep_id,
+        action="personal_data_anonymized",
+        request=request,
+        legal_basis="LGPD Art. 18, IV",
+        context={
+            "disabled_accounts": len(linked_users),
+            "self_service": False,
+        },
+    )
     await db.commit()

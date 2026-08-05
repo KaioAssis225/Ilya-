@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select
@@ -16,6 +16,7 @@ from app.api.deps import (
     sanitize_client_update_fields,
 )
 from app.core.search import literal_contains_pattern
+from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client, anonymize_client_fields
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
@@ -325,6 +326,7 @@ async def delete_client(
 @router.post("/{client_id}/anonymize", status_code=status.HTTP_204_NO_CONTENT)
 async def anonymize_client(
     client_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN,
 ):
@@ -339,11 +341,24 @@ async def anonymize_client(
 
     anonymize_client_fields(client)
 
-    linked_user = (await db.execute(
+    linked_users = (await db.execute(
         select(User).where(User.linked_id == client_id, User.is_active.is_(True))
-    )).scalar_one_or_none()
-    if linked_user:
+    )).scalars().all()
+    for linked_user in linked_users:
         linked_user.is_active = False
 
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="client",
+        subject_id=client_id,
+        action="personal_data_anonymized",
+        request=request,
+        legal_basis="LGPD Art. 18, IV",
+        context={
+            "disabled_accounts": len(linked_users),
+            "self_service": False,
+        },
+    )
     await db.commit()
     logger.info("Anonimização admin: client_id=%s por user_id=%s", client_id, current_user.id)

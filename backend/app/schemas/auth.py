@@ -1,13 +1,13 @@
 import uuid
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.models.user import UserRole
 
 
 class LoginRequest(BaseModel):
     identifier: str  # accepts email or username
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
     @field_validator("identifier")
     @classmethod
@@ -66,7 +66,7 @@ class ChangePasswordRequest(BaseModel):
 
 
 class ReauthenticationRequest(BaseModel):
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
 
 class UserCreateResponse(BaseModel):
