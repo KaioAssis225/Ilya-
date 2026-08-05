@@ -38,7 +38,7 @@ jobs:
 
       - name: Abrir ou atualizar alerta
         if: failure()
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const title = "[ALERTA] API Ilya de produção indisponível";
@@ -78,7 +78,7 @@ jobs:
 
       - name: Fechar alerta após recuperação
         if: success()
-        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const title = "[ALERTA] API Ilya de produção indisponível";
