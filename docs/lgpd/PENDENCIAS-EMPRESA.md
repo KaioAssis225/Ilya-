@@ -35,7 +35,7 @@ aprovada.
 - [ ] Testes de legítimo interesse aprovados.
 - [x] Política inicial aprovada: cliente sem pedido 2 anos; representante durante
   o vínculo + 5 anos; orçamento não convertido 2 anos; pedido 10 anos.
-- [ ] Legal hold definido.
+- [x] Legal hold definido tecnicamente, auditado e disponível ao administrador.
 
 ## 4. Fornecedores
 
@@ -53,14 +53,14 @@ retenção, exclusão, SLA de incidente e mecanismo de transferência:
 
 - [x] manutenção do acesso amplo da role `produtos` aprovada e justificada;
 - [ ] lista de administradores revisada;
-- [ ] processo de desligamento definido;
+- [x] processo de desligamento e revisão de acessos documentado;
 - [ ] treinamento e termo de confidencialidade realizados.
 
 ## 6. Incidentes
 
 - [x] responsáveis e contatos principais preenchidos no playbook;
 - [ ] acesso ao canal da ANPD conhecido;
-- [ ] modelos de comunicação aprovados;
+- [ ] minutas de comunicação criadas; falta aprovação jurídica;
 - [x] primeiro simulado agendado para 10/10/2026.
 
 ## Aprovação

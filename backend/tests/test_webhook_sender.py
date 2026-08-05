@@ -129,6 +129,7 @@ def test_sucesso_marca_entregue(monkeypatch):
     assert row.status == "delivered"
     assert row.attempts == 1
     assert row.delivered_at is not None
+    assert row.dead_lettered_at is None
     assert row.last_error is None
 
 
@@ -154,6 +155,7 @@ def test_erro_de_contrato_vai_para_dead_letter(monkeypatch):
     _run(w.deliver_one(_FakeClient(status_code=400), row))
 
     assert row.status == "dead_letter"
+    assert row.dead_lettered_at is not None
     assert "HTTP 400" in row.last_error
 
 
@@ -167,6 +169,7 @@ def test_tentativas_esgotadas_viram_dead_letter(monkeypatch):
 
     assert row.attempts == 3
     assert row.status == "dead_letter"
+    assert row.dead_lettered_at is not None
 
 
 def test_429_respeita_retry_after(monkeypatch):

@@ -149,6 +149,7 @@ async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None
             if outcome == DELIVERED:
                 row.status = "delivered"
                 row.delivered_at = datetime.now(timezone.utc)
+                row.dead_lettered_at = None
                 row.last_error = None
                 return
 
@@ -162,6 +163,7 @@ async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None
 
             if outcome == DEAD_LETTER:
                 row.status = "dead_letter"
+                row.dead_lettered_at = datetime.now(timezone.utc)
                 row.last_error = error
                 logger.error(
                     "Evento %s (%s) em dead_letter: HTTP %s",
@@ -192,6 +194,7 @@ def _schedule_retry(
 
     if delay is None or row.attempts >= settings.WEBHOOK_MAX_ATTEMPTS:
         row.status = "dead_letter"
+        row.dead_lettered_at = datetime.now(timezone.utc)
         row.last_error = error
         logger.error(
             "Evento %s (%s) esgotou as tentativas: %s",
@@ -202,6 +205,7 @@ def _schedule_retry(
         return
 
     row.status = "pending"
+    row.dead_lettered_at = None
     row.last_error = error
     row.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
 

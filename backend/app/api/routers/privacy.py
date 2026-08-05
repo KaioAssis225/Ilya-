@@ -18,11 +18,15 @@ from app.core.limiter import limiter
 from app.core.privacy_audit import record_privacy_event
 from app.core.security import verify_password
 from app.models.client import Client
+from app.models.integration_outbox import IntegrationOutbox
+from app.models.notification import Notification
 from app.models.order import Order
+from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
 from app.models.refresh_token import RefreshToken
 from app.models.representative import Representative
 from app.models.retention import LegalHold, RetentionReview
+from app.models.signature_invitation import SignatureInvitation
 from app.models.user import User, UserRole
 from app.schemas.retention import (
     LegalHoldCreate,
@@ -41,7 +45,7 @@ from app.schemas.retention import (
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
 _ADMIN = Depends(require_roles(UserRole.admin))
 
-_POLICY_VERSION = "2026-08-05-v2"
+_POLICY_VERSION = "2026-08-05-v3"
 _MAX_SNAPSHOT_CANDIDATES = 5_000
 
 
@@ -74,6 +78,46 @@ def _order_hold_exists(now: datetime):
     client = _hold_exists("client", Order.client_id, now)
     representative = _hold_exists("representative", Order.rep_id, now)
     return or_(direct, client, representative)
+
+
+def _notification_hold_exists(now: datetime):
+    return exists(
+        select(User.id).where(
+            User.id == Notification.user_id,
+            or_(
+                _hold_exists("client", User.linked_id, now),
+                _hold_exists("representative", User.rep_id, now),
+            ),
+        )
+    )
+
+
+def _signature_invitation_hold_exists(now: datetime):
+    return or_(
+        _hold_exists("order", SignatureInvitation.order_id, now),
+        _hold_exists("client", SignatureInvitation.client_id, now),
+    )
+
+
+def _privacy_event_hold_exists(now: datetime):
+    return or_(
+        (
+            (PrivacyEvent.subject_type == "client")
+            & _hold_exists("client", PrivacyEvent.subject_id, now)
+        ),
+        (
+            (PrivacyEvent.subject_type == "representative")
+            & _hold_exists(
+                "representative",
+                PrivacyEvent.subject_id,
+                now,
+            )
+        ),
+        (
+            (PrivacyEvent.subject_type == "order")
+            & _hold_exists("order", PrivacyEvent.subject_id, now)
+        ),
+    )
 
 
 async def _subject_exists(
@@ -528,6 +572,11 @@ async def create_retention_dry_run(
         "open_orders": now - timedelta(days=730),
         "closed_orders": now - timedelta(days=3650),
         "representatives": now - timedelta(days=1825),
+        "notifications_read": now - timedelta(days=90),
+        "notifications_unread": now - timedelta(days=365),
+        "signature_invitations": now - timedelta(days=30),
+        "outbox_delivered": now - timedelta(days=90),
+        "privacy_events": now - timedelta(days=1825),
     }
     summary: dict = {}
     candidates: list[dict] = []
@@ -697,6 +746,227 @@ async def create_retention_dry_run(
                     "reference_at": row.reference_at.isoformat(),
                     "proposed_action": "anonymize_after_manual_review",
                     "category": "representatives",
+                }
+            )
+
+    notification_hold = _notification_hold_exists(now)
+    if "notifications_read" in payload.categories:
+        due = (
+            Notification.is_read.is_(True)
+            & (Notification.read_at < cutoffs["notifications_read"])
+        )
+        held = due & notification_hold
+        eligible = due & ~notification_hold
+        due_count = await _count(db, Notification, due)
+        held_count = await _count(db, Notification, held)
+        candidate_count = due_count - held_count
+        total_candidates += candidate_count
+        summary["notifications_read"] = {
+            "status": "evaluated",
+            "retention_days": 90,
+            "reference_field": "read_at",
+            "due": due_count,
+            "blocked_by_legal_hold": held_count,
+            "candidates": candidate_count,
+            "proposed_action": "delete_after_manual_review",
+        }
+        for row in await _candidate_rows(
+            db,
+            Notification,
+            eligible,
+            Notification.read_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "notification",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "delete_after_manual_review",
+                    "category": "notifications_read",
+                }
+            )
+
+    if "notifications_unread" in payload.categories:
+        due = (
+            Notification.is_read.is_(False)
+            & (Notification.created_at < cutoffs["notifications_unread"])
+        )
+        held = due & notification_hold
+        eligible = due & ~notification_hold
+        due_count = await _count(db, Notification, due)
+        held_count = await _count(db, Notification, held)
+        candidate_count = due_count - held_count
+        total_candidates += candidate_count
+        summary["notifications_unread"] = {
+            "status": "evaluated",
+            "retention_days": 365,
+            "reference_field": "created_at",
+            "due": due_count,
+            "blocked_by_legal_hold": held_count,
+            "candidates": candidate_count,
+            "proposed_action": "delete_after_manual_review",
+        }
+        for row in await _candidate_rows(
+            db,
+            Notification,
+            eligible,
+            Notification.created_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "notification",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "delete_after_manual_review",
+                    "category": "notifications_unread",
+                }
+            )
+
+    if "signature_invitations" in payload.categories:
+        invitation_terminal_at = func.greatest(
+            SignatureInvitation.expires_at,
+            func.coalesce(
+                SignatureInvitation.consumed_at,
+                SignatureInvitation.expires_at,
+            ),
+            func.coalesce(
+                SignatureInvitation.revoked_at,
+                SignatureInvitation.expires_at,
+            ),
+        )
+        due = invitation_terminal_at < cutoffs["signature_invitations"]
+        invitation_hold = _signature_invitation_hold_exists(now)
+        held = due & invitation_hold
+        eligible = due & ~invitation_hold
+        due_count = await _count(db, SignatureInvitation, due)
+        held_count = await _count(db, SignatureInvitation, held)
+        candidate_count = due_count - held_count
+        total_candidates += candidate_count
+        summary["signature_invitations"] = {
+            "status": "evaluated",
+            "retention_days": 30,
+            "reference_field": "expires_at/consumed_at/revoked_at",
+            "due": due_count,
+            "blocked_by_legal_hold": held_count,
+            "candidates": candidate_count,
+            "proposed_action": "delete_token_metadata_after_review",
+        }
+        for row in await _candidate_rows(
+            db,
+            SignatureInvitation,
+            eligible,
+            invitation_terminal_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "signature_invitation",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "delete_token_metadata_after_review",
+                    "category": "signature_invitations",
+                }
+            )
+
+    if "outbox_delivered" in payload.categories:
+        due = (
+            (IntegrationOutbox.status == "delivered")
+            & (
+                IntegrationOutbox.delivered_at
+                < cutoffs["outbox_delivered"]
+            )
+        )
+        due_count = await _count(db, IntegrationOutbox, due)
+        total_candidates += due_count
+        summary["outbox_delivered"] = {
+            "status": "evaluated",
+            "retention_days": 90,
+            "reference_field": "delivered_at",
+            "due": due_count,
+            "blocked_by_legal_hold": 0,
+            "candidates": due_count,
+            "proposed_action": "delete_payload_preserve_metrics",
+        }
+        for row in await _candidate_rows(
+            db,
+            IntegrationOutbox,
+            due,
+            IntegrationOutbox.delivered_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "integration_outbox",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "delete_payload_preserve_metrics",
+                    "category": "outbox_delivered",
+                }
+            )
+
+    if "outbox_dead_letter" in payload.categories:
+        due = IntegrationOutbox.status == "dead_letter"
+        due_count = await _count(db, IntegrationOutbox, due)
+        total_candidates += due_count
+        summary["outbox_dead_letter"] = {
+            "status": "evaluated",
+            "reference_field": "dead_lettered_at",
+            "due": due_count,
+            "blocked_by_legal_hold": 0,
+            "candidates": due_count,
+            "proposed_action": "resolve_manually_never_auto_delete",
+        }
+        for row in await _candidate_rows(
+            db,
+            IntegrationOutbox,
+            due,
+            IntegrationOutbox.dead_lettered_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "integration_outbox",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "resolve_manually_never_auto_delete",
+                    "category": "outbox_dead_letter",
+                }
+            )
+
+    if "privacy_events" in payload.categories:
+        due = PrivacyEvent.created_at < cutoffs["privacy_events"]
+        event_hold = _privacy_event_hold_exists(now)
+        held = due & event_hold
+        eligible = due & ~event_hold
+        due_count = await _count(db, PrivacyEvent, due)
+        held_count = await _count(db, PrivacyEvent, held)
+        candidate_count = due_count - held_count
+        total_candidates += candidate_count
+        summary["privacy_events"] = {
+            "status": "evaluated",
+            "retention_days": 1825,
+            "reference_field": "created_at",
+            "due": due_count,
+            "blocked_by_legal_hold": held_count,
+            "candidates": candidate_count,
+            "proposed_action": "manual_review_before_minimization",
+        }
+        for row in await _candidate_rows(
+            db,
+            PrivacyEvent,
+            eligible,
+            PrivacyEvent.created_at,
+            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
+        ):
+            candidates.append(
+                {
+                    "subject_type": "privacy_event",
+                    "subject_id": str(row.id),
+                    "reference_at": row.reference_at.isoformat(),
+                    "proposed_action": "manual_review_before_minimization",
+                    "category": "privacy_events",
                 }
             )
 

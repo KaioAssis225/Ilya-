@@ -7,6 +7,7 @@ class NotificationRead(BaseModel):
     id: uuid.UUID
     message: str
     is_read: bool
+    read_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

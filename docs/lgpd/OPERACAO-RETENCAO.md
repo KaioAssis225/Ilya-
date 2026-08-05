@@ -36,6 +36,12 @@ gera uma fotografia auditável:
 | Orçamento/pedido aberto | 730 dias | `orders.updated_at` | revisão manual |
 | Pedido finalizado/cancelado | 3.650 dias | `orders.finalized_at` ou `orders.cancelled_at` | anonimizar após revisão |
 | Representante | 5 anos após encerramento | `representatives.relationship_ended_at` | anonimizar após revisão |
+| Notificação lida | 90 dias | `notifications.read_at` | excluir após revisão |
+| Notificação não lida | 365 dias | `notifications.created_at` | excluir após revisão |
+| Convite de assinatura | 30 dias | maior marco entre expiração, consumo e revogação | remover metadados após revisão |
+| Webhook entregue | 90 dias | `integration_outbox.delivered_at` | remover payload e preservar métrica |
+| Webhook em `dead_letter` | até resolução | `integration_outbox.dead_lettered_at` | resolver manualmente; nunca excluir automaticamente |
+| Evento de privacidade | 5 anos | `privacy_events.created_at` | revisão manual antes de minimizar |
 
 Os registros históricos recebem backfill conservador a partir de `updated_at`
 ou `created_at`. Novas operações passam a registrar os marcos no momento em que
@@ -75,9 +81,11 @@ apresenta botões de exclusão ou execução no painel de retenção.
 
 ## Próximos requisitos antes de qualquer descarte
 
-1. Definir os prazos ainda pendentes na matriz.
-2. Paginar candidatos em tabela própria para volumes acima de 5.000.
-3. Implementar dupla confirmação e revalidação transacional.
-4. Criar modo canário com limite pequeno e rollback lógico.
-5. Validar restauração de backup sem reintrodução operacional.
-6. Autorizar cada categoria separadamente após revisão jurídica/contábil.
+Não há execução destrutiva nesta versão. Caso a empresa decida implementá-la,
+serão requisitos obrigatórios:
+
+1. paginar candidatos em tabela própria para volumes acima de 5.000;
+2. dupla confirmação e revalidação transacional;
+3. modo canário com limite pequeno e rollback lógico;
+4. validação de restauração sem reintrodução operacional;
+5. autorização separada de cada categoria após revisão jurídica/contábil.

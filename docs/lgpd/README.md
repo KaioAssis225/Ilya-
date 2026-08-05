@@ -12,7 +12,13 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
 - [Matriz de acesso](./MATRIZ-ACESSO.md): necessidade de acesso por papel.
 - [Playbook de incidentes](./PLAYBOOK-INCIDENTES-LGPD.md): resposta e comunicação.
 - [Proposta de prazos auxiliares](./PROPOSTA-PRAZOS-AUXILIARES.md): recomendações
-  ainda dependentes de aprovação.
+  aprovadas para inventário e simulação não destrutiva.
+- [Relatório consolidado](./RELATORIO-CONSOLIDADO-LGPD-2026-08-05.md): tudo que
+  foi implementado, validado e o que ainda depende da empresa.
+- [Procedimento de desligamento](./PROCEDIMENTO-DESLIGAMENTO-E-ACESSOS.md).
+- [Modelos de comunicação de incidente](./MODELOS-COMUNICACAO-INCIDENTE.md).
+- [Checklist de fornecedores](./CHECKLIST-FORNECEDORES.md).
+- [Modelo de LIA](./MODELO-LIA.md).
 - [Ato de designação do encarregado](./ATO-DESIGNACAO-ENCARREGADO.md): minuta para aprovação formal.
 - [Pendências da empresa](./PENDENCIAS-EMPRESA.md): decisões que o código não pode tomar.
 
@@ -53,6 +59,8 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
 - o registro estruturado de incidentes fica restrito ao administrador, conserva
   os campos regulatórios mínimos por pelo menos cinco anos e não oferece
   exclusão pela API.
+- a simulação de retenção cobre dez categorias, incluindo notificações, convites
+  de assinatura, webhooks e eventos de privacidade.
 
 ## Regra de manutenção
 

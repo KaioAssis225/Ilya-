@@ -1,7 +1,8 @@
-# Proposta de prazos auxiliares
+# Política de prazos auxiliares
 
-**Versão:** 0.1 — proposta para decisão
+**Versão:** 1.0 — aprovada para simulação não destrutiva
 **Data:** 05/08/2026
+**Responsável pela decisão:** Kaio Vinicius de Assis
 
 ## Limite desta proposta
 
@@ -29,7 +30,7 @@ aplicação”, que envolve data/hora de uso e endereço IP. A empresa deve conf
 com assessoria jurídica se o Ilya se enquadra no art. 15 e se os provedores
 contratados entregam a guarda necessária.
 
-## Recomendação técnica sujeita a aprovação
+## Prazos aprovados para inventário e simulação
 
 | Categoria | Proposta inicial | Condição |
 |---|---:|---|
@@ -41,15 +42,15 @@ contratados entregam a guarda necessária.
 | Evento de operação de privacidade (`privacy_events`) | 5 anos | validar com jurídico; conteúdo já é minimizado |
 | Log de aplicação/segurança além do registro obrigatório | 180 dias | ampliar sob incidente, ordem ou legal hold |
 
-## Decisões necessárias
+## Registro da decisão
 
-- [ ] Aprovar ou ajustar notificações.
-- [ ] Aprovar ou ajustar convites de assinatura.
-- [ ] Aprovar ou ajustar outbox/webhooks.
-- [ ] Aprovar ou ajustar eventos de privacidade.
+- [x] Notificações: 90 dias após leitura e 365 dias se não lidas.
+- [x] Convites de assinatura: 30 dias após o último marco.
+- [x] Outbox entregue: 90 dias; `dead_letter` exige resolução manual.
+- [x] Eventos de privacidade: 5 anos e revisão manual.
 - [ ] Confirmar política de logs no Railway e Vercel.
 - [ ] Confirmar o enquadramento do art. 15 do Marco Civil.
 
-Até essas decisões serem registradas, nenhum job novo de descarte deve ser
-habilitado. A próxima implementação segura é um inventário não destrutivo por
-categoria, seguido de simulação e aprovação separada.
+Os prazos aprovados foram implementados no `dry-run` administrativo. A
+aprovação não autoriza descarte automático. Logs dependem de contrato,
+configuração dos provedores e validação jurídica externa.

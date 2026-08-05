@@ -65,16 +65,33 @@ class LegalHoldRead(BaseModel):
 
 class RetentionDryRunRequest(BaseModel):
     categories: list[
-        Literal["clients", "open_orders", "closed_orders", "representatives"]
+        Literal[
+            "clients",
+            "open_orders",
+            "closed_orders",
+            "representatives",
+            "notifications_read",
+            "notifications_unread",
+            "signature_invitations",
+            "outbox_delivered",
+            "outbox_dead_letter",
+            "privacy_events",
+        ]
     ] = Field(
         default_factory=lambda: [
             "clients",
             "open_orders",
             "closed_orders",
             "representatives",
+            "notifications_read",
+            "notifications_unread",
+            "signature_invitations",
+            "outbox_delivered",
+            "outbox_dead_letter",
+            "privacy_events",
         ],
         min_length=1,
-        max_length=4,
+        max_length=10,
     )
 
     @field_validator("categories")

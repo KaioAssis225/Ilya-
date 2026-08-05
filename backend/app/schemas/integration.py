@@ -27,6 +27,7 @@ class OutboxEventRead(BaseModel):
     next_attempt_at: datetime
     last_error: str | None
     delivered_at: datetime | None
+    dead_lettered_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

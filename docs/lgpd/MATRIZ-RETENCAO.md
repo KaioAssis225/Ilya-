@@ -17,13 +17,13 @@ investigação ou obrigação legal, aplica-se legal hold até o encerramento.
 | RET-05 | Orçamento não convertido | sem expiração automática | 2 anos após a última atualização | excluir/anonimizar dados pessoais e preservar somente métrica agregada | Aprovado |
 | RET-06 | Pedido finalizado ou cancelado, itens e snapshots | sem expiração automática | 10 anos após finalização/cancelamento | anonimizar dados pessoais; preservar somente o mínimo necessário para histórico e obrigação aplicável | Aprovado |
 | RET-06A | Histórico do pedido | acompanha o pedido, sem prazo próprio | mesmo prazo de 10 anos do pedido | anonimizar o autor e detalhes pessoais ao término | Aprovado |
-| RET-07 | Notificações | sem expiração automática | curto prazo após leitura ou encerramento do evento, a definir | exclusão automatizada | Produto + Jurídico |
-| RET-08 | Solicitações de titular | operações técnicas passam a gerar trilha estruturada em `privacy_events` | prazo suficiente para provar atendimento, ainda a definir | anonimização ou descarte seguro após prazo | Prazo pendente |
+| RET-07 | Notificações | marco `read_at` implementado | 90 dias após leitura; 365 dias após criação quando não lida | simulação; descarte somente após revisão | Aprovado |
+| RET-08 | Solicitações de titular | operações técnicas geram trilha estruturada em `privacy_events` | 5 anos após o evento | revisão e minimização manual | Aprovado |
 | RET-08A | Registro de incidentes com dados pessoais | cadastro estruturado administrativo | mínimo de 5 anos contados do registro | reavaliar ao fim do prazo; legal hold e obrigação adicional prevalecem | Obrigação regulatória |
-| RET-09 | Assinaturas e convites | assinatura histórica sem prazo; convite expira em 10 min, mas linha permanece | assinatura acompanha o pedido por até 10 anos; prazo técnico da linha de convite ainda a definir | apagar imagem/hash/convite ao fim do prazo e revogar imediatamente quando necessário | Assinatura aprovada; convite pendente |
-| RET-10 | Logs | depende do provedor/máquina | prazo curto proporcional ao risco; diferenciar segurança, aplicação e backup | rotação e eliminação automatizadas | Segurança + DPO |
+| RET-09 | Assinaturas e convites | assinatura histórica acompanha o pedido; convite expira em 10 min | assinatura acompanha o pedido por até 10 anos; metadados do convite por 30 dias após expiração/consumo/revogação | simulação; apagar metadados somente após revisão | Aprovado |
+| RET-10 | Logs | depende do provedor/máquina | 6 meses para registro de acesso quando aplicável; 180 dias propostos para logs técnicos | confirmar cobertura e rotação nos provedores | Pendente externo |
 | RET-11 | Backups | 7 diários, 4 semanais, 6 mensais; criptografados | manter GFS atual, confirmar se 6 meses atende obrigações e risco | expiração automática local e off-site; registrar destruição | Infra + Jurídico |
-| RET-12 | Outbox/webhooks | sem expiração automática | pendentes até resolução; entregues por prazo técnico curto; dead letter revisada | apagar payload e preservar métrica agregada | Integrações + DPO |
+| RET-12 | Outbox/webhooks | `delivered_at` e `dead_lettered_at` implementados | entregues por 90 dias; `dead_letter` até resolução manual | simular remoção do payload entregue; nunca eliminar falha não resolvida | Aprovado |
 | RET-13 | Arquivos/imagens de produto | sem descarte de órfãos comprovado | enquanto produto estiver ativo e janela curta após substituição | job de órfãos e exclusão no storage | Produto + Infra |
 
 ## Regras de implementação
@@ -45,10 +45,7 @@ investigação ou obrigação legal, aplica-se legal hold até o encerramento.
 
 ## Pendências antes de liberar os jobs
 
-- prazo de notificações;
 - prazo de logs no Railway/Vercel;
-- prazo de eventos entregues/dead letter;
-- prazo da trilha de solicitações/operações de privacidade;
 - confirmação de expiração dos arquivos na cópia off-site.
 
 Os marcos canônicos de atividade do cliente, encerramento do representante e

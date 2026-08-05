@@ -71,6 +71,9 @@ class IntegrationOutbox(Base, TimestampMixin):
     delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     correlation_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), nullable=True
     )
@@ -80,6 +83,10 @@ class IntegrationOutbox(Base, TimestampMixin):
             "status IN ('pending', 'processing', 'delivered', 'failed', 'dead_letter')",
             name="ck_integration_outbox_status",
         ),
+        CheckConstraint(
+            "(status = 'dead_letter') = (dead_lettered_at IS NOT NULL)",
+            name="ck_integration_outbox_dead_letter_timestamp",
+        ),
         # Índice quente do worker: "o que está pronto para enviar agora?".
         # Parcial de propósito — as linhas `delivered` viram a maioria absoluta
         # da tabela com o tempo e ficariam fora do índice, mantendo-o pequeno.
@@ -87,6 +94,18 @@ class IntegrationOutbox(Base, TimestampMixin):
             "ix_integration_outbox_due",
             "next_attempt_at",
             postgresql_where=text("status = 'pending'"),
+        ),
+        Index(
+            "ix_integration_outbox_retention_delivered",
+            "delivered_at",
+            "id",
+            postgresql_where=text("status = 'delivered'"),
+        ),
+        Index(
+            "ix_integration_outbox_dead_lettered",
+            "dead_lettered_at",
+            "id",
+            postgresql_where=text("status = 'dead_letter'"),
         ),
     )
 

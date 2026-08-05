@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +43,8 @@ async def mark_read(
     if not notif:
         raise HTTPException(status_code=404, detail="Notificação não encontrada.")
     notif.is_read = True
+    if notif.read_at is None:
+        notif.read_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(notif)
     return notif

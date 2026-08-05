@@ -11,11 +11,17 @@ import {
 } from 'lucide-react'
 import api from '../lib/api'
 
-type SubjectType = 'client' | 'representative' | 'order'
+type HoldSubjectType = 'client' | 'representative' | 'order'
+type CandidateSubjectType =
+  | HoldSubjectType
+  | 'notification'
+  | 'signature_invitation'
+  | 'integration_outbox'
+  | 'privacy_event'
 
 type LegalHold = {
   id: string
-  subject_type: SubjectType
+  subject_type: HoldSubjectType
   subject_id: string
   reason: string
   expires_at: string | null
@@ -38,7 +44,7 @@ type RetentionCategory = {
 }
 
 type RetentionCandidate = {
-  subject_type: SubjectType
+  subject_type: CandidateSubjectType
   subject_id: string
   reference_at: string
   proposed_action: string
@@ -59,14 +65,18 @@ type RetentionReview = {
 }
 
 type HoldModalState = {
-  subject_type: SubjectType
+  subject_type: HoldSubjectType
   subject_id: string
 }
 
-const SUBJECT_LABEL: Record<SubjectType, string> = {
+const SUBJECT_LABEL: Record<CandidateSubjectType, string> = {
   client: 'Cliente',
   representative: 'Representante',
   order: 'Pedido/orçamento',
+  notification: 'Notificação',
+  signature_invitation: 'Convite de assinatura',
+  integration_outbox: 'Evento de integração',
+  privacy_event: 'Evento de privacidade',
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -74,6 +84,12 @@ const CATEGORY_LABEL: Record<string, string> = {
   open_orders: 'Orçamentos/pedidos abertos',
   closed_orders: 'Pedidos finalizados/cancelados',
   representatives: 'Representantes',
+  notifications_read: 'Notificações lidas',
+  notifications_unread: 'Notificações não lidas',
+  signature_invitations: 'Convites de assinatura',
+  outbox_delivered: 'Webhooks entregues',
+  outbox_dead_letter: 'Webhooks com falha definitiva',
+  privacy_events: 'Eventos de privacidade',
 }
 
 function formatDate(value: string | null) {
@@ -176,7 +192,7 @@ export default function RetentionGovernancePanel() {
     }
   }
 
-  function openHold(subjectType: SubjectType = 'client', subjectId = '') {
+  function openHold(subjectType: HoldSubjectType = 'client', subjectId = '') {
     setHoldReason('')
     setHoldExpiresAt('')
     setHoldModal({ subject_type: subjectType, subject_id: subjectId })
@@ -431,13 +447,15 @@ export default function RetentionGovernancePanel() {
                             <p className="truncate font-mono text-[10px] text-muted">{candidate.subject_id}</p>
                             <p className="text-[10px] text-muted">Referência: {formatDate(candidate.reference_at)}</p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => openHold(candidate.subject_type, candidate.subject_id)}
-                            className="shrink-0 text-xs font-medium text-gold hover:text-gold-600"
-                          >
-                            Bloquear
-                          </button>
+                          {(['client', 'representative', 'order'] as CandidateSubjectType[]).includes(candidate.subject_type) && (
+                            <button
+                              type="button"
+                              onClick={() => openHold(candidate.subject_type as HoldSubjectType, candidate.subject_id)}
+                              className="shrink-0 text-xs font-medium text-gold hover:text-gold-600"
+                            >
+                              Bloquear
+                            </button>
+                          )}
                         </div>
                       ))}
                       {selected.candidates.length > 100 && (
@@ -505,7 +523,7 @@ export default function RetentionGovernancePanel() {
                 value={holdModal.subject_type}
                 onChange={(event) => setHoldModal({
                   ...holdModal,
-                  subject_type: event.target.value as SubjectType,
+                  subject_type: event.target.value as HoldSubjectType,
                 })}
               >
                 <option value="client">Cliente</option>
