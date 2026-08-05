@@ -322,6 +322,7 @@ async def update_product(
     components_in = payload.components
     for field, value in data.items():
         setattr(product, field, value)
+    product.source_version += 1
     if optional_ids is not None:
         product.optionals = await _resolve_optionals(db, optional_ids)
     if set_items_in is not None:
@@ -349,10 +350,12 @@ async def delete_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    old_photo_path = product.photo_path
-    await db.delete(product)
+    # Migration/01 + decisão do Alto Comando (05/08/2026): desativação, não
+    # exclusão física. O product_code permanece reservado (Opção A) e a foto
+    # não é apagada — o produto pode ser reativado no futuro.
+    product.is_active = False
+    product.source_version += 1
     await db.commit()
-    await delete_upload(old_photo_path)
 
 
 @router.post("/{product_id}/upload-photo", response_model=ProductRead)

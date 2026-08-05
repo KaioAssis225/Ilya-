@@ -643,6 +643,10 @@ async def update_order(
     if _representative_cannot_access_order(current_user, order):
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
 
+    # Migration/01: toda edição aceita incrementa o frescor para consumidores
+    # externos (leitura cross-database do Ilya Estoque).
+    order.source_version += 1
+
     changes: list[str] = []
 
     if payload.notes is not None and payload.notes != order.notes:
@@ -811,6 +815,7 @@ async def finalize_order(
     terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
     order.finalized_at = terminal_at
+    order.source_version += 1
     if payload.external_code:
         order.external_code = payload.external_code
     db.add(OrderHistory(
@@ -856,6 +861,7 @@ async def cancel_order(
     terminal_at = datetime.now(timezone.utc)
     order.is_cancelled = True
     order.cancelled_at = terminal_at
+    order.source_version += 1
     db.add(OrderHistory(
         id=uuid.uuid4(),
         order_id=order.id,

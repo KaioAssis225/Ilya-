@@ -32,6 +32,9 @@ class Order(Base, TimestampMixin):
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     external_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Migration/01: frescor para consumidores externos (leitura cross-database
+    # do Ilya Estoque).
+    source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan", lazy="selectin")
     history: Mapped[list["OrderHistory"]] = relationship("OrderHistory", back_populates="order", cascade="all, delete-orphan", lazy="selectin", order_by="OrderHistory.created_at")

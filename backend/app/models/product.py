@@ -32,6 +32,10 @@ class Product(Base, TimestampMixin):
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     all_optionals_categories: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Migration/01: frescor para consumidores externos (leitura cross-database
+    # do Ilya Estoque) e desativação sem exclusão física.
+    source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
     optionals: Mapped[list["OptionalColor"]] = relationship(
         "OptionalColor", secondary=product_optionals, lazy="selectin"
