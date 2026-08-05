@@ -1,6 +1,6 @@
 # Playbook de incidentes com dados pessoais
 
-**Versão:** 1.0
+**Versão:** 1.1
 **Data:** 05/08/2026
 **Referência:** LGPD art. 48 e Resolução CD/ANPD nº 15/2024.
 
@@ -117,7 +117,13 @@ Para todo incidente, comunicado ou não, guardar:
 - ações corretivas, dono e prazo;
 - data de encerramento e aprovação.
 
-O prazo desse registro deve ser definido na matriz de retenção.
+O registro deve ser mantido por **no mínimo cinco anos contados da data do
+registro**, inclusive quando o incidente não for comunicado à ANPD ou aos
+titulares. O sistema calcula e bloqueia esse prazo mínimo no momento da
+abertura. Obrigações adicionais ou legal hold podem exigir conservação maior.
+
+O cadastro fica em **Admin → Registro de incidentes LGPD** e não possui endpoint
+de exclusão. Alterações de estado e abertura também geram evento de auditoria.
 
 ## 7. Contatos a preencher antes de produção
 

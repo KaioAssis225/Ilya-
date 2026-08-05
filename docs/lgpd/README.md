@@ -11,6 +11,8 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
   aprovação sem descarte.
 - [Matriz de acesso](./MATRIZ-ACESSO.md): necessidade de acesso por papel.
 - [Playbook de incidentes](./PLAYBOOK-INCIDENTES-LGPD.md): resposta e comunicação.
+- [Proposta de prazos auxiliares](./PROPOSTA-PRAZOS-AUXILIARES.md): recomendações
+  ainda dependentes de aprovação.
 - [Ato de designação do encarregado](./ATO-DESIGNACAO-ENCARREGADO.md): minuta para aprovação formal.
 - [Pendências da empresa](./PENDENCIAS-EMPRESA.md): decisões que o código não pode tomar.
 
@@ -48,6 +50,9 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
   a simulação não depende mais de timestamps técnicos para registros encerrados.
 - o encerramento administrativo do representante exige senha e justificativa,
   desativa os acessos vinculados e revoga seus refresh tokens.
+- o registro estruturado de incidentes fica restrito ao administrador, conserva
+  os campos regulatórios mínimos por pelo menos cinco anos e não oferece
+  exclusão pela API.
 
 ## Regra de manutenção
 

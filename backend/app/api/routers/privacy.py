@@ -19,6 +19,7 @@ from app.core.privacy_audit import record_privacy_event
 from app.core.security import verify_password
 from app.models.client import Client
 from app.models.order import Order
+from app.models.privacy_incident import PrivacyIncident
 from app.models.refresh_token import RefreshToken
 from app.models.representative import Representative
 from app.models.retention import LegalHold, RetentionReview
@@ -32,6 +33,9 @@ from app.schemas.retention import (
     RetentionReviewRead,
     RepresentativeRelationshipEndRead,
     RepresentativeRelationshipEndRequest,
+    PrivacyIncidentCreate,
+    PrivacyIncidentRead,
+    PrivacyIncidentUpdate,
 )
 
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
@@ -39,6 +43,13 @@ _ADMIN = Depends(require_roles(UserRole.admin))
 
 _POLICY_VERSION = "2026-08-05-v2"
 _MAX_SNAPSHOT_CANDIDATES = 5_000
+
+
+def _add_calendar_years(value: datetime, years: int) -> datetime:
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        return value.replace(month=2, day=28, year=value.year + years)
 
 
 def _is_active_hold(now: datetime):
@@ -246,6 +257,167 @@ async def _candidate_rows(
             .limit(remaining)
         )
     ).all()
+
+
+@router.get("/incidents", response_model=list[PrivacyIncidentRead])
+async def list_privacy_incidents(
+    incident_status: str | None = Query(
+        default=None,
+        alias="status",
+        pattern="^(investigating|contained|closed)$",
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db_session),
+    _: User = _ADMIN,
+):
+    stmt = select(PrivacyIncident).order_by(
+        PrivacyIncident.known_at.desc(),
+        PrivacyIncident.id.desc(),
+    ).limit(limit)
+    if incident_status is not None:
+        stmt = stmt.where(PrivacyIncident.status == incident_status)
+    return (await db.execute(stmt)).scalars().all()
+
+
+@router.post(
+    "/incidents",
+    response_model=PrivacyIncidentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("20/hour")
+async def create_privacy_incident(
+    payload: PrivacyIncidentCreate,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+):
+    now = datetime.now(timezone.utc)
+    if payload.known_at > now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A data de ciência não pode estar no futuro.",
+        )
+    incident = PrivacyIncident(
+        **payload.model_dump(),
+        retain_until=_add_calendar_years(now, 5),
+        created_at=now,
+        created_by_user_id=current_user.id,
+        updated_by_user_id=current_user.id,
+    )
+    db.add(incident)
+    await db.flush()
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="privacy_incident",
+        subject_id=incident.id,
+        action="privacy_incident_created",
+        request=request,
+        legal_basis="LGPD Art. 48 e Resolução CD/ANPD 15/2024",
+        context={
+            "status": incident.status,
+            "retain_until": incident.retain_until.isoformat(),
+            "anpd_notified": incident.anpd_notified,
+            "subjects_notified": incident.subjects_notified,
+        },
+    )
+    await db.commit()
+    await db.refresh(incident)
+    return incident
+
+
+@router.patch(
+    "/incidents/{incident_id}",
+    response_model=PrivacyIncidentRead,
+)
+@limiter.limit("30/hour")
+async def update_privacy_incident(
+    incident_id: uuid.UUID,
+    payload: PrivacyIncidentUpdate,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+):
+    incident = (
+        await db.execute(
+            select(PrivacyIncident)
+            .where(PrivacyIncident.id == incident_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incidente não encontrado.")
+
+    update_data = payload.model_dump(
+        exclude_unset=True,
+    )
+    target_anpd = update_data.get("anpd_notified", incident.anpd_notified)
+    target_subjects = update_data.get(
+        "subjects_notified",
+        incident.subjects_notified,
+    )
+    target_details = update_data.get(
+        "notification_details",
+        incident.notification_details,
+    )
+    target_reason = update_data.get(
+        "non_notification_reason",
+        incident.non_notification_reason,
+    )
+    if (target_anpd or target_subjects) and not target_details:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Informe os detalhes das comunicações realizadas.",
+        )
+    if not target_anpd and not target_subjects and not target_reason:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Fundamente a decisão de ainda não comunicar.",
+        )
+    target_status = update_data.get("status", incident.status)
+    target_root_cause = update_data.get("root_cause", incident.root_cause)
+    target_actions = update_data.get(
+        "corrective_actions",
+        incident.corrective_actions,
+    )
+    if target_status == "closed" and (
+        not target_root_cause or not target_actions
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Para encerrar, registre a causa raiz e as ações corretivas."
+            ),
+        )
+
+    previous_status = incident.status
+    for field, value in update_data.items():
+        setattr(incident, field, value)
+    if incident.status == "closed" and incident.closed_at is None:
+        incident.closed_at = datetime.now(timezone.utc)
+    elif incident.status != "closed":
+        incident.closed_at = None
+    incident.updated_by_user_id = current_user.id
+
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="privacy_incident",
+        subject_id=incident.id,
+        action="privacy_incident_updated",
+        request=request,
+        legal_basis="LGPD Art. 48 e Resolução CD/ANPD 15/2024",
+        context={
+            "previous_status": previous_status,
+            "status": incident.status,
+            "changed_fields": sorted(update_data),
+        },
+    )
+    await db.commit()
+    await db.refresh(incident)
+    return incident
 
 
 @router.post(

@@ -7,11 +7,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.routers.privacy import (
+    _add_calendar_years,
     _hold_read,
     approve_retention_review,
     create_legal_hold,
     create_retention_dry_run,
     end_representative_relationship,
+    create_privacy_incident,
+    update_privacy_incident,
     release_legal_hold,
 )
 from app.main import app
@@ -19,6 +22,7 @@ from app.schemas.retention import (
     LegalHoldCreate,
     LegalHoldRelease,
     RepresentativeRelationshipEndRequest,
+    PrivacyIncidentCreate,
     RetentionDryRunRequest,
 )
 
@@ -65,6 +69,37 @@ def test_encerramento_de_representante_exige_fuso_e_justificativa():
             reason="   ",
             password="SenhaForte1",
         )
+
+
+def test_incidente_exige_campos_minimos_e_decisao_de_comunicacao():
+    with pytest.raises(ValidationError, match="fuso"):
+        PrivacyIncidentCreate(
+            known_at=datetime(2026, 8, 5, 12, 0),
+            description="Exposição confirmada no ambiente produtivo.",
+            data_categories=["contato"],
+            risk_assessment="Possibilidade de contato indevido.",
+            mitigation_measures="Acesso revogado.",
+            non_notification_reason="Avaliação inicial em andamento.",
+        )
+    with pytest.raises(ValidationError, match="comunica"):
+        PrivacyIncidentCreate(
+            known_at=datetime.now(timezone.utc),
+            description="Exposição confirmada no ambiente produtivo.",
+            data_categories=["contato"],
+            risk_assessment="Possibilidade de contato indevido.",
+            mitigation_measures="Acesso revogado.",
+        )
+
+
+def test_retencao_de_incidente_soma_cinco_anos_calendario():
+    leap_day = datetime(2024, 2, 29, 10, tzinfo=timezone.utc)
+    assert _add_calendar_years(leap_day, 5) == datetime(
+        2029,
+        2,
+        28,
+        10,
+        tzinfo=timezone.utc,
+    )
 
 
 def test_estado_ativo_do_legal_hold_considera_expiracao_e_liberacao():
@@ -115,6 +150,8 @@ def test_api_de_retencao_nao_expoe_execucao_ou_exclusao():
     }
     assert "/api/v1/privacy/legal-holds" in privacy_paths
     assert "/api/v1/privacy/retention-reviews/dry-run" in privacy_paths
+    assert "/api/v1/privacy/incidents" in privacy_paths
+    assert "/api/v1/privacy/incidents/{incident_id}" in privacy_paths
     assert (
         "/api/v1/privacy/representatives/{representative_id}/relationship-end"
         in privacy_paths
@@ -143,6 +180,8 @@ def test_endpoints_limitados_recebem_response_para_headers_do_rate_limit():
         create_retention_dry_run,
         approve_retention_review,
         end_representative_relationship,
+        create_privacy_incident,
+        update_privacy_incident,
     ):
         assert "request" in inspect.signature(endpoint).parameters
         assert "response" in inspect.signature(endpoint).parameters
