@@ -13,6 +13,7 @@ from app.api.deps import (
     require_directory_access,
     require_roles,
     is_client_account,
+    sanitize_client_update_fields,
 )
 from app.core.search import literal_contains_pattern
 from app.models.client import Client, anonymize_client_fields
@@ -257,12 +258,9 @@ async def update_client(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     _rep_guard(client, current_user)
-    update_data = payload.model_dump(exclude_unset=True)
-    if current_user.role == UserRole.representante:
-        update_data.pop("email", None)
-        update_data.pop("price_profile", None)
-    if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
-        update_data.pop("max_discount", None)
+    update_data = sanitize_client_update_fields(
+        payload.model_dump(exclude_unset=True), current_user
+    )
     new_email = update_data.get("email")
     if new_email:
         duplicate_email = (

@@ -80,6 +80,26 @@ def is_internal_operator(user: User) -> bool:
     return user.role == UserRole.vendedor and user.linked_id is None
 
 
+def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict:
+    """Remove de um PATCH de cliente os campos que o papel não pode alterar.
+
+    Defesa server-side de preço (regra nº 1): `price_profile` e `max_discount`
+    definem o faturamento e são exclusivos de admin/cadastros/produtos. Uma
+    conta de portal do cliente-final (SEC-PRICE-02) nunca altera os próprios
+    termos comerciais, nem mesmo editando o próprio registro; o `representante`
+    também não muda perfil de preço nem e-mail do cliente.
+    """
+    if current_user.role == UserRole.representante:
+        update_data.pop("email", None)
+    # SEC-PRICE-02: cliente-final (inclui legado `vendedor`+linked_id) e
+    # representante nunca definem o perfil de faturamento do cliente.
+    if is_client_account(current_user) or current_user.role == UserRole.representante:
+        update_data.pop("price_profile", None)
+    if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
+        update_data.pop("max_discount", None)
+    return update_data
+
+
 def _enforce_roles(current_user: User, allowed_roles: frozenset[UserRole]) -> User:
     if current_user.role == UserRole.admin:
         return current_user
