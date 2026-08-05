@@ -9,6 +9,7 @@ import { useCartQuantities } from './hooks/useCart'
 import { countCartUnits } from './lib/cart'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
+import { ErrorBoundary } from './components/ErrorBoundary'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
 const CadastroPage = lazy(() => import('./pages/CadastroPage'))
@@ -275,6 +276,7 @@ function RouteFallback() {
 }
 
 export default function PrivateApp() {
+  const location = useLocation()
   return (
     <QueryClientProvider client={queryClient}>
           <a
@@ -285,6 +287,7 @@ export default function PrivateApp() {
           </a>
           <Nav />
           <main id="main-content">
+            <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                   <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
@@ -331,6 +334,7 @@ export default function PrivateApp() {
                   />
               </Routes>
             </Suspense>
+            </ErrorBoundary>
           </main>
           <BottomNav />
           <DashboardFabGate />
