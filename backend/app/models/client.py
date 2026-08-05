@@ -43,6 +43,7 @@ class Client(Base, TimestampMixin):
         Index("ix_clients_phone_id", "phone", "id"),
         Index("ix_clients_city_id", "city", "id"),
         Index("ix_clients_max_discount_id", "max_discount", "id"),
+        Index("ix_clients_retention_updated_id", "updated_at", "id"),
         Index(
             "ix_clients_name_trgm",
             "name",

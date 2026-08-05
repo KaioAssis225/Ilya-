@@ -525,6 +525,10 @@ Após a análise inicial, foram implementadas as seguintes mitigações:
   já existente para clientes, desativando todas as contas ativas vinculadas;
 - a exclusão automática por retenção permanece deliberadamente desativada até
   serem definidos legal hold, eventos de referência e prazos ainda pendentes.
+- criada a fundação de `legal hold` e relatório de retenção `dry-run`, limitada
+  a administradores e sem qualquer endpoint de execução ou exclusão;
+- a aprovação do relatório exige reautenticação e fica registrada na trilha de
+  privacidade, mas não autoriza descarte automático.
 
 As lacunas originais permanecem neste relatório como registro histórico. O
 estado operacional corrente deve ser consultado em `docs/lgpd/README.md`.

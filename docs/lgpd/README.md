@@ -7,6 +7,8 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
 
 - [ROPA](./ROPA.md): registro das operações de tratamento.
 - [Matriz de retenção](./MATRIZ-RETENCAO.md): critérios de guarda e descarte.
+- [Operação de retenção](./OPERACAO-RETENCAO.md): legal hold, simulação e
+  aprovação sem descarte.
 - [Matriz de acesso](./MATRIZ-ACESSO.md): necessidade de acesso por papel.
 - [Playbook de incidentes](./PLAYBOOK-INCIDENTES-LGPD.md): resposta e comunicação.
 - [Ato de designação do encarregado](./ATO-DESIGNACAO-ENCARREGADO.md): minuta para aprovação formal.
@@ -38,6 +40,10 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
 - a trilha não copia senha, token, arquivo exportado ou conteúdo pessoal;
 - anonimização administrativa está disponível para clientes e representantes,
   com desativação de todas as contas ativas vinculadas.
+- legal hold e relatórios `dry-run` estão disponíveis somente para
+  administradores; aprovar um relatório não executa descarte.
+- o painel **Admin → Governança de retenção** permite gerar, revisar, bloquear
+  e aprovar as fotografias sem disponibilizar ações destrutivas.
 
 ## Regra de manutenção
 

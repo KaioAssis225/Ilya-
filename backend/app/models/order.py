@@ -87,6 +87,22 @@ class Order(Base, TimestampMixin):
             "id",
             postgresql_where=text("is_cancelled = true"),
         ),
+        Index(
+            "ix_orders_retention_open_updated_id",
+            "updated_at",
+            "id",
+            postgresql_where=text(
+                "is_finalized = false AND is_cancelled = false"
+            ),
+        ),
+        Index(
+            "ix_orders_retention_closed_updated_id",
+            "updated_at",
+            "id",
+            postgresql_where=text(
+                "is_finalized = true OR is_cancelled = true"
+            ),
+        ),
     )
 
     # Flags derivadas — permitem a listagem informar status de assinatura

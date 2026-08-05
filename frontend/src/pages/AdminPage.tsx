@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, KeyRound, Pencil, Plus, Search, ShieldCheck,
 import { useUsersPage, useCreateUser, useUpdateUser, useResetUserPassword, useDeleteUser } from '../hooks/useUsers'
 import type { UserRead, UserCreate, UserUpdate } from '../hooks/useUsers'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
+import RetentionGovernancePanel from '../components/RetentionGovernancePanel'
 
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -283,6 +284,7 @@ export default function AdminPage() {
             </div>
           </div>
         </div>
+        <RetentionGovernancePanel />
       </div>
 
       {/* Modais */}

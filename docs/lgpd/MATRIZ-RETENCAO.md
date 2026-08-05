@@ -38,6 +38,9 @@ investigação ou obrigação legal, aplica-se legal hold até o encerramento.
 6. O responsável deve testar restauração sem reintroduzir dados já eliminados
    em produção.
 7. A matriz deve ser revisada no mínimo anualmente.
+8. A aprovação de um relatório `dry-run` não autoriza descarte automático; a
+   elegibilidade e os legal holds devem ser revalidados na mesma transação de
+   uma futura execução.
 
 ## Pendências antes de liberar os jobs
 

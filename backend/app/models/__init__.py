@@ -14,6 +14,7 @@ from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
 from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
 from app.models.privacy_event import PrivacyEvent
+from app.models.retention import LegalHold, RetentionReview
 
 __all__ = [
     "Base",
@@ -37,4 +38,6 @@ __all__ = [
     "IntegrationOutbox",
     "OUTBOX_STATUSES",
     "PrivacyEvent",
+    "LegalHold",
+    "RetentionReview",
 ]
