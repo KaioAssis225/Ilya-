@@ -21,6 +21,7 @@ from app.api.deps import (
     is_client_account,
     is_internal_operator,
 )
+from app.api.routers.orders import _can_operate_order
 from app.models.user import UserRole
 
 
@@ -167,3 +168,30 @@ class TestAcessoAPedidos:
         with pytest.raises(HTTPException) as exc:
             require_order_access(current_user=user)
         assert exc.value.status_code == 403
+
+
+class TestOperacaoDoCicloDoPedido:
+    """Editar / finalizar / cancelar — guard compartilhado dos três handlers.
+
+    Ler e criar pedido são mais amplos que operar: a conta de cliente entra em
+    `require_order_access` e em `_allowed_create`, mas nunca opera (SEC-02).
+    """
+
+    @pytest.mark.parametrize(
+        "user",
+        [ADMIN, VENDEDOR_INTERNO, REPRESENTANTE, PRODUTOS],
+    )
+    def test_papeis_operadores_permitidos(self, user):
+        assert _can_operate_order(user) is True
+
+    @pytest.mark.parametrize(
+        "user",
+        [CLIENTE_NOVO, CLIENTE_LEGADO, CADASTROS, EXECUTIVO],
+    )
+    def test_papeis_nao_operadores_bloqueados(self, user):
+        assert _can_operate_order(user) is False
+
+    def test_cliente_legado_nao_opera_mesmo_com_role_vendedor(self):
+        """O legado `vendedor`+linked_id lê pedidos, mas não edita/cancela."""
+        assert require_order_access(current_user=CLIENTE_LEGADO) is CLIENTE_LEGADO
+        assert _can_operate_order(CLIENTE_LEGADO) is False

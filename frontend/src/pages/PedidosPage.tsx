@@ -258,6 +258,7 @@ function OrderDetailModal({
   // O papel legado "vendedor" com vínculo é uma conta de cliente, não um usuário interno.
   const canManage = userRole === 'admin'
     || userRole === 'representante'
+    || userRole === 'produtos'
     || (userRole === 'vendedor' && !canSignContract)
   const profileSig = getProfileSignature(userId)
   const isContractSigned = !!(order.rep_signed || order.rep_signature)
@@ -738,7 +739,7 @@ export default function PedidosPage() {
   const navigate = useNavigate()
   const isLegacyClient = user?.role === 'vendedor' && !!user.linked_id
   const isInternalSeller = user?.role === 'vendedor' && !user.linked_id
-  const canManage = user?.role === 'admin' || user?.role === 'representante' || isInternalSeller
+  const canManage = user?.role === 'admin' || user?.role === 'representante' || user?.role === 'produtos' || isInternalSeller
   const canViewGlobalAudit = user?.role === 'admin' || isInternalSeller
   const canDelete = user?.role === 'admin'
   const [activeTab, setActiveTab] = useState<'orders' | 'audit'>('orders')

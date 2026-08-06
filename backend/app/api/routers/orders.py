@@ -82,6 +82,20 @@ def _ensure_total_capacity(*values: Decimal) -> None:
         )
 
 
+def _can_operate_order(current_user: User) -> bool:
+    """Papéis que operam o ciclo de vida do pedido (editar/finalizar/cancelar).
+
+    Operador interno de vendas, representante, `produtos` e admin. Conta de
+    portal do cliente-final nunca opera pedido (SEC-02) — `is_internal_operator`
+    já exclui o legado `vendedor`+`linked_id`. Exclusão segue exclusiva do admin.
+    """
+    return (
+        current_user.role
+        in {UserRole.admin, UserRole.representante, UserRole.produtos}
+        or is_internal_operator(current_user)
+    )
+
+
 def _representative_cannot_access_order(
     current_user: User,
     order: Order,
@@ -626,8 +640,8 @@ async def update_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    # Edição é operação de operador interno ou representante — cliente-final nunca edita pedido (SEC-02).
-    if not (current_user.role in {UserRole.admin, UserRole.representante} or is_internal_operator(current_user)):
+    # Edição é operação de operador interno, representante ou produtos — cliente-final nunca edita pedido (SEC-02).
+    if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Operação não permitida.")
 
     result = await db.execute(
@@ -797,7 +811,7 @@ async def finalize_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    if not (current_user.role == UserRole.admin or is_internal_operator(current_user) or current_user.role == UserRole.representante):
+    if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
         select(Order).where(Order.id == order_id).with_for_update()
@@ -843,7 +857,7 @@ async def cancel_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    if not (current_user.role == UserRole.admin or is_internal_operator(current_user) or current_user.role == UserRole.representante):
+    if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
         select(Order).where(Order.id == order_id).with_for_update()
