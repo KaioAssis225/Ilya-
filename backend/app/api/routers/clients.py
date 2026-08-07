@@ -19,6 +19,7 @@ from app.api.deps import (
 from app.core.search import literal_contains_pattern
 from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client, anonymize_client_fields
+from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
 
@@ -27,6 +28,26 @@ router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 logger = logging.getLogger("ilya.clients")
 
 _ADMIN = Depends(require_roles(UserRole.admin))
+
+
+async def _validated_rep_id(
+    rep_id: uuid.UUID | None,
+    db: AsyncSession,
+) -> uuid.UUID | None:
+    """Confere que a carteira informada existe antes de gravar o vínculo."""
+    if rep_id is None:
+        return None
+    exists = (
+        await db.execute(
+            select(Representative.id).where(Representative.id == rep_id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if not exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Representante não encontrado.",
+        )
+    return rep_id
 
 
 def _rep_guard(client: Client, current_user: User) -> None:
@@ -213,7 +234,10 @@ async def create_client(
                     "de representante associado."
                 ),
             )
+        # Representante nunca escolhe a carteira — nem a própria, nem a alheia.
         client.rep_id = current_user.rep_id
+    else:
+        client.rep_id = await _validated_rep_id(data.get("rep_id"), db)
     db.add(client)
     try:
         await db.commit()
@@ -267,6 +291,8 @@ async def update_client(
     update_data = sanitize_client_update_fields(
         payload.model_dump(exclude_unset=True), current_user
     )
+    if "rep_id" in update_data:
+        update_data["rep_id"] = await _validated_rep_id(update_data["rep_id"], db)
     new_email = update_data.get("email")
     if new_email:
         duplicate_email = (

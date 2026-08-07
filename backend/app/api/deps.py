@@ -97,6 +97,9 @@ def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict
         update_data.pop("price_profile", None)
     if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
         update_data.pop("max_discount", None)
+        # Reatribuir carteira é decisão comercial: sem isso um representante
+        # poderia puxar para si o cliente de outro — ou se livrar do próprio.
+        update_data.pop("rep_id", None)
     return update_data
 
 

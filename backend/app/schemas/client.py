@@ -29,7 +29,10 @@ class ClientBase(BaseModel):
 
 
 class ClientCreate(ClientBase):
-    pass
+    # Sem isto, um cliente cadastrado por admin/cadastros nascia órfão e o
+    # representante levava 403 ao tentar faturar para ele — sem conserto pela
+    # API. Representante não escolhe: o vínculo é sempre com ele mesmo.
+    rep_id: Optional[uuid.UUID] = None
 
 
 class ClientUpdate(BaseModel):
@@ -43,6 +46,8 @@ class ClientUpdate(BaseModel):
     state: Optional[str] = Field(None, min_length=2, max_length=2)
     price_profile: Optional[Literal["lojista", "corporativo"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
+    # Permite reatribuir a carteira e consertar cliente órfão (ver ClientCreate).
+    rep_id: Optional[uuid.UUID] = None
 
     @field_validator("state", mode="before")
     @classmethod
