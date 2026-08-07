@@ -1,8 +1,14 @@
+import re
 import uuid
 from decimal import Decimal
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.models.user import UserRole
+
+# O login compara o identificador já em minúsculas contra `users.username`,
+# então um username com maiúscula seria impossível de usar. O formato restrito
+# também evita que um username se pareça com um e-mail e confunda a busca.
+_USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,100}$")
 
 
 class LoginRequest(BaseModel):
@@ -41,10 +47,28 @@ class UserRead(BaseModel):
 
 class UserCreate(BaseModel):
     email: EmailStr
+    # Login opcional escolhido pelo admin. Sem ele, a conta entra só pelo e-mail
+    # (comportamento anterior preservado).
+    username: Optional[str] = None
     password: str
     full_name: str
     role: UserRole = UserRole.vendedor
     rep_id: Optional[uuid.UUID] = None
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        if not _USERNAME_RE.fullmatch(normalized):
+            raise ValueError(
+                "Usuário deve ter de 3 a 100 caracteres, apenas letras, "
+                "números, ponto, hífen ou sublinhado."
+            )
+        return normalized
 
 
 class UserUpdate(BaseModel):

@@ -167,6 +167,12 @@ async def create_user(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "E-mail já cadastrado.")
+    if body.username:
+        taken = await db.execute(
+            select(User.id).where(User.username == body.username).limit(1)
+        )
+        if taken.scalar_one_or_none():
+            raise HTTPException(status.HTTP_409_CONFLICT, "Usuário já cadastrado.")
     rep_id = await _validated_rep_assignment(
         body.role,
         body.rep_id,
@@ -174,6 +180,7 @@ async def create_user(
     )
     user = User(
         email=normalized_email,
+        username=body.username,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
         role=body.role,
@@ -187,7 +194,7 @@ async def create_user(
         await db.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "E-mail ou representante já vinculado a outra conta.",
+            "E-mail, usuário ou representante já vinculado a outra conta.",
         )
     await db.refresh(user)
     return user
