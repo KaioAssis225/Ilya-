@@ -59,6 +59,16 @@ class Settings(BaseSettings):
 
     RATE_LIMIT_STORAGE_URI: str = "memory://"
     RATE_LIMIT_DEFAULT: str = "200/minute"
+    # Login é anônimo, então o limite é por IP. Numa feira/showroom a equipe
+    # inteira sai pelo mesmo IP público (NAT), e um teto baixo bloquearia o
+    # 6º representante a entrar. A proteção real contra força bruta dirigida
+    # continua sendo o bloqueio por conta (5 falhas → 15 min em auth.login);
+    # este limite existe contra varredura distribuída. Ajustável por env para
+    # ser afrouxado/apertado no dia do evento sem novo deploy.
+    RATE_LIMIT_LOGIN: str = "40/15minute"
+    # Refresh é limitado por sessão (hash do cookie), não por IP — assim uma
+    # sessão em loop é contida sem derrubar os colegas atrás do mesmo NAT.
+    RATE_LIMIT_REFRESH: str = "10/minute"
     RATE_LIMIT_REDIS_TIMEOUT_SECONDS: float = 2.0
     GZIP_MINIMUM_SIZE: int = 1024
     GZIP_COMPRESS_LEVEL: int = 5

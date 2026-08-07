@@ -1,3 +1,5 @@
+import hashlib
+
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -25,6 +27,21 @@ def rate_limit_key(request: Request) -> str:
         subject = payload.get("sub") if payload else None
         if subject:
             return f"user:{subject}"
+    return f"ip:{get_remote_address(request)}"
+
+
+def refresh_rate_limit_key(request: Request) -> str:
+    """Chave por sessão para a renovação de token.
+
+    O /auth/refresh não manda Authorization — só o cookie HttpOnly — então a
+    chave padrão cairia no IP e uma equipe inteira atrás do mesmo NAT (feira,
+    showroom, escritório) dividiria o mesmo balde: bastariam poucas renovações
+    simultâneas para derrubar a sessão dos demais. O hash do próprio cookie
+    isola cada sessão, que é o alvo real do limite. Sem cookie, mantém o IP.
+    """
+    cookie = request.cookies.get("ilya_refresh")
+    if cookie:
+        return f"session:{hashlib.sha256(cookie.encode()).hexdigest()[:32]}"
     return f"ip:{get_remote_address(request)}"
 
 

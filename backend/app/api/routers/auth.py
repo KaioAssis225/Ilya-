@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select, update
 
 from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
-from app.core.limiter import limiter
+from app.core.limiter import limiter, refresh_rate_limit_key
 from app.core.lifecycle import touch_client_activity
 from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.privacy_audit import record_privacy_event
@@ -110,7 +110,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 
 @router.post("/login", response_model=AccessTokenResponse)
-@limiter.limit("5/15minute")
+@limiter.limit(settings.RATE_LIMIT_LOGIN)
 async def login(
     request: Request,
     response: Response,
@@ -188,7 +188,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=AccessTokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(settings.RATE_LIMIT_REFRESH, key_func=refresh_rate_limit_key)
 async def refresh(
     request: Request,
     response: Response,
