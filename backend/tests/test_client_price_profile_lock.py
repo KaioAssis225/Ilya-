@@ -11,7 +11,10 @@ Testa a função de autorização diretamente (sem banco), no mesmo estilo de
 import uuid
 from types import SimpleNamespace
 
+from decimal import Decimal
+
 from app.api.deps import sanitize_client_update_fields
+from app.api.routers.clients import sanitize_client_create_fields
 from app.models.user import UserRole
 
 
@@ -81,3 +84,33 @@ class TestOperadoresPrivilegiados:
         out = sanitize_client_update_fields(_full_payload(), VENDEDOR_INTERNO)
         assert out.get("price_profile") == "corporativo"
         assert "max_discount" not in out
+
+
+class TestCadastroSegueAMesmaRegraDaEdicao:
+    """O POST filtrava menos que o PATCH e virava a porta dos fundos.
+
+    Diferente do PATCH, aqui o campo não sai do dict: volta ao default, senão
+    `Client(**data)` ficaria sem uma coluna obrigatória.
+    """
+
+    def test_representante_nao_nasce_o_cliente_como_corporativo(self):
+        out = sanitize_client_create_fields(_full_payload(), REPRESENTANTE)
+        assert out["price_profile"] == "lojista"  # núcleo do SEC-PRICE-02
+        assert out["max_discount"] == Decimal("0.00")
+
+    def test_conta_de_cliente_final_tambem_bloqueada(self):
+        out = sanitize_client_create_fields(_full_payload(), CLIENTE_NOVO)
+        assert out["price_profile"] == "lojista"
+        assert out["max_discount"] == Decimal("0.00")
+
+    def test_vendedor_interno_define_perfil_mas_nao_teto(self):
+        """Mesma assimetria do PATCH, de propósito."""
+        out = sanitize_client_create_fields(_full_payload(), VENDEDOR_INTERNO)
+        assert out["price_profile"] == "corporativo"
+        assert out["max_discount"] == Decimal("0.00")
+
+    def test_papel_comercial_define_os_dois(self):
+        for user in (ADMIN, CADASTROS, PRODUTOS):
+            out = sanitize_client_create_fields(_full_payload(), user)
+            assert out["price_profile"] == "corporativo"
+            assert out["max_discount"] == "50.00"

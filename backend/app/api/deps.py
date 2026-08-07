@@ -80,6 +80,16 @@ def is_internal_operator(user: User) -> bool:
     return user.role == UserRole.vendedor and user.linked_id is None
 
 
+# Papéis que decidem os termos comerciais do cliente: teto de desconto e
+# carteira (`rep_id`). Cadastro (clients.create_client) e edição
+# (sanitize_client_update_fields) leem esta mesma lista de propósito — já
+# divergiram uma vez, e o efeito foi cliente com a carteira errada que ninguém
+# conseguia corrigir pela API.
+COMMERCIAL_ROLES = frozenset(
+    {UserRole.admin, UserRole.cadastros, UserRole.produtos}
+)
+
+
 def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict:
     """Remove de um PATCH de cliente os campos que o papel não pode alterar.
 
@@ -95,7 +105,7 @@ def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict
     # representante nunca definem o perfil de faturamento do cliente.
     if is_client_account(current_user) or current_user.role == UserRole.representante:
         update_data.pop("price_profile", None)
-    if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
+    if current_user.role not in COMMERCIAL_ROLES:
         update_data.pop("max_discount", None)
         # Reatribuir carteira é decisão comercial: sem isso um representante
         # poderia puxar para si o cliente de outro — ou se livrar do próprio.

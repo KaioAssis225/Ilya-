@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 import logging
 
 from app.api.deps import (
+    COMMERCIAL_ROLES,
     get_db_session,
     get_current_user,
     require_directory_access,
@@ -29,6 +30,18 @@ logger = logging.getLogger("ilya.clients")
 
 _ADMIN = Depends(require_roles(UserRole.admin))
 
+# Quem cadastra cliente. `cadastros` e `produtos` entram porque decidem a
+# carteira (COMMERCIAL_ROLES) e o teto de desconto na edição — sem poder
+# cadastrar, decidiam sobre um registro que não conseguiam criar. Constante
+# nomeada para o teste conferir a coerência com COMMERCIAL_ROLES.
+_CREATE_CLIENT_ROLES = (
+    UserRole.admin,
+    UserRole.vendedor,
+    UserRole.representante,
+    UserRole.cadastros,
+    UserRole.produtos,
+)
+
 
 async def _validated_rep_id(
     rep_id: uuid.UUID | None,
@@ -48,6 +61,50 @@ async def _validated_rep_id(
             detail="Representante não encontrado.",
         )
     return rep_id
+
+
+def sanitize_client_create_fields(data: dict, current_user: User) -> dict:
+    """Espelho de `sanitize_client_update_fields` para o cadastro.
+
+    O PATCH filtrava termos comerciais e o POST não: o representante nascia o
+    cliente já como `corporativo` — escolhendo a tabela de preço que o PATCH
+    depois o proibia de trocar (SEC-PRICE-02) — e qualquer papel fora de
+    `COMMERCIAL_ROLES` gravava o teto de desconto. Em vez de recusar o campo
+    com 4xx, o valor volta ao default: o cadastro segue, sem o termo comercial.
+    """
+    if current_user.role not in COMMERCIAL_ROLES:
+        data["max_discount"] = ClientCreate.model_fields["max_discount"].default
+    if is_client_account(current_user) or current_user.role == UserRole.representante:
+        data["price_profile"] = ClientCreate.model_fields["price_profile"].default
+    return data
+
+
+async def _resolved_rep_id(
+    data: dict,
+    current_user: User,
+    db: AsyncSession,
+) -> uuid.UUID | None:
+    """Carteira do cliente no cadastro — mesma regra do PATCH.
+
+    Representante nunca escolhe: fica com a própria. Papel comercial
+    (`COMMERCIAL_ROLES`) escolhe, e a carteira é validada contra a tabela. Os
+    demais cadastram sem carteira e um papel comercial corrige depois pelo
+    PATCH — antes as duas rotas discordavam e o vendedor interno gravava uma
+    carteira que o sanitizador o impedia de mudar em seguida.
+    """
+    if current_user.role == UserRole.representante:
+        if not current_user.rep_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "O usuário representante não possui um registro "
+                    "de representante associado."
+                ),
+            )
+        return current_user.rep_id
+    if current_user.role in COMMERCIAL_ROLES:
+        return await _validated_rep_id(data.get("rep_id"), db)
+    return None
 
 
 def _rep_guard(client: Client, current_user: User) -> None:
@@ -205,7 +262,7 @@ async def list_clients(
 async def create_client(
     payload: ClientCreate,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.representante)),
+    current_user: User = Depends(require_roles(*_CREATE_CLIENT_ROLES)),
 ):
     data = payload.model_dump()
     duplicate_email = None
@@ -222,22 +279,9 @@ async def create_client(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe um cliente com este e-mail.",
         )
-    if current_user.role not in (UserRole.admin, UserRole.cadastros, UserRole.produtos):
-        data["max_discount"] = ClientCreate.model_fields["max_discount"].default
+    data = sanitize_client_create_fields(data, current_user)
     client = Client(**data, created_by_user_id=current_user.id)
-    if current_user.role == UserRole.representante:
-        if not current_user.rep_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "O usuário representante não possui um registro "
-                    "de representante associado."
-                ),
-            )
-        # Representante nunca escolhe a carteira — nem a própria, nem a alheia.
-        client.rep_id = current_user.rep_id
-    else:
-        client.rep_id = await _validated_rep_id(data.get("rep_id"), db)
+    client.rep_id = await _resolved_rep_id(data, current_user, db)
     db.add(client)
     try:
         await db.commit()
