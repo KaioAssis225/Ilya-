@@ -98,7 +98,12 @@ async def _resolve_set_items(
             select(Product)
             .where(Product.product_code.in_(codes))
             .options(
-                load_only(Product.id, Product.product_code, Product.is_set),
+                load_only(
+                    Product.id,
+                    Product.product_code,
+                    Product.is_set,
+                    Product.is_active,
+                ),
                 noload(Product.optionals),
                 noload(Product.set_items),
                 noload(Product.components),
@@ -111,6 +116,10 @@ async def _resolve_set_items(
         p = product_map.get(item.product_code)
         if not p:
             raise HTTPException(400, f"Produto '{item.product_code}' não encontrado.")
+        # Desativado é diferente de inexistente: a mensagem precisa dizer qual
+        # dos dois, senão o operador procura um código que está lá.
+        if not p.is_active:
+            raise HTTPException(400, f"Produto '{item.product_code}' está desativado e não pode compor um conjunto.")
         if p.is_set:
             raise HTTPException(400, f"Produto '{item.product_code}' é um conjunto — conjuntos não podem conter outros conjuntos.")
         if p.product_code == parent_code:
@@ -183,7 +192,9 @@ async def list_products(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
 ):
-    filters = []
+    # Produto desativado (DELETE = desativação, Migration/01) sai do catálogo.
+    # Entra em `filters`, então vale também para a contagem do X-Total-Count.
+    filters = [Product.is_active.is_(True)]
     search = q.strip() if q else ""
     if search:
         search_pattern = literal_contains_pattern(search)
@@ -257,7 +268,12 @@ async def get_products_batch(
 ):
     codes = list(dict.fromkeys(payload.product_codes))
     products = (
-        await db.execute(select(Product).where(Product.product_code.in_(codes)))
+        await db.execute(
+            select(Product).where(
+                Product.product_code.in_(codes),
+                Product.is_active.is_(True),
+            )
+        )
     ).scalars().all()
     product_map = {product.product_code: product for product in products}
     visible_profile = await _visible_price_profile(db, current_user)
@@ -274,11 +290,24 @@ async def create_product(
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN_VENDEDOR,
 ):
-    existing = await db.execute(
-        select(Product).where(Product.product_code == payload.product_code)
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Código '{payload.product_code}' já existe.")
+    holder_is_active = (
+        await db.execute(
+            select(Product.is_active).where(Product.product_code == payload.product_code)
+        )
+    ).scalar_one_or_none()
+    if holder_is_active is not None:
+        # Opção A (decisão do Alto Comando, 05/08/2026): o código segue
+        # reservado por um produto desativado. Sem dizer isso, o operador vê
+        # "já existe" para um código que não aparece em lugar nenhum.
+        detail = (
+            f"Código '{payload.product_code}' já existe."
+            if holder_is_active
+            else (
+                f"Código '{payload.product_code}' pertence a um produto "
+                "desativado e segue reservado."
+            )
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
     product_data = payload.model_dump(exclude={"optional_ids", "set_items", "components"})
     product = Product(**product_data)
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
@@ -298,7 +327,12 @@ async def get_product(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
 ):
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    result = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.is_active.is_(True),
+        )
+    )
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
