@@ -59,3 +59,10 @@ db.sqlite3
 fotos/
 backups/
 .secrets/
+
+# Scripts de depuração soltos na raiz — batem na API com credencial de admin.
+# A barra inicial ancora o padrão na raiz: backend/tests/test_*.py continua
+# versionado normalmente.
+/test_*.py
+/test_*.js
+/cookie.txt
