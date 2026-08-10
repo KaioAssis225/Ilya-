@@ -28,6 +28,7 @@ def _product() -> SimpleNamespace:
         profundidade=Decimal("0.90"),
         price=Decimal("1000.00"),
         price_lojista=Decimal("1000.00"),
+        custo_desativado=Decimal("1234.56"),
         price_corporativo=Decimal("1500.00"),
         observacao=None,
         all_optionals_categories=None,
@@ -58,6 +59,10 @@ class TestVisiblePriceProfile:
 
 
 class TestToReadRedaction:
+    def test_custo_desativado_nunca_integra_payload_da_api(self):
+        data = _to_read(_product(), None)
+        assert "custo_desativado" not in data.model_dump()
+
     def test_sem_perfil_definido_mantem_os_dois_precos(self):
         data = _to_read(_product(), None)
         assert data.price_lojista == Decimal("1000.00")
