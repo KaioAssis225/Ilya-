@@ -23,6 +23,7 @@ export interface UserCreate {
 
 export interface UserUpdate {
   email?: string
+  username?: string
   full_name?: string
   role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id?: string | null

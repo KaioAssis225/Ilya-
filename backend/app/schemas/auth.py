@@ -73,11 +73,25 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
+    username: Optional[str] = None
     full_name: Optional[str] = None
     role: Optional[UserRole] = None
     rep_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
     can_view_dashboard: Optional[bool] = None
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized or not _USERNAME_RE.fullmatch(normalized):
+            raise ValueError(
+                "Usuário deve ter de 3 a 100 caracteres, apenas letras, "
+                "números, ponto, hífen ou sublinhado."
+            )
+        return normalized
 
 
 class UserPasswordReset(BaseModel):

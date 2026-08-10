@@ -113,7 +113,7 @@ export default function AdminPage() {
   }
 
   function openEdit(u: UserRead) {
-    setEditForm({ email: u.email, full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard })
+    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })
@@ -367,6 +367,20 @@ export default function AdminPage() {
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">E-mail</span>
                   <input className="input" type="email" value={editForm.email ?? ''} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-muted">Login</span>
+                  <input
+                    className="input"
+                    value={editForm.username ?? ''}
+                    onChange={e => setEditForm({ ...editForm, username: e.target.value })}
+                    minLength={3}
+                    maxLength={100}
+                    pattern="[A-Za-z0-9._-]+"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    required
+                  />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">Perfil</span>

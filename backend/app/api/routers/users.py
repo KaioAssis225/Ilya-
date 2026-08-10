@@ -236,6 +236,20 @@ async def update_user(
                 "E-mail já cadastrado.",
             )
         changes["email"] = normalized_email
+    new_username = changes.get("username")
+    if new_username and new_username != user.username:
+        duplicate_username = (
+            await db.execute(
+                select(User.id)
+                .where(User.username == new_username, User.id != user.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if duplicate_username:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Usuário já cadastrado.",
+            )
     target_role = changes.get("role", user.role)
     target_rep_id = changes.get("rep_id", user.rep_id)
     changes["rep_id"] = await _validated_rep_assignment(
@@ -260,7 +274,7 @@ async def update_user(
         changes["linked_id"] = None
     security_changed = any(
         field in changes and changes[field] != getattr(user, field)
-        for field in ("role", "rep_id", "linked_id", "is_active")
+        for field in ("username", "role", "rep_id", "linked_id", "is_active")
     )
     for field, value in changes.items():
         setattr(user, field, value)
@@ -277,7 +291,7 @@ async def update_user(
         await db.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "E-mail ou representante já vinculado a outra conta.",
+            "E-mail, usuário ou representante já vinculado a outra conta.",
         )
     await db.refresh(user)
     return user
