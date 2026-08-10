@@ -40,7 +40,7 @@ const ESTADOS = [
 // Traduz erros de validação da API (422 do FastAPI vem como array em `detail`)
 // para uma mensagem única e amigável em português.
 const FIELD_LABEL: Record<string, string> = {
-  name: 'Nome', phone: 'Telefone', email: 'E-mail', cep: 'CEP',
+  name: 'Nome', phone: 'Telefone', email: 'E-mail', cpf_cnpj: 'CPF/CNPJ', cep: 'CEP',
   numero: 'Número', address: 'Endereço', city: 'Cidade', state: 'Estado (UF)',
 }
 
@@ -212,6 +212,23 @@ function formatOnlyNumbers(value: string): string {
   return value.replace(/\D/g, '')
 }
 
+// Máscara alterna em 11 dígitos: o mesmo campo aceita CPF e CNPJ, e o
+// backend guarda só os dígitos (normalize_cpf_cnpj).
+function formatCpfCnpj(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 14)
+  if (d.length <= 11) {
+    return d
+      .replace(/^(\d{3})(\d)/, '$1.$2')
+      .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
+  }
+  return d
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
+}
+
 function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: ClientCreate) => void }) {
   const [cepLoading, setCepLoading] = useState(false)
   const cepAbortRef = useRef<AbortController | null>(null)
@@ -248,6 +265,10 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">E-mail</span>
         <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-muted">CPF/CNPJ</span>
+        <input className="input" value={form.cpf_cnpj ?? ''} onChange={(e) => setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={18} />
       </label>
       <label className="flex flex-col gap-1 relative">
         <span className="text-xs text-muted">CEP *</span>
@@ -1602,7 +1623,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
 // ── CLIENTES / REPRESENTANTES ─────────────────────────────────────────────────
 
-const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cep: '', numero: '', address: '', city: '', state: '', price_profile: 'lojista' }
+const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cpf_cnpj: '', cep: '', numero: '', address: '', city: '', state: '', price_profile: 'lojista' }
 
 function PeopleTab<T extends Client | Representative>({
   label, entityType, onCreate, onUpdate, onDelete, isPending, color, page, onPage,
@@ -1669,7 +1690,7 @@ function PeopleTab<T extends Client | Representative>({
 
   function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
-    setForm({ name: item.name, phone: item.phone, email: item.email ?? '', cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
+    setForm({ name: item.name, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''), cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
     setEditing(item); setFormError(null); setShowForm(true)
   }
   function openView(item: T) {
@@ -1848,6 +1869,7 @@ function PeopleTab<T extends Client | Representative>({
               <div className="col-span-2"><span className="text-xs text-muted block">E-mail</span><span className="text-ink-2">{viewing.email || 'Não informado'}</span></div>
               <div><span className="text-xs text-muted block">Cidade</span><span className="text-ink-2">{viewing.city}</span></div>
               <div><span className="text-xs text-muted block">Estado</span><span className="text-ink-2">{viewing.state}</span></div>
+              <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
               <div className="col-span-2"><span className="text-xs text-muted block">Endereço</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — CEP {viewing.cep}</span></div>
               {canViewCreator && (
                 <div className="col-span-2">
@@ -2535,8 +2557,8 @@ const SUPPORT_TABLES: { value: string; label: string; columns: string }[] = [
   { value: 'product-groups',  label: 'Grupos de Produto',  columns: 'name, ipi' },
   { value: 'product-types',   label: 'Tipos de Produto',   columns: 'name, group' },
   { value: 'optionals',       label: 'Opcionais',          columns: 'category, color_name' },
-  { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email (opcional), cep, numero, address, city, state' },
-  { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email (opcional), cep, numero, address, city, state, price_profile, rep_email' },
+  { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state' },
+  { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state, price_profile, rep_email' },
 ]
 
 function ImportUploader({ endpoint, label, hint, columns, color }: {

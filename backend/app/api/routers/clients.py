@@ -30,6 +30,14 @@ logger = logging.getLogger("ilya.clients")
 
 _ADMIN = Depends(require_roles(UserRole.admin))
 
+
+def _conflict_detail(error: IntegrityError) -> str:
+    """Com duas restrições únicas na tabela, dizer sempre 'e-mail' mandaria o
+    operador procurar o problema no campo errado."""
+    if "cpf_cnpj" in str(error.orig):
+        return "Já existe um cliente com este CPF/CNPJ."
+    return "Já existe um cliente com este e-mail."
+
 # Quem cadastra cliente. `cadastros` e `produtos` entram porque decidem a
 # carteira (COMMERCIAL_ROLES) e o teto de desconto na edição — sem poder
 # cadastrar, decidiam sobre um registro que não conseguiam criar. Constante
@@ -279,17 +287,31 @@ async def create_client(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe um cliente com este e-mail.",
         )
+    # Só compara quando há documento: sem a guarda, `cpf_cnpj == None` viraria
+    # `IS NULL` e o primeiro cadastro sem documento acusaria duplicidade de
+    # todos os outros sem documento.
+    if payload.cpf_cnpj:
+        duplicate_document = (
+            await db.execute(
+                select(Client.id).where(Client.cpf_cnpj == payload.cpf_cnpj).limit(1)
+            )
+        ).scalar_one_or_none()
+        if duplicate_document:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Já existe um cliente com este CPF/CNPJ.",
+            )
     data = sanitize_client_create_fields(data, current_user)
     client = Client(**data, created_by_user_id=current_user.id)
     client.rep_id = await _resolved_rep_id(data, current_user, db)
     db.add(client)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um cliente com este e-mail.",
+            detail=_conflict_detail(error),
         )
     await db.refresh(client)
     return _with_metadata(
@@ -352,16 +374,31 @@ async def update_client(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Já existe um cliente com este e-mail.",
             )
+    new_document = update_data.get("cpf_cnpj")
+    if new_document:
+        duplicate_document = (
+            await db.execute(
+                select(Client.id).where(
+                    Client.cpf_cnpj == new_document,
+                    Client.id != client.id,
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if duplicate_document:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Já existe um cliente com este CPF/CNPJ.",
+            )
     for field, value in update_data.items():
         setattr(client, field, value)
     client.last_activity_at = datetime.now(timezone.utc)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um cliente com este e-mail.",
+            detail=_conflict_detail(error),
         )
     await db.refresh(client)
     linked = await _user_status(db, [client.id])

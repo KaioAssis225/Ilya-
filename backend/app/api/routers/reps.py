@@ -25,6 +25,14 @@ router = APIRouter(prefix="/api/v1/representatives", tags=["representatives"])
 _ADMIN = Depends(require_roles(UserRole.admin))
 
 
+def _conflict_detail(error: IntegrityError) -> str:
+    """Com duas restrições únicas na tabela, dizer sempre 'e-mail' mandaria o
+    operador procurar o problema no campo errado."""
+    if "cpf_cnpj" in str(error.orig):
+        return "Já existe um representante com este CPF/CNPJ."
+    return "Já existe um representante com este e-mail."
+
+
 async def _linked_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
     if not ids:
         return set()
@@ -192,6 +200,21 @@ async def create_representative(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe um representante com este e-mail.",
         )
+    # Ver create_client: sem a guarda, `cpf_cnpj == None` viraria `IS NULL` e
+    # todo cadastro sem documento acusaria duplicidade.
+    if payload.cpf_cnpj:
+        duplicate_document = (
+            await db.execute(
+                select(Representative.id)
+                .where(Representative.cpf_cnpj == payload.cpf_cnpj)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if duplicate_document:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Já existe um representante com este CPF/CNPJ.",
+            )
     rep = Representative(
         **payload.model_dump(),
         created_by_user_id=current_user.id,
@@ -199,11 +222,11 @@ async def create_representative(
     db.add(rep)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um representante com este e-mail.",
+            detail=_conflict_detail(error),
         )
     await db.refresh(rep)
     return _with_metadata(
@@ -268,6 +291,9 @@ async def update_representative(
     update_data = payload.model_dump(exclude_unset=True)
     if current_user.role == UserRole.representante:
         update_data.pop("email", None)
+        # Mesmo motivo do e-mail: identidade do cadastro não se reescreve por
+        # dentro. Corrigir documento é operação de quem administra o cadastro.
+        update_data.pop("cpf_cnpj", None)
     if current_user.role != UserRole.admin:
         update_data.pop("max_discount", None)
     new_email = update_data.get("email")
@@ -286,15 +312,30 @@ async def update_representative(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Já existe um representante com este e-mail.",
             )
+    new_document = update_data.get("cpf_cnpj")
+    if new_document:
+        duplicate_document = (
+            await db.execute(
+                select(Representative.id).where(
+                    Representative.cpf_cnpj == new_document,
+                    Representative.id != rep.id,
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if duplicate_document:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Já existe um representante com este CPF/CNPJ.",
+            )
     for field, value in update_data.items():
         setattr(rep, field, value)
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um representante com este e-mail.",
+            detail=_conflict_detail(error),
         )
     await db.refresh(rep)
     linked = await _linked_ids(db, [rep.id])
