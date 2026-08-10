@@ -13,6 +13,8 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+
+from app.core.documents import normalize_cpf_cnpj
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -263,6 +265,31 @@ def _email(row: dict) -> str | None:
     return email
 
 
+def _cpf_cnpj(row: dict) -> str | None:
+    """Coluna opcional; quando vem preenchida, o formato é cobrado."""
+    raw = _first(row, "cpf_cnpj", "cpf", "cnpj", "documento")
+    if not raw:
+        return None
+    return normalize_cpf_cnpj(raw)
+
+
+def _document_values(rows: list[dict]) -> list[str]:
+    """Documentos válidos do arquivo, para achar repetição antes de gravar.
+
+    O inválido é ignorado aqui de propósito: ele vira erro com número da linha
+    dentro do laço, que é onde o operador consegue agir."""
+    values: list[str] = []
+    for row in rows:
+        raw = _first(row, "cpf_cnpj", "cpf", "cnpj", "documento")
+        if not raw:
+            continue
+        try:
+            values.append(normalize_cpf_cnpj(raw))
+        except ValueError:
+            continue
+    return values
+
+
 def _uf(row: dict) -> str:
     state = (_first(row, "state", "uf", "estado") or "").upper()
     if len(state) != 2 or not state.isalpha():
@@ -314,6 +341,7 @@ def _address_fields(row: dict) -> dict:
             20,
         ),
         "email": _email(row),
+        "cpf_cnpj": _cpf_cnpj(row),
         "cep": _bounded(_first(row, "cep"), "cep", 20),
         "numero": _bounded(
             _first(row, "numero", "número", "number"),
@@ -536,6 +564,19 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
         loaded_existing,
         lambda representative: representative.email.lower(),
     )
+    document_values = _document_values(rows)
+    duplicate_input_documents = _duplicate_values(document_values)
+    # O índice único garante um dono por documento, então o dict basta.
+    documents_owner = {
+        representative.cpf_cnpj: representative
+        for representative in await _load_chunked(
+            db,
+            set(document_values),
+            lambda chunk: select(Representative).where(
+                Representative.cpf_cnpj.in_(chunk)
+            ),
+        )
+    }
     created = updated = 0
     errors: list[dict] = []
     for i, row in enumerate(rows, start=2):
@@ -549,7 +590,17 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
                 raise ValueError(
                     f"Há mais de um representante cadastrado com o e-mail '{f['email']}'."
                 )
+            if f["cpf_cnpj"] and f["cpf_cnpj"] in duplicate_input_documents:
+                raise ValueError(
+                    f"CPF/CNPJ '{f['cpf_cnpj']}' aparece mais de uma vez no CSV."
+                )
             r = existing.get(f["email"]) if f["email"] else None
+            # Linha sem documento não disputa dono com ninguém.
+            owner = documents_owner.get(f["cpf_cnpj"]) if f["cpf_cnpj"] else None
+            if owner is not None and owner is not r:
+                raise ValueError(
+                    f"CPF/CNPJ '{f['cpf_cnpj']}' já pertence a outro representante."
+                )
             if r:
                 for k, v in f.items():
                     setattr(r, k, v)
@@ -563,6 +614,8 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
                 is_update = False
             if f["email"]:
                 existing[f["email"]] = r
+            if f["cpf_cnpj"]:
+                documents_owner[f["cpf_cnpj"]] = r
             updated += 1 if is_update else 0
             created += 0 if is_update else 1
         except Exception as e:
@@ -607,6 +660,16 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
         loaded_existing,
         lambda client: client.email.lower(),
     )
+    document_values = _document_values(rows)
+    duplicate_input_documents = _duplicate_values(document_values)
+    documents_owner = {
+        client.cpf_cnpj: client
+        for client in await _load_chunked(
+            db,
+            set(document_values),
+            lambda chunk: select(Client).where(Client.cpf_cnpj.in_(chunk)),
+        )
+    }
     reps_by_id = {
         representative.id: representative
         for representative in await _load_chunked(
@@ -651,6 +714,10 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                 raise ValueError(
                     f"Há mais de um cliente cadastrado com o e-mail '{f['email']}'."
                 )
+            if f["cpf_cnpj"] and f["cpf_cnpj"] in duplicate_input_documents:
+                raise ValueError(
+                    f"CPF/CNPJ '{f['cpf_cnpj']}' aparece mais de uma vez no CSV."
+                )
             profile = (_first(row, "price_profile", "perfil") or "lojista").lower()
             if profile not in ("lojista", "corporativo"):
                 raise ValueError("price_profile deve ser 'lojista' ou 'corporativo'.")
@@ -678,6 +745,12 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                     raise ValueError(f"Representante '{rep_name}' não encontrado.")
                 rep_id = rep.id
             c = existing.get(f["email"]) if f["email"] else None
+            # Linha sem documento não disputa dono com ninguém.
+            owner = documents_owner.get(f["cpf_cnpj"]) if f["cpf_cnpj"] else None
+            if owner is not None and owner is not c:
+                raise ValueError(
+                    f"CPF/CNPJ '{f['cpf_cnpj']}' já pertence a outro cliente."
+                )
             if c:
                 for k, v in f.items():
                     setattr(c, k, v)
@@ -695,6 +768,8 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                 is_update = False
             if f["email"]:
                 existing[f["email"]] = c
+            if f["cpf_cnpj"]:
+                documents_owner[f["cpf_cnpj"]] = c
             updated += 1 if is_update else 0
             created += 0 if is_update else 1
         except Exception as e:

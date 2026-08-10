@@ -138,8 +138,24 @@ function Autocomplete<T extends { id: string }>({
 // ── Modal de cadastro rápido ──────────────────────────────────────────────────
 
 const EMPTY_PERSON: ClientCreate = {
-  name: '', phone: '', email: '',
+  name: '', phone: '', email: '', cpf_cnpj: '',
   cep: '', numero: '', address: '', city: '', state: '',
+}
+
+// Máscara alterna em 11 dígitos; o backend guarda só os dígitos.
+function formatCpfCnpj(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 14)
+  if (d.length <= 11) {
+    return d
+      .replace(/^(\d{3})(\d)/, '$1.$2')
+      .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
+  }
+  return d
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
 }
 
 function QuickRegisterModal({ title, entityType, onSave, onClose }: {
@@ -199,6 +215,10 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">E-mail</span>
             <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value || null })} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted">CPF/CNPJ</span>
+            <input className="input" value={form.cpf_cnpj ?? ''} onChange={(e) => setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={18} />
           </label>
           <label className="flex flex-col gap-1 relative">
             <span className="text-xs text-muted">CEP *</span>

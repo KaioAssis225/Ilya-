@@ -110,6 +110,8 @@ export interface Client {
   name: string
   phone: string
   email: string | null
+  // Nulo nos cadastros anteriores ao campo; obrigatório nos novos.
+  cpf_cnpj: string | null
   cep: string
   numero: string | null
   address: string
@@ -130,6 +132,7 @@ export interface ClientCreate {
   name: string
   phone: string
   email?: string | null
+  cpf_cnpj?: string | null
   cep: string
   numero?: string | null
   address: string
