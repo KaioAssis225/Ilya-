@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from app.api.routers.orders import _get_order, _next_codes
+from app.api.routers.orders import _get_order, _next_codes, delete_order
 
 
 class _ScalarResult:
@@ -64,5 +64,21 @@ def test_ped_lookup_rejects_ambiguous_code_between_users():
 
         assert exc_info.value.status_code == 409
         assert "ORC" in exc_info.value.detail
+
+    asyncio.run(run_test())
+
+
+def test_delete_order_is_blocked_by_retention_policy():
+    async def run_test():
+        db = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_order(uuid.uuid4(), db=db, _=object())
+
+        assert exc_info.value.status_code == 409
+        assert "Cancele o pedido" in exc_info.value.detail
+        db.execute.assert_not_awaited()
+        db.delete.assert_not_awaited()
+        db.commit.assert_not_awaited()
 
     asyncio.run(run_test())

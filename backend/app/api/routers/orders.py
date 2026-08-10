@@ -930,16 +930,13 @@ async def delete_order(
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN,
 ):
-    result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
+    # Pedidos e orçamentos são registros históricos sujeitos às políticas de
+    # retenção. Cancelamento é a transição de negócio suportada; exclusão física
+    # quebraria também os consumidores que mantêm projeções por ID do Ilya.
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Pedidos não podem ser excluídos. Cancele o pedido quando aplicável.",
     )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    await touch_client_activity(db, order.client_id)
-    await db.delete(order)
-    await db.commit()
-    logger.warning("Pedido excluído: id=%s", order_id)
 
 
 @router.post("/{order_id}/generate-sign-token")
