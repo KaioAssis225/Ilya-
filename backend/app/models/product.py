@@ -28,6 +28,9 @@ class Product(Base, TimestampMixin):
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     price_lojista: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    # Valor corporativo anterior, preservado exclusivamente para histórico.
+    # Não adicionar este campo aos schemas, endpoints, CSVs ou ao frontend.
+    custo_desativado: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     price_corporativo: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     all_optionals_categories: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
