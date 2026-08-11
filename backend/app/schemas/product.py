@@ -7,6 +7,12 @@ from datetime import datetime
 from app.schemas.optional import OptionalColorRead
 
 
+def _strip_product_type(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.strip()
+
+
 class ProductSetItemCreate(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
     qty: int = Field(..., ge=1, le=100_000)
@@ -46,7 +52,7 @@ class ProductSetComponentRead(BaseModel):
 class ProductBase(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1, max_length=20_000)
-    type: str = Field(default="Outro", max_length=50)
+    type: str = Field(default="Outro", min_length=1, max_length=50)
     is_circular: bool = False
     is_set: bool = False
     altura: Decimal = Field(..., ge=0, decimal_places=2)
@@ -58,6 +64,11 @@ class ProductBase(BaseModel):
     observacao: Optional[str] = Field(None, max_length=20_000)
     all_optionals_categories: Optional[str] = Field(None, max_length=2_000)
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, value: str) -> str:
+        return _strip_product_type(value) or ""
+
 
 class ProductCreate(ProductBase):
     optional_ids: List[uuid.UUID] = Field(default_factory=list, max_length=500)
@@ -68,7 +79,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     product_code: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, min_length=1, max_length=20_000)
-    type: Optional[str] = Field(None, max_length=50)
+    type: Optional[str] = Field(None, min_length=1, max_length=50)
     is_circular: Optional[bool] = None
     is_set: Optional[bool] = None
     altura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
@@ -82,6 +93,11 @@ class ProductUpdate(BaseModel):
     optional_ids: Optional[List[uuid.UUID]] = Field(None, max_length=500)
     set_items: Optional[List[ProductSetItemCreate]] = Field(None, max_length=500)
     components: Optional[List[ProductSetComponentCreate]] = Field(None, max_length=500)
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, value: Optional[str]) -> Optional[str]:
+        return _strip_product_type(value)
 
 
 class ProductBatchRequest(BaseModel):
