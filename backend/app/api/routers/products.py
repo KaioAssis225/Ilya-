@@ -20,6 +20,18 @@ from app.core.config import settings
 from app.core.search import literal_contains_pattern
 from app.core.uploads import build_photo_url, build_thumbnail_url, delete_upload, persist_upload, sanitize_image_upload
 
+
+def _normalized_product_type_value(value: str) -> str:
+    """Chave tolerante a caixa, espaços e plural simples do tipo de produto."""
+    normalized = value.strip().lower()
+    return normalized[:-1] if normalized.endswith("s") else normalized
+
+
+def _normalized_product_type_expression(column):
+    """Equivalente PostgreSQL da normalização aplicada ao valor do filtro."""
+    return func.regexp_replace(func.lower(func.btrim(column)), "s$", "")
+
+
 def _is_conjunto_type(type_: Optional[str]) -> bool:
     """Bloco 74: identifica 'conjuntos' por substring case-insensitive no nome
     do tipo (ex.: 'Conjunto de Jantar', 'conjuntos'), em vez de exigir o valor
@@ -205,11 +217,14 @@ async def list_products(
             )
         )
     if product_type:
-        filters.append(Product.type == product_type)
+        filters.append(
+            _normalized_product_type_expression(Product.type)
+            == _normalized_product_type_value(product_type)
+        )
     if group_id:
         filters.append(
-            Product.type.in_(
-                select(ProductType.name).where(
+            _normalized_product_type_expression(Product.type).in_(
+                select(_normalized_product_type_expression(ProductType.name)).where(
                     ProductType.group_id == group_id
                 )
             )
