@@ -93,17 +93,16 @@ COMMERCIAL_ROLES = frozenset(
 def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict:
     """Remove de um PATCH de cliente os campos que o papel não pode alterar.
 
-    Defesa server-side de preço (regra nº 1): `price_profile` e `max_discount`
-    definem o faturamento e são exclusivos de admin/cadastros/produtos. Uma
-    conta de portal do cliente-final (SEC-PRICE-02) nunca altera os próprios
-    termos comerciais, nem mesmo editando o próprio registro; o `representante`
-    também não muda perfil de preço nem e-mail do cliente.
+    O cliente-final nunca altera os próprios termos comerciais (SEC-PRICE-02).
+    O representante pode escolher a tabela de preço do cliente da própria
+    carteira, como permite o formulário, mas continua sem poder alterar o teto
+    de desconto, o e-mail ou a atribuição da carteira.
     """
     if current_user.role == UserRole.representante:
         update_data.pop("email", None)
-    # SEC-PRICE-02: cliente-final (inclui legado `vendedor`+linked_id) e
-    # representante nunca definem o perfil de faturamento do cliente.
-    if is_client_account(current_user) or current_user.role == UserRole.representante:
+    # SEC-PRICE-02: conta de cliente-final (inclui legado
+    # `vendedor`+linked_id) nunca define o próprio perfil de faturamento.
+    if is_client_account(current_user):
         update_data.pop("price_profile", None)
     if current_user.role not in COMMERCIAL_ROLES:
         update_data.pop("max_discount", None)

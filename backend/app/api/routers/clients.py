@@ -74,15 +74,13 @@ async def _validated_rep_id(
 def sanitize_client_create_fields(data: dict, current_user: User) -> dict:
     """Espelho de `sanitize_client_update_fields` para o cadastro.
 
-    O PATCH filtrava termos comerciais e o POST não: o representante nascia o
-    cliente já como `corporativo` — escolhendo a tabela de preço que o PATCH
-    depois o proibia de trocar (SEC-PRICE-02) — e qualquer papel fora de
-    `COMMERCIAL_ROLES` gravava o teto de desconto. Em vez de recusar o campo
-    com 4xx, o valor volta ao default: o cadastro segue, sem o termo comercial.
+    Cadastro e edição seguem a mesma regra: representantes e vendedores podem
+    escolher o perfil exibido no formulário, mas apenas `COMMERCIAL_ROLES`
+    definem teto de desconto. O cliente-final nunca escolhe o próprio perfil.
     """
     if current_user.role not in COMMERCIAL_ROLES:
         data["max_discount"] = ClientCreate.model_fields["max_discount"].default
-    if is_client_account(current_user) or current_user.role == UserRole.representante:
+    if is_client_account(current_user):
         data["price_profile"] = ClientCreate.model_fields["price_profile"].default
     return data
 

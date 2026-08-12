@@ -55,9 +55,9 @@ class TestClientePortalNaoAlteraTermosComerciais:
 
 
 class TestRepresentante:
-    def test_representante_nao_muda_price_profile_nem_email(self):
+    def test_representante_muda_price_profile_mas_nao_email_ou_desconto(self):
         out = sanitize_client_update_fields(_full_payload(), REPRESENTANTE)
-        assert "price_profile" not in out
+        assert out["price_profile"] == "corporativo"
         assert "email" not in out
         assert "max_discount" not in out
 
@@ -93,9 +93,9 @@ class TestCadastroSegueAMesmaRegraDaEdicao:
     `Client(**data)` ficaria sem uma coluna obrigatória.
     """
 
-    def test_representante_nao_nasce_o_cliente_como_corporativo(self):
+    def test_representante_cadastra_cliente_corporativo_sem_definir_desconto(self):
         out = sanitize_client_create_fields(_full_payload(), REPRESENTANTE)
-        assert out["price_profile"] == "lojista"  # núcleo do SEC-PRICE-02
+        assert out["price_profile"] == "corporativo"
         assert out["max_discount"] == Decimal("0.00")
 
     def test_conta_de_cliente_final_tambem_bloqueada(self):
