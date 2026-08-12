@@ -18,6 +18,7 @@ import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import { NumberField } from '../components/NumberField'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
+import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
@@ -37,28 +38,8 @@ const ESTADOS = [
   'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ]
 
-// Traduz erros de validação da API (422 do FastAPI vem como array em `detail`)
-// para uma mensagem única e amigável em português.
-const FIELD_LABEL: Record<string, string> = {
-  name: 'Nome', phone: 'Telefone', email: 'E-mail', cpf_cnpj: 'CPF/CNPJ', cep: 'CEP',
-  numero: 'Número', address: 'Endereço', city: 'Cidade', state: 'Estado (UF)',
-}
-
-function parseApiError(err: unknown): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  if (typeof detail === 'string') return detail
-  if (Array.isArray(detail) && detail.length > 0) {
-    const msgs = detail.map((d: { loc?: (string | number)[]; msg?: string }) => {
-      const field = d.loc?.[d.loc.length - 1]
-      const label = typeof field === 'string' ? (FIELD_LABEL[field] ?? field) : ''
-      if (field === 'email') return 'E-mail inválido. Informe um e-mail válido (ex: nome@dominio.com).'
-      if (field === 'state') return 'Selecione o estado (UF).'
-      return label ? `${label}: ${d.msg ?? 'valor inválido'}` : (d.msg ?? 'Dados inválidos.')
-    })
-    return Array.from(new Set(msgs)).join(' ')
-  }
-  return 'Não foi possível salvar. Verifique os dados e tente novamente.'
-}
+// `parseApiError` e a normalização vivem em lib/personForm — compartilhados com
+// o cadastro rápido do Orçamento, que antes tinha a própria lógica (divergente).
 
 const TAB_PALETTE = {
   produtos:        { color: '#b25e50', label: 'Terracota' },
@@ -1700,15 +1681,7 @@ function PeopleTab<T extends Client | Representative>({
     e.preventDefault()
     setFormError(null)
     // Normaliza campos antes de enviar — evita 422 por espaços ou UF vazia/minúscula
-    const cleaned: ClientCreate = {
-      ...form,
-      name: form.name.trim(),
-      email: form.email?.trim() || null,
-      city: form.city.trim(),
-      address: form.address.trim(),
-      state: form.state.trim().toUpperCase(),
-      numero: form.numero?.trim() || null,
-    }
+    const cleaned = normalizePersonPayload(form)
     if (cleaned.state.length !== 2) {
       setFormError('Selecione o estado (UF).')
       return

@@ -15,6 +15,7 @@ import { useAuth } from '../hooks/useAuth'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
+import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
 
 function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
@@ -163,6 +164,7 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
 }) {
   const [form, setForm] = useState<ClientCreate>(EMPTY_PERSON)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [cepLoading, setCepLoading] = useState(false)
   const [cepError, setCepError] = useState(false)
   const cepAbortRef = useRef<AbortController | null>(null)
@@ -192,8 +194,19 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
-    try { await onSave(form); onClose() } finally { setSaving(false) }
+    e.preventDefault()
+    setSaveError(null)
+    setSaving(true)
+    try {
+      await onSave(normalizePersonPayload(form))
+      onClose()
+    } catch (err) {
+      // Sem este catch a recusa da API sumia no `finally` e o modal ficava
+      // aberto sem explicação — parecia que o botão não fazia nada.
+      setSaveError(parseApiError(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -263,9 +276,16 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
               </div>
             </div>
           )}
+          {saveError && (
+            <p role="alert" className="col-span-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {saveError}
+            </p>
+          )}
           <div className="col-span-2 flex justify-end gap-3 pt-1">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn-primary" disabled={saving}>Salvar</button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
           </div>
         </form>
       </div>
