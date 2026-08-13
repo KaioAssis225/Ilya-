@@ -395,11 +395,14 @@ function OrderDetailModal({
 
   return (
     <div className="modal-overlay overflow-y-auto" onClick={onClose}>
-      <div className="modal-panel w-full max-w-2xl p-6 my-4" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2">
+      <div className="modal-panel relative w-full max-w-2xl p-6 my-4" onClick={(e) => e.stopPropagation()}>
+        {/* Header — em tela estreita as ações descem para a própria linha em vez
+            de vazarem o painel; o X fica ancorado no canto para não ser
+            empurrado para fora junto com elas. */}
+        <button onClick={onClose} className="absolute top-5 right-5 z-10 text-muted hover:text-ink" aria-label="Fechar"><X className="w-5 h-5" /></button>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4 pr-8">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-semibold text-ink">{order.code}</h3>
               {order.is_finalized
                 ? <span className="flex items-center gap-1 text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> Finalizado</span>
@@ -412,7 +415,7 @@ function OrderDetailModal({
               {order.external_code && <span className="ml-2 font-mono text-xs text-ink-2">· {order.external_code}</span>}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
             {canManage && !order.is_finalized && !order.is_cancelled && (
               <>
                 <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 border border-line text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
@@ -426,7 +429,6 @@ function OrderDetailModal({
                 </button>
               </>
             )}
-            <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Fechar"><X className="w-5 h-5" /></button>
           </div>
         </div>
 

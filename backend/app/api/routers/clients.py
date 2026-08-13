@@ -38,6 +38,15 @@ def _conflict_detail(error: IntegrityError) -> str:
         return "Já existe um cliente com este CPF/CNPJ."
     return "Já existe um cliente com este e-mail."
 
+# Quem apaga cliente. O representante entra para consertar o próprio cadastro
+# errado sem depender de admin. O alcance real é pequeno: cliente com pedido
+# continua barrado pelo 400 de integridade fiscal em delete_client, então o que
+# some é cadastro sem histórico.
+_DELETE_CLIENT_ROLES = (
+    UserRole.admin,
+    UserRole.representante,
+)
+
 # Quem cadastra cliente. `cadastros` e `produtos` entram porque decidem a
 # carteira (COMMERCIAL_ROLES) e o teto de desconto na edição — sem poder
 # cadastrar, decidiam sobre um registro que não conseguiam criar. Constante
@@ -413,12 +422,15 @@ async def update_client(
 async def delete_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    current_user: User = Depends(require_roles(*_DELETE_CLIENT_ROLES)),
 ):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    # Representante só apaga cadastro da própria carteira; o de outro dono
+    # responde 403 pelo mesmo guard usado na leitura e na edição.
+    _rep_guard(client, current_user)
     await db.delete(client)
     try:
         await db.commit()
