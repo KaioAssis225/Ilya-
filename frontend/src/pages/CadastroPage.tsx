@@ -1779,11 +1779,9 @@ function PeopleTab<T extends Client | Representative>({
                     <button onClick={() => openEdit(item)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    {!(isRep && entityType === 'client') && (
-                      <button onClick={() => setDeleting(item)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                    <button onClick={() => setDeleting(item)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
                 <div className="mt-2 space-y-0.5 text-xs text-ink-2">
@@ -1841,9 +1839,7 @@ function PeopleTab<T extends Client | Representative>({
                         <button onClick={() => openEdit(item)} title="Editar" aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        {!(isRep && entityType === 'client') && (
-                          <button onClick={() => setDeleting(item)} title="Excluir" aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                        )}
+                        <button onClick={() => setDeleting(item)} title="Excluir" aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>

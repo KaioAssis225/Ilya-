@@ -13,7 +13,13 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.deps import COMMERCIAL_ROLES, _enforce_roles, sanitize_client_update_fields
-from app.api.routers.clients import _CREATE_CLIENT_ROLES, _resolved_rep_id
+from app.api.routers.clients import (
+    _CREATE_CLIENT_ROLES,
+    _DELETE_CLIENT_ROLES,
+    _rep_guard,
+    _resolved_rep_id,
+)
+from app.models.client import Client
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate
 
@@ -39,6 +45,35 @@ def test_cadastro_aceita_carteira():
 
 def test_cadastro_sem_carteira_continua_valido():
     assert ClientCreate(**BASE).rep_id is None
+
+
+def test_representante_pode_apagar_cliente():
+    assert UserRole.representante in _DELETE_CLIENT_ROLES
+    assert UserRole.admin in _DELETE_CLIENT_ROLES
+
+
+@pytest.mark.parametrize(
+    "role", [UserRole.cadastros, UserRole.produtos, UserRole.vendedor, UserRole.cliente]
+)
+def test_apagar_cliente_segue_fora_do_alcance_dos_demais(role):
+    # A expansao foi so para o representante consertar o proprio cadastro;
+    # ninguem mais ganhou exclusao de cadastro.
+    assert role not in _DELETE_CLIENT_ROLES
+
+
+def test_representante_so_apaga_cliente_da_propria_carteira():
+    carteira = uuid.uuid4()
+    rep = _user(UserRole.representante, rep_id=carteira)
+    _rep_guard(Client(id=uuid.uuid4(), rep_id=carteira), rep)  # nao levanta
+
+    with pytest.raises(HTTPException) as alheio:
+        _rep_guard(Client(id=uuid.uuid4(), rep_id=uuid.uuid4()), rep)
+    assert alheio.value.status_code == 403
+
+    # Cliente orfao tambem nao: sem carteira definida ninguem e o dono.
+    with pytest.raises(HTTPException) as orfao:
+        _rep_guard(Client(id=uuid.uuid4(), rep_id=None), rep)
+    assert orfao.value.status_code == 403
 
 
 def test_edicao_aceita_carteira():
