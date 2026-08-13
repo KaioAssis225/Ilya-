@@ -384,10 +384,13 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="optional-zoom-title"
     >
       <div className="bg-white rounded-2xl shadow-2xl p-4 mx-6 flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
         <img src={photo_url} alt={label} className="w-48 h-48 object-cover rounded-xl border border-line" />
-        <p className="text-sm font-medium text-ink text-center">{label}</p>
+        <p id="optional-zoom-title" className="text-sm font-medium text-ink text-center">{label}</p>
         <button onClick={onClose} className="text-xs text-muted uppercase tracking-wider py-2 px-4">Fechar</button>
       </div>
     </div>
@@ -406,6 +409,21 @@ function ProductFullView({
   const [added, setAdded] = useState(false)
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (mobileOptModal) setMobileOptModal(null)
+      else onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [mobileOptModal, onClose])
+
   function handleAdd() {
     addToCart(product, userId)
     setAdded(true)
@@ -419,7 +437,13 @@ function ProductFullView({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-white flex flex-col md:flex-row overflow-y-auto md:overflow-hidden" style={{ animation: 'fadeIn 0.25s ease-out' }}>
+      <div
+        className="fixed inset-0 z-50 bg-white flex flex-col md:flex-row overflow-y-auto md:overflow-hidden"
+        style={{ animation: 'fadeIn 0.25s ease-out' }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-detail-title"
+      >
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-20 w-11 h-11 flex items-center justify-center rounded-full bg-white/85 backdrop-blur-sm text-muted hover:text-ink shadow-sm transition-colors"
@@ -448,7 +472,7 @@ function ProductFullView({
                 <span className="mx-2 text-[#d8cfc2]">·</span>
                 <span className="font-mono normal-case tracking-normal text-gold">{product.product_code}</span>
               </p>
-              <h2 className="text-3xl md:text-[2.4rem] leading-[1.12] text-ink">{product.description}</h2>
+              <h2 id="product-detail-title" className="text-3xl md:text-[2.4rem] leading-[1.12] text-ink">{product.description}</h2>
               <div className="w-12 h-px bg-gold/50" />
             </div>
 
@@ -546,9 +570,11 @@ function ProductFullView({
                               <img src={opt.photo_url} alt={opt.color_name} decoding="async" className="w-full h-full object-cover" />
                             </div>
                             <button
+                              type="button"
                               className="md:hidden w-14 h-14 rounded-xl overflow-hidden border border-line active:opacity-70 transition-opacity"
                               style={{ touchAction: 'manipulation' }}
                               onClick={() => setMobileOptModal({ photo_url: opt.photo_url!, label: `${CAT_LABEL[cat] ?? cat}: ${opt.color_name}` })}
+                              aria-label={`Ampliar ${CAT_LABEL[cat] ?? cat}: ${opt.color_name}`}
                             >
                               <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-full h-full object-cover" />
                             </button>
@@ -747,6 +773,7 @@ export default function ProdutosPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
             <input
               type="text"
+              aria-label="Buscar produtos"
               placeholder="Buscar por código ou descrição..."
               value={searchTerm}
               onChange={(e) => {
@@ -815,12 +842,15 @@ export default function ProdutosPage() {
         )}
 
         {isLoading ? (
-          <div className="text-center text-muted py-20">Carregando catálogo…</div>
+          <div className="flex items-center justify-center gap-2 text-center text-muted py-20" role="status" aria-live="polite">
+            <span className="w-4 h-4 rounded-full border-2 border-gold/25 border-t-gold animate-spin" aria-hidden="true" />
+            Carregando catálogo…
+          </div>
         ) : products.length === 0 ? (
           <div className="flex flex-col items-center py-20 gap-3">
             <p className="text-muted">Nenhum produto encontrado.</p>
             {hasFilters && (
-              <button onClick={clearFilters} className="text-xs text-gold underline">Limpar filtros</button>
+              <button onClick={clearFilters} className="btn-secondary min-h-11 px-4 text-xs">Limpar filtros</button>
             )}
           </div>
         ) : (

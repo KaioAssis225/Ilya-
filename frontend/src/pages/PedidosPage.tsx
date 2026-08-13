@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, FileText, X, ImageIcon, FileSignature, Link, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
-import { useOrders, useOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, Link, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
+import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
 import { useClient } from '../hooks/useClients'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
@@ -692,10 +692,10 @@ function OrderDetailModal({
 // ── Mobile order card ───────────────────────────────────────────────────────
 
 function MobileOrderCard({
-  order, clientName, repName, onView, onPDF, onFinalize, pdfLoading,
+  order, clientName, repName, onView, onPDF, onFinalize, onDelete, pdfLoading,
 }: {
   order: OrderSummary; clientName: string; repName: string
-  onView: () => void; onPDF: () => void; onFinalize?: () => void
+  onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void
   pdfLoading: boolean
 }) {
   return (
@@ -726,6 +726,9 @@ function MobileOrderCard({
         {onFinalize && (
           <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-green-700 active:bg-green-50 transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar pedido"><CheckCircle className="w-4 h-4" /> Finalizar</button>
         )}
+        {onDelete && (
+          <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-[#fbf2f0] transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
+        )}
       </div>
     </div>
   )
@@ -740,6 +743,7 @@ export default function PedidosPage() {
   const isInternalSeller = user?.role === 'vendedor' && !user.linked_id
   const canManage = user?.role === 'admin' || user?.role === 'representante' || user?.role === 'produtos' || isInternalSeller
   const canViewGlobalAudit = user?.role === 'admin' || isInternalSeller
+  const canDelete = user?.role === 'admin'
   const [activeTab, setActiveTab] = useState<'orders' | 'audit'>('orders')
   const isAuditActive = canViewGlobalAudit && activeTab === 'audit'
   const [filter, setFilter] = useState('')
@@ -779,6 +783,7 @@ export default function PedidosPage() {
     isAuditActive,
   )
   const globalHistory = globalHistoryPage?.items ?? []
+  const deleteM = useDeleteOrder()
   const canSignContract = ELECTRONIC_SIGNATURES_ENABLED
     && (user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient)
 
@@ -832,6 +837,7 @@ export default function PedidosPage() {
   }
 
   const [viewing, setViewing] = useState<OrderSummary | null>(null)
+  const [deleting, setDeleting] = useState<OrderSummary | null>(null)
   const [finalizing, setFinalizing] = useState<OrderSummary | null>(null)
   const [canceling, setCanceling] = useState<OrderSummary | null>(null)
 
@@ -998,6 +1004,7 @@ export default function PedidosPage() {
                     onView={() => setViewing(order)}
                     onPDF={() => handlePDF(order)}
                     onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
+                    onDelete={canDelete ? () => setDeleting(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                   />
                 ))}
@@ -1058,6 +1065,9 @@ export default function PedidosPage() {
                                 <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
                                 <button title="Cancelar" className="text-muted hover:text-terracotta transition-colors p-1" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
                               </>
+                            )}
+                            {canDelete && (
+                              <button title="Excluir" className="text-muted hover:text-red-500 transition-colors p-1" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                             )}
                           </div>
                         </td>
@@ -1126,6 +1136,18 @@ export default function PedidosPage() {
       {finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} />}
       {canceling && <CancelModal order={canceling} onClose={() => setCanceling(null)} />}
 
+      {deleting && (
+        <div className="modal-overlay" onClick={() => setDeleting(null)}>
+          <div className="modal-panel w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-ink mb-2">Confirmar exclusão</h3>
+            <p className="text-ink-2 mb-6">Excluir pedido <span className="text-gold font-mono">{deleting.code}</span>? Esta ação não pode ser desfeita.</p>
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={() => setDeleting(null)}>Cancelar</button>
+              <button className="btn-danger" onClick={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}>Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

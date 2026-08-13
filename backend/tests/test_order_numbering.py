@@ -1,6 +1,7 @@
 import asyncio
 import uuid
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -68,17 +69,101 @@ def test_ped_lookup_rejects_ambiguous_code_between_users():
     asyncio.run(run_test())
 
 
-def test_delete_order_is_blocked_by_retention_policy():
-    async def run_test():
+class TestExclusaoDePedido:
+    """Exclusão física reaberta para o admin (decisão do Alto Comando, 13/08).
+
+    O ponto sensível não é apagar: é avisar. O serviço Estoque mantém projeção
+    por ID e detecta mudança por `source_version` — um DELETE puro sumiria com
+    a linha sem sinal nenhum, deixando a cópia de lá órfã. O evento tem de ser
+    enfileirado na mesma transação, antes do commit.
+    """
+
+    @staticmethod
+    def _db_com_pedido(order):
+        resultado = AsyncMock()
+        resultado.scalar_one_or_none = lambda: order
         db = AsyncMock()
+        db.execute.return_value = resultado
+        # `session.add` é síncrono no SQLAlchemy; deixá-lo como AsyncMock
+        # devolveria uma corrotina nunca aguardada e mascararia a ordem real
+        # das chamadas.
+        db.add = MagicMock()
+        return db
 
-        with pytest.raises(HTTPException) as exc_info:
-            await delete_order(uuid.uuid4(), db=db, _=object())
+    def test_pedido_inexistente_recebe_404(self):
+        async def run_test():
+            resultado = AsyncMock()
+            resultado.scalar_one_or_none = lambda: None
+            db = AsyncMock()
+            db.execute.return_value = resultado
 
-        assert exc_info.value.status_code == 409
-        assert "Cancele o pedido" in exc_info.value.detail
-        db.execute.assert_not_awaited()
-        db.delete.assert_not_awaited()
-        db.commit.assert_not_awaited()
+            with pytest.raises(HTTPException) as exc_info:
+                await delete_order(uuid.uuid4(), db=db, current_user=_admin())
 
-    asyncio.run(run_test())
+            assert exc_info.value.status_code == 404
+            db.delete.assert_not_awaited()
+
+        asyncio.run(run_test())
+
+    def test_exclusao_apaga_e_faz_commit(self):
+        async def run_test():
+            order = _pedido()
+            db = self._db_com_pedido(order)
+
+            await delete_order(order.id, db=db, current_user=_admin())
+
+            db.delete.assert_awaited_once_with(order)
+            db.commit.assert_awaited_once()
+
+        asyncio.run(run_test())
+
+    def test_exclusao_enfileira_evento_para_o_estoque(self):
+        """Sem este evento o consumidor externo nunca fica sabendo."""
+        async def run_test():
+            order = _pedido()
+            db = self._db_com_pedido(order)
+
+            await delete_order(order.id, db=db, current_user=_admin())
+
+            enfileirados = [
+                chamada.args[0] for chamada in db.add.call_args_list
+            ]
+            eventos = [
+                linha for linha in enfileirados
+                if getattr(linha, "event_type", None) == "order.deleted"
+            ]
+            assert len(eventos) == 1, "faltou o aviso de exclusão na outbox"
+            dados = eventos[0].payload["data"]
+            assert dados["order_id"] == str(order.id)
+            assert dados["code"] == order.code
+
+        asyncio.run(run_test())
+
+    def test_evento_entra_antes_do_commit(self):
+        """Se o evento fosse gravado depois, um erro deixaria o Estoque cego."""
+        async def run_test():
+            order = _pedido()
+            db = self._db_com_pedido(order)
+            ordem_das_chamadas = []
+            db.add.side_effect = lambda _linha: ordem_das_chamadas.append("add")
+            db.commit.side_effect = lambda: ordem_das_chamadas.append("commit")
+
+            await delete_order(order.id, db=db, current_user=_admin())
+
+            assert ordem_das_chamadas.index("add") < ordem_das_chamadas.index("commit")
+
+        asyncio.run(run_test())
+
+
+def _admin():
+    return SimpleNamespace(id=uuid.uuid4())
+
+
+def _pedido():
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        code="PED-0007",
+        orc_id="ORC-0007",
+        client_id=uuid.uuid4(),
+        is_finalized=False,
+    )

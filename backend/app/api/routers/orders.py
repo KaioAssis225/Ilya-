@@ -35,6 +35,7 @@ from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
+from app.services.integration_events import enqueue_event
 from app.core.security import (
     SIGN_TOKEN_TTL_MINUTES,
     generate_sign_invitation_token,
@@ -928,14 +929,42 @@ async def get_order(
 async def delete_order(
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    current_user: User = _ADMIN,
 ):
-    # Pedidos e orçamentos são registros históricos sujeitos às políticas de
-    # retenção. Cancelamento é a transição de negócio suportada; exclusão física
-    # quebraria também os consumidores que mantêm projeções por ID do Ilya.
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail="Pedidos não podem ser excluídos. Cancele o pedido quando aplicável.",
+    """Exclusão física, exclusiva do admin (decisão do Alto Comando, 13/08).
+
+    Reabre o que o commit 241d219 havia bloqueado em nome da retenção. A
+    contrapartida é sinalizar a saída: um consumidor que mantém projeção por
+    ID do Ilya (serviço Estoque) não detecta um DELETE — a linha some sem
+    bump de `source_version` e a cópia de lá ficaria órfã para sempre. Por
+    isso o evento `order.deleted` vai para a outbox na MESMA transação: ou os
+    dois acontecem, ou nenhum. Cancelar (`/cancel`) continua sendo o caminho
+    recomendado para pedido com histórico comercial.
+    """
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+
+    await enqueue_event(
+        db,
+        "order.deleted",
+        {
+            "order_id": str(order.id),
+            "code": order.code,
+            "orc_id": order.orc_id,
+            "client_id": str(order.client_id),
+            "was_finalized": order.is_finalized,
+            "deleted_by": str(current_user.id),
+        },
+    )
+    await db.delete(order)
+    await db.commit()
+    logger.warning(
+        "Pedido excluído: id=%s code=%s por user_id=%s",
+        order_id,
+        order.code,
+        current_user.id,
     )
 
 

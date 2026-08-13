@@ -42,6 +42,16 @@ investigação ou obrigação legal, aplica-se legal hold até o encerramento.
 8. A aprovação de um relatório `dry-run` não autoriza descarte automático; a
    elegibilidade e os legal holds devem ser revalidados na mesma transação de
    uma futura execução.
+9. **Exclusão manual de pedido pelo administrador** (`DELETE /orders/{id}`,
+   reaberta em 13/08/2026 por decisão do Alto Comando): é a única via de
+   eliminação fora dos jobs. Não é automática — depende de ação humana
+   deliberada com papel `admin` — e emite `order.deleted` na outbox, para que
+   consumidores externos não fiquem com projeção órfã. Fica registrada aqui
+   porque **conflita com RET-06** quando aplicada a pedido finalizado ou
+   cancelado, cuja guarda prevista é de 10 anos: nesses casos o caminho
+   correto continua sendo cancelar, e o uso da exclusão deve ser restrito a
+   registros sem valor fiscal (testes, duplicidades, lançamentos errados).
+   Cada exclusão é registrada em log com o pedido e o autor.
 
 ## Pendências antes de liberar os jobs
 

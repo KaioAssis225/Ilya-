@@ -653,14 +653,28 @@ function OrderForm({
 // ── Bottom Drawer (mobile) ────────────────────────────────────────────────────
 
 function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open, onClose])
+
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[60] flex items-end lg:hidden">
-      <div className="fixed inset-0 bg-scrim/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[60] flex items-end lg:hidden" role="dialog" aria-modal="true" aria-labelledby="budget-drawer-title">
+      <div className="fixed inset-0 bg-scrim/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <span className="text-sm font-semibold text-ink">Configurar Orçamento</span>
-          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-muted">
+          <h2 id="budget-drawer-title" className="text-sm font-semibold text-ink">Configurar Orçamento</h2>
+          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-muted hover:text-ink" aria-label="Fechar configuração do orçamento">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -1233,9 +1247,9 @@ export default function OrcamentoPage() {
         <div className="lg:hidden">{productSearchCard}</div>
 
         {/* ── Items Panel ──────────────────────────────────────────────────── */}
-        <main className="bg-white border border-line rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
+        <section aria-labelledby="budget-items-title" className="bg-white border border-line rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
           <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-line flex items-center justify-between bg-white flex-shrink-0">
-            <h2 className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
+            <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
               <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
             </h2>
             <div className="flex items-center gap-2">
@@ -1250,9 +1264,10 @@ export default function OrcamentoPage() {
               )}
               <div className="relative w-36 lg:w-52">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
-                <input
-                  className="input pl-8 w-full text-xs border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
-                  placeholder="Buscar..."
+                  <input
+                    className="input pl-8 w-full text-xs border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
+                    aria-label="Buscar nos itens do orçamento"
+                    placeholder="Buscar itens..."
                   value={cartFilter}
                   onChange={(e) => setCartFilter(e.target.value)}
                 />
@@ -1264,7 +1279,18 @@ export default function OrcamentoPage() {
             {filteredCart.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted space-y-3">
                 <Clipboard className="w-10 h-10 text-faint stroke-[1.2]" />
-                <p className="text-sm font-medium text-[#6b5d55]">Nenhum item adicionado.</p>
+                <p className="text-sm font-medium text-[#6b5d55]">
+                  {cart.length === 0 ? 'Seu orçamento ainda está vazio.' : 'Nenhum item corresponde à busca.'}
+                </p>
+                {cart.length === 0 ? (
+                  <a href="/produtos" className="btn-secondary min-h-11 px-4 inline-flex items-center justify-center text-xs">
+                    Escolher produtos
+                  </a>
+                ) : (
+                  <button type="button" onClick={() => setCartFilter('')} className="btn-secondary min-h-11 px-4 text-xs">
+                    Limpar busca
+                  </button>
+                )}
               </div>
             ) : (
               <>
@@ -1382,7 +1408,7 @@ export default function OrcamentoPage() {
                             <SafePrice value={subtotalWithIpi} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto">
+                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={`Remover ${item._product.description} do orçamento`}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>
@@ -1408,7 +1434,7 @@ export default function OrcamentoPage() {
               </div>
             </div>
           )}
-        </main>
+        </section>
 
         {/* ── Desktop Sidebar (hidden on mobile) ───────────────────────── */}
         <aside className="hidden lg:block space-y-5">
@@ -1457,7 +1483,7 @@ export default function OrcamentoPage() {
             </span>
           </div>
           {cart.length > 0 && (
-            <span className="text-sm font-bold"><SafePrice value={total} /></span>
+            <span className="text-sm font-bold"><SafePrice value={totalWithIpi} /></span>
           )}
         </button>
       </div>
