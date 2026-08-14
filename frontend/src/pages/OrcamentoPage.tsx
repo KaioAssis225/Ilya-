@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { useSearchParams } from 'react-router'
+import { useState, useRef, useEffect, useId } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
@@ -61,7 +61,9 @@ function Autocomplete<T extends { id: string }>({
   onQueryChange: (query: string) => void; isLoading?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
   const ref = useRef<HTMLDivElement>(null)
+  const listboxId = useId()
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -72,11 +74,19 @@ function Autocomplete<T extends { id: string }>({
   }, [])
 
   const filtered = items.filter((i) => getSearch(i).toLowerCase().includes(query.toLowerCase()))
+  const visibleItems = filtered.slice(0, 15)
+
+  function choose(item: T) {
+    onChange(item)
+    onQueryChange('')
+    setOpen(false)
+    setActiveIndex(-1)
+  }
 
   return (
     <div ref={ref} className="space-y-1 w-full">
       <div className="flex gap-2">
-        <div className="input flex items-center justify-between bg-[#fcfbfa] border border-line px-3 py-1.5 rounded-lg text-sm flex-1 min-w-0 h-[36px]">
+        <div className="input flex items-center justify-between bg-surface-quiet border border-line px-3 py-1.5 rounded-lg text-sm flex-1 min-w-0 min-h-11">
           <span className={`${value ? 'text-ink font-medium' : 'text-muted-3'} truncate flex-1 min-w-0`}>
             {value ? getLabel(value) : displayPlaceholder}
           </span>
@@ -89,40 +99,60 @@ function Autocomplete<T extends { id: string }>({
                 setOpen(false)
               }}
               className="text-muted hover:text-ink transition-colors w-11 h-11 flex items-center justify-center"
+              aria-label="Limpar seleção"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
         {showQuickAdd && onQuickAdd && (
-          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 h-[36px] border border-line hover:bg-bg rounded-lg transition-colors flex items-center justify-center min-w-[44px]">
+          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 min-h-11 border border-line hover:bg-bg rounded-lg transition-colors flex items-center justify-center min-w-11" aria-label="Cadastrar novo">
             <Plus className="w-4 h-4 text-muted" />
           </button>
         )}
       </div>
       <div className="relative">
         <input
-          className="input w-full text-xs placeholder:text-muted border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
+          className="input w-full text-sm sm:text-xs placeholder:text-muted border border-line rounded-lg px-3 py-2.5 sm:py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
           placeholder={searchPlaceholder}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-activedescendant={activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
           value={query}
           onChange={(e) => {
             onQueryChange(e.target.value)
             setOpen(true)
           }}
           onFocus={() => setOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              setOpen(true)
+              setActiveIndex(current => Math.min(visibleItems.length - 1, current + 1))
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              setActiveIndex(current => Math.max(0, current - 1))
+            } else if (event.key === 'Enter' && open && activeIndex >= 0 && visibleItems[activeIndex]) {
+              event.preventDefault()
+              choose(visibleItems[activeIndex])
+            } else if (event.key === 'Escape') {
+              setOpen(false)
+              setActiveIndex(-1)
+            }
+          }}
         />
         {open && (isLoading || filtered.length > 0 || query.length > 0) && (
-          <ul className="absolute z-30 w-full mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
+          <ul id={listboxId} role="listbox" className="absolute z-30 w-full mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
             {isLoading && (
               <li className="px-3 py-2 text-xs text-muted">Buscando…</li>
             )}
-            {filtered.slice(0, 15).map((item) => (
-              <li key={item.id} className="px-3 py-2 text-xs text-ink hover:bg-bg cursor-pointer transition-colors"
-                onMouseDown={() => {
-                  onChange(item)
-                  onQueryChange('')
-                  setOpen(false)
-                }}>
+            {visibleItems.map((item, index) => (
+              <li key={item.id} id={`${listboxId}-option-${index}`} role="option" aria-selected={activeIndex === index}
+                className={`px-3 py-2.5 text-xs text-ink cursor-pointer transition-colors ${activeIndex === index ? 'bg-bg' : 'hover:bg-bg'}`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseDown={() => choose(item)}>
                 {getLabel(item)}
               </li>
             ))}
@@ -162,6 +192,9 @@ function formatCpfCnpj(value: string): string {
 function QuickRegisterModal({ title, entityType, onSave, onClose }: {
   title: string; entityType: 'client' | 'rep'; onSave: (data: ClientCreate) => Promise<void>; onClose: () => void
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const [form, setForm] = useState<ClientCreate>(EMPTY_PERSON)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -169,6 +202,23 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
   const [cepError, setCepError] = useState(false)
   const cepAbortRef = useRef<AbortController | null>(null)
   useEffect(() => () => cepAbortRef.current?.abort(), [])
+
+  useEffect(() => {
+    const returnFocus = document.activeElement as HTMLElement | null
+    const panel = panelRef.current
+    const focusable = panel?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    focusable?.[0]?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCloseRef.current()
+      if (event.key !== 'Tab' || !focusable?.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => { document.removeEventListener('keydown', handleKeyDown); returnFocus?.focus() }
+  }, [])
 
   async function handleCepBlur() {
     const clean = form.cep.replace(/\D/g, '')
@@ -210,14 +260,14 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-lg p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="quick-register-title">
+      <div ref={panelRef} className="modal-panel w-full max-w-lg p-4 sm:p-6 mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-ink">{title}</h3>
+          <h3 id="quick-register-title" className="text-lg font-semibold text-ink">{title}</h3>
           <button onClick={onClose} className="text-muted hover:text-ink w-11 h-11 flex items-center justify-center" aria-label="Fechar"><X className="w-5 h-5" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
-          <label className="col-span-2 flex flex-col gap-1">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="sm:col-span-2 flex flex-col gap-1">
             <span className="text-xs text-muted">Nome *</span>
             <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </label>
@@ -237,13 +287,13 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
             <span className="text-xs text-muted">CEP *</span>
             <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={9} required />
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
-            {cepError && <span className="text-[10px] text-red-500">CEP não encontrado ou serviço indisponível.</span>}
+            {cepError && <span className="text-xs leading-snug text-red-600">CEP não encontrado ou serviço indisponível.</span>}
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">Número</span>
             <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
           </label>
-          <label className="col-span-2 flex flex-col gap-1">
+          <label className="sm:col-span-2 flex flex-col gap-1">
             <span className="text-xs text-muted">Endereço *</span>
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
           </label>
@@ -256,7 +306,7 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
             <input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required />
           </label>
           {entityType === 'client' && (
-            <div className="col-span-2 flex flex-col gap-1.5">
+            <div className="sm:col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted">Perfil de faturamento *</span>
               <div className="flex gap-2">
                 {(['lojista', 'corporativo'] as const).map((profile) => (
@@ -264,7 +314,7 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
                     key={profile}
                     type="button"
                     onClick={() => setForm({ ...form, price_profile: profile })}
-                    className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${
+                    className={`flex-1 min-h-11 lg:min-h-0 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${
                       (form.price_profile ?? 'lojista') === profile
                         ? 'bg-gold text-white border-gold'
                         : 'border-line text-ink-3 hover:border-faint'
@@ -277,11 +327,11 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
             </div>
           )}
           {saveError && (
-            <p role="alert" className="col-span-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <p role="alert" className="sm:col-span-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               {saveError}
             </p>
           )}
-          <div className="col-span-2 flex justify-end gap-3 pt-1">
+          <div className="sm:col-span-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-1">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={saving}>
               {saving ? 'Salvando...' : 'Salvar'}
@@ -366,15 +416,15 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
         const currentValue = item.opt_categories[cat] ?? ''
         const currentOpt = available.find(o => o.color_name === currentValue)
         return (
-          <div key={cat} className="flex items-center gap-1 bg-[#fcfbfa] border border-bg-2 rounded-md px-1.5 py-0.5">
-            <span className="text-[10px] text-muted font-medium whitespace-nowrap">{catLabel(cat)}:</span>
+          <div key={cat} className="flex min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5">
+            <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt?.photo_url && (
               <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
             )}
             <select
               value={currentValue}
               onChange={(e) => onChange(cat, e.target.value || null)}
-              className="text-[10px] text-ink bg-transparent border-none outline-none cursor-pointer"
+              className="min-h-11 lg:min-h-0 text-xs leading-snug text-ink bg-transparent border-none outline-none cursor-pointer"
               style={{ maxWidth: '100px' }}
             >
               <option value="">—</option>
@@ -392,14 +442,26 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
 // ── Lightbox de foto ──────────────────────────────────────────────────────────
 
 function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    const returnFocus = document.activeElement as HTMLElement | null
+    closeRef.current?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onCloseRef.current() }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => { document.removeEventListener('keydown', handleKeyDown); returnFocus?.focus() }
+  }, [])
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/75 backdrop-blur-sm"
-      onClick={onClose}>
+      onClick={onClose} role="dialog" aria-modal="true" aria-label="Foto ampliada do produto">
       <div className="relative mx-4" onClick={(e) => e.stopPropagation()}>
-        <img src={url} alt="" className="max-w-[480px] max-h-[480px] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
+        <img src={url} alt="Produto ampliado" className="max-w-[min(480px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
         <button
+          ref={closeRef}
           onClick={onClose}
           className="absolute -top-3 -right-3 bg-white border border-line rounded-full w-11 h-11 flex items-center justify-center shadow-md text-muted hover:text-ink transition-colors"
+          aria-label="Fechar foto ampliada"
         >
           <X className="w-4 h-4" />
         </button>
@@ -440,12 +502,9 @@ function MobileCartCard({
       {/* Top: thumbnail + info + trash */}
       <div className="flex gap-3">
         {item._product.photo_url
-          ? <img
-              src={item._product.photo_url} alt=""
-              onClick={() => onPhotoClick(item._product.photo_url!)}
-              className="w-14 h-14 object-cover rounded-lg border border-line flex-shrink-0 cursor-pointer active:opacity-70 transition-opacity"
-              style={{ minWidth: '56px', minHeight: '56px' }}
-            />
+          ? <button type="button" onClick={() => onPhotoClick(item._product.photo_url!)} className="w-14 h-14 rounded-lg flex-shrink-0" aria-label={`Ampliar foto de ${item._product.description}`}>
+              <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line active:opacity-70 transition-opacity" />
+            </button>
           : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0">
               <ImageIcon className="w-5 h-5 text-faint" />
             </div>
@@ -453,12 +512,12 @@ function MobileCartCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-[11px] text-gold font-mono font-semibold">{item.product_code}</span>
+              <span className="type-code">{item.product_code}</span>
               <p className="text-xs font-semibold text-ink leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
               {item._product.components.length > 0 && (
                 <ul className="mt-0.5 space-y-0.5">
                   {item._product.components.map((comp) => (
-                    <li key={comp.id} className="text-[10px] text-ink-3 leading-snug">
+                    <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
                       • {comp.qty}x {comp.description} ({comp.is_circular
                         ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
                         : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
@@ -470,13 +529,14 @@ function MobileCartCard({
                 </ul>
               )}
               {item._product.observacao && (
-                <p className="text-[10px] text-gold italic mt-0.5 line-clamp-2">{item._product.observacao}</p>
+                <p className="text-[11px] leading-snug text-gold italic mt-1 line-clamp-2">{item._product.observacao}</p>
               )}
             </div>
             <button
               onClick={() => onRemove(item.product_code)}
               className="text-muted active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
               style={{ touchAction: 'manipulation' }}
+              aria-label={`Remover ${item._product.description} do orçamento`}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -491,16 +551,18 @@ function MobileCartCard({
         <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
           <button
             onClick={() => onQtyChange(item.product_code, Math.max(1, item.qty - 1))}
-            className="w-9 h-9 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+            className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
+            aria-label={`Diminuir quantidade de ${item._product.description}`}
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
-          <span className="w-9 text-center text-sm font-semibold text-ink">{item.qty}</span>
+          <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
           <button
             onClick={() => onQtyChange(item.product_code, item.qty + 1)}
-            className="w-9 h-9 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+            className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
+            aria-label={`Aumentar quantidade de ${item._product.description}`}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -528,7 +590,7 @@ function MobileCartCard({
 function LockedField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
-      <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">{label}</span>
+      <span className="type-label block">{label}</span>
       <div className="flex items-center gap-2 bg-bg border border-line rounded-lg px-3 py-2 h-[36px]">
         <Lock className="w-3 h-3 text-faint flex-shrink-0" />
         <span className="text-sm font-medium text-ink truncate flex-1">{value}</span>
@@ -565,7 +627,7 @@ function OrderForm({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between pb-3 border-b border-[#f3ede6]">
+      <div className="flex items-center justify-between pb-3 border-b border-line-soft">
         <h2 className="text-base font-semibold text-ink">{editMode ? 'Editar Pedido' : 'Novo Orçamento'}</h2>
         <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider ${editMode ? 'bg-gold/10 text-gold' : 'bg-olive/10 text-olive'}`}>
           {editMode ? editCode : budgetCode}
@@ -579,7 +641,7 @@ function OrderForm({
         />
       ) : (
         <div className="space-y-1">
-          <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Representante</span>
+          <span className="type-label block">Representante</span>
           <Autocomplete
             searchPlaceholder="Buscar representante..."
             items={reps}
@@ -602,7 +664,7 @@ function OrderForm({
         <LockedField label="Cliente" value={`${selectedClient.name} — ${selectedClient.city}/${selectedClient.state}`} />
       ) : (
         <div className="space-y-1">
-          <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Cliente</span>
+          <span className="type-label block">Cliente</span>
           <Autocomplete
             searchPlaceholder="Buscar cliente..."
             items={clients}
@@ -622,7 +684,7 @@ function OrderForm({
       )}
 
       <div className="space-y-1">
-        <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">Observações</span>
+        <span className="type-label block">Observações</span>
         <textarea
           className="input resize-none text-xs"
           rows={3}
@@ -634,7 +696,7 @@ function OrderForm({
 
 
       {(!selectedClient || cart.length === 0) && !isGenerating && (
-        <p className="text-[10px] text-muted text-center -mt-1">
+        <p className="type-meta text-center -mt-1">
           {cart.length === 0 ? 'Adicione ao menos um produto ao orçamento.' : 'Selecione um cliente para continuar.'}
         </p>
       )}
@@ -642,7 +704,7 @@ function OrderForm({
         onClick={onSubmit}
         disabled={!selectedClient || cart.length === 0 || isGenerating}
         style={{ touchAction: 'manipulation' }}
-        className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-gold hover:bg-[#725510] disabled:bg-faint disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
+        className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-gold hover:bg-gold-600 active:bg-gold-700 disabled:bg-faint disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
       >
         {editMode ? 'Salvar Alterações' : 'Finalizar Orçamento'}
       </button>
@@ -653,25 +715,38 @@ function OrderForm({
 // ── Bottom Drawer (mobile) ────────────────────────────────────────────────────
 
 function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
     if (!open) return
+    const returnFocus = document.activeElement as HTMLElement | null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const panel = panelRef.current
+    const focusable = panel?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    focusable?.[0]?.focus()
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') onCloseRef.current()
+      if (event.key !== 'Tab' || !focusable?.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
+      returnFocus?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[60] flex items-end lg:hidden" role="dialog" aria-modal="true" aria-labelledby="budget-drawer-title">
       <div className="fixed inset-0 bg-scrim/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-      <div className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
+      <div ref={panelRef} className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <h2 id="budget-drawer-title" className="text-sm font-semibold text-ink">Configurar Orçamento</h2>
           <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-muted hover:text-ink" aria-label="Fechar configuração do orçamento">
@@ -1092,17 +1167,17 @@ export default function OrcamentoPage() {
 
   // Product search card (shared between desktop and a potential mobile add section)
   const productSearchCard = (
-    <div className="bg-[#f5ede3] border border-[#e8dccb] rounded-xl p-4 space-y-3.5">
-      <span className="text-[10px] font-bold text-gold uppercase tracking-wider block">Adicionar Produto</span>
+    <div className="bg-surface-warm border border-line-warm rounded-xl p-4 space-y-3.5">
+      <span className="type-label text-gold block">Adicionar Produto</span>
       {!cartHydrated && (
-        <div className="rounded-lg border border-[#e8dccb] bg-white px-3 py-2 text-xs text-muted">
+        <div className="rounded-lg border border-line-warm bg-white px-3 py-2 text-xs text-muted">
           {editId && editOrderQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
               <span>Não foi possível carregar o pedido para edição.</span>
               <button
                 type="button"
                 onClick={() => void editOrderQuery.refetch()}
-                className="shrink-0 font-semibold text-gold hover:underline"
+                className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
                 Tentar novamente
               </button>
@@ -1113,7 +1188,7 @@ export default function OrcamentoPage() {
               <button
                 type="button"
                 onClick={() => void resolvedClientQuery.refetch()}
-                className="shrink-0 font-semibold text-gold hover:underline"
+                className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
                 Tentar novamente
               </button>
@@ -1124,7 +1199,7 @@ export default function OrcamentoPage() {
               <button
                 type="button"
                 onClick={() => void resolvedRepQuery.refetch()}
-                className="shrink-0 font-semibold text-gold hover:underline"
+                className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
                 Tentar novamente
               </button>
@@ -1135,7 +1210,7 @@ export default function OrcamentoPage() {
               <button
                 type="button"
                 onClick={() => void resolvedProductQuery.refetch()}
-                className="shrink-0 font-semibold text-gold hover:underline"
+                className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
                 Tentar novamente
               </button>
@@ -1149,6 +1224,7 @@ export default function OrcamentoPage() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
           <input
+            aria-label="Buscar produto para adicionar ao orçamento"
             className="input pl-8 w-full text-xs bg-white border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gold"
             placeholder="Buscar produto por codigo ou desc"
             value={productQuery}
@@ -1165,7 +1241,7 @@ export default function OrcamentoPage() {
             {filteredProducts.slice(0, 15).map((p) => (
               <li
                 key={p.id}
-                className="px-3 py-2 text-xs hover:bg-bg cursor-pointer flex items-center gap-2 transition-colors border-b border-[#fbfaf9]"
+                className="min-h-11 lg:min-h-0 px-3 py-2 text-xs hover:bg-bg cursor-pointer flex items-center gap-2 transition-colors border-b border-surface-2"
                 onMouseDown={() => { setSelectedProduct(p); setProductQuery(''); setProductOpen(false) }}
               >
                 {p.photo_url
@@ -1174,7 +1250,7 @@ export default function OrcamentoPage() {
                 <div className="truncate">
                   <span className="text-gold font-mono font-medium">{p.product_code}</span>
                   <span className="text-ink ml-1.5 font-medium">{p.description}</span>
-                  {dimLabel(p) && <div className="text-[9px] text-muted">{dimLabel(p)}</div>}
+                  {dimLabel(p) && <div className="type-meta font-mono mt-0.5">{dimLabel(p)}</div>}
                 </div>
               </li>
             ))}
@@ -1187,14 +1263,15 @@ export default function OrcamentoPage() {
         )}
       </div>
       {selectedProduct && (
-        <div className="bg-white border border-[#e8dccb] rounded-lg p-2.5 flex gap-2.5 shadow-sm relative">
+        <div className="bg-white border border-line-warm rounded-lg p-2.5 flex gap-2.5 shadow-sm relative">
           <button type="button" onClick={() => setSelectedProduct(null)}
-            className="absolute top-1.5 right-1.5 text-muted hover:text-red-500 transition-colors w-7 h-7 flex items-center justify-center">
+            className="absolute top-0 right-0 text-muted hover:text-red-500 transition-colors w-11 h-11 lg:top-1.5 lg:right-1.5 lg:w-7 lg:h-7 flex items-center justify-center">
             <X className="w-3.5 h-3.5" />
           </button>
           {selectedProduct.photo_url
-            ? <img src={selectedProduct.photo_url} alt="" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)}
-                className="w-12 h-12 object-cover rounded border border-line flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity" />
+            ? <button type="button" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)} className="w-12 h-12 rounded flex-shrink-0" aria-label={`Ampliar foto de ${selectedProduct.description}`}>
+                <img src={selectedProduct.photo_url} alt="" className="w-full h-full object-cover rounded border border-line hover:opacity-80 transition-opacity" />
+              </button>
             : <div className="w-12 h-12 bg-bg-2 rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
           }
           <div className="text-[11px] pr-5 flex-1 min-w-0">
@@ -1209,7 +1286,7 @@ export default function OrcamentoPage() {
         onClick={handleAddProductToCart}
         disabled={!cartHydrated || !selectedProduct}
         style={{ touchAction: 'manipulation' }}
-        className="w-full py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-gold hover:bg-[#725510] disabled:bg-faint disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
+        className="w-full min-h-11 lg:min-h-0 py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-gold hover:bg-gold-600 active:bg-gold-700 disabled:bg-faint disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
       >
         ADICIONAR AO ORÇAMENTO
       </button>
@@ -1218,6 +1295,7 @@ export default function OrcamentoPage() {
 
   return (
     <div className="min-h-screen bg-bg text-ink">
+      <h1 className="sr-only">Novo Orçamento</h1>
       {editId && editOrder && (
         <div className="bg-gold text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
           <PenLine className="w-4 h-4 flex-shrink-0" />
@@ -1235,7 +1313,7 @@ export default function OrcamentoPage() {
               localStorage.removeItem(cartKey)
               notifyCartChanged()
             }}
-            className="ml-auto text-white/70 hover:text-white text-xs underline"
+            className="ml-auto min-h-11 lg:min-h-0 px-2 text-white/70 hover:text-white text-xs underline"
           >
             Cancelar edição
           </button>
@@ -1256,7 +1334,7 @@ export default function OrcamentoPage() {
               {cart.length > 0 && (
                 <button
                   onClick={() => { setCart([]); localStorage.removeItem(cartKey); notifyCartChanged() }}
-                  className="text-xs text-terracotta hover:text-[#8a3a2e] border border-[#f0c8c0] hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
+                  className="min-h-11 lg:min-h-0 text-xs text-terracotta hover:text-terracotta-700 border border-terracotta-soft hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >
                   Limpar
@@ -1279,13 +1357,13 @@ export default function OrcamentoPage() {
             {filteredCart.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted space-y-3">
                 <Clipboard className="w-10 h-10 text-faint stroke-[1.2]" />
-                <p className="text-sm font-medium text-[#6b5d55]">
+                <p className="text-sm font-medium text-ink-3">
                   {cart.length === 0 ? 'Seu orçamento ainda está vazio.' : 'Nenhum item corresponde à busca.'}
                 </p>
                 {cart.length === 0 ? (
-                  <a href="/produtos" className="btn-secondary min-h-11 px-4 inline-flex items-center justify-center text-xs">
+                  <Link to="/produtos" className="btn-secondary min-h-11 px-4 inline-flex items-center justify-center text-xs">
                     Escolher produtos
-                  </a>
+                  </Link>
                 ) : (
                   <button type="button" onClick={() => setCartFilter('')} className="btn-secondary min-h-11 px-4 text-xs">
                     Limpar busca
@@ -1331,25 +1409,25 @@ export default function OrcamentoPage() {
                       const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                       const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
                       return (
-                        <tr key={item.product_code} className="hover:bg-[#fcfbf9] align-top transition-colors">
+                        <tr key={item.product_code} className="hover:bg-surface-2 align-top transition-colors">
                           <td className="px-4 py-3.5">
                             <div className="flex gap-3">
                               {item._product.photo_url
-                                ? <img src={item._product.photo_url} alt="" onClick={() => setActivePhotoModal(item._product.photo_url!)}
-                                    className="object-cover rounded-lg border border-line cursor-pointer hover:opacity-80 transition-opacity"
-                                    style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }} />
+                                ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={`Ampliar foto de ${item._product.description}`}>
+                                    <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
+                                  </button>
                                 : <div className="bg-bg-2 rounded-lg flex items-center justify-center"
                                     style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
                                     <ImageIcon className="w-5 h-5 text-faint" />
                                   </div>
                               }
                               <div className="flex-1 min-w-0">
-                                <span className="text-gold font-mono font-semibold">{item.product_code}</span>
-                                <span className="text-ink ml-2 text-xs font-semibold">{item._product.description}</span>
+                                <span className="type-code">{item.product_code}</span>
+                                <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item._product.description}</span>
                                 {item._product.components.length > 0 && (
                                   <ul className="mt-0.5 space-y-0.5">
                                     {item._product.components.map((comp) => (
-                                      <li key={comp.id} className="text-[10px] text-ink-3 leading-snug">
+                                      <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
                                         • {comp.qty}x {comp.description} ({comp.is_circular
                                           ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
                                           : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
@@ -1361,10 +1439,10 @@ export default function OrcamentoPage() {
                                   </ul>
                                 )}
                                 {item._product.observacao && (
-                                  <div className="text-[10px] text-gold italic mt-0.5">{item._product.observacao}</div>
+                                  <div className="text-[11px] leading-snug text-gold italic mt-1">{item._product.observacao}</div>
                                 )}
                                 {dimLabel(item._product) && (
-                                  <div className="text-[10px] text-muted mt-0.5">{dimLabel(item._product)}</div>
+                                  <div className="type-meta font-mono mt-1">{dimLabel(item._product)}</div>
                                 )}
                                 <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} catLabel={catLabel} />
                               </div>

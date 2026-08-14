@@ -186,9 +186,9 @@ export default function AdminPage() {
       <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-7">
           <div>
-            <h2 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
+            <h1 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
               <ShieldCheck className="w-6 h-6 text-gold" /> Gerenciar Usuários
-            </h2>
+            </h1>
             <p className="text-sm text-muted mt-1">Área exclusiva do Administrador</p>
           </div>
           <button
@@ -204,6 +204,7 @@ export default function AdminPage() {
             <div className="relative w-full sm:max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <input
+                aria-label="Buscar usuários por nome, e-mail ou usuário"
                 type="search"
                 value={userQuery}
                 onChange={(event) => {

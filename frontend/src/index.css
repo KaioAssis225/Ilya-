@@ -7,7 +7,13 @@
   --color-bg:          #f8f6f2;
   --color-surface:     #ffffff;
   --color-surface-2:   #fbfaf8;
+  --color-surface-quiet:#fcfbfa;
+  --color-surface-warm: #f5ede3;
+  --color-surface-note: #fdf6ec;
   --color-line:        #e8e0d6;
+  --color-line-soft:   #efe9e1;
+  --color-line-warm:   #e8dccb;
+  --color-line-note:   #e8d8b8;
 
   --color-ink:         #2c2420;
   --color-ink-2:       #4a3f38;
@@ -29,10 +35,22 @@
   --color-gold-700:    #6a4f0d;
   --color-gold-800:    #5a4508;
   --color-gold-soft:   #c8a84b;
+  --color-gold-wash:   #fdf9f0;
 
   --color-terracotta:  #b25e50;
+  --color-terracotta-700: #8a3a2e;
+  --color-terracotta-soft: #f0c8c0;
   --color-mineral:     #507a9b;
   --color-olive:       #648261;
+  --color-note-ink:    #5a4a2c;
+  --color-success:     #4a7a47;
+  --color-success-soft:#f0f7f0;
+  --color-warning:     #a3690f;
+  --color-warning-soft:#fdf6ec;
+  --color-danger:      #a33f35;
+  --color-danger-soft: #fef3f2;
+  --color-info:        #2c5282;
+  --color-info-soft:   #edf3fa;
 
   --radius-control:    0.5rem;   /* inputs, buttons — the one true control radius */
   --radius-card:       0.75rem;  /* cards, panels, tables */
@@ -40,6 +58,8 @@
   /* Substitui o monospace genérico do SO nas classes font-mono existentes
      (códigos de produto, dimensões) por uma fonte técnica self-hosted. */
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Cormorant Garamond', Georgia, serif;
 }
 
 @layer base {
@@ -50,12 +70,12 @@
   body {
     background-color: var(--color-bg);
     color: var(--color-ink);
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
   h1, h2, h3 {
-    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-family: var(--font-display);
     font-weight: 500;
     letter-spacing: 0.02em;
   }
@@ -71,28 +91,28 @@
 @layer components {
   /* ── Inputs ─────────────────────────────────────────────────────── */
   .input {
-    @apply w-full bg-white border border-line rounded-control px-3 py-2 text-ink text-sm
+    @apply w-full min-h-11 lg:min-h-0 bg-white border border-line rounded-control px-3 py-2 text-ink text-sm
       placeholder:text-muted-3 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:border-gold/60
-      transition-all duration-200;
+      transition-[border-color,box-shadow,background-color] duration-200;
   }
 
   /* ── Buttons ─────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold-600 active:bg-gold-700
-      text-white font-semibold text-sm px-4 py-2 rounded-control transition-all duration-150
+    @apply inline-flex min-h-11 lg:min-h-0 items-center justify-center gap-2 bg-gold hover:bg-gold-600 active:bg-gold-700
+      text-white font-semibold text-sm px-4 py-2 rounded-control transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150
       disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wide
       shadow-sm hover:shadow-md hover:shadow-gold/20;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 bg-white hover:bg-bg active:bg-bg-2
+    @apply inline-flex min-h-11 lg:min-h-0 items-center justify-center gap-2 bg-white hover:bg-bg active:bg-bg-2
       text-ink font-medium text-sm border border-line px-4 py-2 rounded-control
-      transition-all duration-150;
+      transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150;
   }
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 bg-red-700 hover:bg-red-600 active:bg-red-800
-      text-white font-semibold text-sm px-4 py-2 rounded-control transition-all duration-150;
+      text-white font-semibold text-sm px-4 py-2 rounded-control transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150;
   }
 
   /* Icon-only action button — replaces the ad-hoc muted icon buttons in tables. */
@@ -115,12 +135,12 @@
 
   /* ── Nav link ────────────────────────────────────────────────────── */
   .nav-link {
-    @apply px-4 py-2 rounded-control text-sm font-medium transition-all duration-150
+    @apply px-4 py-2 rounded-control text-sm font-medium transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150
       text-muted-2 hover:text-ink hover:bg-bg-2;
   }
 
   .nav-link-active {
-    @apply bg-[#f5f0e8] text-gold hover:text-gold;
+    @apply bg-gold-wash text-gold hover:text-gold;
   }
 
   /* ── Table rows ──────────────────────────────────────────────────── */
@@ -172,6 +192,34 @@
   /* Thin gold rule used as a brand divider (auth headers, etc.). */
   .gold-rule {
     @apply mx-auto h-px w-12 bg-gold;
+  }
+
+  /* Stable type roles for dense operational surfaces. */
+  .type-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-muted leading-tight;
+  }
+
+  .type-meta {
+    @apply text-[11px] text-muted leading-snug;
+  }
+
+  .type-code {
+    @apply font-mono text-[11px] font-semibold tracking-wide text-gold tabular-nums;
+  }
+}
+
+@media (max-width: 1023px) {
+  button,
+  input:not([type='hidden']),
+  select,
+  textarea,
+  [role='button'] {
+    min-height: 44px;
+  }
+
+  button,
+  [role='button'] {
+    min-width: 44px;
   }
 }
 

@@ -375,7 +375,7 @@ function Pagination({ page, totalPages, onPage, color }: {
   if (totalPages <= 1) return null
   const canPrev = page > 1
   const canNext = page < totalPages
-  const base = "flex items-center gap-1 px-3.5 py-2 rounded-lg border text-sm font-medium transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+  const base = "flex items-center gap-1 px-3.5 py-2 rounded-lg border text-sm font-medium transition-[background-color,color,border-color,transform,opacity] active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
   const ring = (e: React.FocusEvent<HTMLButtonElement>, on: boolean) => { e.currentTarget.style.boxShadow = on ? `0 0 0 3px ${color}33` : '' }
   return (
     <div className="flex items-center justify-center gap-3 mt-4">
@@ -676,7 +676,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
                 <>
                   {uploading && (
                     <div className="w-full h-2 bg-bg-2 rounded-full overflow-hidden">
-                      <div className="h-full transition-all" style={{ width: `${progress}%`, backgroundColor: color }} />
+                      <div className="h-full transition-[width]" style={{ width: `${progress}%`, backgroundColor: color }} />
                     </div>
                   )}
                   <div className="max-h-56 overflow-y-auto border border-line rounded-lg divide-y divide-bg-2">
@@ -942,7 +942,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-            <input className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
+            <input aria-label="Buscar produtos por código ou descrição" className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
@@ -1357,7 +1357,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                       const ids = f.optional_ids
                                       return { ...f, optional_ids: ids.includes(opt.id) ? ids.filter(id => id !== opt.id) : [...ids, opt.id] }
                                     })}
-                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all"
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-[background-color,color,border-color]"
                                     style={isSel ? { backgroundColor: `${color}20`, borderColor: color, color } : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
                                   >
                                     {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
@@ -1942,7 +1942,7 @@ function PeopleTab<T extends Client | Representative>({
                 <span className="text-xs text-red-700 leading-snug">{formError}</span>
               </div>
             )}
-            <p className="text-[10px] text-[#b8b0a6] leading-relaxed pt-1">
+            <p className="text-xs text-muted leading-relaxed pt-1">
               Os dados coletados neste formulário são processados estritamente para a elaboração de orçamentos e gestão do pedido, conforme a nossa Política de Privacidade.
             </p>
             <div className="flex justify-end gap-3 pt-1">
@@ -2556,13 +2556,14 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
   }
 
   return (
-    <div className="rounded-xl border border-line bg-[#fcfbfa] p-4">
+    <div className="rounded-xl border border-line bg-surface-quiet p-4">
       <p className="text-sm font-semibold text-ink">{label}</p>
       {hint && <p className="text-xs text-ink-3 mt-0.5">{hint}</p>}
-      <p className="text-[11px] text-muted mt-1">Colunas: <span className="font-mono text-ink-3">{columns}</span></p>
+      <p className="text-xs text-muted mt-1">Colunas: <span className="font-mono text-ink-3">{columns}</span></p>
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         <input
           type="file" accept=".csv,text/csv"
+          aria-label={`Selecionar arquivo CSV de ${label}`}
           onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); setError(null) }}
           className="text-xs text-ink-2 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-bg-2 file:text-ink-2 file:cursor-pointer"
         />
@@ -2591,7 +2592,7 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
           {result.errors.length > 0 && (
             <ul className="mt-2 max-h-40 overflow-y-auto space-y-1">
               {result.errors.map((err, i) => (
-                <li key={i} className="text-[11px] text-red-600">Linha {err.row}: {err.message}</li>
+                <li key={i} className="text-xs text-danger">Linha {err.row}: {err.message}</li>
               ))}
             </ul>
           )}
@@ -2729,6 +2730,7 @@ export default function CadastroPage() {
 
   return (
     <div className="min-h-screen bg-bg text-ink pb-24 md:pb-0">
+      <h1 className="sr-only">Cadastros</h1>
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6">
 
         {/* ── Mobile horizontal tab bar ──────────────────────── */}
@@ -2740,7 +2742,7 @@ export default function CadastroPage() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold border transition-all active:scale-[0.97] active:opacity-80"
+                className="min-h-11 flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold border transition-[background-color,color,border-color,transform,opacity] active:scale-[0.97] active:opacity-80"
                 style={isActive
                   ? { backgroundColor: color, color: 'white', borderColor: color, touchAction: 'manipulation' }
                   : { backgroundColor: 'white', color: '#6b5d55', borderColor: '#e8e0d6', touchAction: 'manipulation' }
@@ -2749,7 +2751,7 @@ export default function CadastroPage() {
                 <Icon className="w-3.5 h-3.5" />
                 {label}
                 <span
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                   style={isActive
                     ? { backgroundColor: 'rgba(255,255,255,0.3)', color: 'white' }
                     : { backgroundColor: '#f0ece6', color: '#9d8d81' }
@@ -2767,7 +2769,7 @@ export default function CadastroPage() {
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
             <div className="bg-white border border-line rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
-              <p className="text-[10px] font-semibold text-muted uppercase tracking-widest px-3 pb-2">Cadastros</p>
+              <p className="text-xs font-semibold text-muted uppercase tracking-widest px-3 pb-2">Cadastros</p>
               {visibleTabs.map(({ key, label, Icon }) => {
                 const { color } = TAB_PALETTE[key]
                 const isActive = tab === key
@@ -2776,12 +2778,12 @@ export default function CadastroPage() {
                   <button
                     key={key}
                     onClick={() => setTab(key)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 text-left"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-[background-color,color,box-shadow] duration-150 text-left"
                     style={isActive
-                      ? { backgroundColor: `${color}12`, color, borderLeft: `3px solid ${color}`, paddingLeft: '9px' }
-                      : { borderLeft: '3px solid transparent', paddingLeft: '9px' }
+                      ? { backgroundColor: `${color}12`, color, boxShadow: `inset 0 0 0 1px ${color}24` }
+                      : undefined
                     }
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = '#f8f6f2' }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-bg)' }}
                     onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}
                   >
                     <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: '#9d8d81' }} />

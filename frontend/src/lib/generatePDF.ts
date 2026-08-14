@@ -15,7 +15,12 @@ interface LoadedImage {
   b64: string
   width: number
   height: number
+  format: 'JPEG'
 }
+
+const PDF_IMAGE_MAX_EDGE = 640
+const PDF_IMAGE_QUALITY = 0.84
+const PDF_IMAGE_CONCURRENCY = 3
 
 async function urlToBase64(url: string): Promise<LoadedImage | null> {
   return new Promise((resolve) => {
@@ -24,11 +29,17 @@ async function urlToBase64(url: string): Promise<LoadedImage | null> {
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas')
-        const w = img.naturalWidth
-        const h = img.naturalHeight
+        const scale = Math.min(1, PDF_IMAGE_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
         canvas.width = w
         canvas.height = h
         const ctx = canvas.getContext('2d')!
+        // JPEG não preserva transparência. As fotos do catálogo usam fundo de
+        // estúdio branco, então preencher explicitamente mantém o resultado
+        // previsível mesmo se algum arquivo de origem tiver canal alpha.
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, w, h)
         const r = w * 0.08
         ctx.beginPath()
         ctx.moveTo(r, 0)
@@ -42,8 +53,13 @@ async function urlToBase64(url: string): Promise<LoadedImage | null> {
         ctx.quadraticCurveTo(0, 0, r, 0)
         ctx.closePath()
         ctx.clip()
-        ctx.drawImage(img, 0, 0)
-        resolve({ b64: canvas.toDataURL('image/png', 0.9), width: w, height: h })
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve({
+          b64: canvas.toDataURL('image/jpeg', PDF_IMAGE_QUALITY),
+          width: w,
+          height: h,
+          format: 'JPEG',
+        })
       } catch {
         resolve(null)
       }
@@ -51,6 +67,25 @@ async function urlToBase64(url: string): Promise<LoadedImage | null> {
     img.onerror = () => resolve(null)
     img.src = url
   })
+}
+
+async function mapWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const item = items[cursor]
+        cursor += 1
+        await task(item)
+      }
+    },
+  )
+  await Promise.all(workers)
 }
 
 // ── Calcula o retângulo proporcional (efeito object-contain) dentro de um box quadrado ──
@@ -77,17 +112,18 @@ export async function generateOrderPDF(
   const doc = new jsPDF('p', 'mm', 'a4')
   const w = doc.internal.pageSize.getWidth()
 
-  // Pré-carrega fotos de todos os itens (paralelo)
+  // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
+  // para o box de 14 mm e evitam baixar a foto original quando disponíveis.
   const photoMap: Record<string, LoadedImage> = {}
-  await Promise.all(
-    order.items.map(async (item) => {
-      const product = products.find((p) => p.product_code === item.product_code)
-      if (product?.photo_url) {
-        const photo = await urlToBase64(product.photo_url)
-        if (photo) photoMap[item.product_code] = photo
-      }
-    }),
-  )
+  const productByCode = new Map(products.map(product => [product.product_code, product]))
+  const uniqueCodes = Array.from(new Set(order.items.map(item => item.product_code)))
+  await mapWithConcurrency(uniqueCodes, PDF_IMAGE_CONCURRENCY, async (productCode) => {
+    const product = productByCode.get(productCode)
+    const source = product?.thumbnail_url ?? product?.photo_url
+    if (!source) return
+    const photo = await urlToBase64(source)
+    if (photo) photoMap[productCode] = photo
+  })
 
   let y = 20
 
@@ -270,7 +306,7 @@ export async function generateOrderPDF(
     if (photo) {
       try {
         const box = containBox(photo.width, photo.height, 14)
-        doc.addImage(photo.b64, 'PNG', 22 + box.dx, y - 1 + box.dy, box.w, box.h)
+        doc.addImage(photo.b64, photo.format, 22 + box.dx, y - 1 + box.dy, box.w, box.h, undefined, 'FAST')
       } catch { /* foto inválida — ignora */ }
     } else {
       doc.setDrawColor(...LINE)

@@ -4,6 +4,7 @@ import axios from 'axios'
 import { authApi, bindAuthHandlers } from '../lib/api'
 import { removeUnsafeLegacyCart } from '../lib/cart'
 import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
+import { DEMO_MODE, DEMO_USER } from '../lib/demo'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
 
@@ -40,8 +41,8 @@ export const AuthContext = createContext<AuthContextValue | null>(null)
 // O browser o envia automaticamente nas requisições para /api/v1/auth/*.
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({ user: null, accessToken: null })
-  const [isLoading, setIsLoading] = useState(true)
+  const [state, setState] = useState<AuthState>(DEMO_MODE ? { user: DEMO_USER, accessToken: 'demo-token' } : { user: null, accessToken: null })
+  const [isLoading, setIsLoading] = useState(!DEMO_MODE)
   const refreshingRef = useRef<Promise<string | null> | null>(null)
   // Mantém o token atual acessível de forma síncrona aos interceptores Axios,
   // evitando stale closure em bindAuthHandlers (V-F1).
@@ -106,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Tenta restaurar sessão ao montar via cookie HttpOnly
   useEffect(() => {
     removeLegacySignatureStorage()
+    if (DEMO_MODE) return
     refreshSession().finally(() => setIsLoading(false))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

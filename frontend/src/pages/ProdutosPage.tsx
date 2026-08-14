@@ -206,7 +206,7 @@ function PriceTableToggle({ value, onChange }: { value: PriceTable; onChange: (n
             type="button"
             onClick={() => onChange(option)}
             aria-pressed={active}
-            className={`flex-1 md:flex-none px-2.5 py-1.5 text-[11px] font-medium rounded-md whitespace-nowrap transition-colors ${
+            className={`flex-1 md:flex-none min-h-11 lg:min-h-0 px-2.5 py-1.5 text-[11px] font-medium rounded-md whitespace-nowrap transition-colors ${
               active ? 'bg-white text-ink shadow-sm ring-1 ring-gold-soft' : 'text-muted hover:text-ink'
             }`}
             style={{ touchAction: 'manipulation' }}
@@ -247,7 +247,7 @@ function CardPrice({ prices }: { prices: VisiblePrice[] }) {
         <p className="text-[15px] md:text-base font-semibold text-ink tabular-nums leading-tight">
           <SafePrice value={prices[0].value} />
         </p>
-        <p className="text-[9px] uppercase tracking-[0.12em] text-muted mt-0.5">{prices[0].label}</p>
+        <p className="type-label mt-1">{prices[0].label}</p>
       </div>
     )
   }
@@ -257,7 +257,7 @@ function CardPrice({ prices }: { prices: VisiblePrice[] }) {
     <dl className="mt-2 space-y-0.5">
       {prices.map(({ label, value }) => (
         <div key={label} className="flex items-baseline justify-between gap-2">
-          <dt className="text-[9px] uppercase tracking-[0.12em] text-muted">{label}</dt>
+          <dt className="type-label">{label}</dt>
           <dd className="text-[13px] md:text-sm font-semibold text-ink tabular-nums">
             <SafePrice value={value} />
           </dd>
@@ -272,10 +272,10 @@ function DetailPrice({ product, priceTable }: { product: Product; priceTable: Pr
   if (prices.length === 0) return null
 
   return (
-    <div className="py-4 border-y border-[#efe9e1] space-y-2">
+    <div className="py-4 border-y border-line-soft space-y-2">
       {prices.map(({ label, value }) => (
         <div key={label} className="flex items-baseline justify-between gap-6">
-          <span className="text-[10px] uppercase tracking-[0.15em] text-muted font-semibold flex-shrink-0">
+          <span className="type-label flex-shrink-0">
             {prices.length === 1 ? 'Preço' : label}
           </span>
           <span className="text-lg text-ink font-semibold tabular-nums">
@@ -380,6 +380,16 @@ function decrementCart(product: Product, userId: string) {
 // ── Mini modal para zoom de opcional no mobile ────────────────────────────────
 
 function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; label: string; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    const returnFocus = document.activeElement as HTMLElement | null
+    closeRef.current?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onCloseRef.current() }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => { document.removeEventListener('keydown', handleKeyDown); returnFocus?.focus() }
+  }, [])
   return (
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm"
@@ -391,7 +401,7 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
       <div className="bg-white rounded-2xl shadow-2xl p-4 mx-6 flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
         <img src={photo_url} alt={label} className="w-48 h-48 object-cover rounded-xl border border-line" />
         <p id="optional-zoom-title" className="text-sm font-medium text-ink text-center">{label}</p>
-        <button onClick={onClose} className="text-xs text-muted uppercase tracking-wider py-2 px-4">Fechar</button>
+        <button ref={closeRef} onClick={onClose} className="btn-secondary min-h-11 px-4 text-xs uppercase tracking-wider">Fechar</button>
       </div>
     </div>
   )
@@ -408,21 +418,29 @@ function ProductFullView({
 }: { product: Product; priceTable: PriceTable; userId: string; onClose: () => void }) {
   const [added, setAdded] = useState(false)
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const onCloseRef = useRef(onClose)
+  const mobileOptModalRef = useRef(mobileOptModal)
+  onCloseRef.current = onClose
+  mobileOptModalRef.current = mobileOptModal
 
   useEffect(() => {
+    const returnFocus = document.activeElement as HTMLElement | null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    closeButtonRef.current?.focus()
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (mobileOptModal) setMobileOptModal(null)
-      else onClose()
+      if (mobileOptModalRef.current) setMobileOptModal(null)
+      else onCloseRef.current()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
+      returnFocus?.focus()
     }
-  }, [mobileOptModal, onClose])
+  }, [])
 
   function handleAdd() {
     addToCart(product, userId)
@@ -445,6 +463,7 @@ function ProductFullView({
         aria-labelledby="product-detail-title"
       >
         <button
+          ref={closeButtonRef}
           onClick={onClose}
           className="absolute top-4 right-4 z-20 w-11 h-11 flex items-center justify-center rounded-full bg-white/85 backdrop-blur-sm text-muted hover:text-ink shadow-sm transition-colors"
           style={{ touchAction: 'manipulation' }}
@@ -467,28 +486,28 @@ function ProductFullView({
         <div className="flex-1 min-w-0 md:h-full md:overflow-y-auto">
           <div className="min-h-full flex flex-col justify-center max-w-[480px] mx-auto w-full px-6 md:px-12 py-10 md:py-16 space-y-8" style={{ animation: 'slideUp 0.35s ease-out' }}>
             <div className="space-y-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-muted font-semibold">
+              <p className="type-label">
                 {product.type}
-                <span className="mx-2 text-[#d8cfc2]">·</span>
+                <span className="mx-2 text-faint">·</span>
                 <span className="font-mono normal-case tracking-normal text-gold">{product.product_code}</span>
               </p>
-              <h2 id="product-detail-title" className="text-3xl md:text-[2.4rem] leading-[1.12] text-ink">{product.description}</h2>
+              <h2 id="product-detail-title" className="text-3xl md:text-[2.4rem] leading-[1.12] text-ink text-balance break-words">{product.description}</h2>
               <div className="w-12 h-px bg-gold/50" />
             </div>
 
             <DetailPrice product={product} priceTable={priceTable} />
 
             {!isConjuntoType(product.type) && (
-              <div className="flex items-baseline gap-6 py-4 border-b border-[#efe9e1]">
-                <span className="text-[10px] uppercase tracking-[0.15em] text-muted font-semibold flex-shrink-0">Dimensões</span>
+              <div className="flex items-baseline gap-6 py-4 border-b border-line-soft">
+                <span className="type-label flex-shrink-0">Dimensões</span>
                 <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product)}</span>
               </div>
             )}
 
             {product.observacao && (
-              <div className="bg-[#fdf6ec] border border-[#e8d8b8] rounded-xl p-3">
+              <div className="bg-surface-note border border-line-note rounded-xl p-3">
                 <p className="text-xs text-gold font-semibold mb-1 uppercase tracking-wide">Observação</p>
-                <p className="text-sm text-[#5a4a2c] italic leading-snug">{product.observacao}</p>
+                <p className="text-sm text-note-ink italic leading-snug">{product.observacao}</p>
               </div>
             )}
 
@@ -507,7 +526,7 @@ function ProductFullView({
                           <p className="text-sm font-medium text-ink">{comp.description}</p>
                           <span className="text-xs font-semibold text-ink-2 whitespace-nowrap flex-shrink-0">×{comp.qty}</span>
                         </div>
-                        <p className="text-[10px] text-muted mt-0.5 font-mono tabular-nums">{dimStr}</p>
+                        <p className="type-meta mt-1 font-mono tabular-nums">{dimStr}</p>
                         {catGroups.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {catGroups.map(cat => {
@@ -515,7 +534,7 @@ function ProductFullView({
                               return (
                                 <div key={cat} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-line bg-white">
                                   {opt.photo_url && <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-3 h-3 rounded object-cover" />}
-                                  <span className="text-[9px] text-ink-2">{CAT_LABEL[cat] ?? cat}: {opt.color_name}</span>
+                                  <span className="text-[11px] leading-snug text-ink-2">{CAT_LABEL[cat] ?? cat}: {opt.color_name}</span>
                                 </div>
                               )
                             })}
@@ -540,7 +559,7 @@ function ProductFullView({
                         : <div className="w-10 h-10 rounded-lg bg-bg-2 flex items-center justify-center flex-shrink-0"><ImageIcon className="w-4 h-4 text-faint" /></div>
                       }
                       <div className="flex-1 min-w-0">
-                        <span className="block text-[10px] font-mono font-semibold text-gold">{item.product_code}</span>
+                        <span className="type-code block">{item.product_code}</span>
                         <span className="block text-xs text-ink font-medium leading-snug truncate">{item.description}</span>
                       </div>
                       <span className="text-xs font-semibold text-ink-2 whitespace-nowrap flex-shrink-0">×{item.qty}</span>
@@ -584,8 +603,8 @@ function ProductFullView({
                         )}
                       </div>
                       <div className="text-center">
-                        <span className="block text-[9px] text-muted uppercase tracking-wide">{CAT_LABEL[cat] ?? cat}</span>
-                        <span className="text-[11px] text-ink-2 font-medium">{opt.color_name}</span>
+                        <span className="type-label block">{CAT_LABEL[cat] ?? cat}</span>
+                        <span className="text-xs leading-snug text-ink-2 font-medium">{opt.color_name}</span>
                       </div>
                     </div>
                   ))}
@@ -760,9 +779,9 @@ export default function ProdutosPage() {
     <div className="min-h-screen bg-bg pb-24 md:pb-8">
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="mb-5 md:mb-6">
-          <h2 className="text-xl md:text-2xl font-semibold text-ink" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
+          <h1 className="text-xl md:text-2xl font-semibold text-ink text-balance">
             Catálogo de Produtos
-          </h2>
+          </h1>
           <p className="text-sm text-muted mt-1">Selecione um produto para adicionar ao orçamento</p>
         </div>
 
@@ -780,10 +799,10 @@ export default function ProdutosPage() {
                 setSearchTerm(e.target.value)
                 setPage(1)
               }}
-              className="w-full pl-9 pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder-faint focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+              className="w-full min-h-11 lg:min-h-0 pl-9 pr-12 lg:pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder-faint focus:outline-none focus:ring-1 focus:ring-gold transition-all"
             />
             {searchTerm && (
-              <button onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink">
+              <button aria-label="Limpar busca" onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-0 top-1/2 h-11 w-11 lg:right-1 lg:h-8 lg:w-8 -translate-y-1/2 flex items-center justify-center text-muted hover:text-ink">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -793,7 +812,7 @@ export default function ProdutosPage() {
           <select
             value={selectedGroupId}
             onChange={(e) => handleGroupChange(e.target.value)}
-            className="w-full md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+            className="w-full min-h-11 lg:min-h-0 md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
           >
             <option value="">Todos os Grupos</option>
             {productGroups.map(g => (
@@ -808,7 +827,7 @@ export default function ProdutosPage() {
               setSelectedTypeName(e.target.value)
               setPage(1)
             }}
-            className="w-full md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
+            className="w-full min-h-11 lg:min-h-0 md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
             disabled={availableTypes.length === 0}
           >
             <option value="">Todos os Subgrupos</option>
@@ -824,7 +843,7 @@ export default function ProdutosPage() {
           {hasFilters && (
             <button
               onClick={clearFilters}
-              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gold border border-gold-soft rounded-lg hover:bg-[#fdf9f0] transition-colors"
+              className="min-h-11 lg:min-h-0 flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gold border border-gold-soft rounded-lg hover:bg-gold-wash transition-colors"
               style={{ touchAction: 'manipulation' }}
             >
               <X className="w-3 h-3" /> Limpar
@@ -892,9 +911,9 @@ export default function ProdutosPage() {
                 </div>
                 <div className="px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-[10px] font-mono font-semibold text-gold tracking-wide">{product.product_code}</span>
+                    <span className="type-code">{product.product_code}</span>
                     {selectedGroupId === '' && product.type && (
-                      <span className="text-[9px] text-muted uppercase tracking-[0.14em] whitespace-nowrap">{product.type}</span>
+                      <span className="type-label whitespace-nowrap">{product.type}</span>
                     )}
                   </div>
                   <CardText product={product} priceTable={priceTable} />
@@ -931,8 +950,8 @@ export default function ProdutosPage() {
                               : <span className="w-5 h-5 rounded-full bg-gold/10 border border-line flex-shrink-0" aria-hidden="true" />
                             const text = (
                               <span className="min-w-0 leading-tight">
-                                <span className="block text-[7px] uppercase tracking-wide text-muted truncate">{CAT_LABEL[opt.category] ?? opt.category}</span>
-                                <span className="block text-[9.5px] font-medium text-ink truncate">{opt.color_name}</span>
+                                <span className="block text-[10px] uppercase tracking-wide text-muted truncate">{CAT_LABEL[opt.category] ?? opt.category}</span>
+                                <span className="block text-[11px] leading-tight font-medium text-ink truncate">{opt.color_name}</span>
                               </span>
                             )
                             // Só vira botão quando há foto pra ampliar — sem
@@ -945,7 +964,7 @@ export default function ProdutosPage() {
                                 onClick={() => setZoomOptional({ photo_url: opt.photo_url!, label })}
                                 aria-label={`Ampliar ${label}`}
                                 style={{ touchAction: 'manipulation' }}
-                                className="flex items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-1.5 py-1 text-left
+                                className="flex min-h-11 items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-2 py-1.5 text-left
                                            transition-[transform,border-color] duration-150 hover:border-gold/40 active:scale-95"
                               >
                                 {swatch}
@@ -973,7 +992,7 @@ export default function ProdutosPage() {
                       aria-label={expandedOptionalsCode === product.product_code ? 'Ocultar opcionais' : 'Ver opcionais'}
                       aria-expanded={expandedOptionalsCode === product.product_code}
                       style={{ touchAction: 'manipulation' }}
-                      className="pointer-events-auto absolute bottom-0 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 translate-y-1/2 items-center justify-center
+                      className="pointer-events-auto absolute bottom-0 left-1/2 z-10 flex h-11 w-11 -translate-x-1/2 translate-y-1/2 items-center justify-center
                                  rounded-full border border-line bg-white text-gold shadow-md shadow-ink/10
                                  transition-[transform,box-shadow,border-color] duration-200 [transition-timing-function:cubic-bezier(0.25,1,0.5,1)]
                                  hover:scale-110 hover:border-gold/40 hover:shadow-lg active:scale-90"
@@ -1034,7 +1053,7 @@ export default function ProdutosPage() {
               type="button"
               disabled={page <= 1}
               onClick={() => changePage(page - 1)}
-              className="px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
+              className="min-h-11 lg:min-h-0 px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
               Anterior
             </button>
@@ -1045,7 +1064,7 @@ export default function ProdutosPage() {
               type="button"
               disabled={page >= totalPages}
               onClick={() => changePage(page + 1)}
-              className="px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
+              className="min-h-11 lg:min-h-0 px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
               Próxima
             </button>

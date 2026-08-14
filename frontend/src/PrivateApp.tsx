@@ -101,7 +101,7 @@ function BottomNav() {
     <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe" aria-label="Navegação principal">
       <NavLink to="/produtos" className={itemClass('/produtos')} aria-label="Produtos">
         <LayoutGrid className="w-5 h-5" />
-        <span className="text-[9px] font-semibold uppercase tracking-wider">Produtos</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider">Produtos</span>
       </NavLink>
       {canSeeOrcamentoPedidos(user) && (
         <NavLink
@@ -119,25 +119,25 @@ function BottomNav() {
               </span>
             )}
           </span>
-          <span className="text-[9px] font-semibold uppercase tracking-wider">Orçamento</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">Orçamento</span>
         </NavLink>
       )}
       {canSeeOrcamentoPedidos(user) && (
         <NavLink to="/pedidos" className={itemClass('/pedidos')} aria-label="Pedidos">
           <ClipboardList className="w-5 h-5" />
-          <span className="text-[9px] font-semibold uppercase tracking-wider">Pedidos</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">Pedidos</span>
         </NavLink>
       )}
       {canSeeCadastros(user) && (
         <NavLink to="/cadastros" className={itemClass('/cadastros')} aria-label="Cadastros">
           <Users className="w-5 h-5" />
-          <span className="text-[9px] font-semibold uppercase tracking-wider">Cadastros</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">Cadastros</span>
         </NavLink>
       )}
       {canSeeAdmin(user) && (
         <NavLink to="/admin" className={itemClass('/admin')} aria-label="Admin">
           <ShieldCheck className="w-5 h-5" />
-          <span className="text-[9px] font-semibold uppercase tracking-wider">Admin</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">Admin</span>
         </NavLink>
       )}
       <button
@@ -146,7 +146,7 @@ function BottomNav() {
         className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-muted-3 active:text-ink transition-colors"
       >
         <LogOut className="w-5 h-5" />
-        <span className="text-[9px] font-semibold uppercase tracking-wider">Sair</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider">Sair</span>
       </button>
     </nav>
   )
@@ -176,12 +176,12 @@ function Nav() {
     <>
       <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label="Navegação principal">
         <div className="flex items-center gap-1">
-          <h1
+          <div
             className="text-base font-semibold tracking-widest mr-5 text-ink"
             style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
           >
             ILYA <span className="text-gold text-sm font-normal tracking-normal hidden sm:inline">— Sistema</span>
-          </h1>
+          </div>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label="Cadastros">Cadastros</NavLink>}
@@ -205,7 +205,7 @@ function Nav() {
           <div className="relative">
             <button
               onClick={() => setShowNotifs(v => !v)}
-              className="relative text-muted-2 hover:text-gold transition-colors p-1"
+              className="relative min-w-11 min-h-11 inline-flex items-center justify-center text-muted-2 hover:text-gold transition-colors"
               title="Notificações"
               aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
             >
@@ -229,7 +229,7 @@ function Nav() {
                     {notifications.map(n => (
                       <li
                         key={n.id}
-                        className="px-4 py-3 hover:bg-[#fdf9f0] cursor-pointer transition-colors"
+                        className="px-4 py-3 hover:bg-gold-wash cursor-pointer transition-colors"
                         onClick={() => { markRead.mutate(n.id); setShowNotifs(false) }}
                       >
                         <p className="text-xs text-ink">{n.message}</p>
@@ -245,7 +245,7 @@ function Nav() {
           </div>
           <button
             onClick={() => setShowProfile(true)}
-            className="text-right hover:opacity-70 transition-opacity cursor-pointer"
+            className="min-h-11 px-1 text-right hover:opacity-70 transition-opacity cursor-pointer"
             aria-label={`Abrir perfil de ${user.full_name}`}
           >
             <span className="block font-medium text-ink max-w-[120px] md:max-w-none truncate">{user.full_name}</span>

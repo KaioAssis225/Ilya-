@@ -1,46 +1,92 @@
 # Product
 
-## Register
+<!-- impeccable:product-schema 1 -->
 
-product
+## Platform
+
+web
 
 ## Users
 
-**Admin** — controla o sistema completo, cria usuários e acessa todos os dados.
-**Vendedor** — time interno de vendas; gera orçamentos, gerencia clientes e pedidos.
-**Representante** — vendedor externo (campo, showroom, home office); acessa em mobilidade para criar orçamentos e acompanhar seus próprios pedidos.
-**Cadastros** — equipe de suporte; mantém clientes e representantes, sem acesso a pedidos.
-**Produtos** — equipe de catálogo; mantém o catálogo de móveis e opcionais.
-**Cliente** — usuário final; consulta seus próprios pedidos e assina contratos eletronicamente.
+**Representantes externos e internos — público principal.** Usam o Ilya para apresentar o catálogo, cadastrar clientes, configurar produtos, elaborar orçamentos e acompanhar pedidos. Trabalham em escritórios, showrooms, feiras, visitas comerciais e em deslocamento, alternando entre desktop e dispositivos móveis.
 
-O contexto primário de uso é desktop (vendedores internos, admin), com uso mobile relevante para representantes externos em campo e showrooms.
+**Admin** — controla o sistema, cria usuários e acessa todos os dados.
+
+**Cadastros** — mantém clientes e representantes conforme suas permissões.
+
+**Produtos** — mantém o catálogo de móveis, tipos, grupos e opcionais.
+
+**Executivo** — acompanha indicadores agregados no dashboard, sem acessar registros comerciais individuais.
+
+**Cliente** — consulta os próprios pedidos. O fluxo histórico de assinatura eletrônica está preservado, mas a criação de novas assinaturas permanece desativada até nova decisão e homologação.
 
 ## Product Purpose
 
-Sistema de gestão comercial B2B para fabricante/distribuidora de móveis de luxo de alto padrão. Centraliza o catálogo de produtos com opcionais configuráveis (alumínio, madeira, tecido, couro, corda), o cadastro de clientes e representantes, a geração de orçamentos detalhados com descontos individuais por item, o histórico de pedidos com snapshots imutáveis e o fluxo de assinatura eletrônica de contratos com link temporário para o cliente.
+O Ilya é um sistema de gestão comercial B2B para uma fabricante e distribuidora de móveis de alto padrão. Ele centraliza catálogo, opcionais configuráveis, clientes, representantes, orçamentos, pedidos, perfis de faturamento e histórico comercial.
 
-Sucesso significa: um representante consegue gerar um orçamento profissional com foto do produto, opcionais e valor correto em menos de 3 minutos, e o cliente consegue assinar o contrato sem precisar instalar nada.
+Seu objetivo principal é permitir que o representante produza rapidamente um orçamento profissional, correto e visualmente compatível com os produtos vendidos. Sucesso significa reduzir o esforço entre apresentar um móvel e entregar uma proposta clara ao cliente, especialmente durante atendimentos presenciais, feiras e showrooms.
 
-## Brand Personality
+## Positioning
 
-Luxuoso · Refinado · Discreto
+O Ilya combina a praticidade de uma ferramenta operacional com uma experiência própria do ramo de móveis de alto padrão. Diferentemente de um ERP genérico, sua navegação, catálogo visual e fluxo de orçamento são construídos em torno da venda consultiva de móveis configuráveis.
 
-Voz: segura, direta, sem exageros. Tom: profissional mas não frio — a elegância dos móveis físicos deve transparecer na interface digital. Metas emocionais: confiança no sistema, orgulho de usar uma ferramenta à altura do produto que vendem.
+O diferencial central é permitir que representantes internos e externos montem orçamentos com agilidade sem apresentar ao cliente uma interface industrial, genérica ou desconectada da identidade do produto físico.
 
-## Anti-references
+## Operating Context
 
-**ERP genérico (SAP, TOTVS, Protheus)** — cinza industrial, densidade de informação sem hierarquia, identidade visual nula, fontes sem cuidado. O Ilya deve parecer o oposto: cada tela tem espaço para respirar, cada detalhe é intencional.
+- Atendimento comercial em escritório, showroom, feira ou visita ao cliente.
+- Uso primário em desktop, com uso móvel relevante e não secundário para representantes em campo.
+- Consulta visual do catálogo com fotos, dimensões, grupos, tipos e opcionais de acabamento.
+- Cadastro ou seleção de cliente durante o processo comercial.
+- Configuração de itens, quantidades, descontos e perfil de faturamento antes do fechamento.
+- Geração de orçamento e PDF profissional para apresentação ao cliente.
+- Conversão e acompanhamento do orçamento ou pedido com preservação do histórico.
+- Operação sujeita a regras de carteira, perfil, desconto, RBAC, retenção e LGPD.
 
-**SaaS B2B americano genérico** — azul corporativo, cards idênticos empilhados, dashboard template com métricas aleatórias. Sem personalidade de marca.
+## Capabilities and Constraints
 
-## Design Principles
+- Catálogo de móveis com tipos, grupos, subgrupos, fotos, dimensões e opcionais configuráveis.
+- Cadastro de clientes e representantes, incluindo CPF ou CNPJ quando aplicável.
+- Perfis de faturamento e regras comerciais resolvidos e protegidos no servidor.
+- Orçamentos e pedidos com desconto por item, IPI, observações e snapshots históricos.
+- Geração de PDF no navegador com informações e imagens do orçamento.
+- Controle de acesso por papéis e isolamento dos dados vinculados ao representante ou cliente.
+- Dashboard executivo com informações agregadas.
+- Importação de dados, notificações e integração assíncrona por webhooks/outbox.
+- Frontend web responsivo em React e backend FastAPI com PostgreSQL.
+- A experiência móvel deve suportar o trabalho real do representante e não ser uma versão degradada do desktop.
+- Segurança, rastreabilidade, retenção e conformidade LGPD são restrições permanentes do produto.
+- Assinaturas eletrônicas permanecem desativadas até nova decisão, testes completos e homologação.
 
-1. **O produto reflete o produto** — a interface deve comunicar o mesmo cuidado artesanal dos móveis vendidos. Detalhes visuais importam tanto quanto funcionalidade.
-2. **Discrição sobre exibicionismo** — luxo não grita. O dourado (#8b6914) é acento, nunca superfície. Espaço em branco é elemento de design.
-3. **Clareza sem frieza** — a eficiência de uma ferramenta de trabalho com o calor da identidade premium. Nunca sacrificar legibilidade por estética.
-4. **Mobile como extensão do campo** — representantes usam em showroom e em deslocamento. Mobile deve ser tão confortável quanto desktop, não uma versão degradada.
-5. **Confiança através da consistência** — paleta contida, tipografia previsível, comportamentos uniformes entre páginas. O usuário nunca deve se perguntar "como isso funciona aqui?".
+## Brand Commitments
+
+**Nome:** Ilya.
+
+**Personalidade:** luxuosa, refinada e discreta.
+
+**Voz:** segura, direta e profissional, sem frieza nem exageros.
+
+A experiência deve condizer com o ramo de móveis de alto padrão e transmitir o mesmo cuidado percebido nos produtos físicos. O visual distinto é parte funcional da confiança comercial, não apenas decoração.
+
+Devem ser evitadas interfaces com aparência de ERP industrial genérico ou de SaaS corporativo indiferenciado. A identidade visual específica permanece documentada separadamente em `DESIGN.md`.
+
+## Evidence on Hand
+
+- Código funcional do monorepo em `C:\Users\koian\OneDrive\Documentos\Ilya-`.
+- Documentação operacional, histórica e de segurança em `C:\Users\koian\OneDrive\Desktop\Programador\Programador\Projeto Ilya`.
+- Catálogo, fotografias e dados reais de produtos presentes nos fluxos e ativos do projeto.
+- Histórico de migrations, testes backend, auditorias, pentests e correções versionadas.
+- Relatórios de deploy e verificações de produção registrados na documentação externa.
+- Não há depoimentos, estudos de caso, métricas comerciais comparativas ou afirmações públicas de desempenho aprovadas; trabalhos futuros não devem fabricá-los.
+
+## Product Principles
+
+1. **Orçamento sem atrito** — reduzir passos, retrabalho e espera entre a escolha do produto e a entrega da proposta.
+2. **O sistema deve condizer com o que vende** — cada interação deve sustentar a percepção de qualidade associada aos móveis de alto padrão.
+3. **Praticidade com segurança comercial** — tornar o fluxo simples sem enfraquecer regras de preço, desconto, carteira, autorização ou histórico.
+4. **Mobilidade real** — atender representantes em campo, feiras e showrooms com a mesma confiança oferecida no desktop.
+5. **Clareza gera confiança** — informações, estados e ações devem ser previsíveis para evitar erros durante o atendimento ao cliente.
 
 ## Accessibility & Inclusion
 
-WCAG AA mínimo. Contraste de texto ≥ 4.5:1 em todos os elementos de corpo. Foco visível em todos os interativos. Suporte a `prefers-reduced-motion` nas animações de loading (overlay ILYA). Sem dependência de cor como único canal semântico (badges e bolinhas de status usam ícone ou texto complementar).
+WCAG AA é o padrão mínimo. Textos de corpo devem manter contraste de pelo menos 4.5:1, todos os controles interativos precisam de foco visível e estados não podem depender exclusivamente de cor. Animações devem respeitar `prefers-reduced-motion`. Responsividade, áreas de toque e legibilidade móvel são requisitos do trabalho de campo dos representantes.

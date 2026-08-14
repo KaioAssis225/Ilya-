@@ -5,6 +5,7 @@ import { AuthProvider, type AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './lib/features'
 import LoginPage from './pages/LoginPage'
+import { DEMO_MODE } from './lib/demo'
 
 const PrivateApp = lazy(() => import('./PrivateApp'))
 const SignContractPage = lazy(() => import('./pages/SignContractPage'))
@@ -23,7 +24,7 @@ function defaultRoute(user: AuthUser) {
 
 function RootPage() {
   const { user } = useAuth()
-  return user ? <Navigate to={defaultRoute(user)} replace /> : <LoginPage />
+  return user ? <Navigate to={DEMO_MODE ? '/produtos?demo=1' : defaultRoute(user)} replace /> : <LoginPage />
 }
 
 function PrivateGate() {

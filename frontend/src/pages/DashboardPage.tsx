@@ -191,9 +191,9 @@ export default function DashboardPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
+            <h1 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
               <LayoutDashboard className="w-6 h-6 text-gold" /> Dashboard BI Comercial
-            </h2>
+            </h1>
             <p className="text-sm text-muted mt-1">Valores e orçamentos consolidados</p>
           </div>
           <button
@@ -236,10 +236,10 @@ export default function DashboardPage() {
             </select>
             {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
           </label>
-          <button onClick={clearFilters} className="text-xs text-gold hover:underline text-left md:text-center py-2">Limpar filtros</button>
+          <button onClick={clearFilters} className="min-h-11 px-2 text-xs text-gold hover:underline text-left md:text-center py-2">Limpar filtros</button>
         </div>
         {data && (
-          <p className="text-right text-[11px] text-muted mb-4">
+          <p className="text-right text-xs text-muted mb-4">
             {new Date(data.start_date + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(data.end_date + 'T12:00:00').toLocaleDateString('pt-BR')}
             {region && ` · ${region}`}
             {repId && ` · ${selectedRep?.name ?? reps.find(r => r.id === repId)?.name ?? ''}`}
@@ -256,14 +256,14 @@ export default function DashboardPage() {
               <button
                 key={key}
                 onClick={() => setActiveMetric(key)}
-                className={`text-left p-4 border-line ${i % 4 !== 3 ? 'border-r' : ''} ${i < 4 ? 'border-b' : ''} transition-colors ${selected ? 'bg-[#fdf9f0]' : 'hover:bg-bg'}`}
+                className={`text-left p-4 border-line ${i % 4 !== 3 ? 'border-r' : ''} ${i < 4 ? 'border-b' : ''} transition-colors ${selected ? 'bg-gold-wash' : 'hover:bg-bg'}`}
                 style={selected ? { boxShadow: 'inset 0 3px #8b6914' } : undefined}
               >
                 <span className="text-xs text-muted">{config.label}</span>
                 <strong className="block my-2 text-xl text-ink tabular-nums">
                   {config.kind === 'revenue' ? currency.format(value) : integer.format(value)}
                 </strong>
-                <small className="text-[11px] text-muted">{config.small}</small>
+                <small className="text-xs text-muted">{config.small}</small>
               </button>
             )
           })}
@@ -306,7 +306,7 @@ export default function DashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[11px] text-muted uppercase tracking-wider">
+                  <tr className="text-left text-xs text-muted uppercase tracking-wider">
                     <th className="py-2">Nome</th>
                     <th className="py-2 text-right">Orçamentos</th>
                     <th className="py-2 text-right">Valor</th>
@@ -343,7 +343,7 @@ export default function DashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[11px] text-muted uppercase tracking-wider">
+                  <tr className="text-left text-xs text-muted uppercase tracking-wider">
                     <th className="py-2">Código</th>
                     <th className="py-2">Descrição</th>
                     <th className="py-2 text-right">Qtd.</th>

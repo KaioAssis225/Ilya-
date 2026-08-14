@@ -46,14 +46,14 @@ const ACTION_LABEL: Record<string, string> = {
 const ACTION_DOT: Record<string, string> = {
   created: 'bg-olive',
   edited: 'bg-gold',
-  finalized: 'bg-[#2c5282]',
+  finalized: 'bg-info',
   cancelled: 'bg-terracotta',
 }
 
 const ACTION_BADGE: Record<string, string> = {
   created: 'bg-olive/10 text-olive',
   edited: 'bg-gold/10 text-gold',
-  finalized: 'bg-[#2c5282]/10 text-[#2c5282]',
+  finalized: 'bg-info-soft text-info',
   cancelled: 'bg-terracotta/10 text-terracotta',
 }
 
@@ -73,11 +73,11 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
           </div>
           <div className="pb-4 flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${ACTION_BADGE[h.action] ?? 'bg-gray-100 text-gray-600'}`}>
+              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${ACTION_BADGE[h.action] ?? 'bg-bg-2 text-muted'}`}>
                 {ACTION_LABEL[h.action] ?? h.action}
               </span>
               {h.user && <span className="text-xs text-ink-2 font-medium">{h.user.full_name}</span>}
-              <span className="text-[10px] text-muted-3 ml-auto whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
+              <span className="text-[11px] text-muted-3 ml-auto whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
             </div>
             {h.details && <p className="text-xs text-[#6b5d55] mt-0.5 break-words">{h.details}</p>}
           </div>
@@ -405,10 +405,10 @@ function OrderDetailModal({
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-semibold text-ink">{order.code}</h3>
               {order.is_finalized
-                ? <span className="flex items-center gap-1 text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> Finalizado</span>
+                ? <span className="flex items-center gap-1 text-[11px] font-bold bg-success-soft text-success border border-success/25 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> Finalizado</span>
                 : order.is_cancelled
-                ? <span className="flex items-center gap-1 text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full"><Ban className="w-2.5 h-2.5" /> Cancelado</span>
-                : <span className="text-[10px] font-bold bg-yellow-50 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded-full">Em andamento</span>
+                ? <span className="flex items-center gap-1 text-[11px] font-bold bg-danger-soft text-danger border border-danger/25 px-1.5 py-0.5 rounded-full"><Ban className="w-2.5 h-2.5" /> Cancelado</span>
+                : <span className="text-[11px] font-bold bg-warning-soft text-warning border border-warning/25 px-1.5 py-0.5 rounded-full">Em andamento</span>
               }
             </div>
             <p className="text-sm text-ink-3">Orçamento: <span className="text-gold">{order.orc_id}</span>
@@ -714,7 +714,7 @@ function MobileOrderCard({
           </div>
         </div>
         <div className="mt-2">
-          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : order.is_cancelled ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
+          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
             {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
             {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
           </span>
@@ -724,7 +724,7 @@ function MobileOrderCard({
         <button onClick={onView} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Visualizar"><Eye className="w-4 h-4 text-gold" /> Ver</button>
         <button disabled={pdfLoading} onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors disabled:opacity-50" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> {pdfLoading ? 'Gerando…' : 'PDF'}</button>
         {onFinalize && (
-          <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-green-700 active:bg-green-50 transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar pedido"><CheckCircle className="w-4 h-4" /> Finalizar</button>
+          <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar pedido"><CheckCircle className="w-4 h-4" /> Finalizar</button>
         )}
         {onDelete && (
           <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-[#fbf2f0] transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
@@ -853,12 +853,12 @@ export default function PedidosPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-ink font-medium">
+            <h1 className="text-xl text-ink font-medium">
               {isAuditActive ? 'Auditoria Geral' : 'Pedidos'}
               <span className="ml-2 text-xs bg-bg-2 text-gold px-2 py-0.5 rounded-full">
                 Nesta página: {isAuditActive ? globalHistory.length : orders.length}
               </span>
-            </h2>
+            </h1>
             {canViewGlobalAudit && (
               <div className="flex gap-1 border border-line rounded-lg p-0.5 bg-white">
                 <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>Pedidos</button>
@@ -873,9 +873,9 @@ export default function PedidosPage() {
             <div className="flex items-center gap-2">
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-                <input className="input pl-9" placeholder="Filtrar por cliente, pedido..." value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <input aria-label="Filtrar pedidos por cliente ou número" className="input pl-9" placeholder="Filtrar por cliente, pedido..." value={filter} onChange={(e) => setFilter(e.target.value)} />
               </div>
-              <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors ${hasFilters ? 'border-gold text-gold bg-[#fdf9f0]' : 'border-line text-muted hover:border-faint'}`}>
+              <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors ${hasFilters ? 'border-gold text-gold bg-gold-wash' : 'border-line text-muted hover:border-faint'}`}>
                 <Filter className="w-3.5 h-3.5" /> Filtros{hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-gold" />}
               </button>
             </div>
@@ -883,7 +883,7 @@ export default function PedidosPage() {
         </div>
 
         {pdfError && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700" role="alert">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
             <span>{pdfError}</span>
             <button className="text-xs font-semibold" onClick={() => setPdfError(null)}>
               Fechar
@@ -895,8 +895,9 @@ export default function PedidosPage() {
         {!isAuditActive && showFilters && (
           <div className="bg-white border border-line rounded-xl p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             <div className="space-y-1">
-              <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Cliente</label>
+              <label htmlFor="orders-client-filter" className="text-xs text-muted font-medium uppercase tracking-wider">Cliente</label>
               <input
+                id="orders-client-filter"
                 className="input text-xs w-full"
                 value={filterClient}
                 onChange={(e) => setFilterClient(e.target.value)}
@@ -904,8 +905,9 @@ export default function PedidosPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Representante</label>
+              <label htmlFor="orders-rep-filter" className="text-xs text-muted font-medium uppercase tracking-wider">Representante</label>
               <input
+                id="orders-rep-filter"
                 className="input text-xs w-full"
                 value={filterRep}
                 onChange={(e) => setFilterRep(e.target.value)}
@@ -913,8 +915,9 @@ export default function PedidosPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Status</label>
+              <label htmlFor="orders-status-filter" className="text-xs text-muted font-medium uppercase tracking-wider">Status</label>
               <select
+                id="orders-status-filter"
                 className="input text-xs w-full"
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as 'in_progress' | 'finalized' | 'cancelled' | '')}
@@ -926,16 +929,16 @@ export default function PedidosPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Data Inicial</label>
-              <input type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
+              <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">Data Inicial</label>
+              <input id="orders-date-from" type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-muted font-medium uppercase tracking-wider">Data Final</label>
-              <input type="date" className="input text-xs w-full" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
+              <label htmlFor="orders-date-to" className="text-xs text-muted font-medium uppercase tracking-wider">Data Final</label>
+              <input id="orders-date-to" type="date" className="input text-xs w-full" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
             </div>
             {hasFilters && (
               <div className="col-span-2 md:col-span-3 xl:col-span-5 flex justify-end">
-                <button onClick={() => { setFilterClient(''); setFilterRep(''); setFilterStatus(''); setFilterDateFrom(''); setFilterDateTo('') }} className="text-xs text-terracotta hover:text-[#8a3a2e] transition-colors">Limpar filtros</button>
+                <button onClick={() => { setFilterClient(''); setFilterRep(''); setFilterStatus(''); setFilterDateFrom(''); setFilterDateTo('') }} className="px-2 text-xs text-terracotta hover:text-terracotta-700 transition-colors">Limpar filtros</button>
               </div>
             )}
           </div>
@@ -1048,7 +1051,7 @@ export default function PedidosPage() {
                         <td className="px-4 py-3 text-right font-semibold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></td>
                         <td className="px-4 py-3 text-ink-3 text-xs">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-green-50 text-green-700' : order.is_cancelled ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
                             {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
                             {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
                           </span>
