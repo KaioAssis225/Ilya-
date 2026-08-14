@@ -317,7 +317,7 @@ async def change_password(
     try:
         validate_password_strength(body.new_password)
     except ValueError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
     if not user.must_change_password:

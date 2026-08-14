@@ -74,7 +74,7 @@ def _read_rows(content: bytes) -> list[dict]:
         decoded = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="CSV inválido: salve o arquivo em UTF-8.",
         )
     sample = decoded[:4096]
@@ -88,14 +88,14 @@ def _read_rows(content: bytes) -> list[dict]:
         }
         if any(isinstance(value, str) and len(value) > _MAX_CELL_LENGTH for value in row.values()):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"CSV contém célula acima de {_MAX_CELL_LENGTH} caracteres.",
             )
         if any(v for v in row.values()):
             rows.append(row)
             if len(rows) > _MAX_ROWS:
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     detail=f"CSV excede o limite de {_MAX_ROWS} linhas.",
                 )
     return rows

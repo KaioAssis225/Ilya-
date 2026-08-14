@@ -171,7 +171,7 @@ async def read_upload_limited(
         content.extend(chunk)
         if len(content) > max_bytes:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"Arquivo excede {max_size_label}.",
             )
     return bytes(content)
@@ -191,7 +191,7 @@ def _sanitize_image_bytes(
             width, height = image.size
             if width <= 0 or height <= 0 or width * height > max_pixels:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="Imagem possui resolução acima do limite permitido.",
                 )
             image.load()
@@ -199,7 +199,7 @@ def _sanitize_image_bytes(
         detected_ext = _FORMAT_TO_EXTENSION.get(image.format or "")
         if not detected_ext or detected_ext not in allowed:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Conteúdo do arquivo não é uma imagem permitida.",
             )
 
@@ -225,7 +225,7 @@ def _sanitize_image_bytes(
         content = output.getvalue()
         if len(content) > max_bytes:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail="Imagem processada excede o limite permitido.",
             )
         return content, detected_ext
@@ -239,7 +239,7 @@ def _sanitize_image_bytes(
         Image.DecompressionBombError,
     ):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Conteúdo do arquivo não é uma imagem válida.",
         )
 
@@ -263,7 +263,7 @@ async def sanitize_image_upload(
     supplied_ext = "jpg" if supplied_ext == "jpeg" else supplied_ext
     if supplied_ext not in allowed:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Extensão '{supplied_ext}' não permitida.",
         )
 

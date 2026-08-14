@@ -78,7 +78,7 @@ def _money(value: object) -> Decimal:
 def _ensure_total_capacity(*values: Decimal) -> None:
     if any(abs(value) > _MAX_ORDER_TOTAL for value in values):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Valor total do pedido excede o limite financeiro permitido.",
         )
 
@@ -272,7 +272,7 @@ def _validate_discount(
     max_discount_value = _decimal(max_discount)
     if discount_value < _ZERO or discount_value > max_discount_value:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Desconto de {discount_value}% no item '{product_code}' excede o limite permitido ({max_discount_value}%) para o seu nível de acesso.",
         )
 

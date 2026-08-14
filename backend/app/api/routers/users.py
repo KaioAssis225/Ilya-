@@ -55,7 +55,7 @@ async def _validated_rep_assignment(
         return None
     if not rep_id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Usuário representante precisa estar vinculado a um representante.",
         )
     exists = (
@@ -153,10 +153,10 @@ async def create_user(
     try:
         validate_password_strength(body.password)
     except ValueError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
     if body.role == UserRole.cliente:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             "Contas de cliente devem ser criadas a partir do cadastro do cliente.",
         )
     normalized_email = str(body.email).lower()
@@ -262,7 +262,7 @@ async def update_user(
     elif target_role == UserRole.cliente:
         if user.role == UserRole.representante or user.linked_id is None:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "Vincule a conta a um cliente pelo fluxo de cadastro.",
             )
         changes["linked_id"] = user.linked_id
@@ -308,7 +308,7 @@ async def reset_password(
     try:
         validate_password_strength(body.new_password)
     except ValueError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:

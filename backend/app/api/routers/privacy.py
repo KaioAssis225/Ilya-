@@ -184,7 +184,7 @@ async def create_legal_hold(
     now = datetime.now(timezone.utc)
     if payload.expires_at is not None and payload.expires_at <= now:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             "A expiração precisa estar no futuro.",
         )
     if not await _subject_exists(db, payload.subject_type, payload.subject_id):
@@ -339,7 +339,7 @@ async def create_privacy_incident(
     now = datetime.now(timezone.utc)
     if payload.known_at > now:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A data de ciência não pode estar no futuro.",
         )
     incident = PrivacyIncident(
@@ -412,12 +412,12 @@ async def update_privacy_incident(
     )
     if (target_anpd or target_subjects) and not target_details:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Informe os detalhes das comunicações realizadas.",
         )
     if not target_anpd and not target_subjects and not target_reason:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Fundamente a decisão de ainda não comunicar.",
         )
     target_status = update_data.get("status", incident.status)
@@ -430,7 +430,7 @@ async def update_privacy_incident(
         not target_root_cause or not target_actions
     ):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 "Para encerrar, registre a causa raiz e as ações corretivas."
             ),
@@ -480,7 +480,7 @@ async def end_representative_relationship(
     now = datetime.now(timezone.utc)
     if payload.ended_at > now:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A data de encerramento não pode estar no futuro.",
         )
     if not verify_password(payload.password, current_user.hashed_password):
