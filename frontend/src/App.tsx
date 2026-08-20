@@ -6,6 +6,8 @@ import { useAuth } from './hooks/useAuth'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './lib/features'
 import LoginPage from './pages/LoginPage'
 import { DEMO_MODE } from './lib/demo'
+import { MarketTransition } from './components/MarketTransition'
+import type { MarketCode } from './components/MarketFlag'
 
 const PrivateApp = lazy(() => import('./PrivateApp'))
 const SignContractPage = lazy(() => import('./pages/SignContractPage'))
@@ -32,11 +34,8 @@ function PrivateGate() {
   const location = useLocation()
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-bg" role="status">
-        <span className="text-sm tracking-widest uppercase text-muted-2">Carregando…</span>
-      </div>
-    )
+    const storedMarket = sessionStorage.getItem('ilya-active-market')
+    return <MarketTransition market={storedMarket === 'EU' ? 'EU' : 'BR'} />
   }
 
   if (!user) return <Navigate to="/login" replace />
@@ -47,12 +46,10 @@ function PrivateGate() {
 }
 
 function RouteFallback() {
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center" role="status">
-      <span className="sr-only">Carregando…</span>
-      <div className="w-8 h-8 rounded-full border-2 border-gold/25 border-t-gold animate-spin" aria-hidden="true" />
-    </div>
-  )
+  const { user } = useAuth()
+  const storedMarket = sessionStorage.getItem('ilya-active-market')
+  const market: MarketCode = user?.active_market ?? (storedMarket === 'EU' ? 'EU' : 'BR')
+  return <MarketTransition market={market} />
 }
 
 export default function App() {

@@ -64,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Atualiza de forma síncrona: nenhuma requisição iniciada no mesmo frame
     // pode reutilizar o token da identidade anterior.
     accessTokenRef.current = accessToken
+    sessionStorage.setItem('ilya-active-market', user.active_market)
     setState({ user, accessToken })
   }, [])
 

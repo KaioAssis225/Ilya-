@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { MarketFlag, type MarketCode } from '../components/MarketFlag'
+import { MarketTransition } from '../components/MarketTransition'
 
 export default function LoginPage() {
   const { login, user, switchMarket } = useAuth()
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [choosingMarket, setChoosingMarket] = useState(false)
+  const [loadingMarket, setLoadingMarket] = useState<MarketCode | null>(null)
   const authenticatingRef = useRef(false)
 
   useEffect(() => {
@@ -43,8 +45,13 @@ export default function LoginPage() {
   async function chooseMarket(market: MarketCode) {
     if (!user) return
     setLoading(true)
+    setLoadingMarket(market)
+    const startedAt = performance.now()
     try {
       if (market !== user.active_market) await switchMarket(market, false)
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const remaining = Math.max(0, (reduceMotion ? 0 : 1650) - (performance.now() - startedAt))
+      if (remaining > 0) await new Promise(resolve => window.setTimeout(resolve, remaining))
       navigate('/', { replace: true })
     } catch {
       setError('Não foi possível abrir esse ambiente. Tente novamente.')
@@ -52,6 +59,7 @@ export default function LoginPage() {
       authenticatingRef.current = false
     } finally {
       setLoading(false)
+      setLoadingMarket(null)
     }
   }
 
@@ -158,7 +166,9 @@ export default function LoginPage() {
       </div>
 
       {/* Bloco 84: overlay premium claro durante a autenticação */}
-      {loading && (
+      {loadingMarket ? (
+        <MarketTransition market={loadingMarket} />
+      ) : loading && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-bg/90 backdrop-blur-sm">
           <div className="absolute w-[520px] h-[520px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }} />
           <p className="relative text-[50px] sm:text-[80px] leading-none tracking-[0.35em] font-light select-none" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", backgroundImage: 'linear-gradient(90deg, #5a4508 0%, #8b6914 25%, #c8952e 50%, #8b6914 75%, #5a4508 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', animation: 'lightSweep 2.4s linear infinite' }}>ILYA</p>
