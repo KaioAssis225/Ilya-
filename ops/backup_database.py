@@ -73,14 +73,18 @@ def create_dump(target: str, destination: Path) -> None:
 
 
 def verify_catalog(dump_path: Path) -> None:
-    mount = f"{dump_path.parent.resolve()}:/backups:ro"
-    result = subprocess.run(
-        ["docker", "run", "--rm", "-v", mount, POSTGRES_IMAGE,
-         "pg_restore", "--list", f"/backups/{dump_path.name}"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    # Enviar o dump por stdin evita bind mounts. No Windows, um drive mapeado
+    # (por exemplo X:) pode resolver para um caminho UNC, que o Docker Desktop
+    # rejeita mesmo quando o arquivo é perfeitamente legível pelo processo.
+    with dump_path.open("rb") as source:
+        result = subprocess.run(
+            ["docker", "run", "--rm", "-i", POSTGRES_IMAGE,
+             "pg_restore", "--list"],
+            stdin=source,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
     if result.returncode or b"TABLE" not in result.stdout:
         error = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"A verificacao do catalogo do backup falhou: {error}")
