@@ -89,7 +89,8 @@ async def list_representatives(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
 ):
-    filters = []
+    market = active_market_for(current_user)
+    filters = [Representative.market_code == market]
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
             response.headers["X-Total-Count"] = "0"
@@ -194,6 +195,7 @@ async def create_representative(
         duplicate_email = (
             await db.execute(
                 select(Representative.id).where(
+                    Representative.market_code == market,
                     func.lower(Representative.email)
                     == str(payload.email).lower()
                 ).limit(1)
@@ -210,7 +212,10 @@ async def create_representative(
         duplicate_document = (
             await db.execute(
                 select(Representative.id)
-                .where(Representative.cpf_cnpj == payload.cpf_cnpj)
+                .where(
+                    Representative.market_code == market,
+                    Representative.cpf_cnpj == payload.cpf_cnpj,
+                )
                 .limit(1)
             )
         ).scalar_one_or_none()
@@ -265,7 +270,11 @@ async def get_representative(
                 status_code=403,
                 detail="Acesso negado a este representante.",
             )
-    result = await db.execute(select(Representative).where(Representative.id == rep_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Representative).where(
+        Representative.id == rep_id,
+        Representative.market_code == market,
+    ))
     rep = result.scalar_one_or_none()
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
@@ -289,7 +298,11 @@ async def update_representative(
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         if current_user.role != UserRole.representante or current_user.rep_id != rep_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para o seu nível de acesso.")
-    result = await db.execute(select(Representative).where(Representative.id == rep_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Representative).where(
+        Representative.id == rep_id,
+        Representative.market_code == market,
+    ))
     rep = result.scalar_one_or_none()
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
@@ -306,6 +319,7 @@ async def update_representative(
         duplicate_email = (
             await db.execute(
                 select(Representative.id).where(
+                    Representative.market_code == market,
                     func.lower(Representative.email)
                     == str(new_email).lower(),
                     Representative.id != rep.id,
@@ -322,6 +336,7 @@ async def update_representative(
         duplicate_document = (
             await db.execute(
                 select(Representative.id).where(
+                    Representative.market_code == market,
                     Representative.cpf_cnpj == new_document,
                     Representative.id != rep.id,
                 ).limit(1)
@@ -357,9 +372,13 @@ async def update_representative(
 async def delete_representative(
     rep_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    current_user: User = _ADMIN,
 ):
-    result = await db.execute(select(Representative).where(Representative.id == rep_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Representative).where(
+        Representative.id == rep_id,
+        Representative.market_code == market,
+    ))
     rep = result.scalar_one_or_none()
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
@@ -375,9 +394,13 @@ async def anonymize_representative(
     current_user: User = _ADMIN,
 ):
     """Anonimiza o cadastro comercial e desativa eventual conta vinculada."""
+    market = active_market_for(current_user)
     rep = (
         await db.execute(
-            select(Representative).where(Representative.id == rep_id)
+            select(Representative).where(
+                Representative.id == rep_id,
+                Representative.market_code == market,
+            )
         )
     ).scalar_one_or_none()
     if not rep:
