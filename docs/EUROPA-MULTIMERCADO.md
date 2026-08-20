@@ -10,7 +10,8 @@ Para a Europa ficar operacional, duas condições independentes precisam existir
 
 1. `markets.is_enabled = true`, liberado pelo endpoint administrativo somente
    depois de todos os SKUs disponíveis terem Lojista, Corporativo e PVP;
-2. `EUROPE_MARKET_ENABLED=true` no ambiente do backend.
+2. `EUROPE_MARKET_ENABLED=true` no ambiente do backend (valor padrão após a
+   importação e reconciliação inicial; use `false` como bloqueio de emergência).
 
 Essa dupla trava permite publicar schema e código antes de publicar preços.
 

@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { MarketFlag, type MarketCode } from '../components/MarketFlag'
 
 export default function LoginPage() {
-  const { login, user } = useAuth()
+  const { login, user, switchMarket } = useAuth()
   const navigate = useNavigate()
 
   const [identifier, setIdentifier] = useState('')
@@ -12,20 +13,43 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [choosingMarket, setChoosingMarket] = useState(false)
+  const authenticatingRef = useRef(false)
 
   useEffect(() => {
-    if (user) navigate('/', { replace: true })
-  }, [navigate, user])
+    if (user && !authenticatingRef.current && !choosingMarket) navigate('/', { replace: true })
+  }, [choosingMarket, navigate, user])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
+    authenticatingRef.current = true
     try {
-      await login(identifier, password)
+      const authenticatedUser = await login(identifier, password)
+      if (authenticatedUser.allowed_markets.length > 1) {
+        setChoosingMarket(true)
+        return
+      }
       navigate('/', { replace: true })
     } catch {
       setError('Usuário ou senha incorretos.')
+      authenticatingRef.current = false
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function chooseMarket(market: MarketCode) {
+    if (!user) return
+    setLoading(true)
+    try {
+      if (market !== user.active_market) await switchMarket(market, false)
+      navigate('/', { replace: true })
+    } catch {
+      setError('Não foi possível abrir esse ambiente. Tente novamente.')
+      setChoosingMarket(false)
+      authenticatingRef.current = false
     } finally {
       setLoading(false)
     }
@@ -50,6 +74,26 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-surface rounded-2xl shadow-sm border border-line px-8 py-9">
+          {choosingMarket && user ? (
+            <div>
+              <h2 className="text-center text-xl font-semibold text-ink" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>Escolha o ambiente</h2>
+              <p className="mt-1.5 text-center text-sm text-muted">Onde você quer trabalhar agora?</p>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                {user.allowed_markets.map(market => (
+                  <button
+                    key={market}
+                    type="button"
+                    onClick={() => void chooseMarket(market)}
+                    disabled={loading}
+                    className="flex min-h-24 flex-col items-center justify-center gap-3 rounded-xl border border-line bg-surface-alt text-sm font-semibold text-ink transition-colors hover:border-gold/50 hover:bg-gold-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 disabled:opacity-60"
+                  >
+                    <MarketFlag market={market} className="h-7 w-10 shadow-sm" />
+                    {market === 'BR' ? 'Brasil' : 'Portugal'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <label htmlFor="login-id" className="block text-xs font-semibold text-muted uppercase tracking-wider">
@@ -105,6 +149,7 @@ export default function LoginPage() {
               {loading ? 'Entrando…' : 'Entrar'}
             </button>
           </form>
+          )}
         </div>
 
         <p className="text-center text-xs text-muted mt-6">

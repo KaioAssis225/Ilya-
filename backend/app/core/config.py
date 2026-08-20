@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     ELECTRONIC_SIGNATURES_ENABLED: bool = False
     # O schema multimercado pode ser publicado com segurança enquanto a Europa
     # permanece inacessível. Ative somente após importar e conferir preços/IVA.
-    EUROPE_MARKET_ENABLED: bool = False
+    # Catálogo e preços europeus foram reconciliados antes do lançamento.
+    # O status persistido em markets.is_enabled continua sendo a segunda trava.
+    EUROPE_MARKET_ENABLED: bool = True
 
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
     # Deployments de produção/preview do projeto Ilya na conta Vercel indicada.
