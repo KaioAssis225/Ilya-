@@ -156,33 +156,39 @@ function FullProductImage({ product }: { product: Product }) {
 // A escolha é só de EXIBIÇÃO — o valor aplicado no orçamento segue resolvido no
 // servidor pelo perfil do cliente, nunca por esse seletor.
 
-type PriceTable = 'lojista' | 'corporativo' | 'ambos'
+type PriceKey = 'lojista' | 'corporativo' | 'pvp'
+type PriceTable = PriceKey | 'todos'
 
 const PRICE_TABLE_KEY = 'catalogo_tabela_preco'
 const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
   { value: 'lojista', label: 'Lojista' },
   { value: 'corporativo', label: 'Corporativo' },
-  { value: 'ambos', label: 'Ambos' },
+  { value: 'pvp', label: 'PVP' },
+  { value: 'todos', label: 'Todos' },
 ]
 
 // Padrão é uma tabela só: sem escolha salva, o catálogo nunca nasce expondo as
 // duas de uma vez.
 function readPriceTable(): PriceTable {
   const saved = localStorage.getItem(PRICE_TABLE_KEY)
-  return saved === 'corporativo' || saved === 'ambos' ? saved : 'lojista'
+  if (saved === 'corporativo' || saved === 'pvp' || saved === 'todos') return saved
+  if (saved === 'ambos') return 'todos'
+  return 'lojista'
 }
 
-type VisiblePrice = { key: Exclude<PriceTable, 'ambos'>; label: string; value: number }
+type VisiblePrice = { key: PriceKey; label: string; value: number }
 
 function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
-  const prices: VisiblePrice[] = []
-  if (product.price_lojista != null) {
-    prices.push({ key: 'lojista', label: 'Lojista', value: product.price_lojista })
+  const source = product.market_prices ?? {
+    ...(product.price_lojista != null ? { lojista: product.price_lojista } : {}),
+    ...(product.price_corporativo != null ? { corporativo: product.price_corporativo } : {}),
   }
-  if (product.price_corporativo != null) {
-    prices.push({ key: 'corporativo', label: 'Corporativo', value: product.price_corporativo })
-  }
-  if (table === 'ambos') return prices
+  const prices: VisiblePrice[] = PRICE_TABLE_OPTIONS
+    .filter((option): option is { value: PriceKey; label: string } => option.value !== 'todos')
+    .flatMap(option => source[option.value] != null
+      ? [{ key: option.value, label: option.label, value: Number(source[option.value]) }]
+      : [])
+  if (table === 'todos') return prices
 
   // A conta do cliente-final recebe uma tabela só. Se a escolhida não for a que
   // o servidor liberou, mostra a que existe em vez de esconder o preço: o
@@ -191,14 +197,15 @@ function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
   return picked.length > 0 ? picked : prices
 }
 
-function PriceTableToggle({ value, onChange }: { value: PriceTable; onChange: (next: PriceTable) => void }) {
+function PriceTableToggle({ value, onChange, available }: { value: PriceTable; onChange: (next: PriceTable) => void; available: PriceKey[] }) {
+  const options = PRICE_TABLE_OPTIONS.filter(option => option.value === 'todos' || available.includes(option.value as PriceKey))
   return (
     <div
       role="group"
       aria-label="Tabela de preço exibida"
       className="flex w-full md:w-auto flex-shrink-0 items-center gap-0.5 p-0.5 bg-bg border border-line rounded-lg"
     >
-      {PRICE_TABLE_OPTIONS.map(({ value: option, label }) => {
+      {options.map(({ value: option, label }) => {
         const active = option === value
         return (
           <button
@@ -650,7 +657,7 @@ export default function ProdutosPage() {
   // Só quem recebe as duas tabelas do servidor vê o seletor. Uma vez detectado,
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
-  const [hasDualPricing, setHasDualPricing] = useState(false)
+  const [availablePriceTables, setAvailablePriceTables] = useState<PriceKey[]>([])
   const cartQuantities = useCartQuantities(user?.id, user?.active_market)
   // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
   // virando um mosaico de painéis abertos ao mesmo tempo.
@@ -679,10 +686,20 @@ export default function ProdutosPage() {
   }, [priceTable])
 
   useEffect(() => {
-    const hasLojista = products.some(product => product.price_lojista != null)
-    const hasCorporativo = products.some(product => product.price_corporativo != null)
-    if (hasLojista && hasCorporativo) setHasDualPricing(true)
+    const discovered = (['lojista', 'corporativo', 'pvp'] as PriceKey[]).filter(key =>
+      products.some(product => product.market_prices?.[key] != null ||
+        (key === 'lojista' && product.price_lojista != null) ||
+        (key === 'corporativo' && product.price_corporativo != null))
+    )
+    if (discovered.length > 0) {
+      setAvailablePriceTables(current => Array.from(new Set([...current, ...discovered])))
+    }
   }, [products])
+
+  useEffect(() => {
+    if (availablePriceTables.length === 0 || priceTable === 'todos') return
+    if (!availablePriceTables.includes(priceTable)) setPriceTable(availablePriceTables[0])
+  }, [availablePriceTables, priceTable])
 
   useEffect(() => {
     if (products.length === 0) return
@@ -839,7 +856,7 @@ export default function ProdutosPage() {
 
           {/* Seletor de tabela: fica sempre à vista para o representante
               conferir o estado de relance ANTES de virar a tela para o cliente. */}
-          {hasDualPricing && <PriceTableToggle value={priceTable} onChange={setPriceTable} />}
+          {availablePriceTables.length > 1 && <PriceTableToggle value={priceTable} onChange={setPriceTable} available={availablePriceTables} />}
 
           {hasFilters && (
             <button
