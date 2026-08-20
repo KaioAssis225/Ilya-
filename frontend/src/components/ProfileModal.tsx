@@ -291,7 +291,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
           ) : (
             <button
               onClick={() => setSigModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-gold-soft text-gold rounded-xl hover:bg-[#fdf9f0] transition-colors text-sm font-medium"
+              className="w-full flex items-center justify-center gap-2 py-3 border border-dashed border-gold-soft text-gold rounded-xl hover:bg-gold-wash transition-colors text-sm font-medium"
             >
               <PenLine className="w-4 h-4" />
               Adicionar Assinatura

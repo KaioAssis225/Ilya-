@@ -20,7 +20,7 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 const ROLE_COLOR: Record<string, string> = {
-  admin: '#8b6914',
+  admin: 'var(--color-gold)',
   vendedor: '#507a9b',
   representante: '#648261',
   cadastros: '#7a5a9b',

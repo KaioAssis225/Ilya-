@@ -92,15 +92,15 @@ function DashboardChart({ series, activeMetric, granularity, locale, currency, i
         <>
           <path
             d={`${coords.map((c, i) => `${i ? 'L' : 'M'}${c[0]} ${c[1]}`).join(' ')} L${coords.at(-1)![0]} ${top + height} L${coords[0][0]} ${top + height} Z`}
-            fill="#8b691418"
+            fill="color-mix(in srgb, var(--color-gold) 9%, transparent)"
           />
-          <path d={coords.map((c, i) => `${i ? 'L' : 'M'}${c[0]} ${c[1]}`).join(' ')} fill="none" stroke="#8b6914" strokeWidth={3} />
-          {coords.map((c, i) => <circle key={i} cx={c[0]} cy={c[1]} r={4} fill="#8b6914" />)}
+          <path d={coords.map((c, i) => `${i ? 'L' : 'M'}${c[0]} ${c[1]}`).join(' ')} fill="none" stroke="var(--color-gold)" strokeWidth={3} />
+          {coords.map((c, i) => <circle key={i} cx={c[0]} cy={c[1]} r={4} fill="var(--color-gold)" />)}
         </>
       ) : (
         coords.map((c, i) => {
           const barWidth = Math.min(48, (width / series.length) * 0.65)
-          return <rect key={i} x={c[0] - barWidth / 2} y={c[1]} width={barWidth} height={top + height - c[1]} rx={3} fill="#8b6914" />
+          return <rect key={i} x={c[0] - barWidth / 2} y={c[1]} width={barWidth} height={top + height - c[1]} rx={3} fill="var(--color-gold)" />
         })
       )}
     </svg>
@@ -263,7 +263,7 @@ export default function DashboardPage() {
                 key={key}
                 onClick={() => setActiveMetric(key)}
                 className={`text-left p-4 border-line ${i % 4 !== 3 ? 'border-r' : ''} ${i < 4 ? 'border-b' : ''} transition-colors ${selected ? 'bg-gold-wash' : 'hover:bg-bg'}`}
-                style={selected ? { boxShadow: 'inset 0 3px #8b6914' } : undefined}
+                style={selected ? { boxShadow: 'inset 0 3px var(--color-gold)' } : undefined}
               >
                 <span className="text-xs text-muted">{config.label}</span>
                 <strong className="block my-2 text-xl text-ink tabular-nums">

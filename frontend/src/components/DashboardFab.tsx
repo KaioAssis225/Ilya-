@@ -77,7 +77,7 @@ export default function DashboardFab({
         aria-label={mode === 'enter' ? 'Abrir Dashboard BI' : 'Fechar Dashboard BI'}
         title={mode === 'enter' ? 'Dashboard BI' : 'Voltar'}
         className="group fixed bottom-20 md:bottom-6 right-4 md:right-6 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg transition-transform duration-200 active:scale-90 hover:scale-105"
-        style={{ background: 'linear-gradient(135deg, #c8952e 0%, #8b6914 100%)' }}
+        style={{ background: 'linear-gradient(135deg, var(--color-gold-highlight) 0%, var(--color-gold) 100%)' }}
       >
         <span className="absolute inset-0 rounded-full border-2 border-gold pointer-events-none opacity-0 group-hover:opacity-100 group-hover:[animation:fabRing_1.1s_ease-out_infinite]" />
         {mode === 'enter' ? (
@@ -108,13 +108,13 @@ export default function DashboardFab({
         >
           <div
             className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }}
+            style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--color-gold) 18%, transparent) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }}
           />
           <p
             className="relative text-[50px] sm:text-[80px] leading-none tracking-[0.35em] font-light select-none"
             style={{
               fontFamily: "'Cormorant Garamond', Georgia, serif",
-              backgroundImage: 'linear-gradient(90deg, #5a4508 0%, #8b6914 25%, #c8952e 50%, #8b6914 75%, #5a4508 100%)',
+              backgroundImage: 'linear-gradient(90deg, var(--color-gold-800) 0%, var(--color-gold) 25%, var(--color-gold-highlight) 50%, var(--color-gold) 75%, var(--color-gold-800) 100%)',
               backgroundSize: '200% auto',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -128,7 +128,7 @@ export default function DashboardFab({
             Voltando aos Pedidos
           </p>
           <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
-            <div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, #5a4508, #c8952e, #5a4508)', animation: 'progressLine 1s linear forwards' }} />
+            <div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, var(--color-gold-800), var(--color-gold-highlight), var(--color-gold-800))', animation: 'progressLine 1s linear forwards' }} />
           </div>
         </div>
       )}
