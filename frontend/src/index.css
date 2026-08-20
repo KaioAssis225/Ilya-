@@ -64,16 +64,16 @@
 }
 
 /* Portugal preserva a mesma hierarquia visual do Brasil, mas troca o acento
-   dourado pelo Azul Celeste Mineral aprovado pela diretoria. O escopo fica no
+   dourado pelo Verde Jade Mineral aprovado pela diretoria. O escopo fica no
    mercado ativo para impedir que a paleta portuguesa vaze para o Brasil. */
 [data-market='EU'] {
-  --color-gold:        #477991;
-  --color-gold-600:    #3d6c82;
-  --color-gold-700:    #345f74;
-  --color-gold-800:    #2c5265;
-  --color-gold-soft:   #759db0;
-  --color-gold-highlight: #7fa8ba;
-  --color-gold-wash:   #f1f7f9;
+  --color-gold:        #477d68;
+  --color-gold-600:    #3d705b;
+  --color-gold-700:    #34614f;
+  --color-gold-800:    #2c5344;
+  --color-gold-soft:   #79a893;
+  --color-gold-highlight: #80b49d;
+  --color-gold-wash:   #f1f8f4;
 }
 
 @layer base {
