@@ -289,6 +289,80 @@
   to   { opacity: 1; }
 }
 
+/* A troca de mercado constrói a nova bandeira em camadas antes de recarregar
+   o contexto autenticado, tornando explícita a mudança Brasil ↔ Portugal. */
+.market-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgb(248 246 242 / 0.96);
+  backdrop-filter: blur(10px);
+  animation: marketVeilIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.market-transition-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.market-transition-flag {
+  width: clamp(9rem, 22vw, 14rem);
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 18px 24px rgb(44 36 32 / 0.16));
+}
+
+.market-transition-name {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.market-transition-br .market-transition-name { color: #08783f; }
+.market-transition-eu .market-transition-name { color: #c8102e; }
+
+.market-flag-build .market-flag-field {
+  transform-origin: left center;
+  animation: marketFieldBuild 520ms cubic-bezier(0.16, 1, 0.3, 1) 60ms both;
+}
+
+.market-flag-build .market-flag-panel {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: marketPanelBuild 400ms cubic-bezier(0.16, 1, 0.3, 1) 210ms both;
+}
+
+.market-flag-build .market-flag-symbol {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: marketSymbolBuild 340ms cubic-bezier(0.16, 1, 0.3, 1) 360ms both;
+}
+
+@keyframes marketVeilIn {
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to { opacity: 1; backdrop-filter: blur(10px); }
+}
+
+@keyframes marketFieldBuild {
+  from { opacity: 0.25; transform: scaleX(0.08); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes marketPanelBuild {
+  from { opacity: 0; transform: scale(0.45) rotate(-5deg); }
+  to { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes marketSymbolBuild {
+  from { opacity: 0; transform: scale(0.35); filter: blur(3px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────────
    Honour the user's OS preference. Brand loading flourishes collapse to a
    static, legible state instead of looping animation.                        */

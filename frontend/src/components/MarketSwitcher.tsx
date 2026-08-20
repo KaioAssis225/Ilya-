@@ -35,8 +35,11 @@ export function MarketSwitcher() {
       setOpen(false)
       return
     }
+    setOpen(false)
     setSwitching(market)
     try {
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (!reduceMotion) await new Promise(resolve => window.setTimeout(resolve, 720))
       await switchMarket(market)
     } finally {
       setSwitching(null)
@@ -53,6 +56,19 @@ export function MarketSwitcher() {
 
   return (
     <div ref={rootRef} className="relative">
+      {switching && (
+        <div
+          className={`market-transition market-transition-${switching.toLowerCase()}`}
+          role="status"
+          aria-live="polite"
+          aria-label={`Abrindo ambiente ${LABELS[switching]}`}
+        >
+          <div className="market-transition-content">
+            <MarketFlag market={switching} animated className="market-transition-flag" />
+            <span className="market-transition-name">ILYA — {LABELS[switching].toUpperCase()}</span>
+          </div>
+        </div>
+      )}
       <button
         type="button"
         onClick={() => setOpen(value => !value)}
@@ -60,6 +76,7 @@ export function MarketSwitcher() {
         aria-label={`Ambiente ${LABELS[user.active_market]}. Trocar ambiente`}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={switching !== null}
       >
         <MarketFlag market={user.active_market} className="h-4 w-6 shadow-sm" />
         <ChevronDown className={`h-3 w-3 text-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />

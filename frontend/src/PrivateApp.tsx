@@ -172,16 +172,18 @@ function Nav() {
   if (!user) return null
 
   const unreadCount = notifications.filter(n => !n.is_read).length
+  const marketName = user.active_market === 'EU' ? 'PORTUGAL' : 'BRASIL'
+  const marketNameColor = user.active_market === 'EU' ? '#C8102E' : '#08783f'
 
   return (
     <>
       <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label="Navegação principal">
         <div className="flex items-center gap-1">
           <div
-            className="text-base font-semibold tracking-widest mr-5 text-ink"
+            className="mr-3 whitespace-nowrap text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
             style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
           >
-            ILYA <span className="text-gold text-sm font-normal tracking-normal hidden sm:inline">— Sistema</span>
+            ILYA <span className="text-xs font-semibold tracking-[0.08em] sm:text-sm" style={{ color: marketNameColor }}>— {marketName}</span>
           </div>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
