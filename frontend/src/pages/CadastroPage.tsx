@@ -77,13 +77,15 @@ function Th({ label, col, sortKey, sortDir, onSort, color }: {
   )
 }
 
-type ProductColumnKey = 'code' | 'description' | 'dimensions' | 'price' | 'optionals' | 'photo' | 'actions'
+type ProductColumnKey = 'code' | 'description' | 'dimensions' | 'price_lojista' | 'price_corporativo' | 'price_pvp' | 'optionals' | 'photo' | 'actions'
 
 const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
   code: 110,
   description: 180,
   dimensions: 190,
-  price: 130,
+  price_lojista: 120,
+  price_corporativo: 120,
+  price_pvp: 120,
   optionals: 150,
   photo: 72,
   actions: 72,
@@ -93,7 +95,9 @@ const INITIAL_PRODUCT_COLUMN_WIDTHS: Record<ProductColumnKey, number> = {
   code: 140,
   description: 320,
   dimensions: 270,
-  price: 150,
+  price_lojista: 140,
+  price_corporativo: 140,
+  price_pvp: 140,
   optionals: 240,
   photo: 88,
   actions: 80,
@@ -713,6 +717,13 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
 }
 
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
+  const { user } = useAuth()
+  const isEurope = user?.active_market === 'EU'
+  const locale = isEurope ? 'pt-PT' : 'pt-BR'
+  const currency = isEurope ? 'EUR' : 'BRL'
+  const money = (value: number | null | undefined) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value ?? 0))
+  const marketPrice = (product: Product, key: 'lojista' | 'corporativo' | 'pvp') =>
+    product.market_prices?.[key] ?? (key === 'lojista' ? product.price_lojista : key === 'corporativo' ? product.price_corporativo : null)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)
   const [sortKey, setSortKey] = useState<'product_code' | 'description' | 'price_lojista'>('product_code')
@@ -775,6 +786,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
   const [columnWidths, setColumnWidths] = useState<Record<ProductColumnKey, number>>(INITIAL_PRODUCT_COLUMN_WIDTHS)
+  const visibleColumnKeys = (Object.keys(columnWidths) as ProductColumnKey[]).filter(column => isEurope || column !== 'price_pvp')
   const tableContainerRef = useRef<HTMLDivElement>(null)
 
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
@@ -812,16 +824,18 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     // espaço; todo texto continua visível por quebra de linha, sem reticências.
     const ratios: Record<ProductColumnKey, number> = {
       code: 0.11,
-      description: 0.24,
-      dimensions: 0.19,
-      price: 0.14,
-      optionals: 0.15,
-      photo: 0.09,
-      actions: 0.08,
+      description: isEurope ? 0.19 : 0.22,
+      dimensions: 0.16,
+      price_lojista: 0.11,
+      price_corporativo: 0.11,
+      price_pvp: isEurope ? 0.11 : 0,
+      optionals: 0.12,
+      photo: 0.05,
+      actions: 0.04,
     }
     const fitted = {} as Record<ProductColumnKey, number>
     let assigned = 0
-    const columns = Object.keys(ratios) as ProductColumnKey[]
+    const columns = visibleColumnKeys
     columns.forEach((column, index) => {
       const width = index === columns.length - 1
         ? availableWidth - assigned
@@ -937,7 +951,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   return (
     <div className="min-w-0 max-w-full">
-      <BatchPhotoUpload color={color} />
+      {!isEurope && <BatchPhotoUpload color={color} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <span className="text-sm text-muted whitespace-nowrap">{totalProducts} {totalProducts === 1 ? 'produto' : 'produtos'}</span>
@@ -946,11 +960,18 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
             <input aria-label="Buscar produtos por código ou descrição" className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
-          <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
-            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
-          </button>
+          {!isEurope && (
+            <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
+              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
+            </button>
+          )}
         </div>
       </div>
+      {isEurope && (
+        <p className="mb-4 rounded-lg bg-bg-2 px-3 py-2 text-xs text-ink-2">
+          Catálogo Portugal — preços em EUR geridos pela importação validada.
+        </p>
+      )}
 
       {isLoading ? (
         <p className="text-muted text-sm py-8 text-center">Carregando...</p>
@@ -970,14 +991,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
                       <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
                     </div>
-                    <div className="flex gap-0 flex-shrink-0">
+                    {!isEurope && <div className="flex gap-0 flex-shrink-0">
                       <button onClick={() => openEdit(p)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button onClick={() => setDeleting(p)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
-                    </div>
+                    </div>}
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] text-muted">
@@ -985,9 +1006,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
                         : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </span>
-                    <span className="text-right">
-                      <span className="block text-sm font-bold text-ink">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista ?? 0)}</span>
-                      <span className="block text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo ?? 0)}</span>
+                    <span className="space-y-0.5 text-right">
+                      <span className="block text-[10px] text-muted">Lojista <strong className="text-sm text-ink">{money(marketPrice(p, 'lojista'))}</strong></span>
+                      <span className="block text-[10px] text-muted">Corporativo <strong className="text-ink-2">{money(marketPrice(p, 'corporativo'))}</strong></span>
+                      {isEurope && <span className="block text-[10px] text-muted">PVP <strong className="text-gold">{money(marketPrice(p, 'pvp'))}</strong></span>}
                     </span>
                   </div>
                   {(p.optionals.length > 0 || p.all_optionals_categories) && (
@@ -1029,10 +1051,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
           <div ref={tableContainerRef} className="hidden lg:block w-full max-w-full min-w-0 overflow-x-auto rounded-xl border border-line overscroll-x-contain">
             <table
               className="table-fixed text-sm"
-              style={{ width: Object.values(columnWidths).reduce((total, width) => total + width, 0) }}
+              style={{ width: visibleColumnKeys.reduce((total, column) => total + columnWidths[column], 0) }}
             >
               <colgroup>
-                {(Object.keys(columnWidths) as ProductColumnKey[]).map((column) => (
+                {visibleColumnKeys.map((column) => (
                   <col key={column} style={{ width: columnWidths[column] }} />
                 ))}
               </colgroup>
@@ -1043,8 +1065,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   <ResizableProductTh label="Descrição" column="description" width={columnWidths.description} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'description', dir: sortDir, onClick: () => toggle('description') }} />
                   <ResizableProductTh label="Dimensões" column="dimensions" width={columnWidths.dimensions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  <ResizableProductTh label="Preço" column="price" width={columnWidths.price} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                  <ResizableProductTh label="Lojista" column="price_lojista" width={columnWidths.price_lojista} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'price_lojista', dir: sortDir, onClick: () => toggle('price_lojista') }} />
+                  <ResizableProductTh label="Corporativo" column="price_corporativo" width={columnWidths.price_corporativo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  {isEurope && <ResizableProductTh label="PVP" column="price_pvp" width={columnWidths.price_pvp} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />}
                   <ResizableProductTh label="Opcionais" column="optionals" width={columnWidths.optionals} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label="Foto" column="photo" width={columnWidths.photo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label="" column="actions" width={columnWidths.actions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
@@ -1060,10 +1084,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
                         : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
                     </td>
-                    <td data-product-col="price" className="px-4 py-3 text-sm border-r border-line whitespace-normal align-top">
-                      <div className="text-ink font-medium">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_lojista ?? 0)}</div>
-                      <div className="text-[10px] text-ink-3">Corp.: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.price_corporativo ?? 0)}</div>
-                    </td>
+                    <td data-product-col="price_lojista" className="px-4 py-3 text-sm font-medium text-ink border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'lojista'))}</td>
+                    <td data-product-col="price_corporativo" className="px-4 py-3 text-sm text-ink-2 border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'corporativo'))}</td>
+                    {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'pvp'))}</td>}
                     <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {p.optionals.length > 0 || p.all_optionals_categories
                         ? getProductOptionalsLabel(p, catLabel, ', ')
@@ -1075,17 +1098,19 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         : <ImageIcon className="w-6 h-6 text-faint" />}
                     </td>
                     <td data-product-col="actions" className="px-2 py-3 align-top">
+                      {!isEurope && (
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
                         <button onClick={() => setDeleting(p)} aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))}
                 {pageItems.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
+                  <tr><td colSpan={visibleColumnKeys.length} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
                 )}
               </tbody>
             </table>
