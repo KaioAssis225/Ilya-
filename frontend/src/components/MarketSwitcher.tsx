@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
 import { MarketFlag, type MarketCode } from './MarketFlag'
 import { MarketTransition } from './MarketTransition'
@@ -8,6 +9,7 @@ const LABELS: Record<MarketCode, string> = { BR: 'Brasil', EU: 'Portugal' }
 
 export function MarketSwitcher() {
   const { user, switchMarket } = useAuth()
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState<MarketCode | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -38,10 +40,14 @@ export function MarketSwitcher() {
     }
     setOpen(false)
     setSwitching(market)
+    const startedAt = performance.now()
     try {
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (!reduceMotion) await new Promise(resolve => window.setTimeout(resolve, 1650))
-      await switchMarket(market)
+      await switchMarket(market, false)
+      queryClient.clear()
+      const minimumDuration = reduceMotion ? 0 : 1650
+      const remaining = Math.max(0, minimumDuration - (performance.now() - startedAt))
+      if (remaining > 0) await new Promise(resolve => window.setTimeout(resolve, remaining))
     } finally {
       setSwitching(null)
     }

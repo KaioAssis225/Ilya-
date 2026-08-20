@@ -11,6 +11,7 @@ import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { MarketSwitcher } from './components/MarketSwitcher'
+import { MarketTransition } from './components/MarketTransition'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
 const CadastroPage = lazy(() => import('./pages/CadastroPage'))
@@ -271,12 +272,8 @@ function Nav() {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 function RouteFallback() {
-  return (
-    <div className="flex items-center justify-center min-h-[60vh]" role="status" aria-live="polite">
-      <span className="sr-only">Carregando…</span>
-      <div className="w-8 h-8 rounded-full border-2 border-gold/25 border-t-gold animate-spin" aria-hidden="true" />
-    </div>
-  )
+  const { user } = useAuth()
+  return <MarketTransition market={user?.active_market ?? 'BR'} />
 }
 
 export default function PrivateApp() {
