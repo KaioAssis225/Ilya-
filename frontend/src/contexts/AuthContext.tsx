@@ -5,6 +5,7 @@ import { authApi, bindAuthHandlers } from '../lib/api'
 import { removeUnsafeLegacyCart } from '../lib/cart'
 import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 import { DEMO_MODE, DEMO_USER } from '../lib/demo'
+import { clearPrivateQueryState } from '../lib/queryClient'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
 
@@ -51,13 +52,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Mantém o token atual acessível de forma síncrona aos interceptores Axios,
   // evitando stale closure em bindAuthHandlers (V-F1).
   const accessTokenRef = useRef<string | null>(null)
+  const sessionScopeRef = useRef<string | null>(
+    DEMO_MODE ? `${DEMO_USER.id}:${DEMO_USER.active_market}` : null
+  )
 
   const setSession = useCallback((accessToken: string, user: AuthUser) => {
     removeUnsafeLegacyCart()
+    const nextScope = `${user.id}:${user.active_market}`
+    if (sessionScopeRef.current !== nextScope) clearPrivateQueryState()
+    sessionScopeRef.current = nextScope
+    // Atualiza de forma síncrona: nenhuma requisição iniciada no mesmo frame
+    // pode reutilizar o token da identidade anterior.
+    accessTokenRef.current = accessToken
     setState({ user, accessToken })
   }, [])
 
   const clearSession = useCallback(() => {
+    accessTokenRef.current = null
+    sessionScopeRef.current = null
+    clearPrivateQueryState()
     setState({ user: null, accessToken: null })
   }, [])
 
@@ -146,14 +159,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(async () => {
+    // Esconde e remove os dados privados antes da chamada de rede. Mesmo com
+    // conexão lenta, a conta anterior nunca continua visível durante o logout.
+    clearSignatureMemory()
+    removeLegacySignatureStorage()
+    clearSession()
     try {
       await authApi.post('/auth/logout')
     } catch {
       // ignora falha de rede no logout
     }
-    clearSignatureMemory()
-    removeLegacySignatureStorage()
-    clearSession()
   }, [clearSession])
 
   const switchMarket = useCallback(async (market: 'BR' | 'EU', reload = true) => {

@@ -5,9 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.orm import Session
 
 from app.core.markets import active_market_for, allowed_markets, require_allowed_market
 from app.core.security import create_access_token, decode_access_token
+from app.models.client import Client
 from app.models.user import UserRole
 from app.api.routers.clients import get_client
 from app.api.routers.reps import get_representative
@@ -108,3 +111,23 @@ def test_representative_lookup_always_contains_active_market_scope():
         assert exc.value.status_code == 404
 
     asyncio.run(run())
+
+
+def test_orm_market_scope_does_not_reuse_previous_market():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE clients (id CHAR(32) PRIMARY KEY, market_code VARCHAR(2) NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO clients (id, market_code) VALUES "
+            "('00000000000000000000000000000001', 'BR'), "
+            "('00000000000000000000000000000002', 'EU')"
+        ))
+
+    with Session(engine) as session:
+        count_query = select(func.count()).select_from(Client)
+        session.info["active_market"] = "BR"
+        assert session.execute(count_query).scalar_one() == 1
+        session.info["active_market"] = "EU"
+        assert session.execute(count_query).scalar_one() == 1
