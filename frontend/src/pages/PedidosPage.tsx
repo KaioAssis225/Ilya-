@@ -546,7 +546,7 @@ function OrderDetailModal({
                   <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
                 </div>
                 {canGenerateSignLink && !isClientSigned && (
-                  <button disabled={signLinkLoading} onClick={async () => { setSignLinkLoading(true); try { const res = await api.post<{ token: string; url: string }>(`/orders/${order.id}/generate-sign-token`); setSignLink(window.location.origin + res.data.url) } catch { /* ignore */ } finally { setSignLinkLoading(false) } }} className="flex items-center gap-1.5 px-3 py-1.5 border border-gold-soft text-gold rounded-lg text-xs font-medium hover:bg-[#fdf9f0] transition-colors disabled:opacity-50">
+                  <button disabled={signLinkLoading} onClick={async () => { setSignLinkLoading(true); try { const res = await api.post<{ token: string; url: string }>(`/orders/${order.id}/generate-sign-token`); setSignLink(window.location.origin + res.data.url) } catch { /* ignore */ } finally { setSignLinkLoading(false) } }} className="flex items-center gap-1.5 px-3 py-1.5 border border-gold-soft text-gold rounded-lg text-xs font-medium hover:bg-gold-wash transition-colors disabled:opacity-50">
                     <Link className="w-3.5 h-3.5" />{signLinkLoading ? 'Gerando...' : 'Gerar Link'}
                   </button>
                 )}
@@ -569,7 +569,7 @@ function OrderDetailModal({
                   {notifyDone
                     ? <div className="flex items-center gap-1.5 text-xs text-green-600"><CheckCircle className="w-3.5 h-3.5" /> Notificação enviada ao cliente.</div>
                     : <>
-                        <button disabled={notifyLoading || !clientHasAccount} onClick={handleNotifyClient} title={!clientHasAccount ? 'Cliente não possui conta no sistema' : undefined} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors ${clientHasAccount ? 'border-gold-soft text-gold hover:bg-[#fdf9f0] disabled:opacity-50' : 'border-line text-faint cursor-not-allowed'}`}>
+                        <button disabled={notifyLoading || !clientHasAccount} onClick={handleNotifyClient} title={!clientHasAccount ? 'Cliente não possui conta no sistema' : undefined} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors ${clientHasAccount ? 'border-gold-soft text-gold hover:bg-gold-wash disabled:opacity-50' : 'border-line text-faint cursor-not-allowed'}`}>
                           <Bell className="w-3.5 h-3.5" />{notifyLoading ? 'Enviando...' : 'Notificar Cliente'}
                         </button>
                         {notifyError && <p className="text-[10px] text-red-500 mt-1">Erro ao enviar notificação.</p>}
@@ -671,10 +671,10 @@ function OrderDetailModal({
 
         {ELECTRONIC_SIGNATURES_ENABLED && isSigning && (
           <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-bg/90 backdrop-blur-sm">
-            <div className="absolute w-[520px] h-[520px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }} />
-            <p className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", backgroundImage: 'linear-gradient(90deg, #5a4508 0%, #8b6914 25%, #c8952e 50%, #8b6914 75%, #5a4508 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', animation: 'lightSweep 2.4s linear infinite' }}>ILYA</p>
+            <div className="absolute w-[520px] h-[520px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--color-gold) 18%, transparent) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }} />
+            <p className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", backgroundImage: 'linear-gradient(90deg, var(--color-gold-800) 0%, var(--color-gold) 25%, var(--color-gold-highlight) 50%, var(--color-gold) 75%, var(--color-gold-800) 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', animation: 'lightSweep 2.4s linear infinite' }}>ILYA</p>
             <p className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-gold" style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}>Gerando Assinatura</p>
-            <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full"><div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, #5a4508, #c8952e, #5a4508)', animation: 'progressLine 3s linear forwards' }} /></div>
+            <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full"><div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, var(--color-gold-800), var(--color-gold-highlight), var(--color-gold-800))', animation: 'progressLine 3s linear forwards' }} /></div>
           </div>
         )}
 

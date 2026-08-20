@@ -73,7 +73,7 @@ export default function DashboardIntro({
       <div
         className="absolute inset-0 opacity-[0.06]"
         style={{
-          backgroundImage: 'linear-gradient(#8b6914 1px, transparent 1px), linear-gradient(90deg, #8b6914 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(var(--color-gold) 1px, transparent 1px), linear-gradient(90deg, var(--color-gold) 1px, transparent 1px)',
           backgroundSize: '40px 40px',
         }}
       />
@@ -82,7 +82,7 @@ export default function DashboardIntro({
         <div
           className="absolute top-0 bottom-0 w-40"
           style={{
-            background: 'linear-gradient(90deg, transparent, rgba(139,105,20,0.16), transparent)',
+            background: 'linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-gold) 16%, transparent), transparent)',
             animation: 'gridSweep 2.2s ease-in-out infinite',
           }}
         />
@@ -97,7 +97,7 @@ export default function DashboardIntro({
               className="w-3 rounded-t-sm origin-bottom"
               style={{
                 height: `${h * 64}px`,
-                background: 'linear-gradient(180deg, #c8952e 0%, #8b6914 100%)',
+                background: 'linear-gradient(180deg, var(--color-gold-highlight) 0%, var(--color-gold) 100%)',
                 animation: `barRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both`,
                 animationDelay: `${i * 60}ms`,
               }}

@@ -35,6 +35,7 @@
   --color-gold-700:    #6a4f0d;
   --color-gold-800:    #5a4508;
   --color-gold-soft:   #c8a84b;
+  --color-gold-highlight: #c8952e;
   --color-gold-wash:   #fdf9f0;
 
   --color-terracotta:  #b25e50;
@@ -60,6 +61,19 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-display: 'Cormorant Garamond', Georgia, serif;
+}
+
+/* Portugal preserva a mesma hierarquia visual do Brasil, mas troca o acento
+   dourado pelo Verde Jade Mineral aprovado pela diretoria. O escopo fica no
+   mercado ativo para impedir que a paleta portuguesa vaze para o Brasil. */
+[data-market='EU'] {
+  --color-gold:        #477d68;
+  --color-gold-600:    #3d705b;
+  --color-gold-700:    #34614f;
+  --color-gold-800:    #2c5344;
+  --color-gold-soft:   #79a893;
+  --color-gold-highlight: #80b49d;
+  --color-gold-wash:   #f1f8f4;
 }
 
 @layer base {

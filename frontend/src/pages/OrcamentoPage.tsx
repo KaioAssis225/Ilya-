@@ -1625,7 +1625,7 @@ export default function OrcamentoPage() {
           <div
             className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
             style={{
-              background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)',
+              background: 'radial-gradient(circle, color-mix(in srgb, var(--color-gold) 18%, transparent) 0%, transparent 68%)',
               animation: 'pulseRadial 2.2s ease-in-out infinite',
             }}
           />
@@ -1633,7 +1633,7 @@ export default function OrcamentoPage() {
             className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none"
             style={{
               fontFamily: "'Cormorant Garamond', Georgia, serif",
-              backgroundImage: 'linear-gradient(90deg, #5a4508 0%, #8b6914 25%, #c8952e 50%, #8b6914 75%, #5a4508 100%)',
+              backgroundImage: 'linear-gradient(90deg, var(--color-gold-800) 0%, var(--color-gold) 25%, var(--color-gold-highlight) 50%, var(--color-gold) 75%, var(--color-gold-800) 100%)',
               backgroundSize: '200% auto',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -1653,7 +1653,7 @@ export default function OrcamentoPage() {
             <div
               className="h-full rounded-full"
               style={{
-                background: 'linear-gradient(90deg, #5a4508, #c8952e, #5a4508)',
+                background: 'linear-gradient(90deg, var(--color-gold-800), var(--color-gold-highlight), var(--color-gold-800))',
                 animation: 'progressLine 3s linear forwards',
               }}
             />
