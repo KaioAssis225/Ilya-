@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import type { PageResult, Representative, RepresentativeCreate, RepresentativeUpdate } from '../types'
+import { useAuth } from './useAuth'
 
 const KEY = 'representatives'
 
@@ -17,8 +18,9 @@ export function useRepresentativesPage(
   params: RepresentativePageParams,
   enabled = true,
 ) {
+  const { user } = useAuth()
   return useQuery<PageResult<Representative>>({
-    queryKey: [KEY, 'page', params],
+    queryKey: [KEY, user?.id, user?.active_market, 'page', params],
     queryFn: async () => {
       const response = await api.get<Representative[]>(
         '/representatives',
@@ -37,8 +39,9 @@ export function useRepresentativesPage(
 }
 
 export function useRepresentative(id: string, enabled = true) {
+  const { user } = useAuth()
   return useQuery<Representative>({
-    queryKey: [KEY, id],
+    queryKey: [KEY, user?.id, user?.active_market, id],
     queryFn: async () => (await api.get(`/representatives/${id}`)).data,
     enabled: enabled && !!id,
   })

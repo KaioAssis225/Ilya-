@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import type { Client, ClientCreate, ClientUpdate, PageResult } from '../types'
+import { useAuth } from './useAuth'
 
 const KEY = 'clients'
 
@@ -14,8 +15,9 @@ export interface ClientPageParams {
 }
 
 export function useClientsPage(params: ClientPageParams, enabled = true) {
+  const { user } = useAuth()
   return useQuery<PageResult<Client>>({
-    queryKey: [KEY, 'page', params],
+    queryKey: [KEY, user?.id, user?.active_market, 'page', params],
     queryFn: async () => {
       const response = await api.get<Client[]>('/clients', { params })
       return {
@@ -31,8 +33,9 @@ export function useClientsPage(params: ClientPageParams, enabled = true) {
 }
 
 export function useClient(id: string, enabled = true) {
+  const { user } = useAuth()
   return useQuery<Client>({
-    queryKey: [KEY, id],
+    queryKey: [KEY, user?.id, user?.active_market, id],
     queryFn: async () => (await api.get(`/clients/${id}`)).data,
     enabled: enabled && !!id,
   })

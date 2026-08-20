@@ -5,10 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.orm import Session
 
 from app.core.markets import active_market_for, allowed_markets, require_allowed_market
 from app.core.security import create_access_token, decode_access_token
+from app.models.client import Client
 from app.models.user import UserRole
+from app.api.routers.clients import get_client
+from app.api.routers.reps import get_representative
 
 
 def _user(role=UserRole.vendedor, home="BR"):
@@ -58,3 +63,71 @@ def test_feature_flag_blocks_europe_even_for_admin():
                 await require_allowed_market(db, _user(UserRole.admin), "EU")
         assert exc.value.status_code == 403
     asyncio.run(run())
+
+
+def test_client_lookup_always_contains_active_market_scope():
+    async def run():
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db.execute.return_value = result
+        user = SimpleNamespace(
+            role=UserRole.admin,
+            active_market="BR",
+            linked_id=None,
+            rep_id=None,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await get_client(uuid.uuid4(), db=db, current_user=user)
+
+        statement = db.execute.await_args.args[0]
+        assert "clients.market_code" in str(statement)
+        assert "BR" in statement.compile().params.values()
+        assert exc.value.status_code == 404
+
+    asyncio.run(run())
+
+
+def test_representative_lookup_always_contains_active_market_scope():
+    async def run():
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db.execute.return_value = result
+        user = SimpleNamespace(
+            role=UserRole.admin,
+            active_market="EU",
+            linked_id=None,
+            rep_id=None,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await get_representative(uuid.uuid4(), db=db, current_user=user)
+
+        statement = db.execute.await_args.args[0]
+        assert "representatives.market_code" in str(statement)
+        assert "EU" in statement.compile().params.values()
+        assert exc.value.status_code == 404
+
+    asyncio.run(run())
+
+
+def test_orm_market_scope_does_not_reuse_previous_market():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE clients (id CHAR(32) PRIMARY KEY, market_code VARCHAR(2) NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO clients (id, market_code) VALUES "
+            "('00000000000000000000000000000001', 'BR'), "
+            "('00000000000000000000000000000002', 'EU')"
+        ))
+
+    with Session(engine) as session:
+        count_query = select(func.count()).select_from(Client)
+        session.info["active_market"] = "BR"
+        assert session.execute(count_query).scalar_one() == 1
+        session.info["active_market"] = "EU"
+        assert session.execute(count_query).scalar_one() == 1

@@ -211,7 +211,8 @@ async def list_clients(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
 ):
-    filters = []
+    market = active_market_for(current_user)
+    filters = [Client.market_code == market]
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
             response.headers["X-Total-Count"] = "0"
@@ -286,12 +287,14 @@ async def create_client(
     current_user: User = Depends(require_roles(*_CREATE_CLIENT_ROLES)),
 ):
     data = payload.model_dump()
+    market = active_market_for(current_user)
     duplicate_email = None
     if payload.email:
         duplicate_email = (
             await db.execute(
                 select(Client.id).where(
-                    func.lower(Client.email) == str(payload.email).lower()
+                    Client.market_code == market,
+                    func.lower(Client.email) == str(payload.email).lower(),
                 ).limit(1)
             )
         ).scalar_one_or_none()
@@ -306,7 +309,10 @@ async def create_client(
     if payload.cpf_cnpj:
         duplicate_document = (
             await db.execute(
-                select(Client.id).where(Client.cpf_cnpj == payload.cpf_cnpj).limit(1)
+                select(Client.id).where(
+                    Client.market_code == market,
+                    Client.cpf_cnpj == payload.cpf_cnpj,
+                ).limit(1)
             )
         ).scalar_one_or_none()
         if duplicate_document:
@@ -315,7 +321,6 @@ async def create_client(
                 detail="Já existe um cliente com este CPF/CNPJ.",
             )
     data = sanitize_client_create_fields(data, current_user)
-    market = active_market_for(current_user)
     if market == "BR" and data.get("state") == "--":
         raise HTTPException(status_code=422, detail="UF é obrigatória no mercado Brasil.")
     if market == "EU" and "country" not in payload.model_fields_set:
@@ -355,7 +360,11 @@ async def get_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
 ):
-    result = await db.execute(select(Client).where(Client.id == client_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Client).where(
+        Client.id == client_id,
+        Client.market_code == market,
+    ))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
@@ -377,7 +386,11 @@ async def update_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
 ):
-    result = await db.execute(select(Client).where(Client.id == client_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Client).where(
+        Client.id == client_id,
+        Client.market_code == market,
+    ))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
@@ -401,6 +414,7 @@ async def update_client(
         duplicate_email = (
             await db.execute(
                 select(Client.id).where(
+                    Client.market_code == market,
                     func.lower(Client.email) == str(new_email).lower(),
                     Client.id != client.id,
                 ).limit(1)
@@ -416,6 +430,7 @@ async def update_client(
         duplicate_document = (
             await db.execute(
                 select(Client.id).where(
+                    Client.market_code == market,
                     Client.cpf_cnpj == new_document,
                     Client.id != client.id,
                 ).limit(1)
@@ -454,7 +469,11 @@ async def delete_client(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(*_DELETE_CLIENT_ROLES)),
 ):
-    result = await db.execute(select(Client).where(Client.id == client_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Client).where(
+        Client.id == client_id,
+        Client.market_code == market,
+    ))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
@@ -487,7 +506,11 @@ async def anonymize_client(
     anonimiza um cliente que não possui conta no sistema, preservando o registro
     para integridade fiscal dos pedidos (Art. 16, I). Desativa a conta vinculada,
     caso exista."""
-    result = await db.execute(select(Client).where(Client.id == client_id))
+    market = active_market_for(current_user)
+    result = await db.execute(select(Client).where(
+        Client.id == client_id,
+        Client.market_code == market,
+    ))
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")

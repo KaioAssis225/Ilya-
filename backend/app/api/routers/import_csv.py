@@ -560,6 +560,7 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
         db,
         emails,
         lambda chunk: select(Representative).where(
+            Representative.market_code == market,
             func.lower(Representative.email).in_(chunk)
         ),
     )
@@ -576,6 +577,7 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
             db,
             set(document_values),
             lambda chunk: select(Representative).where(
+                Representative.market_code == market,
                 Representative.cpf_cnpj.in_(chunk)
             ),
         )
@@ -665,6 +667,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
         db,
         emails,
         lambda chunk: select(Client).where(
+            Client.market_code == market,
             func.lower(Client.email).in_(chunk)
         ),
     )
@@ -679,7 +682,10 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
         for client in await _load_chunked(
             db,
             set(document_values),
-            lambda chunk: select(Client).where(Client.cpf_cnpj.in_(chunk)),
+            lambda chunk: select(Client).where(
+                Client.market_code == market,
+                Client.cpf_cnpj.in_(chunk),
+            ),
         )
     }
     reps_by_id = {
@@ -688,6 +694,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
             db,
             rep_emails,
             lambda chunk: select(Representative).where(
+                Representative.market_code == market,
                 func.lower(Representative.email).in_(chunk)
             ),
         )
@@ -699,6 +706,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                 db,
                 rep_names,
                 lambda chunk: select(Representative).where(
+                    Representative.market_code == market,
                     func.lower(Representative.name).in_(chunk)
                 ),
             )

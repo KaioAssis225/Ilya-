@@ -23,10 +23,15 @@ def add_market_scope(execute_state) -> None:
     if execute_state.is_select:
         statement = execute_state.statement
         for model in MARKET_SCOPED_MODELS:
+            # Passe a expressão pronta. Uma lambda com `market=market` usa um
+            # argumento padrão que não participa da chave de cache do sistema
+            # de lambdas do SQLAlchemy; o primeiro mercado compilado poderia
+            # então vazar para sessões posteriores (BR consultando como EU ou
+            # vice-versa).
             statement = statement.options(
                 with_loader_criteria(
                     model,
-                    lambda entity, market=market: entity.market_code == market,
+                    model.market_code == market,
                     include_aliases=True,
                 )
             )
