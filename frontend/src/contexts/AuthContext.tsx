@@ -31,11 +31,11 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (identifier: string, password: string) => Promise<void>
+  login: (identifier: string, password: string) => Promise<AuthUser>
   logout: () => Promise<void>
   refreshSession: () => Promise<string | null>
   refreshMe: () => Promise<void>
-  switchMarket: (market: 'BR' | 'EU') => Promise<void>
+  switchMarket: (market: 'BR' | 'EU', reload?: boolean) => Promise<void>
   isLoading: boolean
 }
 
@@ -140,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { Authorization: `Bearer ${access_token}` },
       })
       setSession(access_token, me.data)
+      return me.data
     },
     [setSession]
   )
@@ -155,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession()
   }, [clearSession])
 
-  const switchMarket = useCallback(async (market: 'BR' | 'EU') => {
+  const switchMarket = useCallback(async (market: 'BR' | 'EU', reload = true) => {
     if (!state.user || market === state.user.active_market) return
     const response = await authApi.post<{ access_token: string }>('/auth/switch-market', { market }, {
       headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : undefined,
@@ -166,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(response.data.access_token, me.data)
     // As queries e os carrinhos são dependentes de mercado. Recarregar elimina
     // qualquer cache visual do escopo anterior; o refresh HttpOnly preserva EU/BR.
-    window.location.reload()
+    if (reload) window.location.reload()
   }, [state.user, state.accessToken, setSession])
 
   return (

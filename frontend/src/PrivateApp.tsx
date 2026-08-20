@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell, Globe2 } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -10,6 +10,7 @@ import { countCartUnits } from './lib/cart'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { MarketSwitcher } from './components/MarketSwitcher'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
 const CadastroPage = lazy(() => import('./pages/CadastroPage'))
@@ -155,7 +156,7 @@ function BottomNav() {
 // ── Desktop Nav ───────────────────────────────────────────────────────────────
 
 function Nav() {
-  const { user, logout, switchMarket } = useAuth()
+  const { user, logout } = useAuth()
   const location = useLocation()
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
@@ -202,25 +203,7 @@ function Nav() {
           )}
         </div>
         <div className="flex items-center gap-3 md:gap-4 text-xs">
-          <label className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-line bg-surface-alt px-2.5 text-ink" title="Mercado ativo">
-            <Globe2 className="h-4 w-4 text-gold" aria-hidden="true" />
-            <span className="sr-only">Mercado ativo</span>
-            {user.allowed_markets.length > 1 ? (
-              <select
-                value={user.active_market}
-                onChange={(event) => void switchMarket(event.target.value as 'BR' | 'EU')}
-                className="bg-transparent text-xs font-semibold uppercase tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
-                aria-label="Trocar mercado ativo"
-              >
-                <option value="BR">Brasil · BRL</option>
-                <option value="EU">Europa · EUR</option>
-              </select>
-            ) : (
-              <span className="font-semibold uppercase tracking-wide">
-                {user.active_market === 'EU' ? 'Europa · EUR' : 'Brasil · BRL'}
-              </span>
-            )}
-          </label>
+          <MarketSwitcher />
           <div className="relative">
             <button
               onClick={() => setShowNotifs(v => !v)}
