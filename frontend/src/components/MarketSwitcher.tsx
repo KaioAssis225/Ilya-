@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { MarketFlag, type MarketCode } from './MarketFlag'
+import { MarketTransition } from './MarketTransition'
 
 const LABELS: Record<MarketCode, string> = { BR: 'Brasil', EU: 'Portugal' }
 
@@ -39,7 +40,7 @@ export function MarketSwitcher() {
     setSwitching(market)
     try {
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (!reduceMotion) await new Promise(resolve => window.setTimeout(resolve, 720))
+      if (!reduceMotion) await new Promise(resolve => window.setTimeout(resolve, 1650))
       await switchMarket(market)
     } finally {
       setSwitching(null)
@@ -57,17 +58,7 @@ export function MarketSwitcher() {
   return (
     <div ref={rootRef} className="relative">
       {switching && (
-        <div
-          className={`market-transition market-transition-${switching.toLowerCase()}`}
-          role="status"
-          aria-live="polite"
-          aria-label={`Abrindo ambiente ${LABELS[switching]}`}
-        >
-          <div className="market-transition-content">
-            <MarketFlag market={switching} animated className="market-transition-flag" />
-            <span className="market-transition-name">ILYA — {LABELS[switching].toUpperCase()}</span>
-          </div>
-        </div>
+        <MarketTransition market={switching} />
       )}
       <button
         type="button"
