@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 
-const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
-const integer = new Intl.NumberFormat('pt-BR')
-
 // Alturas relativas das barrinhas do mini-gráfico de entrada — assinatura
 // visual do módulo BI, distinta do wordmark "ILYA" usado em Login/Orçamento.
 const BAR_HEIGHTS = [0.35, 0.6, 0.42, 0.78, 0.55, 0.9, 0.68]
@@ -35,11 +32,17 @@ export default function DashboardIntro({
   revenueTotal,
   ordersTotal,
   onDone,
+  locale = 'pt-BR',
+  currencyCode = 'BRL',
 }: {
   revenueTotal: number | null
   ordersTotal: number | null
   onDone: () => void
+  locale?: string
+  currencyCode?: string
 }) {
+  const currency = new Intl.NumberFormat(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })
+  const integer = new Intl.NumberFormat(locale)
   const [visible, setVisible] = useState(true)
   const revenue = useCountUp(revenueTotal, 900)
   const orders = useCountUp(ordersTotal, 900)

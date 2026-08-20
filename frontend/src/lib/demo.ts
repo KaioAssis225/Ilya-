@@ -5,7 +5,7 @@ import type { AuthUser } from '../contexts/AuthContext'
 const demoRequested = new URLSearchParams(window.location.search).get('demo') === '1'
 if (demoRequested) sessionStorage.setItem('ilya-demo-mode', '1')
 export const DEMO_MODE = demoRequested || sessionStorage.getItem('ilya-demo-mode') === '1'
-export const DEMO_USER: AuthUser = { id: 'demo-admin', email: 'demo@oramo.com.br', username: 'demo', full_name: 'Marina — Demonstração', role: 'admin', rep_id: null, linked_id: null, is_active: true, must_change_password: false, max_discount: 20, can_view_dashboard: true }
+export const DEMO_USER: AuthUser = { id: 'demo-admin', email: 'demo@oramo.com.br', username: 'demo', full_name: 'Marina — Demonstração', role: 'admin', rep_id: null, linked_id: null, is_active: true, must_change_password: false, max_discount: 20, can_view_dashboard: true, home_market: 'BR', active_market: 'BR', allowed_markets: ['BR', 'EU'] }
 const now = new Date().toISOString()
 const image = (label: string, color: string) => `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700"><rect width="100%" height="100%" fill="${color}"/><path d="M170 470h560v45H170zM230 310h440v170H230z" fill="#fff" opacity=".28"/><text x="50%" y="85%" text-anchor="middle" fill="#fff" font-family="Georgia" font-size="42">${label}</text></svg>`)}`
 const optionals = [{ id: 'o1', category: 'MADEIRA', color_name: 'Nogueira Natural', photo_url: image('Nogueira', '#76553d') }, { id: 'o2', category: 'TECIDO', color_name: 'Linho Areia', photo_url: image('Linho Areia', '#b5a48b') }, { id: 'o3', category: 'METAL', color_name: 'Champagne', photo_url: image('Champagne', '#a98b55') }]

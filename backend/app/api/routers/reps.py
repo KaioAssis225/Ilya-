@@ -19,6 +19,7 @@ from app.models.client import Client
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.user import User, UserRole
 from app.schemas.representative import RepresentativeCreate, RepresentativeUpdate, RepresentativeRead
+from app.core.markets import active_market_for
 
 router = APIRouter(prefix="/api/v1/representatives", tags=["representatives"])
 
@@ -185,6 +186,9 @@ async def create_representative(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(UserRole.admin)),
 ):
+    market = active_market_for(current_user)
+    if market == "EU" and "country" not in payload.model_fields_set:
+        raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
     duplicate_email = None
     if payload.email:
         duplicate_email = (
@@ -217,6 +221,7 @@ async def create_representative(
             )
     rep = Representative(
         **payload.model_dump(),
+        market_code=market,
         created_by_user_id=current_user.id,
     )
     db.add(rep)

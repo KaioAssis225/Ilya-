@@ -31,6 +31,8 @@ from app.models.optional_color import OptionalColor, product_optionals
 from app.models.client import Client
 from app.models.representative import Representative
 from app.core.config import settings
+from app.core.markets import active_market_for
+from app.models.market import PriceList, ProductMarket, ProductPrice
 from app.core.uploads import read_upload_limited
 
 logger = logging.getLogger("ilya.import")
@@ -545,6 +547,7 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
 async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
     """E-mail é opcional. Com e-mail faz upsert; sem e-mail cria novo registro."""
     rows = await _load_rows(file)
+    market = active_market_for(current_user)
     await _acquire_import_lock(db)
     email_values = [
         value.lower()
@@ -608,6 +611,10 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
             else:
                 r = Representative(
                     **f,
+                    market_code=market,
+                    country="BR" if market == "BR" else (_first(row, "country", "pais") or "").upper(),
+                    region=_first(row, "region", "regiao") or None,
+                    tax_id=_first(row, "tax_id", "vat") or None,
                     created_by_user_id=current_user.id,
                 )
                 db.add(r)
@@ -631,6 +638,11 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
     O representante pode ser informado por rep_email ou rep_name.
     """
     rows = await _load_rows(file)
+    market = active_market_for(current_user)
+    price_lists = (await db.execute(select(PriceList).where(
+        PriceList.market_code == market, PriceList.is_active.is_(True)
+    ))).scalars().all()
+    price_list_ids = {item.code: item.id for item in price_lists}
     await _acquire_import_lock(db)
     email_values = [
         value.lower()
@@ -719,8 +731,9 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                     f"CPF/CNPJ '{f['cpf_cnpj']}' aparece mais de uma vez no CSV."
                 )
             profile = (_first(row, "price_profile", "perfil") or "lojista").lower()
-            if profile not in ("lojista", "corporativo"):
-                raise ValueError("price_profile deve ser 'lojista' ou 'corporativo'.")
+            allowed_profiles = ("lojista", "corporativo", "pvp") if market == "EU" else ("lojista", "corporativo")
+            if profile not in allowed_profiles or profile not in price_list_ids:
+                raise ValueError(f"price_profile inválido para o mercado {market}.")
             rep_key = _first(row, "rep_email", "representante_email")
             rep_name = _first(row, "rep_name", "representante", "rep")
             rep_id = None
@@ -755,12 +768,18 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                 for k, v in f.items():
                     setattr(c, k, v)
                 c.price_profile = profile
+                c.price_list_id = price_list_ids[profile]
                 c.rep_id = rep_id
                 is_update = True
             else:
                 c = Client(
                     **f,
                     price_profile=profile,
+                    price_list_id=price_list_ids[profile],
+                    market_code=market,
+                    country="BR" if market == "BR" else (_first(row, "country", "pais") or "").upper(),
+                    region=_first(row, "region", "regiao") or None,
+                    tax_id=_first(row, "tax_id", "vat") or None,
                     rep_id=rep_id,
                     created_by_user_id=current_user.id,
                 )
@@ -781,10 +800,12 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
 # ── Catálogo de produtos em duas etapas ────────────────────────────────────────
 
 @router.post("/products")
-async def import_products(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_products(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
     """Etapa 1 — Colunas: product_code, description, type, is_circular,
     altura, largura, profundidade, price_lojista, price_corporativo, observacao.
     Upsert por product_code (SKU)."""
+    if active_market_for(current_user) != "BR":
+        raise HTTPException(403, "O catálogo-base só pode ser importado no mercado Brasil.")
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
     codes = {
@@ -900,6 +921,24 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             created += 0 if is_update else 1
         except Exception as e:
             _record_error(errors, i, e)
+    if not errors:
+        await db.flush()
+        lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
+        list_ids = {item.code: item.id for item in lists}
+        for product in existing.values():
+            if product.product_code not in codes:
+                continue
+            await db.execute(pg_insert(ProductMarket).values(
+                product_id=product.id, market_code="BR", is_available=True
+            ).on_conflict_do_update(
+                index_elements=[ProductMarket.product_id, ProductMarket.market_code], set_={"is_available": True}
+            ))
+            for code, amount in (("lojista", product.price_lojista), ("corporativo", product.price_corporativo)):
+                await db.execute(pg_insert(ProductPrice).values(
+                    product_id=product.id, price_list_id=list_ids[code], amount=amount
+                ).on_conflict_do_update(
+                    index_elements=[ProductPrice.product_id, ProductPrice.price_list_id], set_={"amount": amount}
+                ))
     committed = await _finalize(db, errors)
     return _summary("products", len(rows), created, updated, errors, committed)
 

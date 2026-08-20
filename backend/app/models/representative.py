@@ -10,6 +10,10 @@ class Representative(Base, TimestampMixin):
     __tablename__ = "representatives"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR")
+    country: Mapped[str] = mapped_column(String(2), nullable=False, default="BR", server_default="BR")
+    region: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tax_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -32,10 +36,11 @@ class Representative(Base, TimestampMixin):
     )
     __table_args__ = (
         CheckConstraint(
-            "state ~ '^[A-Z]{2}$'",
+            "market_code <> 'BR' OR state ~ '^[A-Z]{2}$'",
             name="ck_representatives_state_uf",
         ),
         Index("ix_representatives_name_id", "name", "id"),
+        Index("ix_representatives_market_id", "market_code", "id"),
         Index("ix_representatives_created_by_user_id", "created_by_user_id"),
         Index(
             "ix_representatives_name_lower_id",
@@ -44,11 +49,11 @@ class Representative(Base, TimestampMixin):
         ),
         Index("ix_representatives_email_id", "email", "id"),
         Index(
-            "uq_representatives_email_lower",
-            func.lower(email),
+            "uq_representatives_market_email_lower",
+            "market_code", func.lower(email),
             unique=True,
         ),
-        Index("uq_representatives_cpf_cnpj", "cpf_cnpj", unique=True),
+        Index("uq_representatives_market_cpf_cnpj", "market_code", "cpf_cnpj", unique=True),
         Index("ix_representatives_phone_id", "phone", "id"),
         Index("ix_representatives_city_id", "city", "id"),
         Index("ix_representatives_state_id", "state", "id"),

@@ -232,12 +232,12 @@ function CardText({ product, priceTable }: { product: Product; priceTable: Price
       <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
         {product.description}
       </h3>
-      {prices.length > 0 && <CardPrice prices={prices} />}
+      {prices.length > 0 && <CardPrice prices={prices} currency={product.currency} locale={product.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} />}
     </>
   )
 }
 
-function CardPrice({ prices }: { prices: VisiblePrice[] }) {
+function CardPrice({ prices, currency, locale }: { prices: VisiblePrice[]; currency?: string; locale?: string }) {
   // Uma tabela: o valor em destaque, com o rótulo pequeno embaixo dizendo de
   // qual tabela é — importante quando o produto tem as duas e o representante
   // restringiu a visualização a uma só.
@@ -245,7 +245,7 @@ function CardPrice({ prices }: { prices: VisiblePrice[] }) {
     return (
       <div className="mt-2">
         <p className="text-[15px] md:text-base font-semibold text-ink tabular-nums leading-tight">
-          <SafePrice value={prices[0].value} />
+          <SafePrice value={prices[0].value} currency={currency} locale={locale} />
         </p>
         <p className="type-label mt-1">{prices[0].label}</p>
       </div>
@@ -259,7 +259,7 @@ function CardPrice({ prices }: { prices: VisiblePrice[] }) {
         <div key={label} className="flex items-baseline justify-between gap-2">
           <dt className="type-label">{label}</dt>
           <dd className="text-[13px] md:text-sm font-semibold text-ink tabular-nums">
-            <SafePrice value={value} />
+            <SafePrice value={value} currency={currency} locale={locale} />
           </dd>
         </div>
       ))}
@@ -279,7 +279,7 @@ function DetailPrice({ product, priceTable }: { product: Product; priceTable: Pr
             {prices.length === 1 ? 'Preço' : label}
           </span>
           <span className="text-lg text-ink font-semibold tabular-nums">
-            <SafePrice value={value} />
+            <SafePrice value={value} currency={product.currency} locale={product.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} />
           </span>
         </div>
       ))}
@@ -324,8 +324,8 @@ function dimLabel(p: Product) {
     : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
 }
 
-function addToCart(product: Product, userId: string) {
-  const storageKey = cartStorageKey(userId)
+function addToCart(product: Product, userId: string, market: 'BR' | 'EU') {
+  const storageKey = cartStorageKey(userId, market)
   const raw = localStorage.getItem(storageKey)
   const cart = raw ? JSON.parse(raw) : []
   const existing = cart.find((i: { product_code: string }) => i.product_code === product.product_code)
@@ -353,8 +353,8 @@ function addToCart(product: Product, userId: string) {
 // Uma unidade a menos; some do carrinho ao chegar a 0 em vez de deixar qty: 0
 // pendurado (o resto do app assume que todo item presente no carrinho tem
 // qty > 0 — é o mesmo contrato que readCartQuantities já aplica na leitura).
-function decrementCart(product: Product, userId: string) {
-  const storageKey = cartStorageKey(userId)
+function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
+  const storageKey = cartStorageKey(userId, market)
   const raw = localStorage.getItem(storageKey)
   if (!raw) return
   let cart: { product_code: string; qty: number }[]
@@ -414,8 +414,9 @@ function ProductFullView({
   product,
   priceTable,
   userId,
+  market,
   onClose,
-}: { product: Product; priceTable: PriceTable; userId: string; onClose: () => void }) {
+}: { product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void }) {
   const [added, setAdded] = useState(false)
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
@@ -443,7 +444,7 @@ function ProductFullView({
   }, [])
 
   function handleAdd() {
-    addToCart(product, userId)
+    addToCart(product, userId, market)
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
@@ -650,7 +651,7 @@ export default function ProdutosPage() {
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
   const [hasDualPricing, setHasDualPricing] = useState(false)
-  const cartQuantities = useCartQuantities(user?.id)
+  const cartQuantities = useCartQuantities(user?.id, user?.active_market)
   // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
   // virando um mosaico de painéis abertos ao mesmo tempo.
   const [expandedOptionalsCode, setExpandedOptionalsCode] = useState<string | null>(null)
@@ -1017,7 +1018,7 @@ export default function ProdutosPage() {
                 {cartQuantities[product.product_code] > 0 && (
                   <button
                     type="button"
-                    onClick={() => user && decrementCart(product, user.id)}
+                    onClick={() => user && decrementCart(product, user.id, user.active_market)}
                     aria-label={`Diminuir quantidade de ${product.description} no orçamento`}
                     style={{ touchAction: 'manipulation' }}
                     className="w-11 h-11 rounded-full bg-white text-ink border border-line shadow-md shadow-ink/10
@@ -1029,7 +1030,7 @@ export default function ProdutosPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => user && addToCart(product, user.id)}
+                  onClick={() => user && addToCart(product, user.id, user.active_market)}
                   aria-label={`Adicionar ${product.description} ao orçamento`}
                   style={{ touchAction: 'manipulation' }}
                   className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
@@ -1077,6 +1078,7 @@ export default function ProdutosPage() {
           product={selected}
           priceTable={priceTable}
           userId={user.id}
+          market={user.active_market}
           onClose={() => setSelected(null)}
         />
       )}

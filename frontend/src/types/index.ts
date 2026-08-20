@@ -73,6 +73,9 @@ export interface Product {
   price: number | null
   price_lojista: number | null
   price_corporativo: number | null
+  market_code?: 'BR' | 'EU'
+  currency?: 'BRL' | 'EUR'
+  market_prices?: Record<string, number>
   observacao: string | null
   all_optionals_categories: string | null
   optionals: OptionalColor[]
@@ -117,7 +120,11 @@ export interface Client {
   address: string
   city: string
   state: string
-  price_profile: 'lojista' | 'corporativo'
+  country: string
+  region: string | null
+  tax_id: string | null
+  market_code: 'BR' | 'EU'
+  price_profile: 'lojista' | 'corporativo' | 'pvp'
   max_discount: number
   rep_id: string | null
   created_at: string
@@ -138,7 +145,10 @@ export interface ClientCreate {
   address: string
   city: string
   state: string
-  price_profile?: 'lojista' | 'corporativo'
+  country?: string
+  region?: string | null
+  tax_id?: string | null
+  price_profile?: 'lojista' | 'corporativo' | 'pvp'
   max_discount?: number
 }
 
@@ -190,6 +200,8 @@ export interface OrderItem {
   discount: number
   ipi_rate: number
   ipi_value: number
+  tax_label: 'IPI' | 'IVA'
+  currency: 'BRL' | 'EUR'
   observacao: string | null
   created_at: string
   updated_at: string
@@ -214,6 +226,8 @@ export interface OrderSummary {
   id: string
   code: string
   orc_id: string
+  market_code: 'BR' | 'EU'
+  currency: 'BRL' | 'EUR'
   client_id: string
   client_name: string
   rep_id: string | null
@@ -232,6 +246,10 @@ export interface Order {
   id: string
   code: string
   orc_id: string
+  market_code: 'BR' | 'EU'
+  price_list_code: string
+  currency: 'BRL' | 'EUR'
+  locale: 'pt-BR' | 'pt-PT'
   client_id: string
   rep_id: string | null
   total_value: number

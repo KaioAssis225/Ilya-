@@ -210,12 +210,13 @@ function formatCpfCnpj(value: string): string {
     .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
 }
 
-function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: ClientCreate) => void }) {
+function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm: (v: ClientCreate) => void; market: 'BR' | 'EU' }) {
   const [cepLoading, setCepLoading] = useState(false)
   const cepAbortRef = useRef<AbortController | null>(null)
   useEffect(() => () => cepAbortRef.current?.abort(), [])
 
   async function handleCepBlur() {
+    if (market !== 'BR') return
     cepAbortRef.current?.abort()
     const controller = new AbortController()
     cepAbortRef.current = controller
@@ -241,19 +242,19 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">Telefone *</span>
-        <input className="input" value={form.phone} maxLength={PHONE_INPUT_MAX_LENGTH} onChange={(e) => setForm({ ...form, phone: formatBrazilianPhone(e.target.value) })} required />
+        <input className="input" value={form.phone} maxLength={market === 'BR' ? PHONE_INPUT_MAX_LENGTH : 20} onChange={(e) => setForm({ ...form, phone: market === 'BR' ? formatBrazilianPhone(e.target.value) : e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">E-mail</span>
         <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">CPF/CNPJ</span>
-        <input className="input" value={form.cpf_cnpj ?? ''} onChange={(e) => setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={18} />
+        <span className="text-xs text-muted">{market === 'EU' ? 'VAT / Tax ID' : 'CPF/CNPJ'}</span>
+        <input className="input" value={market === 'EU' ? (form.tax_id ?? '') : (form.cpf_cnpj ?? '')} onChange={(e) => market === 'EU' ? setForm({ ...form, tax_id: e.target.value }) : setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={market === 'EU' ? 40 : 18} />
       </label>
       <label className="flex flex-col gap-1 relative">
-        <span className="text-xs text-muted">CEP *</span>
-        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: formatCep(e.target.value) })} onBlur={handleCepBlur} maxLength={9} required />
+        <span className="text-xs text-muted">{market === 'EU' ? 'Código postal *' : 'CEP *'}</span>
+        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: market === 'BR' ? formatCep(e.target.value) : e.target.value })} onBlur={handleCepBlur} maxLength={20} required />
         {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
       </label>
       <label className="flex flex-col gap-1">
@@ -265,16 +266,17 @@ function AddressFields({ form, setForm }: { form: ClientCreate; setForm: (v: Cli
         <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">Cidade *</span>
+        <span className="text-xs text-muted">{market === 'EU' ? 'Localidade *' : 'Cidade *'}</span>
         <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
       </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">Estado *</span>
-        <select className="input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required>
-          <option value="">UF</option>
-          {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </label>
+      {market === 'BR' ? (
+        <label className="flex flex-col gap-1"><span className="text-xs text-muted">Estado *</span><select className="input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required><option value="">UF</option>{ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
+      ) : (
+        <>
+          <label className="flex flex-col gap-1"><span className="text-xs text-muted">País *</span><input className="input" value={form.country ?? ''} onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase().slice(0, 2), state: '--' })} placeholder="PT" minLength={2} maxLength={2} required /></label>
+          <label className="col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">Região</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} maxLength={120} /></label>
+        </>
+      )}
     </div>
   )
 }
@@ -1604,7 +1606,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
 // ── CLIENTES / REPRESENTANTES ─────────────────────────────────────────────────
 
-const EMPTY_ADDRESS: ClientCreate = { name: '', phone: '', email: '', cpf_cnpj: '', cep: '', numero: '', address: '', city: '', state: '', price_profile: 'lojista' }
+const emptyAddress = (market: 'BR' | 'EU'): ClientCreate => ({ name: '', phone: '', email: '', cpf_cnpj: '', tax_id: '', country: market === 'BR' ? 'BR' : '', region: '', cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--', price_profile: 'lojista' })
 
 function PeopleTab<T extends Client | Representative>({
   label, entityType, onCreate, onUpdate, onDelete, isPending, color, page, onPage,
@@ -1616,6 +1618,7 @@ function PeopleTab<T extends Client | Representative>({
 }) {
   const { user: authUser } = useAuth()
   const isAdmin = authUser?.role === 'admin'
+  const activeMarket = authUser?.active_market ?? 'BR'
   const isRep = authUser?.role === 'representante'
   const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
   const defaultMaxDiscount = entityType === 'client' ? 0 : 30
@@ -1664,14 +1667,14 @@ function PeopleTab<T extends Client | Representative>({
   const [createUserError, setCreateUserError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState<ClientCreate>(EMPTY_ADDRESS)
+  const [form, setForm] = useState<ClientCreate>(() => emptyAddress(activeMarket))
 
   const createFromClient = useCreateUserFromClient()
   const createFromRep = useCreateUserFromRep()
 
-  function openCreate() { setForm(EMPTY_ADDRESS); setEditing(null); setFormError(null); setShowForm(true) }
+  function openCreate() { setForm(emptyAddress(activeMarket)); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
-    setForm({ name: item.name, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''), cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
+    setForm({ name: item.name, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''), tax_id: item.tax_id, country: item.country, region: item.region, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
     setEditing(item); setFormError(null); setShowForm(true)
   }
   function openView(item: T) {
@@ -1682,7 +1685,7 @@ function PeopleTab<T extends Client | Representative>({
     setFormError(null)
     // Normaliza campos antes de enviar — evita 422 por espaços ou UF vazia/minúscula
     const cleaned = normalizePersonPayload(form)
-    if (cleaned.state.length !== 2) {
+    if (activeMarket === 'BR' && cleaned.state.length !== 2) {
       setFormError('Selecione o estado (UF).')
       return
     }
@@ -1907,12 +1910,12 @@ function PeopleTab<T extends Client | Representative>({
       {showForm && (
         <Modal title={editing ? `Editar ${label.slice(0, -1)}` : `Novo ${label.slice(0, -1)}`} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
-            <AddressFields form={form} setForm={setForm} />
+            <AddressFields form={form} setForm={setForm} market={activeMarket} />
             {entityType === 'client' && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">Perfil de faturamento *</span>
                 <div className="flex gap-2">
-                  {(['lojista', 'corporativo'] as const).map((profile) => (
+                  {(activeMarket === 'EU' ? ['lojista', 'corporativo', 'pvp'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
                     <button
                       key={profile}
                       type="button"

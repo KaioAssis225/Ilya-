@@ -19,6 +19,7 @@ from app.schemas.dashboard import (
     ProductRanking,
     RepresentativeRanking,
 )
+from app.core.markets import active_market_for
 
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -41,7 +42,7 @@ async def get_overview(
     region: str | None = Query(default=None),
     ranking_limit: int = Query(default=100, ge=5, le=500),
     db: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_dashboard_access),
+    current_user: User = Depends(require_dashboard_access),
 ):
     if not end_date:
         end_date = datetime.now(timezone.utc).date()
@@ -62,6 +63,7 @@ async def get_overview(
         tzinfo=timezone.utc,
     )
     conditions = [
+        Order.market_code == active_market_for(current_user),
         Order.created_at >= start_dt,
         Order.created_at < end_exclusive,
     ]

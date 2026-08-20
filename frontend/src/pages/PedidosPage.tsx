@@ -206,6 +206,8 @@ function OrderDetailModal({
   const { data: clientObj } = useClient(orderLight.client_id)
   const order: Order = orderDetail ?? {
     ...orderLight,
+    price_list_code: 'lojista',
+    locale: orderLight.market_code === 'EU' ? 'pt-PT' : 'pt-BR',
     total_ipi: 0,
     external_code: null,
     notes: null,
@@ -450,10 +452,10 @@ function OrderDetailModal({
             <div className="grid grid-cols-2 gap-3 text-sm mb-5">
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Cliente</p><p className="text-ink font-medium">{clientName}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Representante</p><p className="text-ink font-medium">{repName || '—'}</p></div>
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{fmtDate(order.created_at)}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(order.locale)}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3">
-                <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? 'Total com IPI' : 'Total'}</p>
-                <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></p>
+                <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? `Total com ${order.market_code === 'EU' ? 'IVA' : 'IPI'}` : 'Total'}</p>
+                <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.locale} /></p>
               </div>
               {order.notes && (
                 <div className="col-span-2 bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Observações</p><p className="text-ink-2">{order.notes}</p></div>
@@ -472,7 +474,7 @@ function OrderDetailModal({
                     <th className="px-3 py-2 text-center text-xs text-muted">Qtd</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">Preço Base</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">Desconto</th>
-                    <th className="px-3 py-2 text-right text-xs text-muted">IPI</th>
+                    <th className="px-3 py-2 text-right text-xs text-muted">{order.market_code === 'EU' ? 'IVA' : 'IPI'}</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">Subtotal</th>
                   </tr>
                 </thead>
@@ -505,7 +507,7 @@ function OrderDetailModal({
                         </td>
                         <td className="px-3 py-2 text-center text-ink">{item.qty}</td>
                         <td className="px-3 py-2 text-right text-xs text-ink-2 font-semibold whitespace-nowrap">
-                          <SafePrice value={Number(item.unit_price)} />
+                          <SafePrice value={Number(item.unit_price)} currency={order.currency} locale={order.locale} />
                         </td>
                         <td className="px-3 py-2 text-right align-middle">
                           {Number(item.discount) > 0 ? (
@@ -518,7 +520,7 @@ function OrderDetailModal({
                             : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right font-bold text-ink whitespace-nowrap">
-                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} />
+                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={order.locale} />
                         </td>
                       </tr>
                     )
@@ -528,7 +530,7 @@ function OrderDetailModal({
                   <tr className="border-t border-line bg-bg">
                     <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">Valor Total</td>
                     <td className="px-3 py-2.5 text-right text-gold font-bold text-base">
-                      <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} />
+                      <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.locale} />
                     </td>
                   </tr>
                 </tfoot>
@@ -709,7 +711,7 @@ function MobileOrderCard({
             <p className="text-xs text-ink-3 truncate">{repName}</p>
           </div>
           <div className="text-right flex-shrink-0">
-            <p className="text-sm font-bold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></p>
+            <p className="text-sm font-bold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></p>
             <p className="text-[10px] text-muted-3 mt-0.5">{fmtDate(order.created_at)}</p>
           </div>
         </div>
@@ -1048,7 +1050,7 @@ export default function PedidosPage() {
                         <td className="px-4 py-3 text-ink">{order.client_name}</td>
                         <td className="px-4 py-3 text-ink-3">{order.rep_name ?? '—'}</td>
                         <td className="px-4 py-3 text-ink-3 text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} /></td>
+                        <td className="px-4 py-3 text-right font-semibold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></td>
                         <td className="px-4 py-3 text-ink-3 text-xs">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-center">
                           <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>

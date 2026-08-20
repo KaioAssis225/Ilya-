@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.core.security import decode_access_token
+from app.core.markets import require_allowed_market
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login"
@@ -47,6 +48,15 @@ async def get_authenticated_user(
     if user is None:
         raise credentials_exception
     if payload.get("ver") != user.auth_version:
+        raise credentials_exception
+    token_market = payload.get("market")
+    if not isinstance(token_market, str):
+        raise credentials_exception
+    try:
+        user.active_market = await require_allowed_market(db, user, token_market)
+        db.sync_session.info["active_market"] = user.active_market
+    except HTTPException:
+        # Retirada de acesso invalida imediatamente o access token existente.
         raise credentials_exception
     return user
 

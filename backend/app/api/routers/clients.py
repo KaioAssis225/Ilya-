@@ -23,6 +23,8 @@ from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
+from app.models.market import PriceList
+from app.core.markets import active_market_for
 
 router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 
@@ -176,6 +178,10 @@ def _with_metadata(
     # não recebem o server_default antes do flush.
     if client.last_activity_at is None:
         client.last_activity_at = client.updated_at or client.created_at
+    if client.country is None:
+        client.country = "BR"
+    if client.market_code is None:
+        client.market_code = "BR"
     r = ClientRead.model_validate(client)
     return r.model_copy(
         update={
@@ -309,7 +315,22 @@ async def create_client(
                 detail="Já existe um cliente com este CPF/CNPJ.",
             )
     data = sanitize_client_create_fields(data, current_user)
-    client = Client(**data, created_by_user_id=current_user.id)
+    market = active_market_for(current_user)
+    if market == "BR" and data.get("state") == "--":
+        raise HTTPException(status_code=422, detail="UF é obrigatória no mercado Brasil.")
+    if market == "EU" and "country" not in payload.model_fields_set:
+        raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
+    data["country"] = "BR" if market == "BR" else data.get("country", "").upper()
+    if market == "EU" and not data["country"]:
+        raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
+    price_list = (await db.execute(select(PriceList).where(
+        PriceList.market_code == market,
+        PriceList.code == data["price_profile"],
+        PriceList.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if not price_list:
+        raise HTTPException(status_code=422, detail="Lista de preços inválida para o mercado ativo.")
+    client = Client(**data, market_code=market, price_list_id=price_list.id, created_by_user_id=current_user.id)
     client.rep_id = await _resolved_rep_id(data, current_user, db)
     db.add(client)
     try:
@@ -366,6 +387,15 @@ async def update_client(
     )
     if "rep_id" in update_data:
         update_data["rep_id"] = await _validated_rep_id(update_data["rep_id"], db)
+    if "price_profile" in update_data:
+        price_list = (await db.execute(select(PriceList).where(
+            PriceList.market_code == client.market_code,
+            PriceList.code == update_data["price_profile"],
+            PriceList.is_active.is_(True),
+        ))).scalar_one_or_none()
+        if not price_list:
+            raise HTTPException(status_code=422, detail="Lista de preços inválida para o mercado do cliente.")
+        update_data["price_list_id"] = price_list.id
     new_email = update_data.get("email")
     if new_email:
         duplicate_email = (

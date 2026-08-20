@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.db.url import resolve_async_database_url
+from app.db import market_scope as _market_scope  # noqa: F401 - registra evento ORM
 
 try:
     from app.core.config import settings

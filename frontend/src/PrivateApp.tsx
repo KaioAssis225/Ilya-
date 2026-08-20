@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell, Globe2 } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -85,7 +85,7 @@ function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
   // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
-  const cartUnits = countCartUnits(useCartQuantities(user?.id))
+  const cartUnits = countCartUnits(useCartQuantities(user?.id, user?.active_market))
   if (!user || user.must_change_password) return null
   // Bloco 95: Dashboard é um módulo isolado, sem a navegação padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
@@ -155,13 +155,13 @@ function BottomNav() {
 // ── Desktop Nav ───────────────────────────────────────────────────────────────
 
 function Nav() {
-  const { user, logout } = useAuth()
+  const { user, logout, switchMarket } = useAuth()
   const location = useLocation()
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
   const { data: notifications = [] } = useNotifications(Boolean(user))
   const markRead = useMarkNotificationRead()
-  const cartUnits = countCartUnits(useCartQuantities(user?.id))
+  const cartUnits = countCartUnits(useCartQuantities(user?.id, user?.active_market))
   // Bloco 95: Dashboard é um módulo isolado, sem o cabeçalho padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
 
@@ -202,6 +202,25 @@ function Nav() {
           )}
         </div>
         <div className="flex items-center gap-3 md:gap-4 text-xs">
+          <label className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-line bg-surface-alt px-2.5 text-ink" title="Mercado ativo">
+            <Globe2 className="h-4 w-4 text-gold" aria-hidden="true" />
+            <span className="sr-only">Mercado ativo</span>
+            {user.allowed_markets.length > 1 ? (
+              <select
+                value={user.active_market}
+                onChange={(event) => void switchMarket(event.target.value as 'BR' | 'EU')}
+                className="bg-transparent text-xs font-semibold uppercase tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
+                aria-label="Trocar mercado ativo"
+              >
+                <option value="BR">Brasil · BRL</option>
+                <option value="EU">Europa · EUR</option>
+              </select>
+            ) : (
+              <span className="font-semibold uppercase tracking-wide">
+                {user.active_market === 'EU' ? 'Europa · EUR' : 'Brasil · BRL'}
+              </span>
+            )}
+          </label>
           <div className="relative">
             <button
               onClick={() => setShowNotifs(v => !v)}

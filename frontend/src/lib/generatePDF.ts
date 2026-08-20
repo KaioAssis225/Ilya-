@@ -96,9 +96,8 @@ function containBox(width: number, height: number, box: number): { w: number; h:
   return { w, h, dx: (box - w) / 2, dy: (box - h) / 2 }
 }
 
-// ── Formatação monetária pt-BR ────────────────────────────────────────────────
-function formatBRL(value: number): string {
-  return 'R$ ' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function formatMoney(value: number, currency: string, locale: string): string {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 // ── Gerador principal ─────────────────────────────────────────────────────────
@@ -110,6 +109,9 @@ export async function generateOrderPDF(
   catLabel: (code: string) => string = (c) => c,
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
+  const locale = order.locale || (order.market_code === 'EU' ? 'pt-PT' : 'pt-BR')
+  const currency = order.currency || (order.market_code === 'EU' ? 'EUR' : 'BRL')
+  const taxLabel = order.market_code === 'EU' ? 'IVA' : 'IPI'
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -158,7 +160,7 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
   doc.text(
-    'Data: ' + new Date(order.created_at).toLocaleDateString('pt-BR'),
+    'Data: ' + new Date(order.created_at).toLocaleDateString(locale),
     w - 20,
     42,
     { align: 'right' },
@@ -223,7 +225,7 @@ export async function generateOrderPDF(
   doc.text('PRODUTO', 22, y)
   doc.text('QTD', 125, y, { align: 'right' })
   doc.text('VALOR UN.', 150, y, { align: 'right' })
-  doc.text('IPI', 167, y, { align: 'right' })
+  doc.text(taxLabel, 167, y, { align: 'right' })
   doc.text('TOTAL', 186, y, { align: 'right' })
 
   y += 4
@@ -377,15 +379,15 @@ export async function generateOrderPDF(
     if (discount > 0) {
       doc.setFontSize(6)
       doc.setTextColor(...MUTED)
-      doc.text(formatBRL(unitPrice), 150, y - 2, { align: 'right' })
+      doc.text(formatMoney(unitPrice, currency, locale), 150, y - 2, { align: 'right' })
       doc.setFontSize(7.5)
       doc.setTextColor(...DARK)
-      doc.text(formatBRL(effectivePrice), 150, y + 2.5, { align: 'right' })
+      doc.text(formatMoney(effectivePrice, currency, locale), 150, y + 2.5, { align: 'right' })
       doc.setFontSize(5.5)
       doc.setTextColor(...MUTED)
       doc.text(`-${discount}%`, 150, y + 6.5, { align: 'right' })
     } else {
-      doc.text(formatBRL(unitPrice), 150, y, { align: 'right' })
+      doc.text(formatMoney(unitPrice, currency, locale), 150, y, { align: 'right' })
     }
 
     // IPI %
@@ -405,7 +407,7 @@ export async function generateOrderPDF(
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     doc.setTextColor(...DARK)
-    doc.text(formatBRL(subtotalWithIpi), 186, y, { align: 'right' })
+    doc.text(formatMoney(subtotalWithIpi, currency, locale), 186, y, { align: 'right' })
 
     // Linha separadora leve
     doc.setFont('helvetica', 'normal')
@@ -441,7 +443,7 @@ export async function generateOrderPDF(
   doc.text('VALOR TOTAL:', 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
-  doc.text(formatBRL(finalTotal), 186, y, { align: 'right' })
+  doc.text(formatMoney(finalTotal, currency, locale), 186, y, { align: 'right' })
   y += 10
 
   // ── Observações ────────────────────────────────────────────────────────────

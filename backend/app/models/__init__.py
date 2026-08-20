@@ -16,6 +16,7 @@ from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
 from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
 from app.models.retention import LegalHold, RetentionReview
+from app.models.market import Market, UserMarket, PriceList, ProductMarket, ProductPrice, MarketTaxRate, MarketOrderCounter, MarketQuoteCounter
 
 __all__ = [
     "Base",
@@ -42,4 +43,6 @@ __all__ = [
     "PrivacyIncident",
     "LegalHold",
     "RetentionReview",
+    "Market", "UserMarket", "PriceList", "ProductMarket", "ProductPrice", "MarketTaxRate",
+    "MarketOrderCounter", "MarketQuoteCounter",
 ]

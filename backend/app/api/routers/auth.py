@@ -28,6 +28,7 @@ from app.models.user import User, UserRole
 from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.refresh_token import RefreshToken
+from app.core.markets import allowed_markets, require_allowed_market
 from app.models.notification import Notification
 from app.models.order import Order
 from app.models.order_history import OrderHistory
@@ -39,6 +40,7 @@ from app.schemas.auth import (
     UserRead,
     ChangePasswordRequest,
     ReauthenticationRequest,
+    SwitchMarketRequest,
 )
 
 logger = logging.getLogger("ilya.auth")
@@ -170,7 +172,8 @@ async def login(
     user.locked_until = None
     logger.info("Login: user_id=%s role=%s", user.id, user.role.value)
 
-    access_token = create_access_token(user.id, user.role.value, user.auth_version)
+    market = await require_allowed_market(db, user, user.home_market)
+    access_token = create_access_token(user.id, user.role.value, user.auth_version, market)
     raw_refresh = generate_refresh_token()
     family_id = uuid.uuid4()
     db.add(RefreshToken(
@@ -178,6 +181,7 @@ async def login(
         token_hash=hash_refresh_token(raw_refresh),
         expires_at=refresh_token_expiry(),
         family_id=family_id,
+        active_market=market,
     ))
     if user.role == UserRole.cliente and user.linked_id is not None:
         await touch_client_activity(db, user.linked_id, now)
@@ -244,6 +248,14 @@ async def refresh(
     if not user:
         raise invalid_exc
 
+    try:
+        active_market = await require_allowed_market(db, user, stored.active_market)
+    except HTTPException:
+        stored.revoked = True
+        stored.revoked_at = now
+        await db.commit()
+        raise invalid_exc
+
     stored.revoked = True
     stored.used_at = now
     stored.revoked_at = now
@@ -254,12 +266,13 @@ async def refresh(
         expires_at=refresh_token_expiry(),
         family_id=stored.family_id,
         parent_id=stored.id,
+        active_market=active_market,
     ))
     await db.commit()
 
     _set_refresh_cookie(response, new_refresh_raw)
     return AccessTokenResponse(
-        access_token=create_access_token(user.id, user.role.value, user.auth_version)
+        access_token=create_access_token(user.id, user.role.value, user.auth_version, active_market)
     )
 
 
@@ -302,7 +315,41 @@ async def me(
     max_discount = await _resolve_max_discount(db, current_user)
     data = UserRead.model_validate(current_user).model_dump()
     data["max_discount"] = max_discount
+    data["active_market"] = current_user.active_market
+    data["allowed_markets"] = await allowed_markets(db, current_user)
     return data
+
+
+@router.post("/switch-market", response_model=AccessTokenResponse)
+async def switch_market(
+    body: SwitchMarketRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_authenticated_user),
+    refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
+):
+    """Troca explícita de escopo. O mercado vem da permissão persistida,
+    nunca de IP, query string ou cabeçalho fornecido pelo cliente."""
+    market = await require_allowed_market(db, current_user, body.market)
+    if not refresh_token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão renovável não encontrada.")
+    stored = (await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == hash_refresh_token(refresh_token),
+            RefreshToken.user_id == current_user.id,
+            RefreshToken.revoked.is_(False),
+        )
+    )).scalar_one_or_none()
+    if not stored:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão renovável não encontrada.")
+    stored.active_market = market
+    await db.commit()
+    return AccessTokenResponse(
+        access_token=create_access_token(
+            current_user.id, current_user.role.value, current_user.auth_version, market
+        )
+    )
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)

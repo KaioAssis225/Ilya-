@@ -34,6 +34,8 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
+from app.models.market import ProductMarket, ProductPrice, PriceList, MarketTaxRate
+from app.core.markets import active_market_for, market_context
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.core.security import (
@@ -149,6 +151,7 @@ def _invitation_is_valid(invitation: SignatureInvitation | None) -> bool:
 async def _next_codes(
     db: AsyncSession,
     number_owner_id: uuid.UUID,
+    market_code: str,
 ) -> tuple[str, str, int]:
     # O UPSERT bloqueia atomicamente apenas o contador deste usuário e não
     # reutiliza números de pedidos apagados. O ORC segue na sequence global.
@@ -156,24 +159,31 @@ async def _next_codes(
         await db.execute(
             text(
                 """
-                INSERT INTO order_number_counters (
-                    number_owner_id,
+                INSERT INTO market_order_counters (
+                    market_code, number_owner_id,
                     next_value
                 )
-                VALUES (:number_owner_id, 2)
-                ON CONFLICT (number_owner_id) DO UPDATE
+                VALUES (:market_code, :number_owner_id, 2)
+                ON CONFLICT (market_code, number_owner_id) DO UPDATE
                 SET
-                    next_value = order_number_counters.next_value + 1,
+                    next_value = market_order_counters.next_value + 1,
                     updated_at = NOW()
                 RETURNING next_value - 1
                 """
             ),
-            {"number_owner_id": str(number_owner_id)},
+            {"market_code": market_code, "number_owner_id": str(number_owner_id)},
         )
     ).scalar_one()
     orc_number = (
         await db.execute(
-            text("SELECT nextval('order_seq')")
+            text("""
+                INSERT INTO market_quote_counters (market_code,next_value)
+                VALUES (:market_code, 2)
+                ON CONFLICT (market_code) DO UPDATE
+                SET next_value=market_quote_counters.next_value+1, updated_at=NOW()
+                RETURNING next_value-1
+            """),
+            {"market_code": market_code},
         )
     ).scalar_one()
     return (
@@ -357,7 +367,43 @@ async def create_order(
 
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
     product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
-    profile = client.price_profile  # faturamento pelo perfil do cliente (V-Bloco62)
+    market_code = active_market_for(current_user)
+    context = market_context(current_user)
+    price_list = (await db.execute(
+        select(PriceList).where(
+            PriceList.id == client.price_list_id,
+            PriceList.market_code == market_code,
+            PriceList.is_active.is_(True),
+        )
+    )).scalar_one_or_none()
+    if not price_list:
+        raise HTTPException(status_code=422, detail="Cliente sem lista de preços válida para o mercado ativo.")
+    product_ids = [product.id for product in product_map.values()]
+    available_ids = set((await db.execute(
+        select(ProductMarket.product_id).where(
+            ProductMarket.market_code == market_code,
+            ProductMarket.is_available.is_(True),
+            ProductMarket.product_id.in_(product_ids),
+        )
+    )).scalars().all())
+    price_map = dict((await db.execute(
+        select(ProductPrice.product_id, ProductPrice.amount).where(
+            ProductPrice.price_list_id == price_list.id,
+            ProductPrice.product_id.in_(product_ids),
+        )
+    )).all())
+    product_market_rows = (await db.execute(
+        select(ProductMarket.product_id, ProductMarket.vat_rate).where(
+            ProductMarket.market_code == market_code,
+            ProductMarket.product_id.in_(product_ids),
+        )
+    )).all()
+    product_vat = dict(product_market_rows)
+    type_tax = dict((await db.execute(
+        select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
+            MarketTaxRate.market_code == market_code
+        )
+    )).all())
 
     total = _ZERO
     total_ipi = _ZERO
@@ -366,7 +412,11 @@ async def create_order(
         product = product_map.get(item_in.product_code)
         if not product:
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-        unit_price = _price_for_profile(product, profile)
+        if product.id not in available_ids:
+            raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
+        if product.id not in price_map:
+            raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
+        unit_price = _money(price_map[product.id])
         discount = _decimal(item_in.discount or _ZERO)
         _validate_discount(discount, max_discount, product.product_code)
         effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
@@ -374,11 +424,10 @@ async def create_order(
         total += subtotal
 
         product_type = type_map.get(product.type)
-        ipi_rate = (
-            _decimal(product_type.group.ipi)
-            if product_type and product_type.group
-            else _ZERO
-        )
+        if market_code == "EU":
+            ipi_rate = _decimal(product_vat.get(product.id) if product_vat.get(product.id) is not None else type_tax.get(product.type, 0))
+        else:
+            ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
         ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
         total_ipi += ipi_value
 
@@ -396,6 +445,8 @@ async def create_order(
             discount=discount,
             ipi_rate=ipi_rate,
             ipi_value=ipi_value,
+            tax_label=context.tax_label,
+            currency=context.currency,
             observacao=product.observacao,
         ))
 
@@ -403,9 +454,13 @@ async def create_order(
     total_ipi = _money(total_ipi)
     total_with_ipi = _money(total + total_ipi)
     _ensure_total_capacity(total, total_ipi, total_with_ipi)
-    code, orc_id, order_number = await _next_codes(db, current_user.id)
+    code, orc_id, order_number = await _next_codes(db, current_user.id, market_code)
     order = Order(
         id=uuid.uuid4(),
+        market_code=market_code,
+        price_list_code=price_list.code,
+        currency=context.currency,
+        locale=context.locale,
         code=code,
         number_owner_id=current_user.id,
         order_number=order_number,
@@ -526,6 +581,8 @@ async def list_orders(
             Order.id,
             Order.code,
             Order.orc_id,
+            Order.market_code,
+            Order.currency,
             Order.client_id,
             Client.name.label("client_name"),
             Order.rep_id,
@@ -541,7 +598,7 @@ async def list_orders(
         .select_from(Order)
         .join(Client, Client.id == Order.client_id)
         .outerjoin(Representative, Representative.id == Order.rep_id)
-        .where(*conditions)
+        .where(Order.market_code == active_market_for(current_user), *conditions)
         .order_by(Order.created_at.desc(), Order.id.desc())
     )
 
@@ -604,7 +661,9 @@ async def list_global_history(
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
-    stmt = select(OrderHistory)
+    stmt = select(OrderHistory).join(Order, Order.id == OrderHistory.order_id).where(
+        Order.market_code == active_market_for(current_user)
+    )
     if cursor:
         cursor_created_at, cursor_id = _decode_order_cursor(cursor)
         stmt = stmt.where(
@@ -710,7 +769,30 @@ async def update_order(
             db, [i.product_code for i in payload.items]
         )
         client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
-        profile = client.price_profile if client else "lojista"  # faturamento pelo perfil (V-Bloco62)
+        price_list = (await db.execute(select(PriceList).where(
+            PriceList.market_code == order.market_code,
+            PriceList.code == order.price_list_code,
+            PriceList.is_active.is_(True),
+        ))).scalar_one_or_none()
+        if not client or not price_list:
+            raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
+        product_ids = [product.id for product in product_map.values()]
+        available_ids = set((await db.execute(select(ProductMarket.product_id).where(
+            ProductMarket.market_code == order.market_code,
+            ProductMarket.is_available.is_(True),
+            ProductMarket.product_id.in_(product_ids),
+        ))).scalars().all())
+        price_map = dict((await db.execute(select(ProductPrice.product_id, ProductPrice.amount).where(
+            ProductPrice.price_list_id == price_list.id,
+            ProductPrice.product_id.in_(product_ids),
+        ))).all())
+        product_vat = dict((await db.execute(select(ProductMarket.product_id, ProductMarket.vat_rate).where(
+            ProductMarket.market_code == order.market_code,
+            ProductMarket.product_id.in_(product_ids),
+        ))).all())
+        type_tax = dict((await db.execute(select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
+            MarketTaxRate.market_code == order.market_code
+        ))).all())
         rep = selected_rep
         if rep is None and order.rep_id:
             rep = (
@@ -729,7 +811,11 @@ async def update_order(
             product = product_map.get(item_in.product_code)
             if not product:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-            unit_price = _price_for_profile(product, profile)
+            if product.id not in available_ids:
+                raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
+            if product.id not in price_map:
+                raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
+            unit_price = _money(price_map[product.id])
             discount = _decimal(item_in.discount or _ZERO)
             _validate_discount(discount, max_discount, product.product_code)
             effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
@@ -737,11 +823,10 @@ async def update_order(
             total += subtotal
 
             product_type = type_map.get(product.type)
-            ipi_rate = (
-                _decimal(product_type.group.ipi)
-                if product_type and product_type.group
-                else _ZERO
-            )
+            if order.market_code == "EU":
+                ipi_rate = _decimal(product_vat.get(product.id) if product_vat.get(product.id) is not None else type_tax.get(product.type, 0))
+            else:
+                ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
             ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
             total_ipi += ipi_value
 
@@ -760,6 +845,8 @@ async def update_order(
                 discount=discount,
                 ipi_rate=ipi_rate,
                 ipi_value=ipi_value,
+                tax_label="IVA" if order.market_code == "EU" else "IPI",
+                currency=order.currency,
                 observacao=product.observacao,
             ))
 
@@ -777,7 +864,7 @@ async def update_order(
         order.total_ipi = total_ipi
         order.total_with_ipi = total_with_ipi
         if abs(old_total - total) > _CENT:
-            changes.append(f"total: R$ {old_total:.2f} → R$ {total:.2f}")
+            changes.append(f"total: {order.currency} {old_total:.2f} → {order.currency} {total:.2f}")
         for item in new_items:
             db.add(item)
 
@@ -1025,6 +1112,7 @@ async def generate_sign_token(
     if client_user:
         db.add(Notification(
             id=uuid.uuid4(),
+            market_code=order.market_code,
             user_id=client_user.id,
             message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
         ))
@@ -1174,6 +1262,7 @@ async def notify_client(
         raise HTTPException(status_code=404, detail="Cliente não possui conta ativa no sistema.")
     db.add(Notification(
         id=uuid.uuid4(),
+        market_code=order.market_code,
         user_id=client_user.id,
         message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
     ))

@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy import String, ForeignKey, Boolean, DateTime, Integer, Enum as SAEnum, Index, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 
@@ -35,6 +35,16 @@ class User(Base, TimestampMixin):
     # Bloco 95: admin pode habilitar o Dashboard BI para qualquer role sem alterar
     # as demais permissões. Role `executivo` sempre tem acesso, independente da flag.
     can_view_dashboard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    home_market: Mapped[str] = mapped_column(
+        ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR"
+    )
+    allowed_market_links = relationship(
+        "UserMarket", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    @property
+    def allowed_markets(self) -> list[str]:
+        return sorted(link.market_code for link in self.allowed_market_links)
 
     __table_args__ = (
         Index("ix_users_rep_id", "rep_id"),
