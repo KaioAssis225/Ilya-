@@ -11,6 +11,8 @@ from app.api.deps import get_db_session, require_roles
 from app.core.uploads import read_upload_limited
 from app.models.market import Market, PriceList, ProductMarket, ProductPrice
 from app.models.product import Product
+from app.models.product_group import ProductGroup
+from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/api/v1/markets", tags=["markets"])
@@ -94,8 +96,9 @@ async def import_europe_catalog(
 ):
     """Importação atômica do subconjunto europeu.
 
-    Colunas: product_code, lojista, corporativo, pvp, vat_rate e opcionalmente
-    is_available. A moeda não é aceita do arquivo: as listas EU são sempre EUR.
+    Colunas: product_code, lojista, corporativo, pvp e opcionalmente vat_rate e
+    is_available. Sem vat_rate, copia a taxa já configurada no grupo do produto
+    no Ilya. A moeda não é aceita do arquivo: as listas EU são sempre EUR.
     """
     raw = await read_upload_limited(file, 10 * 1024 * 1024, max_size_label="10MB")
     try:
@@ -103,7 +106,7 @@ async def import_europe_catalog(
     except UnicodeDecodeError:
         raise HTTPException(422, "CSV deve estar em UTF-8.")
     reader = csv.DictReader(io.StringIO(text), delimiter=";")
-    required = {"product_code", *_EU_LISTS, "vat_rate"}
+    required = {"product_code", *_EU_LISTS}
     if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
         raise HTTPException(422, f"Cabeçalho obrigatório: {';'.join(sorted(required))}.")
     parsed: list[dict] = []
@@ -117,16 +120,23 @@ async def import_europe_catalog(
         seen.add(sku)
         try:
             prices = {code: _decimal_csv(row.get(code) or "") for code in _EU_LISTS}
-            vat = _decimal_csv(row.get("vat_rate") or "")
-            if any(value < 0 for value in prices.values()) or vat < 0 or vat > 100:
+            vat_raw = (row.get("vat_rate") or "").strip()
+            vat = _decimal_csv(vat_raw) if vat_raw else None
+            if any(value < 0 for value in prices.values()) or (vat is not None and (vat < 0 or vat > 100)):
                 raise ValueError
         except (InvalidOperation, ValueError):
             errors.append(f"Linha {line}: preço negativo/inválido ou IVA fora de 0–100.")
             continue
         available = (row.get("is_available") or "true").strip().lower() in {"1", "true", "sim", "yes"}
         parsed.append({"sku": sku, "prices": prices, "vat": vat, "available": available})
-    products = (await db.execute(select(Product.id, Product.product_code).where(Product.product_code.in_(seen)))).all()
-    product_ids = {sku: product_id for product_id, sku in products}
+    products = (await db.execute(
+        select(Product.id, Product.product_code, ProductGroup.ipi)
+        .outerjoin(ProductType, ProductType.name == Product.type)
+        .outerjoin(ProductGroup, ProductGroup.id == ProductType.group_id)
+        .where(Product.product_code.in_(seen))
+    )).all()
+    product_ids = {sku: product_id for product_id, sku, _ in products}
+    inherited_tax = {sku: (ipi if ipi is not None else Decimal("0")) for _, sku, ipi in products}
     missing = sorted(seen - set(product_ids))
     if missing:
         errors.append("SKUs inexistentes: " + ", ".join(missing[:50]))
@@ -138,11 +148,12 @@ async def import_europe_catalog(
         raise HTTPException(422, {"message": "Importação rejeitada; nenhum dado foi alterado.", "errors": errors[:100]})
     for row in parsed:
         product_id = product_ids[row["sku"]]
+        vat_rate = row["vat"] if row["vat"] is not None else inherited_tax[row["sku"]]
         await db.execute(pg_insert(ProductMarket).values(
-            product_id=product_id, market_code="EU", is_available=row["available"], vat_rate=row["vat"]
+            product_id=product_id, market_code="EU", is_available=row["available"], vat_rate=vat_rate
         ).on_conflict_do_update(
             index_elements=[ProductMarket.product_id, ProductMarket.market_code],
-            set_={"is_available": row["available"], "vat_rate": row["vat"]},
+            set_={"is_available": row["available"], "vat_rate": vat_rate},
         ))
         for code, amount in row["prices"].items():
             await db.execute(pg_insert(ProductPrice).values(
@@ -152,4 +163,8 @@ async def import_europe_catalog(
                 set_={"amount": amount},
             ))
     await db.commit()
-    return {"market": "EU", "currency": "EUR", "imported": len(parsed), "errors": []}
+    inherited_count = sum(row["vat"] is None for row in parsed)
+    return {
+        "market": "EU", "currency": "EUR", "imported": len(parsed), "errors": [],
+        "tax_rates_inherited_from_ilya": inherited_count,
+    }

@@ -52,13 +52,16 @@ Endpoint: `POST /api/v1/markets/EU/import` (admin ou cadastros).
 Arquivo UTF-8 separado por ponto e vírgula:
 
 ```csv
-product_code;lojista;corporativo;pvp;vat_rate;is_available
-IML0001;895,00;820,00;1099,00;23,00;true
+product_code;lojista;corporativo;pvp;is_available
+IML0001;55,63;72,11;103,02;true
 ```
 
 O arquivo inteiro é rejeitado se houver SKU ausente/duplicado, preço vazio,
-negativo ou inválido, IVA fora de 0–100 ou configuração incorreta das listas.
-A moeda é sempre EUR e não pode ser escolhida no CSV.
+negativo ou inválido, IVA informado fora de 0–100 ou configuração incorreta das
+listas. A coluna `vat_rate` é opcional: quando ausente ou vazia, a importação
+copia para o SKU europeu a taxa já cadastrada no grupo do produto no Ilya. Ela
+pode ser informada para sobrescrever casos específicos. A moeda é sempre EUR e
+não pode ser escolhida no CSV.
 
 Depois da conferência, `POST /api/v1/markets/EU/activate` valida cobertura das
 três listas. Ainda é necessário configurar `EUROPE_MARKET_ENABLED=true` e fazer
