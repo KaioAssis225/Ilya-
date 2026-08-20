@@ -3,9 +3,7 @@ import { Download, LayoutDashboard } from 'lucide-react'
 import { useDashboardOverview, DASHBOARD_REGIONS } from '../hooks/useDashboard'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
-
-const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
-const integer = new Intl.NumberFormat('pt-BR')
+import { useAuth } from '../hooks/useAuth'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -16,19 +14,17 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced
 }
 
-function fmtCompact(v: number) {
-  if (v >= 1e6) return `R$ ${(v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`
-  if (v >= 1e3) return `R$ ${Math.round(v / 1e3)} mil`
-  return currency.format(v)
+function fmtCompact(v: number, formatter: Intl.NumberFormat) {
+  return formatter.format(v)
 }
 
-function fmtAxis(key: string, granularity: string) {
+function fmtAxis(key: string, granularity: string, locale: string) {
   if (granularity === 'month') {
     const [y, m] = key.split('-')
     return `${m}/${y.slice(2)}`
   }
   const d = new Date(key + 'T12:00:00')
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(d)
+  return new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit' }).format(d)
 }
 
 function todayISO(offsetDays = 0) {
@@ -52,10 +48,13 @@ const METRIC_CONFIG: Record<MetricKey, { label: string; small: string; kind: 're
   orders_cancelled: { label: 'Orçamentos cancelados', small: 'Cancelados totalmente', kind: 'orders' },
 }
 
-function DashboardChart({ series, activeMetric, granularity }: {
+function DashboardChart({ series, activeMetric, granularity, locale, currency, integer }: {
   series: { key: string; revenue: number; orders: number }[]
   activeMetric: MetricKey
   granularity: string
+  locale: string
+  currency: Intl.NumberFormat
+  integer: Intl.NumberFormat
 }) {
   const kind = METRIC_CONFIG[activeMetric].kind
   const values = series.map(p => (kind === 'revenue' ? p.revenue : p.orders))
@@ -78,14 +77,14 @@ function DashboardChart({ series, activeMetric, granularity }: {
         return (
           <g key={i}>
             <line x1={left} y1={y} x2={left + width} y2={y} stroke="#e8e0d6" strokeWidth={1} />
-            <text x={4} y={y + 4} fontSize={11} fill="#9d8d81">{kind === 'revenue' ? fmtCompact(value) : integer.format(Math.round(value))}</text>
+            <text x={4} y={y + 4} fontSize={11} fill="#9d8d81">{kind === 'revenue' ? fmtCompact(value, currency) : integer.format(Math.round(value))}</text>
           </g>
         )
       })}
       {series.map((p, i) => (
         (i % showEvery === 0 || i === series.length - 1) && (
           <text key={p.key} x={coords[i][0]} y={height + top + 24} textAnchor="middle" fontSize={11} fill="#9d8d81">
-            {fmtAxis(p.key, granularity)}
+            {fmtAxis(p.key, granularity, locale)}
           </text>
         )
       ))}
@@ -109,6 +108,11 @@ function DashboardChart({ series, activeMetric, granularity }: {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth()
+  const locale = user?.active_market === 'EU' ? 'pt-PT' : 'pt-BR'
+  const currencyCode = user?.active_market === 'EU' ? 'EUR' : 'BRL'
+  const currency = useMemo(() => new Intl.NumberFormat(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 }), [locale, currencyCode])
+  const integer = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const [startDate, setStartDate] = useState(todayISO(-29))
   const [endDate, setEndDate] = useState(todayISO())
   const [repId, setRepId] = useState('')
@@ -186,6 +190,8 @@ export default function DashboardPage() {
           revenueTotal={data ? data.metrics.revenue_total : null}
           ordersTotal={data ? data.metrics.orders_total : null}
           onDone={hideIntro}
+          locale={locale}
+          currencyCode={currencyCode}
         />
       )}
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
@@ -240,7 +246,7 @@ export default function DashboardPage() {
         </div>
         {data && (
           <p className="text-right text-xs text-muted mb-4">
-            {new Date(data.start_date + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(data.end_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+            {new Date(data.start_date + 'T12:00:00').toLocaleDateString(locale)} a {new Date(data.end_date + 'T12:00:00').toLocaleDateString(locale)}
             {region && ` · ${region}`}
             {repId && ` · ${selectedRep?.name ?? reps.find(r => r.id === repId)?.name ?? ''}`}
           </p>
@@ -285,7 +291,7 @@ export default function DashboardPage() {
           {isLoading ? (
             <p className="py-16 text-center text-sm text-muted">Carregando…</p>
           ) : (
-            <DashboardChart series={data?.chart ?? []} activeMetric={activeMetric} granularity={data?.granularity ?? 'day'} />
+            <DashboardChart series={data?.chart ?? []} activeMetric={activeMetric} granularity={data?.granularity ?? 'day'} locale={locale} currency={currency} integer={integer} />
           )}
         </div>
 

@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import exists, func, or_, select, update
 
 from app.api.deps import get_db_session, get_current_user, require_roles
 from app.core.security import hash_password, validate_password_strength
@@ -16,6 +16,7 @@ from app.models.user import User, UserRole
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
+from app.models.market import UserMarket
 from app.schemas.auth import UserRead, UserCreate, UserUpdate, UserPasswordReset, UserCreateResponse
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
@@ -87,10 +88,13 @@ async def list_users(
         "is_active",
     ] = Query(default="full_name"),
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
+    market: Literal["BR", "EU"] | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
     _: User = Depends(_admin_only),
 ):
     filters = []
+    if market:
+        filters.append(exists().where(UserMarket.user_id == User.id, UserMarket.market_code == market))
     search = q.strip() if q else ""
     if search:
         search_pattern = literal_contains_pattern(search)
@@ -178,6 +182,10 @@ async def create_user(
         body.rep_id,
         db,
     )
+    allowed_codes = set(body.allowed_markets)
+    allowed_codes.add(body.home_market)
+    if body.role == UserRole.admin:
+        allowed_codes.update(("BR", "EU"))
     user = User(
         email=normalized_email,
         username=body.username,
@@ -186,7 +194,9 @@ async def create_user(
         role=body.role,
         rep_id=rep_id,
         linked_id=rep_id,
+        home_market=body.home_market,
     )
+    user.allowed_market_links = [UserMarket(market_code=code) for code in sorted(allowed_codes)]
     db.add(user)
     try:
         await db.commit()
@@ -217,6 +227,17 @@ async def update_user(
         for field, value in submitted.items()
         if value is not None or field == "rep_id"
     }
+    allowed_codes = changes.pop("allowed_markets", None)
+    market_access_changed = allowed_codes is not None
+    if allowed_codes is not None:
+        allowed_codes = set(allowed_codes)
+        allowed_codes.add(changes.get("home_market", user.home_market))
+        if changes.get("role", user.role) == UserRole.admin:
+            allowed_codes.update(("BR", "EU"))
+        user.allowed_market_links = [UserMarket(market_code=code) for code in sorted(allowed_codes)]
+    elif "home_market" in changes and changes["home_market"] not in user.allowed_markets:
+        user.allowed_market_links.append(UserMarket(market_code=changes["home_market"]))
+        market_access_changed = True
     new_email = changes.get("email")
     if new_email:
         normalized_email = str(new_email).lower()
@@ -272,9 +293,9 @@ async def update_user(
         changes["linked_id"] = user.linked_id
     else:
         changes["linked_id"] = None
-    security_changed = any(
+    security_changed = market_access_changed or any(
         field in changes and changes[field] != getattr(user, field)
-        for field in ("username", "role", "rep_id", "linked_id", "is_active")
+        for field in ("username", "role", "rep_id", "linked_id", "is_active", "home_market")
     )
     for field, value in changes.items():
         setattr(user, field, value)
@@ -385,7 +406,9 @@ async def create_user_from_client(
         role=UserRole.cliente,  # SEC-01: conta de cliente-final, sem acesso de operador
         must_change_password=True,
         linked_id=client_id,
+        home_market=client.market_code,
     )
+    user.allowed_market_links = [UserMarket(market_code=client.market_code)]
     db.add(user)
     try:
         await db.commit()
@@ -443,7 +466,9 @@ async def create_user_from_rep(
         rep_id=rep_id,
         must_change_password=True,
         linked_id=rep_id,
+        home_market=rep.market_code,
     )
+    user.allowed_market_links = [UserMarket(market_code=rep.market_code)]
     db.add(user)
     try:
         await db.commit()

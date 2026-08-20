@@ -119,6 +119,9 @@ class ProductRead(ProductBase):
     price: Optional[Decimal] = None
     price_lojista: Optional[Decimal] = None
     price_corporativo: Optional[Decimal] = None
+    market_code: str = "BR"
+    currency: str = "BRL"
+    market_prices: dict[str, Decimal] = Field(default_factory=dict)
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     optionals: List[OptionalColorRead] = []

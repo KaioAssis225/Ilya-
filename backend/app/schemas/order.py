@@ -58,6 +58,8 @@ class OrderItemRead(BaseModel):
     discount: Decimal = Decimal("0")
     ipi_rate: Decimal = Decimal("0")
     ipi_value: Decimal = Decimal("0")
+    tax_label: str = "IPI"
+    currency: str = "BRL"
     observacao: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -88,6 +90,10 @@ class OrderRead(BaseModel):
     id: uuid.UUID
     code: str
     orc_id: str
+    market_code: str = "BR"
+    price_list_code: str = "lojista"
+    currency: str = "BRL"
+    locale: str = "pt-BR"
     client_id: uuid.UUID
     rep_id: Optional[uuid.UUID]
     total_value: Decimal
@@ -126,6 +132,8 @@ class OrderListRead(BaseModel):
     id: uuid.UUID
     code: str
     orc_id: str
+    market_code: str = "BR"
+    currency: str = "BRL"
     client_id: uuid.UUID
     client_name: str
     rep_id: Optional[uuid.UUID]

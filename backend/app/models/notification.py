@@ -19,6 +19,7 @@ class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR")
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -37,6 +38,7 @@ class Notification(Base, TimestampMixin):
             "user_id",
             "created_at",
         ),
+        Index("ix_notifications_market_user_created", "market_code", "user_id", "created_at"),
         Index(
             "ix_notifications_unread_user_created",
             "user_id",

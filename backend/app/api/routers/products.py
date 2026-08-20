@@ -2,7 +2,7 @@ import uuid
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, literal_column, or_, select
+from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
 from app.api.deps import get_db_session, get_current_user, is_client_account, require_roles
@@ -11,6 +11,8 @@ from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
+from app.models.market import ProductMarket, ProductPrice, PriceList
+from app.core.markets import active_market_for, market_context
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
@@ -99,6 +101,35 @@ def _to_read(product: Product, visible_profile: Optional[str] = None) -> Product
             opt_read.thumbnail_url = build_thumbnail_url(opt_orm.photo_path)
         data.components.append(comp_read)
     return data
+
+
+async def _to_market_reads(
+    db: AsyncSession, products: list[Product], user: User, visible_profile: Optional[str]
+) -> list[ProductRead]:
+    market = active_market_for(user)
+    context = market_context(user)
+    ids = [product.id for product in products]
+    rows = (await db.execute(
+        select(ProductPrice.product_id, PriceList.code, ProductPrice.amount)
+        .join(PriceList, PriceList.id == ProductPrice.price_list_id)
+        .where(PriceList.market_code == market, PriceList.is_active.is_(True), ProductPrice.product_id.in_(ids))
+    )).all() if ids else []
+    prices: dict[uuid.UUID, dict[str, Decimal]] = {}
+    for product_id, code, amount in rows:
+        if visible_profile is None or visible_profile == code:
+            prices.setdefault(product_id, {})[code] = amount
+    result = []
+    for product in products:
+        item = _to_read(product, visible_profile if market == "BR" else None)
+        item.market_code = market
+        item.currency = context.currency
+        item.market_prices = prices.get(product.id, {})
+        if market == "EU":
+            item.price = item.market_prices.get(visible_profile or "lojista")
+            item.price_lojista = item.market_prices.get("lojista")
+            item.price_corporativo = item.market_prices.get("corporativo")
+        result.append(item)
+    return result
 
 
 async def _resolve_set_items(
@@ -206,7 +237,15 @@ async def list_products(
 ):
     # Produto desativado (DELETE = desativação, Migration/01) sai do catálogo.
     # Entra em `filters`, então vale também para a contagem do X-Total-Count.
-    filters = [Product.is_active.is_(True)]
+    active_market = active_market_for(current_user)
+    filters = [
+        Product.is_active.is_(True),
+        exists().where(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == active_market,
+            ProductMarket.is_available.is_(True),
+        ),
+    ]
     search = q.strip() if q else ""
     if search:
         search_pattern = literal_contains_pattern(search)
@@ -272,7 +311,7 @@ async def list_products(
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(products))
     visible_profile = await _visible_price_profile(db, current_user)
-    return [_to_read(product, visible_profile) for product in products]
+    return await _to_market_reads(db, products, current_user, visible_profile)
 
 
 @router.post("/batch", response_model=List[ProductRead])
@@ -287,24 +326,28 @@ async def get_products_batch(
             select(Product).where(
                 Product.product_code.in_(codes),
                 Product.is_active.is_(True),
+                exists().where(
+                    ProductMarket.product_id == Product.id,
+                    ProductMarket.market_code == active_market_for(current_user),
+                    ProductMarket.is_available.is_(True),
+                ),
             )
         )
     ).scalars().all()
     product_map = {product.product_code: product for product in products}
     visible_profile = await _visible_price_profile(db, current_user)
-    return [
-        _to_read(product_map[code], visible_profile)
-        for code in codes
-        if code in product_map
-    ]
+    ordered = [product_map[code] for code in codes if code in product_map]
+    return await _to_market_reads(db, ordered, current_user, visible_profile)
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
 async def create_product(
     payload: ProductCreate,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN_VENDEDOR,
+    current_user: User = _ADMIN_VENDEDOR,
 ):
+    if active_market_for(current_user) != "BR":
+        raise HTTPException(status_code=403, detail="O catálogo-base é mantido no mercado Brasil; use a importação europeia para disponibilidade e preços.")
     holder_is_active = (
         await db.execute(
             select(Product.is_active).where(Product.product_code == payload.product_code)
@@ -331,6 +374,13 @@ async def create_product(
     if _is_conjunto_type(payload.type) and payload.components:
         product.components = await _resolve_components(db, payload.components)
     db.add(product)
+    await db.flush()
+    db.add(ProductMarket(product_id=product.id, market_code="BR", is_available=True))
+    lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
+    amounts = {"lojista": payload.price_lojista, "corporativo": payload.price_corporativo}
+    for price_list in lists:
+        if price_list.code in amounts:
+            db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=amounts[price_list.code]))
     await db.commit()
     await db.refresh(product)
     return _to_read(product)
@@ -346,12 +396,17 @@ async def get_product(
         select(Product).where(
             Product.id == product_id,
             Product.is_active.is_(True),
+            exists().where(
+                ProductMarket.product_id == Product.id,
+                ProductMarket.market_code == active_market_for(current_user),
+                ProductMarket.is_available.is_(True),
+            ),
         )
     )
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    return _to_read(product, await _visible_price_profile(db, current_user))
+    return (await _to_market_reads(db, [product], current_user, await _visible_price_profile(db, current_user)))[0]
 
 
 @router.patch("/{product_id}", response_model=ProductRead)
@@ -359,8 +414,10 @@ async def update_product(
     product_id: uuid.UUID,
     payload: ProductUpdate,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN_VENDEDOR,
+    current_user: User = _ADMIN_VENDEDOR,
 ):
+    if active_market_for(current_user) != "BR":
+        raise HTTPException(status_code=403, detail="Altere o catálogo-base no mercado Brasil.")
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
@@ -384,6 +441,18 @@ async def update_product(
             product.components = await _resolve_components(db, components_in)
         else:
             product.components = []
+    lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
+    price_changes = {"lojista": data.get("price_lojista"), "corporativo": data.get("price_corporativo")}
+    for price_list in lists:
+        if price_changes.get(price_list.code) is not None:
+            existing_price = (await db.execute(select(ProductPrice).where(
+                ProductPrice.product_id == product.id,
+                ProductPrice.price_list_id == price_list.id,
+            ))).scalar_one_or_none()
+            if existing_price:
+                existing_price.amount = price_changes[price_list.code]
+            else:
+                db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=price_changes[price_list.code]))
     await db.commit()
     await db.refresh(product)
     return _to_read(product)
@@ -393,8 +462,10 @@ async def update_product(
 async def delete_product(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    current_user: User = _ADMIN,
 ):
+    if active_market_for(current_user) != "BR":
+        raise HTTPException(status_code=403, detail="Desative o catálogo-base no mercado Brasil.")
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
@@ -412,8 +483,10 @@ async def upload_photo(
     product_id: uuid.UUID,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN_VENDEDOR,
+    current_user: User = _ADMIN_VENDEDOR,
 ):
+    if active_market_for(current_user) != "BR":
+        raise HTTPException(status_code=403, detail="Altere as fotos do catálogo-base no mercado Brasil.")
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:

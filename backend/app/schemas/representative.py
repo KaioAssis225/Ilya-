@@ -18,7 +18,10 @@ class RepresentativeBase(BaseModel):
     numero: Optional[str] = Field(None, max_length=50)
     address: str = Field(..., max_length=255)
     city: str = Field(..., max_length=255)
-    state: str = Field(..., min_length=2, max_length=2)
+    state: str = Field("--", min_length=2, max_length=2)
+    country: str = Field("BR", min_length=2, max_length=2)
+    region: Optional[str] = Field(None, max_length=120)
+    tax_id: Optional[str] = Field(None, max_length=40)
     max_discount: Decimal = Field(default=Decimal("30.00"), ge=0, le=100)
 
     @field_validator("cpf_cnpj", mode="before")
@@ -34,7 +37,7 @@ class RepresentativeBase(BaseModel):
         if not isinstance(value, str):
             raise ValueError("UF deve ser informada como texto.")
         state = value.strip().upper()
-        if len(state) != 2 or not state.isascii() or not state.isalpha():
+        if state != "--" and (len(state) != 2 or not state.isascii() or not state.isalpha()):
             raise ValueError("UF deve conter exatamente 2 letras.")
         return state
 
@@ -53,6 +56,9 @@ class RepresentativeUpdate(BaseModel):
     address: Optional[str] = Field(None, max_length=255)
     city: Optional[str] = Field(None, max_length=255)
     state: Optional[str] = Field(None, min_length=2, max_length=2)
+    country: Optional[str] = Field(None, min_length=2, max_length=2)
+    region: Optional[str] = Field(None, max_length=120)
+    tax_id: Optional[str] = Field(None, max_length=40)
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
 
     @field_validator("cpf_cnpj", mode="before")
@@ -71,13 +77,14 @@ class RepresentativeUpdate(BaseModel):
         if not isinstance(value, str):
             raise ValueError("UF deve ser informada como texto.")
         state = value.strip().upper()
-        if len(state) != 2 or not state.isascii() or not state.isalpha():
+        if state != "--" and (len(state) != 2 or not state.isascii() or not state.isalpha()):
             raise ValueError("UF deve conter exatamente 2 letras.")
         return state
 
 
 class RepresentativeRead(RepresentativeBase):
     id: uuid.UUID
+    market_code: str = "BR"
     created_at: datetime
     updated_at: datetime
     relationship_ended_at: datetime | None = None

@@ -168,10 +168,11 @@ function Autocomplete<T extends { id: string }>({
 
 // ── Modal de cadastro rápido ──────────────────────────────────────────────────
 
-const EMPTY_PERSON: ClientCreate = {
-  name: '', phone: '', email: '', cpf_cnpj: '',
-  cep: '', numero: '', address: '', city: '', state: '',
-}
+const emptyPerson = (market: 'BR' | 'EU'): ClientCreate => ({
+  name: '', phone: '', email: '', cpf_cnpj: '', tax_id: '',
+  country: market === 'BR' ? 'BR' : '', region: '',
+  cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--',
+})
 
 // Máscara alterna em 11 dígitos; o backend guarda só os dígitos.
 function formatCpfCnpj(value: string): string {
@@ -189,13 +190,13 @@ function formatCpfCnpj(value: string): string {
     .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
 }
 
-function QuickRegisterModal({ title, entityType, onSave, onClose }: {
-  title: string; entityType: 'client' | 'rep'; onSave: (data: ClientCreate) => Promise<void>; onClose: () => void
+function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
+  title: string; entityType: 'client' | 'rep'; market: 'BR' | 'EU'; onSave: (data: ClientCreate) => Promise<void>; onClose: () => void
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
-  const [form, setForm] = useState<ClientCreate>(EMPTY_PERSON)
+  const [form, setForm] = useState<ClientCreate>(() => emptyPerson(market))
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [cepLoading, setCepLoading] = useState(false)
@@ -221,6 +222,7 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
   }, [])
 
   async function handleCepBlur() {
+    if (market !== 'BR') return
     const clean = form.cep.replace(/\D/g, '')
     if (clean.length !== 8) return
     cepAbortRef.current?.abort()
@@ -273,19 +275,19 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">Telefone *</span>
-            <input className="input" value={form.phone} maxLength={PHONE_INPUT_MAX_LENGTH} onChange={(e) => setForm({ ...form, phone: formatBrazilianPhone(e.target.value) })} required />
+            <input className="input" value={form.phone} maxLength={market === 'BR' ? PHONE_INPUT_MAX_LENGTH : 20} onChange={(e) => setForm({ ...form, phone: market === 'BR' ? formatBrazilianPhone(e.target.value) : e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">E-mail</span>
             <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value || null })} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">CPF/CNPJ</span>
-            <input className="input" value={form.cpf_cnpj ?? ''} onChange={(e) => setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={18} />
+            <span className="text-xs text-muted">{market === 'EU' ? 'VAT / Tax ID' : 'CPF/CNPJ'}</span>
+            <input className="input" value={market === 'EU' ? (form.tax_id ?? '') : (form.cpf_cnpj ?? '')} onChange={(e) => market === 'EU' ? setForm({ ...form, tax_id: e.target.value }) : setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={market === 'EU' ? 40 : 18} />
           </label>
           <label className="flex flex-col gap-1 relative">
-            <span className="text-xs text-muted">CEP *</span>
-            <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={9} required />
+            <span className="text-xs text-muted">{market === 'EU' ? 'Código postal *' : 'CEP *'}</span>
+            <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={20} required />
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
             {cepError && <span className="text-xs leading-snug text-red-600">CEP não encontrado ou serviço indisponível.</span>}
           </label>
@@ -298,18 +300,15 @@ function QuickRegisterModal({ title, entityType, onSave, onClose }: {
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">Cidade *</span>
+            <span className="text-xs text-muted">{market === 'EU' ? 'Localidade *' : 'Cidade *'}</span>
             <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">UF *</span>
-            <input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required />
-          </label>
+          {market === 'BR' ? <label className="flex flex-col gap-1"><span className="text-xs text-muted">UF *</span><input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required /></label> : <><label className="flex flex-col gap-1"><span className="text-xs text-muted">País *</span><input className="input" minLength={2} maxLength={2} value={form.country ?? ''} onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase(), state: '--' })} required /></label><label className="sm:col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">Região</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} /></label></>}
           {entityType === 'client' && (
             <div className="sm:col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted">Perfil de faturamento *</span>
               <div className="flex gap-2">
-                {(['lojista', 'corporativo'] as const).map((profile) => (
+                {(market === 'EU' ? ['lojista', 'corporativo', 'pvp'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
                   <button
                     key={profile}
                     type="button"
@@ -356,10 +355,10 @@ interface CartItem {
 type PersistedCartItem = Omit<CartItem, '_product'>
 const EMPTY_PRODUCTS: Product[] = []
 
-function readPersistedCart(userId?: string): PersistedCartItem[] {
+function readPersistedCart(userId?: string, market: 'BR' | 'EU' = 'BR'): PersistedCartItem[] {
   if (!userId) return []
   try {
-    const raw = localStorage.getItem(cartStorageKey(userId))
+    const raw = localStorage.getItem(cartStorageKey(userId, market))
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -476,14 +475,15 @@ function effectivePrice(product: Product, profile: string | undefined): number {
   // Bloco 96: a API omite (null) o preço que a role logada não pode ver. O
   // perfil pedido aqui é sempre o que o servidor liberou, então o `?? 0` só
   // protege a prévia de quebrar — o valor faturado é recalculado no backend.
-  const price = profile === 'corporativo' ? product.price_corporativo : product.price_lojista
+  const price = product.market_prices?.[profile ?? 'lojista']
+    ?? (profile === 'corporativo' ? product.price_corporativo : product.price_lojista)
   return price ?? 0
 }
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile, catLabel
+  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -493,6 +493,8 @@ function MobileCartCard({
   onOptChange: (cat: string, value: string | null) => void
   priceProfile: string
   catLabel: (code: string) => string
+  currency: string
+  locale: string
 }) {
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
@@ -571,14 +573,14 @@ function MobileCartCard({
         {/* Pricing */}
         <div className="text-right">
           {hasDiscount && (
-            <p className="text-[10px] text-muted line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} /></p>
+            <p className="text-[10px] text-muted line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} currency={currency} locale={locale} /></p>
           )}
           {hasDiscount && (
             <span className="text-[10px] bg-gold/10 text-gold font-semibold px-1.5 py-0.5 rounded-full">
               -{item.discount}%
             </span>
           )}
-          <p className="text-sm font-bold text-ink mt-0.5"><SafePrice value={subtotal} /></p>
+          <p className="text-sm font-bold text-ink mt-0.5"><SafePrice value={subtotal} currency={currency} locale={locale} /></p>
         </div>
       </div>
     </div>
@@ -764,9 +766,13 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 export default function OrcamentoPage() {
   const { user } = useAuth()
   const userId = user?.id ?? ''
-  const cartKey = cartStorageKey(userId)
-  const clientStorageKey = `orcamento_client_id:${userId}`
-  const repStorageKey = `orcamento_rep_id:${userId}`
+  const market = user?.active_market ?? 'BR'
+  const currency = market === 'EU' ? 'EUR' : 'BRL'
+  const locale = market === 'EU' ? 'pt-PT' : 'pt-BR'
+  const taxLabel = market === 'EU' ? 'IVA' : 'IPI'
+  const cartKey = cartStorageKey(userId, market)
+  const clientStorageKey = `orcamento_client_id:${userId}:${market}`
+  const repStorageKey = `orcamento_rep_id:${userId}:${market}`
   const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit')
 
@@ -782,7 +788,7 @@ export default function OrcamentoPage() {
   const [notes, setNotes] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [persistedCart] = useState<PersistedCartItem[]>(
-    () => readPersistedCart(user?.id),
+    () => readPersistedCart(user?.id, user?.active_market),
   )
   // sessionStorage (não localStorage): sobrevive a trocar de aba dentro do app
   // e a um F5, mas some quando a aba fecha — não volta pré-preenchido amanhã.
@@ -1277,7 +1283,7 @@ export default function OrcamentoPage() {
           <div className="text-[11px] pr-5 flex-1 min-w-0">
             <p className="text-gold font-mono font-semibold">{selectedProduct.product_code}</p>
             <p className="text-ink font-medium truncate">{selectedProduct.description}</p>
-            <p className="text-gold font-bold mt-0.5"><SafePrice value={effectivePrice(selectedProduct, priceProfile)} /></p>
+            <p className="text-gold font-bold mt-0.5"><SafePrice value={effectivePrice(selectedProduct, priceProfile)} currency={currency} locale={locale} /></p>
           </div>
         </div>
       )}
@@ -1385,6 +1391,8 @@ export default function OrcamentoPage() {
                       onOptChange={(cat, val) => updateOptCategory(item.product_code, cat, val)}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
+                      currency={currency}
+                      locale={locale}
                     />
                   ))}
                 </div>
@@ -1397,7 +1405,7 @@ export default function OrcamentoPage() {
                       <th className="px-4 py-3 text-left w-16">Qtd</th>
                       <th className="px-4 py-3 text-left w-28">Preço Base</th>
                       <th className="px-4 py-3 text-left w-24">Desconto (%)</th>
-                      <th className="px-4 py-3 text-right w-28">IPI</th>
+                      <th className="px-4 py-3 text-right w-28">{taxLabel}</th>
                       <th className="px-4 py-3 text-right w-28">Subtotal</th>
                       <th className="px-4 py-3 w-8"></th>
                     </tr>
@@ -1457,7 +1465,7 @@ export default function OrcamentoPage() {
                             />
                           </td>
                           <td className="px-4 py-3.5 text-ink-2 text-xs font-semibold whitespace-nowrap align-middle">
-                            <SafePrice value={effectivePrice(item._product, priceProfile)} />
+                            <SafePrice value={effectivePrice(item._product, priceProfile)} currency={currency} locale={locale} />
                           </td>
                           <td className="px-4 py-3.5 align-middle">
                             <NumberField
@@ -1472,7 +1480,7 @@ export default function OrcamentoPage() {
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
-                                <SafePrice value={effectivePrice(item._product, priceProfile) * item.discount / 100} prefix="− R$ " />
+                                <span>− </span><SafePrice value={effectivePrice(item._product, priceProfile) * item.discount / 100} currency={currency} locale={locale} />
                               </p>
                             )}
                           </td>
@@ -1483,7 +1491,7 @@ export default function OrcamentoPage() {
                             }
                           </td>
                           <td className="px-4 py-3.5 text-right text-xs font-bold text-ink align-middle whitespace-nowrap">
-                            <SafePrice value={subtotalWithIpi} />
+                            <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
                             <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={`Remover ${item._product.description} do orçamento`}>
@@ -1508,7 +1516,7 @@ export default function OrcamentoPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-ink font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
-                <span className="text-gold font-bold text-base"><SafePrice value={totalWithIpi} /></span>
+                <span className="text-gold font-bold text-base"><SafePrice value={totalWithIpi} currency={currency} locale={locale} /></span>
               </div>
             </div>
           )}
@@ -1561,7 +1569,7 @@ export default function OrcamentoPage() {
             </span>
           </div>
           {cart.length > 0 && (
-            <span className="text-sm font-bold"><SafePrice value={totalWithIpi} /></span>
+            <span className="text-sm font-bold"><SafePrice value={totalWithIpi} currency={currency} locale={locale} /></span>
           )}
         </button>
       </div>
@@ -1591,6 +1599,7 @@ export default function OrcamentoPage() {
 
       {quickModal === 'client' && (
         <QuickRegisterModal
+          market={user?.active_market ?? 'BR'}
           title="Novo Cliente"
           entityType="client"
           onSave={async (data) => { await createClientM.mutateAsync(data) }}
@@ -1599,6 +1608,7 @@ export default function OrcamentoPage() {
       )}
       {quickModal === 'rep' && !isRep && (
         <QuickRegisterModal
+          market={user?.active_market ?? 'BR'}
           title="Novo Representante"
           entityType="rep"
           onSave={async (data) => { await createRepM.mutateAsync(data) }}

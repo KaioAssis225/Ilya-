@@ -11,6 +11,8 @@ export interface UserRead {
   rep_id: string | null
   is_active: boolean
   can_view_dashboard: boolean
+  home_market: 'BR' | 'EU'
+  allowed_markets: Array<'BR' | 'EU'>
 }
 
 export interface UserCreate {
@@ -19,6 +21,8 @@ export interface UserCreate {
   full_name: string
   role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id?: string | null
+  home_market: 'BR' | 'EU'
+  allowed_markets: Array<'BR' | 'EU'>
 }
 
 export interface UserUpdate {
@@ -29,6 +33,8 @@ export interface UserUpdate {
   rep_id?: string | null
   is_active?: boolean
   can_view_dashboard?: boolean
+  home_market?: 'BR' | 'EU'
+  allowed_markets?: Array<'BR' | 'EU'>
 }
 
 export interface UserPageParams {
@@ -38,6 +44,7 @@ export interface UserPageParams {
   include_total?: boolean
   sort_by?: 'full_name' | 'email' | 'role' | 'is_active'
   sort_dir?: 'asc' | 'desc'
+  market?: 'BR' | 'EU'
 }
 
 export function useUsersPage(params: UserPageParams, enabled = true) {

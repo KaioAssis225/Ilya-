@@ -1,7 +1,7 @@
 import re
 import uuid
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.models.user import UserRole
 
@@ -41,6 +41,9 @@ class UserRead(BaseModel):
     must_change_password: bool
     max_discount: Decimal = Decimal("0.00")
     can_view_dashboard: bool = False
+    home_market: Literal["BR", "EU"] = "BR"
+    active_market: Literal["BR", "EU"] = "BR"
+    allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])
 
     model_config = {"from_attributes": True}
 
@@ -54,6 +57,8 @@ class UserCreate(BaseModel):
     full_name: str
     role: UserRole = UserRole.vendedor
     rep_id: Optional[uuid.UUID] = None
+    home_market: Literal["BR", "EU"] = "BR"
+    allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])
 
     @field_validator("username")
     @classmethod
@@ -79,6 +84,8 @@ class UserUpdate(BaseModel):
     rep_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
     can_view_dashboard: Optional[bool] = None
+    home_market: Optional[Literal["BR", "EU"]] = None
+    allowed_markets: Optional[list[Literal["BR", "EU"]]] = None
 
     @field_validator("username")
     @classmethod
@@ -114,3 +121,7 @@ class UserCreateResponse(BaseModel):
     full_name: str
     role: str
     temp_password: str
+
+
+class SwitchMarketRequest(BaseModel):
+    market: Literal["BR", "EU"]

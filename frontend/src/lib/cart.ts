@@ -14,8 +14,8 @@ export const CART_EVENT = 'ilya:cart-changed'
 type StoredCartItem = { product_code: string; qty: number }
 
 /** Quantidade por SKU: `{ IAC0000: 2 }`. Vazio se não houver carrinho ou o JSON estiver corrompido. */
-export function cartStorageKey(userId: string): string {
-  return `${CART_KEY_PREFIX}:${userId}`
+export function cartStorageKey(userId: string, market: 'BR' | 'EU' = 'BR'): string {
+  return `${CART_KEY_PREFIX}:${userId}:${market}`
 }
 
 /** Remove o formato antigo, que era compartilhado entre todas as contas. */
@@ -23,10 +23,10 @@ export function removeUnsafeLegacyCart(): void {
   localStorage.removeItem(CART_KEY_PREFIX)
 }
 
-export function readCartQuantities(userId?: string | null): Record<string, number> {
+export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' = 'BR'): Record<string, number> {
   if (!userId) return {}
   try {
-    const raw = localStorage.getItem(cartStorageKey(userId))
+    const raw = localStorage.getItem(cartStorageKey(userId, market))
     if (!raw) return {}
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return {}

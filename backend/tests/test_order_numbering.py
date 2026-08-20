@@ -42,15 +42,16 @@ def test_next_codes_uses_owner_sequence_and_global_orc():
             _ScalarResult(42),
         ]
 
-        code, orc_id, order_number = await _next_codes(db, owner_id)
+        code, orc_id, order_number = await _next_codes(db, owner_id, "EU")
 
         assert code == "PED-0003"
         assert orc_id == "ORC-0042"
         assert order_number == 3
         assert db.execute.await_count == 2
         assert db.execute.await_args_list[0].args[1] == {
-            "number_owner_id": str(owner_id)
+            "market_code": "EU", "number_owner_id": str(owner_id)
         }
+        assert db.execute.await_args_list[1].args[1] == {"market_code": "EU"}
 
     asyncio.run(run_test())
 

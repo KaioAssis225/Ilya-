@@ -5,6 +5,9 @@ import type { UserRead, UserCreate, UserUpdate } from '../hooks/useUsers'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import RetentionGovernancePanel from '../components/RetentionGovernancePanel'
 import IncidentRegistryPanel from '../components/IncidentRegistryPanel'
+import { useAuth } from '../hooks/useAuth'
+import { useQuery } from '@tanstack/react-query'
+import api from '../lib/api'
 
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -30,6 +33,7 @@ type ModalMode = 'create' | 'edit' | 'password' | 'delete'
 
 const EMPTY_CREATE: UserCreate = {
   email: '', password: '', full_name: '', role: 'vendedor', rep_id: null,
+  home_market: 'BR', allowed_markets: ['BR'],
 }
 
 const USERS_PER_PAGE = 25
@@ -44,6 +48,15 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 export default function AdminPage() {
+  const { user: currentUser } = useAuth()
+  const [marketTab, setMarketTab] = useState<'BR' | 'EU'>(currentUser?.active_market ?? 'BR')
+  const [showPriceComparison, setShowPriceComparison] = useState(false)
+  const priceComparison = useQuery<Record<string, Record<string, Record<string, string>>>>({
+    queryKey: ['markets', 'price-comparison'],
+    queryFn: () => api.get('/markets/price-comparison').then(response => response.data),
+    enabled: showPriceComparison,
+    staleTime: 60_000,
+  })
   const [userPage, setUserPage] = useState(1)
   const [userQuery, setUserQuery] = useState('')
   const debouncedUserQuery = useDebouncedValue(userQuery.trim(), 300)
@@ -53,6 +66,7 @@ export default function AdminPage() {
     q: debouncedUserQuery || undefined,
     sort_by: 'full_name',
     sort_dir: 'asc',
+    market: marketTab,
   })
   const users = usersPage?.items ?? []
   const totalUsers = usersPage?.total ?? 0
@@ -106,14 +120,14 @@ export default function AdminPage() {
   }
 
   function openCreate() {
-    setForm(EMPTY_CREATE)
+    setForm({ ...EMPTY_CREATE, home_market: marketTab, allowed_markets: [marketTab] })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'create' })
   }
 
   function openEdit(u: UserRead) {
-    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard })
+    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard, home_market: u.home_market, allowed_markets: u.allowed_markets })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })
@@ -198,8 +212,31 @@ export default function AdminPage() {
             <Plus className="w-4 h-4" /> Novo Usuário
           </button>
         </div>
+        <section className="bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between gap-4 px-5 py-4">
+            <div className="min-w-0"><h2 className="text-sm font-semibold text-ink">Comparação de preços por mercado</h2><p className="mt-1 text-xs text-muted">Área administrativa; valores de Brasil e Europa não aparecem nas telas operacionais ao mesmo tempo.</p></div>
+            <button type="button" className="btn-secondary shrink-0" onClick={() => setShowPriceComparison(value => !value)}>{showPriceComparison ? 'Ocultar' : 'Comparar'}</button>
+          </div>
+          {showPriceComparison && <div className="max-h-96 overflow-auto border-t border-line">
+            {priceComparison.isLoading ? <p className="p-5 text-sm text-muted">Carregando preços…</p> : priceComparison.isError ? <p className="p-5 text-sm text-red-700">Não foi possível carregar a comparação. Tente novamente.</p> : <table className="w-full min-w-[680px] text-sm"><thead className="sticky top-0 bg-surface-alt"><tr><th className="px-5 py-3 text-left">SKU</th><th className="px-5 py-3 text-left">Brasil</th><th className="px-5 py-3 text-left">Europa</th></tr></thead><tbody>{Object.entries(priceComparison.data ?? {}).map(([sku, markets]) => <tr key={sku} className="border-t border-line"><td className="px-5 py-3 font-mono font-medium text-gold">{sku}</td><td className="px-5 py-3 text-ink-2">{Object.entries(markets.BR ?? {}).map(([list, value]) => `${list}: ${value}`).join(' · ') || '—'}</td><td className="px-5 py-3 text-ink-2">{Object.entries(markets.EU ?? {}).map(([list, value]) => `${list}: ${value}`).join(' · ') || '—'}</td></tr>)}</tbody></table>}
+          </div>}
+        </section>
 
         <div className="bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex gap-1 border-b border-line bg-surface-alt px-5 pt-3" role="tablist" aria-label="Usuários por mercado">
+            {(['BR', 'EU'] as const).map(code => (
+              <button
+                key={code}
+                type="button"
+                role="tab"
+                aria-selected={marketTab === code}
+                onClick={() => { setMarketTab(code); setUserPage(1) }}
+                className={`min-h-11 px-4 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors ${marketTab === code ? 'border-gold text-gold' : 'border-transparent text-muted hover:text-ink'}`}
+              >
+                {code === 'BR' ? 'Brasil' : 'Europa'}
+              </button>
+            ))}
+          </div>
           <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative w-full sm:max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
@@ -306,6 +343,29 @@ export default function AdminPage() {
                   <span className="text-xs text-muted">Nome Completo *</span>
                   <input className="input" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required />
                 </label>
+                <fieldset className="space-y-2 rounded-xl border border-line p-3">
+                  <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Acesso a mercados</legend>
+                  <div className="flex gap-4">
+                    {(['BR', 'EU'] as const).map(code => (
+                      <label key={code} className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                        <input type="checkbox" className="h-4 w-4 accent-gold" checked={form.allowed_markets.includes(code)} onChange={event => {
+                          const allowed = event.target.checked ? [...form.allowed_markets, code] : form.allowed_markets.filter(item => item !== code)
+                          setForm({ ...form, allowed_markets: allowed.length ? allowed : [form.home_market] })
+                        }} />
+                        {code === 'BR' ? 'Brasil' : 'Europa'}
+                      </label>
+                    ))}
+                  </div>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">Mercado principal</span>
+                    <select className="input" value={form.home_market} onChange={event => {
+                      const home = event.target.value as 'BR' | 'EU'
+                      setForm({ ...form, home_market: home, allowed_markets: Array.from(new Set([...form.allowed_markets, home])) })
+                    }}>
+                      <option value="BR">Brasil</option><option value="EU">Europa</option>
+                    </select>
+                  </label>
+                </fieldset>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">E-mail *</span>
                   <input className="input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
@@ -413,6 +473,28 @@ export default function AdminPage() {
                     {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
                   </label>
                 )}
+                <fieldset className="space-y-2 rounded-xl border border-line p-3">
+                  <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Acesso a mercados</legend>
+                  <div className="flex gap-4">
+                    {(['BR', 'EU'] as const).map(code => (
+                      <label key={code} className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                        <input type="checkbox" className="h-4 w-4 accent-gold" checked={(editForm.allowed_markets ?? []).includes(code)} onChange={event => {
+                          const current = editForm.allowed_markets ?? []
+                          const allowed = event.target.checked ? [...current, code] : current.filter(item => item !== code)
+                          setEditForm({ ...editForm, allowed_markets: allowed })
+                        }} />
+                        {code === 'BR' ? 'Brasil' : 'Europa'}
+                      </label>
+                    ))}
+                  </div>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">Mercado principal</span>
+                    <select className="input" value={editForm.home_market ?? 'BR'} onChange={event => {
+                      const home = event.target.value as 'BR' | 'EU'
+                      setEditForm({ ...editForm, home_market: home, allowed_markets: Array.from(new Set([...(editForm.allowed_markets ?? []), home])) })
+                    }}><option value="BR">Brasil</option><option value="EU">Europa</option></select>
+                  </label>
+                </fieldset>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={editForm.is_active ?? true} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} className="w-4 h-4 accent-gold" />
                   <span className="text-sm text-ink-2">Usuário ativo</span>

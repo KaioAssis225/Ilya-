@@ -13,11 +13,15 @@ class Order(Base, TimestampMixin):
     __tablename__ = "orders"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR")
+    price_list_code: Mapped[str] = mapped_column(String(30), nullable=False, default="lojista", server_default="lojista")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="BRL", server_default="BRL")
+    locale: Mapped[str] = mapped_column(String(10), nullable=False, default="pt-BR", server_default="pt-BR")
     # O código PED é sequencial dentro do usuário que criou o pedido.
     code: Mapped[str] = mapped_column(String(50), nullable=False)
     number_owner_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     order_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    orc_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    orc_id: Mapped[str] = mapped_column(String(50), nullable=False)
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), nullable=False)
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id"), nullable=True)
     total_value: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
@@ -57,10 +61,12 @@ class Order(Base, TimestampMixin):
             name="ck_orders_order_number_positive",
         ),
         UniqueConstraint(
-            "number_owner_id",
+            "market_code", "number_owner_id",
             "order_number",
-            name="uq_orders_number_owner_order_number",
+            name="uq_orders_market_owner_order_number",
         ),
+        UniqueConstraint("market_code", "orc_id", name="uq_orders_market_orc_id"),
+        Index("ix_orders_market_created_id", "market_code", "created_at", "id"),
         Index("ix_orders_number_owner_id", "number_owner_id"),
         Index(
             "ix_orders_code_trgm",
@@ -157,6 +163,8 @@ class OrderItem(Base, TimestampMixin):
     discount: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     ipi_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     ipi_value: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
+    tax_label: Mapped[str] = mapped_column(String(10), nullable=False, default="IPI", server_default="IPI")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="BRL", server_default="BRL")
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     order: Mapped["Order"] = relationship("Order", back_populates="items")

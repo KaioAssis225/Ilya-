@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Temporariamente desativado: mantém código e dados de assinatura intactos,
     # mas bloqueia criação, validação e aplicação de assinaturas eletrônicas.
     ELECTRONIC_SIGNATURES_ENABLED: bool = False
+    # O schema multimercado pode ser publicado com segurança enquanto a Europa
+    # permanece inacessível. Ative somente após importar e conferir preços/IVA.
+    EUROPE_MARKET_ENABLED: bool = False
 
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
     # Deployments de produção/preview do projeto Ilya na conta Vercel indicada.

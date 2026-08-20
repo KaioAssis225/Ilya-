@@ -20,6 +20,9 @@ export interface AuthUser {
   must_change_password: boolean
   max_discount: number
   can_view_dashboard: boolean
+  home_market: 'BR' | 'EU'
+  active_market: 'BR' | 'EU'
+  allowed_markets: Array<'BR' | 'EU'>
 }
 
 interface AuthState {
@@ -32,6 +35,7 @@ interface AuthContextValue extends AuthState {
   logout: () => Promise<void>
   refreshSession: () => Promise<string | null>
   refreshMe: () => Promise<void>
+  switchMarket: (market: 'BR' | 'EU') => Promise<void>
   isLoading: boolean
 }
 
@@ -151,9 +155,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession()
   }, [clearSession])
 
+  const switchMarket = useCallback(async (market: 'BR' | 'EU') => {
+    if (!state.user || market === state.user.active_market) return
+    const response = await authApi.post<{ access_token: string }>('/auth/switch-market', { market }, {
+      headers: state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : undefined,
+    })
+    const me = await authApi.get<AuthUser>('/auth/me', {
+      headers: { Authorization: `Bearer ${response.data.access_token}` },
+    })
+    setSession(response.data.access_token, me.data)
+    // As queries e os carrinhos são dependentes de mercado. Recarregar elimina
+    // qualquer cache visual do escopo anterior; o refresh HttpOnly preserva EU/BR.
+    window.location.reload()
+  }, [state.user, state.accessToken, setSession])
+
   return (
     <AuthContext.Provider
-      value={{ ...state, login, logout, refreshSession, refreshMe, isLoading }}
+      value={{ ...state, login, logout, refreshSession, refreshMe, switchMarket, isLoading }}
     >
       {children}
     </AuthContext.Provider>

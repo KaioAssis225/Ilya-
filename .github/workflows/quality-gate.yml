@@ -170,6 +170,22 @@ jobs:
             ilya-backend-ci \
             python startup.py migrate
 
+      - name: Validar árvore Alembic e upgrade incremental
+        shell: bash
+        run: |
+          set -euo pipefail
+          heads=$(docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ilya_boot_test \
+            --env SECRET_KEY=ci-secret-key-with-at-least-32-characters \
+            --env PASSWORD_PEPPER=ci-password-pepper-not-used-in-production \
+            ilya-backend-ci alembic heads | wc -l)
+          test "$heads" -eq 1 || { echo "Alembic deve possuir exatamente uma head; encontrou $heads."; exit 1; }
+          docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ilya_boot_test \
+            --env SECRET_KEY=ci-secret-key-with-at-least-32-characters \
+            --env PASSWORD_PEPPER=ci-password-pepper-not-used-in-production \
+            ilya-backend-ci sh -c 'alembic downgrade 0050 && alembic upgrade head'
+
       - name: Validar boot do servidor sem migration nem seed
         shell: bash
         run: |

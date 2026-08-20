@@ -4,11 +4,15 @@ interface SafePriceProps {
   value: number
   className?: string
   prefix?: string
+  currency?: string
+  locale?: string
 }
 
-export function SafePrice({ value, className, prefix = 'R$ ' }: SafePriceProps) {
+export function SafePrice({ value, className, prefix, currency = 'BRL', locale = 'pt-BR' }: SafePriceProps) {
   const spanRef = useRef<HTMLSpanElement>(null)
-  const formatted = `${prefix}${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const formatted = prefix !== undefined
+    ? `${prefix}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value))
 
   useEffect(() => {
     const el = spanRef.current

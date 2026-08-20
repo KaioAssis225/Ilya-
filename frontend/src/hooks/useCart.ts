@@ -8,13 +8,13 @@ import { CART_EVENT, readCartQuantities } from '../lib/cart'
  * Não usa `useSyncExternalStore`: o snapshot é um objeto novo a cada leitura, o
  * que dispararia loop infinito sem uma camada de cache que não vale o custo aqui.
  */
-export function useCartQuantities(userId?: string | null): Record<string, number> {
+export function useCartQuantities(userId?: string | null, market: 'BR' | 'EU' = 'BR'): Record<string, number> {
   const [quantities, setQuantities] = useState<Record<string, number>>(
-    () => readCartQuantities(userId),
+    () => readCartQuantities(userId, market),
   )
 
   useEffect(() => {
-    const sync = () => setQuantities(readCartQuantities(userId))
+    const sync = () => setQuantities(readCartQuantities(userId, market))
     // Reconcilia no mount: o carrinho pode ter mudado entre o estado inicial e
     // a montagem (ex.: outra rota escreveu durante o lazy-load desta página).
     sync()
@@ -24,7 +24,7 @@ export function useCartQuantities(userId?: string | null): Record<string, number
       window.removeEventListener(CART_EVENT, sync)
       window.removeEventListener('storage', sync)
     }
-  }, [userId])
+  }, [userId, market])
 
   return quantities
 }

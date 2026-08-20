@@ -77,7 +77,7 @@ def test_delete_product_desativa_em_vez_de_excluir():
         with patch(
             "app.api.routers.products.delete_upload", new_callable=AsyncMock
         ) as mock_delete_upload:
-            await delete_product(product.id, db=db, _=SimpleNamespace())
+            await delete_product(product.id, db=db, current_user=SimpleNamespace(active_market="BR"))
 
             # Desativa e marca frescor — não remove a linha.
             assert product.is_active is False

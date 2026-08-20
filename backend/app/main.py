@@ -23,7 +23,7 @@ from app.core.limiter import limiter
 from app.core.request_size import RequestSizeLimitMiddleware
 from app.db.session import AsyncSessionLocal, engine
 from app.models.refresh_token import cleanup_expired_tokens
-from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, optional_categories_router, users_router, notifications_router, utils_router, import_router, dashboard_router, media_router, integrations_router, privacy_router
+from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, optional_categories_router, users_router, notifications_router, utils_router, import_router, dashboard_router, media_router, integrations_router, privacy_router, markets_router
 from app.api.routers.auth import router as auth_router
 
 # ── Logging estruturado ───────────────────────────────────────────────────────
@@ -256,6 +256,7 @@ app.include_router(dashboard_router)
 app.include_router(media_router)
 app.include_router(integrations_router)
 app.include_router(privacy_router)
+app.include_router(markets_router)
 
 
 @app.get("/health", tags=["health"])

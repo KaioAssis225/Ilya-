@@ -18,8 +18,11 @@ class ClientBase(BaseModel):
     numero: Optional[str] = Field(None, max_length=50)
     address: str = Field(..., max_length=255)
     city: str = Field(..., max_length=255)
-    state: str = Field(..., min_length=2, max_length=2)
-    price_profile: Literal["lojista", "corporativo"] = "lojista"
+    state: str = Field("--", min_length=2, max_length=2)
+    country: str = Field("BR", min_length=2, max_length=2)
+    region: Optional[str] = Field(None, max_length=120)
+    tax_id: Optional[str] = Field(None, max_length=40)
+    price_profile: Literal["lojista", "corporativo", "pvp"] = "lojista"
     max_discount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
 
     @field_validator("cpf_cnpj", mode="before")
@@ -35,7 +38,7 @@ class ClientBase(BaseModel):
         if not isinstance(value, str):
             raise ValueError("UF deve ser informada como texto.")
         state = value.strip().upper()
-        if len(state) != 2 or not state.isascii() or not state.isalpha():
+        if state != "--" and (len(state) != 2 or not state.isascii() or not state.isalpha()):
             raise ValueError("UF deve conter exatamente 2 letras.")
         return state
 
@@ -59,7 +62,10 @@ class ClientUpdate(BaseModel):
     address: Optional[str] = Field(None, max_length=255)
     city: Optional[str] = Field(None, max_length=255)
     state: Optional[str] = Field(None, min_length=2, max_length=2)
-    price_profile: Optional[Literal["lojista", "corporativo"]] = None
+    country: Optional[str] = Field(None, min_length=2, max_length=2)
+    region: Optional[str] = Field(None, max_length=120)
+    tax_id: Optional[str] = Field(None, max_length=40)
+    price_profile: Optional[Literal["lojista", "corporativo", "pvp"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
     # Permite reatribuir a carteira e consertar cliente órfão (ver ClientCreate).
     rep_id: Optional[uuid.UUID] = None
@@ -81,13 +87,14 @@ class ClientUpdate(BaseModel):
         if not isinstance(value, str):
             raise ValueError("UF deve ser informada como texto.")
         state = value.strip().upper()
-        if len(state) != 2 or not state.isascii() or not state.isalpha():
+        if state != "--" and (len(state) != 2 or not state.isascii() or not state.isalpha()):
             raise ValueError("UF deve conter exatamente 2 letras.")
         return state
 
 
 class ClientRead(ClientBase):
     id: uuid.UUID
+    market_code: Literal["BR", "EU"] = "BR"
     rep_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
