@@ -169,7 +169,6 @@ function Nav() {
 
   const unreadCount = notifications.filter(n => !n.is_read).length
   const marketName = user.active_market === 'EU' ? 'PORTUGAL' : 'BRASIL'
-  const marketNameColor = user.active_market === 'EU' ? '#C8102E' : '#08783f'
 
   return (
     <>
@@ -179,7 +178,7 @@ function Nav() {
             className="mr-3 whitespace-nowrap text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
             style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
           >
-            ILYA <span className="text-xs font-semibold tracking-[0.08em] sm:text-sm" style={{ color: marketNameColor }}>— {marketName}</span>
+            ILYA <span className="text-xs font-semibold tracking-[0.08em] text-gold sm:text-sm">— {marketName}</span>
           </div>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
