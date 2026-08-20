@@ -54,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setSession = useCallback((accessToken: string, user: AuthUser) => {
     removeUnsafeLegacyCart()
+    sessionStorage.setItem('ilya-active-market', user.active_market)
     setState({ user, accessToken })
   }, [])
 
