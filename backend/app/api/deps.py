@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.db.session import get_db
 from app.models.user import User, UserRole
 from app.core.security import decode_access_token
-from app.core.markets import require_allowed_market
+from app.core.markets import MarketPrincipal, build_market_principal
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login"
@@ -20,11 +20,11 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def get_authenticated_user(
+async def get_market_principal(
     token: str = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db_session)
-) -> User:
-    """Validates token and returns the user. Does NOT enforce must_change_password."""
+) -> MarketPrincipal:
+    """Valida identidade e mercado e devolve o principal imutável da requisição."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Credenciais inválidas ou token expirado.",
@@ -53,24 +53,35 @@ async def get_authenticated_user(
     if not isinstance(token_market, str):
         raise credentials_exception
     try:
-        user.active_market = await require_allowed_market(db, user, token_market)
-        db.sync_session.info["active_market"] = user.active_market
+        return await build_market_principal(db, user, token_market)
     except HTTPException:
         # Retirada de acesso invalida imediatamente o access token existente.
         raise credentials_exception
-    return user
 
 
-async def get_current_user(
-    user: User = Depends(get_authenticated_user),
+async def get_authenticated_user(
+    principal: MarketPrincipal = Depends(get_market_principal),
 ) -> User:
-    """Returns the current user, raising 403 if a password change is required."""
-    if user.must_change_password:
+    """Adaptador legado de identidade; novas rotas devem receber o principal."""
+    return principal.user
+
+
+async def get_current_principal(
+    principal: MarketPrincipal = Depends(get_market_principal),
+) -> MarketPrincipal:
+    if principal.user.must_change_password:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="must_change_password",
         )
-    return user
+    return principal
+
+
+async def get_current_user(
+    principal: MarketPrincipal = Depends(get_current_principal),
+) -> User:
+    """Adaptador legado; preserva dependências RBAC enquanto rotas são migradas."""
+    return principal.user
 
 
 def is_client_account(user: User) -> bool:

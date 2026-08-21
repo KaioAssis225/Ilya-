@@ -20,6 +20,7 @@ from app.api.routers.products import (
     get_products_batch,
     list_products,
 )
+from app.core.markets import MARKETS, MarketPrincipal
 from app.models.user import UserRole
 from app.schemas.product import ProductBatchRequest
 
@@ -61,6 +62,7 @@ def _capturing_db(wheres: list[str]):
 
 
 ADMIN = SimpleNamespace(role=UserRole.admin, linked_id=None)
+BR_PRINCIPAL = MarketPrincipal(user=ADMIN, market=MARKETS["BR"])
 
 
 def test_delete_product_desativa_em_vez_de_excluir():
@@ -77,7 +79,12 @@ def test_delete_product_desativa_em_vez_de_excluir():
         with patch(
             "app.api.routers.products.delete_upload", new_callable=AsyncMock
         ) as mock_delete_upload:
-            await delete_product(product.id, db=db, current_user=SimpleNamespace(active_market="BR"))
+            await delete_product(
+                product.id,
+                db=db,
+                current_user=ADMIN,
+                principal=BR_PRINCIPAL,
+            )
 
             # Desativa e marca frescor — não remove a linha.
             assert product.is_active is False
@@ -112,6 +119,7 @@ class TestLeituraEscondeDesativado:
                 sort_dir="asc",
                 db=_capturing_db(wheres),
                 current_user=ADMIN,
+                principal=BR_PRINCIPAL,
             )
             # Duas consultas: a contagem do X-Total-Count e a página em si. Um
             # total maior que a página quebraria a paginação do catálogo.
@@ -125,7 +133,10 @@ class TestLeituraEscondeDesativado:
             wheres: list[str] = []
             with pytest.raises(HTTPException) as exc:
                 await get_product(
-                    uuid.uuid4(), db=_capturing_db(wheres), current_user=ADMIN
+                    uuid.uuid4(),
+                    db=_capturing_db(wheres),
+                    current_user=ADMIN,
+                    principal=BR_PRINCIPAL,
                 )
             assert exc.value.status_code == 404
             assert "is_active" in wheres[0]
@@ -139,6 +150,7 @@ class TestLeituraEscondeDesativado:
                 ProductBatchRequest(product_codes=["ABC123"]),
                 db=_capturing_db(wheres),
                 current_user=ADMIN,
+                principal=BR_PRINCIPAL,
             )
             assert resultado == []
             assert "is_active" in wheres[0]

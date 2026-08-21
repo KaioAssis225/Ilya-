@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 
 from app.api.deps import (
     get_db_session,
+    get_current_principal,
     get_current_user,
     require_directory_access,
     require_roles,
@@ -19,7 +20,7 @@ from app.models.client import Client
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.user import User, UserRole
 from app.schemas.representative import RepresentativeCreate, RepresentativeUpdate, RepresentativeRead
-from app.core.markets import active_market_for
+from app.core.markets import MarketPrincipal
 
 router = APIRouter(prefix="/api/v1/representatives", tags=["representatives"])
 
@@ -88,8 +89,9 @@ async def list_representatives(
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     filters = [Representative.market_code == market]
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
@@ -186,8 +188,9 @@ async def create_representative(
     payload: RepresentativeCreate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(UserRole.admin)),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     if market == "EU" and "country" not in payload.model_fields_set:
         raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
     duplicate_email = None
@@ -251,6 +254,7 @@ async def get_representative(
     rep_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     if current_user.role == UserRole.representante and current_user.rep_id != rep_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este representante.")
@@ -270,7 +274,7 @@ async def get_representative(
                 status_code=403,
                 detail="Acesso negado a este representante.",
             )
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Representative).where(
         Representative.id == rep_id,
         Representative.market_code == market,
@@ -294,11 +298,12 @@ async def update_representative(
     payload: RepresentativeUpdate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         if current_user.role != UserRole.representante or current_user.rep_id != rep_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para o seu nível de acesso.")
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Representative).where(
         Representative.id == rep_id,
         Representative.market_code == market,
@@ -373,8 +378,9 @@ async def delete_representative(
     rep_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Representative).where(
         Representative.id == rep_id,
         Representative.market_code == market,
@@ -392,9 +398,10 @@ async def anonymize_representative(
     request: Request,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     """Anonimiza o cadastro comercial e desativa eventual conta vinculada."""
-    market = active_market_for(current_user)
+    market = principal.code
     rep = (
         await db.execute(
             select(Representative).where(

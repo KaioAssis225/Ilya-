@@ -1,11 +1,10 @@
 import { createContext, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import axios from 'axios'
-import { authApi, bindAuthHandlers } from '../lib/api'
+import { authApi, bindAuthHandlers, rotatePrivateApiSession } from '../lib/api'
 import { removeUnsafeLegacyCart } from '../lib/cart'
 import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 import { DEMO_MODE, DEMO_USER } from '../lib/demo'
-import { clearPrivateQueryState } from '../lib/queryClient'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
 
@@ -59,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setSession = useCallback((accessToken: string, user: AuthUser) => {
     removeUnsafeLegacyCart()
     const nextScope = `${user.id}:${user.active_market}`
-    if (sessionScopeRef.current !== nextScope) clearPrivateQueryState()
+    if (sessionScopeRef.current !== nextScope) rotatePrivateApiSession()
     sessionScopeRef.current = nextScope
     // Atualiza de forma síncrona: nenhuma requisição iniciada no mesmo frame
     // pode reutilizar o token da identidade anterior.
@@ -71,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearSession = useCallback(() => {
     accessTokenRef.current = null
     sessionScopeRef.current = null
-    clearPrivateQueryState()
+    rotatePrivateApiSession()
     setState({ user: null, accessToken: null })
   }, [])
 
@@ -136,12 +135,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await authApi.get<AuthUser>('/auth/me', {
         headers: { Authorization: `Bearer ${token}` },
       })
-      setState((s) => ({ ...s, user: me.data }))
+      setSession(token, me.data)
     } catch (err) {
       // Não propaga: callers (ex.: troca de senha) não devem exibir erro falso (V-M6).
       if (import.meta.env.DEV) console.error('Falha ao atualizar dados do usuário:', err)
     }
-  }, [state.accessToken])
+  }, [state.accessToken, setSession])
 
   const login = useCallback(
     async (identifier: string, password: string) => {

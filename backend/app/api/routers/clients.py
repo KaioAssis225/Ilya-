@@ -11,6 +11,7 @@ import logging
 from app.api.deps import (
     COMMERCIAL_ROLES,
     get_db_session,
+    get_current_principal,
     get_current_user,
     require_directory_access,
     require_roles,
@@ -24,7 +25,7 @@ from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
 from app.models.market import PriceList
-from app.core.markets import active_market_for
+from app.core.markets import MarketPrincipal
 
 router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 
@@ -210,8 +211,9 @@ async def list_clients(
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     filters = [Client.market_code == market]
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
@@ -285,9 +287,10 @@ async def create_client(
     payload: ClientCreate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(*_CREATE_CLIENT_ROLES)),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     data = payload.model_dump()
-    market = active_market_for(current_user)
+    market = principal.code
     duplicate_email = None
     if payload.email:
         duplicate_email = (
@@ -359,8 +362,9 @@ async def get_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Client).where(
         Client.id == client_id,
         Client.market_code == market,
@@ -385,8 +389,9 @@ async def update_client(
     payload: ClientUpdate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_directory_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Client).where(
         Client.id == client_id,
         Client.market_code == market,
@@ -468,8 +473,9 @@ async def delete_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(*_DELETE_CLIENT_ROLES)),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Client).where(
         Client.id == client_id,
         Client.market_code == market,
@@ -501,12 +507,13 @@ async def anonymize_client(
     request: Request,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     """LGPD Art. 18, IV (via Art. 18 §1º — pedido do titular por outros canais):
     anonimiza um cliente que não possui conta no sistema, preservando o registro
     para integridade fiscal dos pedidos (Art. 16, I). Desativa a conta vinculada,
     caso exista."""
-    market = active_market_for(current_user)
+    market = principal.code
     result = await db.execute(select(Client).where(
         Client.id == client_id,
         Client.market_code == market,

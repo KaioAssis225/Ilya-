@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session, require_dashboard_access
+from app.api.deps import get_current_principal, get_db_session, require_dashboard_access
 from app.core.limiter import limiter
 from app.core.regions import REGIONS, states_for_region
 from app.models.client import Client
@@ -19,7 +19,7 @@ from app.schemas.dashboard import (
     ProductRanking,
     RepresentativeRanking,
 )
-from app.core.markets import active_market_for
+from app.core.markets import MarketPrincipal
 
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
@@ -43,6 +43,7 @@ async def get_overview(
     ranking_limit: int = Query(default=100, ge=5, le=500),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_dashboard_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     if not end_date:
         end_date = datetime.now(timezone.utc).date()
@@ -63,7 +64,7 @@ async def get_overview(
         tzinfo=timezone.utc,
     )
     conditions = [
-        Order.market_code == active_market_for(current_user),
+        Order.market_code == principal.code,
         Order.created_at >= start_dt,
         Order.created_at < end_exclusive,
     ]
