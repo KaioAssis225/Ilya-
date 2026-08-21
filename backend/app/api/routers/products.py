@@ -5,14 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
-from app.api.deps import get_db_session, get_current_user, is_client_account, require_roles
+from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_roles
 from app.models.client import Client
 from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList
-from app.core.markets import active_market_for, market_context
+from app.core.markets import MarketPrincipal
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
@@ -104,10 +104,10 @@ def _to_read(product: Product, visible_profile: Optional[str] = None) -> Product
 
 
 async def _to_market_reads(
-    db: AsyncSession, products: list[Product], user: User, visible_profile: Optional[str]
+    db: AsyncSession, products: list[Product], principal: MarketPrincipal, visible_profile: Optional[str]
 ) -> list[ProductRead]:
-    market = active_market_for(user)
-    context = market_context(user)
+    market = principal.code
+    context = principal.market
     ids = [product.id for product in products]
     rows = (await db.execute(
         select(ProductPrice.product_id, PriceList.code, ProductPrice.amount)
@@ -234,10 +234,11 @@ async def list_products(
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     # Produto desativado (DELETE = desativação, Migration/01) sai do catálogo.
     # Entra em `filters`, então vale também para a contagem do X-Total-Count.
-    active_market = active_market_for(current_user)
+    active_market = principal.code
     filters = [
         Product.is_active.is_(True),
         exists().where(
@@ -311,7 +312,7 @@ async def list_products(
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(products))
     visible_profile = await _visible_price_profile(db, current_user)
-    return await _to_market_reads(db, products, current_user, visible_profile)
+    return await _to_market_reads(db, products, principal, visible_profile)
 
 
 @router.post("/batch", response_model=List[ProductRead])
@@ -319,6 +320,7 @@ async def get_products_batch(
     payload: ProductBatchRequest,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     codes = list(dict.fromkeys(payload.product_codes))
     products = (
@@ -328,7 +330,7 @@ async def get_products_batch(
                 Product.is_active.is_(True),
                 exists().where(
                     ProductMarket.product_id == Product.id,
-                    ProductMarket.market_code == active_market_for(current_user),
+                    ProductMarket.market_code == principal.code,
                     ProductMarket.is_available.is_(True),
                 ),
             )
@@ -337,7 +339,7 @@ async def get_products_batch(
     product_map = {product.product_code: product for product in products}
     visible_profile = await _visible_price_profile(db, current_user)
     ordered = [product_map[code] for code in codes if code in product_map]
-    return await _to_market_reads(db, ordered, current_user, visible_profile)
+    return await _to_market_reads(db, ordered, principal, visible_profile)
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -345,8 +347,9 @@ async def create_product(
     payload: ProductCreate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if active_market_for(current_user) != "BR":
+    if principal.code != "BR":
         raise HTTPException(status_code=403, detail="O catálogo-base é mantido no mercado Brasil; use a importação europeia para disponibilidade e preços.")
     holder_is_active = (
         await db.execute(
@@ -391,6 +394,7 @@ async def get_product(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     result = await db.execute(
         select(Product).where(
@@ -398,7 +402,7 @@ async def get_product(
             Product.is_active.is_(True),
             exists().where(
                 ProductMarket.product_id == Product.id,
-                ProductMarket.market_code == active_market_for(current_user),
+                ProductMarket.market_code == principal.code,
                 ProductMarket.is_available.is_(True),
             ),
         )
@@ -406,7 +410,7 @@ async def get_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    return (await _to_market_reads(db, [product], current_user, await _visible_price_profile(db, current_user)))[0]
+    return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user)))[0]
 
 
 @router.patch("/{product_id}", response_model=ProductRead)
@@ -415,8 +419,9 @@ async def update_product(
     payload: ProductUpdate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if active_market_for(current_user) != "BR":
+    if principal.code != "BR":
         raise HTTPException(status_code=403, detail="Altere o catálogo-base no mercado Brasil.")
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
@@ -463,8 +468,9 @@ async def delete_product(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if active_market_for(current_user) != "BR":
+    if principal.code != "BR":
         raise HTTPException(status_code=403, detail="Desative o catálogo-base no mercado Brasil.")
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
@@ -484,8 +490,9 @@ async def upload_photo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if active_market_for(current_user) != "BR":
+    if principal.code != "BR":
         raise HTTPException(status_code=403, detail="Altere as fotos do catálogo-base no mercado Brasil.")
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()

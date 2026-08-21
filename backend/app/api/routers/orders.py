@@ -15,6 +15,7 @@ from sqlalchemy.orm import load_only, noload, selectinload
 
 from app.api.deps import (
     get_db_session,
+    get_current_principal,
     get_current_user,
     require_order_access,
     require_roles,
@@ -35,7 +36,7 @@ from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
 from app.models.market import ProductMarket, ProductPrice, PriceList, MarketTaxRate
-from app.core.markets import active_market_for, market_context
+from app.core.markets import MarketPrincipal
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.core.security import (
@@ -321,6 +322,7 @@ async def create_order(
     payload: OrderCreate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     _allowed_create = {UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.produtos, UserRole.cliente}
     if current_user.role not in _allowed_create:
@@ -367,8 +369,8 @@ async def create_order(
 
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
     product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
-    market_code = active_market_for(current_user)
-    context = market_context(current_user)
+    market_code = principal.code
+    context = principal.market
     price_list = (await db.execute(
         select(PriceList).where(
             PriceList.id == client.price_list_id,
@@ -508,6 +510,7 @@ async def list_orders(
     date_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_order_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     conditions = []
     if current_user.role == UserRole.representante:
@@ -598,7 +601,7 @@ async def list_orders(
         .select_from(Order)
         .join(Client, Client.id == Order.client_id)
         .outerjoin(Representative, Representative.id == Order.rep_id)
-        .where(Order.market_code == active_market_for(current_user), *conditions)
+        .where(Order.market_code == principal.code, *conditions)
         .order_by(Order.created_at.desc(), Order.id.desc())
     )
 
@@ -657,12 +660,13 @@ async def list_global_history(
     cursor: str | None = Query(default=None, max_length=256),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     if not (current_user.role == UserRole.admin or is_internal_operator(current_user)):
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
     stmt = select(OrderHistory).join(Order, Order.id == OrderHistory.order_id).where(
-        Order.market_code == active_market_for(current_user)
+        Order.market_code == principal.code
     )
     if cursor:
         cursor_created_at, cursor_id = _decode_order_cursor(cursor)

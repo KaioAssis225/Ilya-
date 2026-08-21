@@ -8,7 +8,13 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
-from app.core.markets import active_market_for, allowed_markets, require_allowed_market
+from app.core.markets import (
+    MARKETS,
+    MarketPrincipal,
+    build_market_principal,
+    allowed_markets,
+    require_allowed_market,
+)
 from app.core.security import create_access_token, decode_access_token
 from app.models.client import Client
 from app.models.user import UserRole
@@ -25,8 +31,17 @@ def test_access_token_signs_market_scope():
     assert decode_access_token(token)["market"] == "EU"
 
 
-def test_legacy_helper_defaults_to_br_without_ip_or_header():
-    assert active_market_for(SimpleNamespace()) == "BR"
+def test_market_principal_binds_only_the_validated_market():
+    async def run():
+        db = AsyncMock()
+        db.sync_session = SimpleNamespace(info={})
+        with patch("app.core.markets.require_allowed_market", AsyncMock(return_value="EU")):
+            principal = await build_market_principal(db, _user(UserRole.admin), "EU")
+        assert principal.code == "EU"
+        assert principal.market is MARKETS["EU"]
+        assert db.sync_session.info == {"active_market": "EU"}
+
+    asyncio.run(run())
 
 
 def test_admin_receives_both_markets_only_when_europe_flag_enabled():
@@ -79,7 +94,12 @@ def test_client_lookup_always_contains_active_market_scope():
         )
 
         with pytest.raises(HTTPException) as exc:
-            await get_client(uuid.uuid4(), db=db, current_user=user)
+            await get_client(
+                uuid.uuid4(),
+                db=db,
+                current_user=user,
+                principal=MarketPrincipal(user=user, market=MARKETS["BR"]),
+            )
 
         statement = db.execute.await_args.args[0]
         assert "clients.market_code" in str(statement)
@@ -103,7 +123,12 @@ def test_representative_lookup_always_contains_active_market_scope():
         )
 
         with pytest.raises(HTTPException) as exc:
-            await get_representative(uuid.uuid4(), db=db, current_user=user)
+            await get_representative(
+                uuid.uuid4(),
+                db=db,
+                current_user=user,
+                principal=MarketPrincipal(user=user, market=MARKETS["EU"]),
+            )
 
         statement = db.execute.await_args.args[0]
         assert "representatives.market_code" in str(statement)

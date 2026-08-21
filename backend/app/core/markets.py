@@ -17,6 +17,26 @@ class MarketContext:
     tax_label: str
 
 
+@dataclass(frozen=True)
+class MarketPrincipal:
+    """Identidade autenticada e mercado autorizado de uma requisição.
+
+    O código de mercado não é inferido: ele já foi validado contra o token e os
+    vínculos do usuário antes da construção deste objeto.
+    """
+
+    user: User
+    market: MarketContext
+
+    @property
+    def code(self) -> str:
+        return self.market.code
+
+    def bind(self, db: AsyncSession) -> None:
+        """Vincula à sessão ORM exatamente o mercado validado no principal."""
+        db.sync_session.info["active_market"] = self.code
+
+
 MARKETS = {
     BR_MARKET: MarketContext(BR_MARKET, "BRL", "pt-BR", "IPI"),
     EU_MARKET: MarketContext(EU_MARKET, "EUR", "pt-PT", "IVA"),
@@ -52,9 +72,12 @@ async def require_allowed_market(db: AsyncSession, user: User, code: str) -> str
     return normalized
 
 
-def active_market_for(user: User) -> str:
-    return getattr(user, "active_market", None) or getattr(user, "home_market", None) or BR_MARKET
-
-
-def market_context(user: User) -> MarketContext:
-    return MARKETS[active_market_for(user)]
+async def build_market_principal(
+    db: AsyncSession,
+    user: User,
+    token_market: str,
+) -> MarketPrincipal:
+    code = await require_allowed_market(db, user, token_market)
+    principal = MarketPrincipal(user=user, market=MARKETS[code])
+    principal.bind(db)
+    return principal

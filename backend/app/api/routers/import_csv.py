@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, noload
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import get_db_session, require_roles
+from app.api.deps import get_current_principal, get_db_session, require_roles
 from app.models.user import User, UserRole
 from app.models.product import Product
 from app.models.product_type import ProductType
@@ -31,7 +31,7 @@ from app.models.optional_color import OptionalColor, product_optionals
 from app.models.client import Client
 from app.models.representative import Representative
 from app.core.config import settings
-from app.core.markets import active_market_for
+from app.core.markets import MarketPrincipal
 from app.models.market import PriceList, ProductMarket, ProductPrice
 from app.core.uploads import read_upload_limited
 
@@ -544,10 +544,10 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
 
 
 @router.post("/representatives")
-async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
+async def import_representatives(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """E-mail é opcional. Com e-mail faz upsert; sem e-mail cria novo registro."""
     rows = await _load_rows(file)
-    market = active_market_for(current_user)
+    market = principal.code
     await _acquire_import_lock(db)
     email_values = [
         value.lower()
@@ -634,13 +634,13 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
 
 
 @router.post("/clients")
-async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
+async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """E-mail é opcional. Com e-mail faz upsert; sem e-mail cria novo registro.
 
     O representante pode ser informado por rep_email ou rep_name.
     """
     rows = await _load_rows(file)
-    market = active_market_for(current_user)
+    market = principal.code
     price_lists = (await db.execute(select(PriceList).where(
         PriceList.market_code == market, PriceList.is_active.is_(True)
     ))).scalars().all()
@@ -808,11 +808,11 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
 # ── Catálogo de produtos em duas etapas ────────────────────────────────────────
 
 @router.post("/products")
-async def import_products(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS):
+async def import_products(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), current_user: User = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Etapa 1 — Colunas: product_code, description, type, is_circular,
     altura, largura, profundidade, price_lojista, price_corporativo, observacao.
     Upsert por product_code (SKU)."""
-    if active_market_for(current_user) != "BR":
+    if principal.code != "BR":
         raise HTTPException(403, "O catálogo-base só pode ser importado no mercado Brasil.")
     rows = await _load_rows(file)
     await _acquire_import_lock(db)

@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select, update
 
-from app.api.deps import get_db_session, get_authenticated_user, get_current_user, is_client_account
+from app.api.deps import get_db_session, get_authenticated_user, get_market_principal, get_current_user, is_client_account
 from app.core.limiter import limiter, refresh_rate_limit_key
 from app.core.lifecycle import touch_client_activity
 from app.core.origin_guard import require_trusted_cookie_origin
@@ -28,7 +28,7 @@ from app.models.user import User, UserRole
 from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.refresh_token import RefreshToken
-from app.core.markets import allowed_markets, require_allowed_market
+from app.core.markets import MarketPrincipal, allowed_markets, require_allowed_market
 from app.models.notification import Notification
 from app.models.order import Order
 from app.models.order_history import OrderHistory
@@ -310,12 +310,13 @@ async def _resolve_max_discount(db: AsyncSession, user: User) -> Decimal:
 @router.get("/me", response_model=UserRead)
 async def me(
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_authenticated_user),
+    principal: MarketPrincipal = Depends(get_market_principal),
 ):
+    current_user = principal.user
     max_discount = await _resolve_max_discount(db, current_user)
     data = UserRead.model_validate(current_user).model_dump()
     data["max_discount"] = max_discount
-    data["active_market"] = current_user.active_market
+    data["active_market"] = principal.code
     data["allowed_markets"] = await allowed_markets(db, current_user)
     return data
 
@@ -325,12 +326,13 @@ async def switch_market(
     body: SwitchMarketRequest,
     request: Request,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_authenticated_user),
+    principal: MarketPrincipal = Depends(get_market_principal),
     refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
     _origin_guard: None = Depends(require_trusted_cookie_origin),
 ):
     """Troca explícita de escopo. O mercado vem da permissão persistida,
     nunca de IP, query string ou cabeçalho fornecido pelo cliente."""
+    current_user = principal.user
     market = await require_allowed_market(db, current_user, body.market)
     if not refresh_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão renovável não encontrada.")

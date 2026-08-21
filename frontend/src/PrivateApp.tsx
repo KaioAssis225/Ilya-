@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
+import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
@@ -11,7 +12,7 @@ import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { MarketSwitcher } from './components/MarketSwitcher'
-import { queryClient } from './lib/queryClient'
+import { createPrivateQueryClient, disposePrivateQueryClient } from './lib/queryClient'
 import { MarketTransition } from './components/MarketTransition'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
@@ -270,12 +271,25 @@ function RouteFallback() {
   return <MarketTransition market={user?.active_market ?? 'BR'} />
 }
 
+function PrivateSessionBoundary({ children }: { children: ReactNode }) {
+  const [client] = useState(createPrivateQueryClient)
+
+  useEffect(() => () => {
+    disposePrivateQueryClient(client)
+  }, [client])
+
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
 export default function PrivateApp() {
   const location = useLocation()
   const { user } = useAuth()
+  if (!user) return null
+  const sessionScope = `${user.id}:${user.active_market}`
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <div data-market={user?.active_market ?? 'BR'} className="min-h-screen">
+    <PrivateSessionBoundary key={sessionScope}>
+      <div data-market={user.active_market} className="min-h-screen">
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
@@ -336,6 +350,6 @@ export default function PrivateApp() {
           <BottomNav />
           <DashboardFabGate />
       </div>
-    </QueryClientProvider>
+    </PrivateSessionBoundary>
   )
 }
