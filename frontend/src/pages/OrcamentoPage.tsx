@@ -909,8 +909,18 @@ export default function OrcamentoPage() {
   const createClientM = useCreateClient()
   const createRepM = useCreateRepresentative()
 
-  // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62)
-  const priceProfile = selectedClient?.price_profile ?? 'lojista'
+  // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62).
+  // A proteção adicional impede que um cadastro legado PVP no Brasil anuncie
+  // uma tabela inexistente enquanto o cálculo faz fallback para lojista.
+  const requestedPriceProfile = selectedClient?.price_profile ?? 'lojista'
+  const priceProfile = market === 'BR' && requestedPriceProfile === 'pvp'
+    ? 'lojista'
+    : requestedPriceProfile
+  const priceProfileLabel = {
+    lojista: 'Lojista',
+    corporativo: 'Corporativo',
+    pvp: 'PVP',
+  }[priceProfile]
 
   function handleClientChange(client: Client | null) {
     const clientId = client?.id ?? ''
@@ -1332,10 +1342,23 @@ export default function OrcamentoPage() {
 
         {/* ── Items Panel ──────────────────────────────────────────────────── */}
         <section aria-labelledby="budget-items-title" className="bg-white border border-line rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
-          <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-line flex items-center justify-between bg-white flex-shrink-0">
-            <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
-            </h2>
+          <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-line flex flex-col gap-3 bg-white flex-shrink-0 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+              <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
+              </h2>
+              <output
+                aria-live="polite"
+                aria-label={`Preço consultado: ${priceProfileLabel}`}
+                title={selectedClient ? `Tabela de preço de ${selectedClient.name}` : 'Tabela padrão até selecionar um cliente'}
+                className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
+              >
+                <span className="px-2.5 text-muted">Preço consultado</span>
+                <strong className="self-stretch border-l border-line bg-white px-2.5 inline-flex items-center font-semibold text-gold">
+                  {priceProfileLabel}
+                </strong>
+              </output>
+            </div>
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
