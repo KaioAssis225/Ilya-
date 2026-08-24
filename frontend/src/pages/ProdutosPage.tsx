@@ -169,22 +169,28 @@ const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
 
 // Padrão é uma tabela só: sem escolha salva, o catálogo nunca nasce expondo as
 // duas de uma vez.
-function readPriceTable(): PriceTable {
-  const saved = localStorage.getItem(PRICE_TABLE_KEY)
-  if (saved === 'corporativo' || saved === 'pvp' || saved === 'todos') return saved
+function priceTableStorageKey(market: 'BR' | 'EU') {
+  return `${PRICE_TABLE_KEY}_${market}`
+}
+
+function readPriceTable(market: 'BR' | 'EU'): PriceTable {
+  const saved = localStorage.getItem(priceTableStorageKey(market))
+  if (saved === 'corporativo' || saved === 'todos') return saved
+  if (market === 'EU' && saved === 'pvp') return saved
   if (saved === 'ambos') return 'todos'
   return 'lojista'
 }
 
 type VisiblePrice = { key: PriceKey; label: string; value: number }
 
-function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
+function visiblePrices(product: Product, table: PriceTable, market: 'BR' | 'EU'): VisiblePrice[] {
   const source = product.market_prices ?? {
     ...(product.price_lojista != null ? { lojista: product.price_lojista } : {}),
     ...(product.price_corporativo != null ? { corporativo: product.price_corporativo } : {}),
   }
   const prices: VisiblePrice[] = PRICE_TABLE_OPTIONS
-    .filter((option): option is { value: PriceKey; label: string } => option.value !== 'todos')
+    .filter((option): option is { value: PriceKey; label: string } =>
+      option.value !== 'todos' && (market === 'EU' || option.value !== 'pvp'))
     .flatMap(option => source[option.value] != null
       ? [{ key: option.value, label: option.label, value: Number(source[option.value]) }]
       : [])
@@ -231,8 +237,8 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
 // no desktop; foi revertida para o preço não depender de passar o mouse,
 // igual já era no mobile por não ter hover.)
 
-function CardText({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
-  const prices = visiblePrices(product, priceTable)
+function CardText({ product, priceTable, market }: { product: Product; priceTable: PriceTable; market: 'BR' | 'EU' }) {
+  const prices = visiblePrices(product, priceTable, market)
 
   return (
     <>
@@ -274,8 +280,8 @@ function CardPrice({ prices, currency, locale }: { prices: VisiblePrice[]; curre
   )
 }
 
-function DetailPrice({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
-  const prices = visiblePrices(product, priceTable)
+function DetailPrice({ product, priceTable, market }: { product: Product; priceTable: PriceTable; market: 'BR' | 'EU' }) {
+  const prices = visiblePrices(product, priceTable, market)
   if (prices.length === 0) return null
 
   return (
@@ -503,7 +509,7 @@ function ProductFullView({
               <div className="w-12 h-px bg-gold/50" />
             </div>
 
-            <DetailPrice product={product} priceTable={priceTable} />
+            <DetailPrice product={product} priceTable={priceTable} market={market} />
 
             {!isConjuntoType(product.type) && (
               <div className="flex items-baseline gap-6 py-4 border-b border-line-soft">
@@ -653,7 +659,8 @@ export default function ProdutosPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
   const [selected, setSelected] = useState<Product | null>(null)
-  const [priceTable, setPriceTable] = useState<PriceTable>(readPriceTable)
+  const activeMarket = user?.active_market ?? 'BR'
+  const [priceTable, setPriceTable] = useState<PriceTable>(() => readPriceTable(activeMarket))
   // Só quem recebe as duas tabelas do servidor vê o seletor. Uma vez detectado,
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
@@ -682,11 +689,20 @@ export default function ProdutosPage() {
     : Math.max(1, page)
 
   useEffect(() => {
-    localStorage.setItem(PRICE_TABLE_KEY, priceTable)
-  }, [priceTable])
+    if (activeMarket === 'BR' && priceTable === 'pvp') return
+    localStorage.setItem(priceTableStorageKey(activeMarket), priceTable)
+  }, [activeMarket, priceTable])
 
   useEffect(() => {
-    const discovered = (['lojista', 'corporativo', 'pvp'] as PriceKey[]).filter(key =>
+    setAvailablePriceTables([])
+    setPriceTable(readPriceTable(activeMarket))
+  }, [activeMarket])
+
+  useEffect(() => {
+    const allowedKeys: PriceKey[] = activeMarket === 'EU'
+      ? ['lojista', 'corporativo', 'pvp']
+      : ['lojista', 'corporativo']
+    const discovered = allowedKeys.filter(key =>
       products.some(product => product.market_prices?.[key] != null ||
         (key === 'lojista' && product.price_lojista != null) ||
         (key === 'corporativo' && product.price_corporativo != null))
@@ -694,7 +710,7 @@ export default function ProdutosPage() {
     if (discovered.length > 0) {
       setAvailablePriceTables(current => Array.from(new Set([...current, ...discovered])))
     }
-  }, [products])
+  }, [activeMarket, products])
 
   useEffect(() => {
     if (availablePriceTables.length === 0 || priceTable === 'todos') return
@@ -934,7 +950,7 @@ export default function ProdutosPage() {
                       <span className="type-label whitespace-nowrap">{product.type}</span>
                     )}
                   </div>
-                  <CardText product={product} priceTable={priceTable} />
+                  <CardText product={product} priceTable={priceTable} market={activeMarket} />
                 </div>
               </button>
 
