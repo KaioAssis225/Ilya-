@@ -67,6 +67,7 @@
    dourado pelo Verde Jade Mineral aprovado pela diretoria. O escopo fica no
    mercado ativo para impedir que a paleta portuguesa vaze para o Brasil. */
 [data-market='EU'] {
+  --color-bg:          #f4ecea;
   --color-gold:        #477d68;
   --color-gold-600:    #3d705b;
   --color-gold-700:    #34614f;
