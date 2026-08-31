@@ -96,6 +96,28 @@ def upgrade() -> None:
                 '\\mSEM FURO\\M', 'WITHOUT PARASOL HOLE', 'gi')
         WHERE market_code = 'EU'
     """)
+    # Características mantêm a mesma ordem do nome BR, mas deixam de ficar
+    # parcialmente em português no título inglês.
+    op.execute("""
+        UPDATE product_markets
+        SET description_en = regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+            regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+            regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+                description_en,
+                '\\mRETANGULAR\\M', 'RECTANGULAR', 'gi'),
+                '\\mQUADRADA?\\M', 'SQUARE', 'gi'),
+                '\\mREDONDA?\\M', 'ROUND', 'gi'),
+                '\\mSEM FURO\\M', 'WITHOUT PARASOL HOLE', 'gi'),
+                '\\mCOM FURO\\M', 'WITH PARASOL HOLE', 'gi'),
+                '\\mMADEIRA\\M', 'WOOD', 'gi'),
+                '\\mALUMÍNIO\\M', 'ALUMINIUM', 'gi'),
+                '\\mCORDA\\M', 'ROPE', 'gi'),
+                '\\mTECIDO\\M', 'FABRIC', 'gi'),
+                '\\mVIDRO\\M', 'GLASS', 'gi'),
+                '\\mAÇO\\M', 'STEEL', 'gi'),
+                '\\mTAMPO\\M', 'TOP', 'gi')
+        WHERE market_code = 'EU'
+    """)
 
 
 def downgrade() -> None:
