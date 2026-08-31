@@ -284,6 +284,7 @@ export interface ViaCepResponse {
   localidade: string
   uf: string
   erro?: boolean
+  regiao?: string
 }
 
 export interface PageResult<T> {
