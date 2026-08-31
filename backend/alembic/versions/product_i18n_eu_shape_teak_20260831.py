@@ -1,13 +1,13 @@
 """Normalize English EU product shape and teak terminology.
 
-Revision ID: product_i18n_eu_shape_teak_20260831
+Revision ID: eu_shape_teak_20260831
 Revises: product_i18n_eu_arms_20260831
 """
 
 from alembic import op
 
 
-revision = "product_i18n_eu_shape_teak_20260831"
+revision = "eu_shape_teak_20260831"
 down_revision = "product_i18n_eu_arms_20260831"
 branch_labels = None
 depends_on = None
