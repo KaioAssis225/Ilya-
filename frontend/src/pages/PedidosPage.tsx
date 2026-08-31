@@ -14,6 +14,7 @@ import api from '../lib/api'
 import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
 import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
+import { formatDimensions } from '../lib/measurements'
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
@@ -469,7 +470,7 @@ function OrderDetailModal({
                   <tr>
                     <th className="px-3 py-2 w-10"></th>
                     <th className="px-3 py-2 text-left text-xs text-muted">Produto</th>
-                    <th className="px-3 py-2 text-left text-xs text-muted">Dim. (m)</th>
+                    <th className="px-3 py-2 text-left text-xs text-muted">Dim. ({order.market_code === 'EU' ? '″' : 'm'})</th>
                     <th className="px-3 py-2 text-left text-xs text-muted">Opcionais</th>
                     <th className="px-3 py-2 text-center text-xs text-muted">Qtd</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">Preço Base</th>
@@ -481,7 +482,6 @@ function OrderDetailModal({
                 <tbody>
                   {order.items.map((item) => {
                     const photoUrl = products.find(p => p.product_code === item.product_code)?.photo_url ?? null
-                    const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
                     return (
                       <tr key={item.id} className="border-t border-line">
                         <td className="px-2 py-2" style={{ width: '40px', minWidth: '40px' }}>
@@ -496,7 +496,7 @@ function OrderDetailModal({
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs whitespace-nowrap">
-                          {item.is_circular ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m` : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`}
+                          {formatDimensions(item, order.market_code, order.locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR')}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
                           {(() => {

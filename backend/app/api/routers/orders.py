@@ -395,12 +395,21 @@ async def create_order(
         )
     )).all())
     product_market_rows = (await db.execute(
-        select(ProductMarket.product_id, ProductMarket.vat_rate).where(
+        select(
+            ProductMarket.product_id,
+            ProductMarket.vat_rate,
+            ProductMarket.description_pt_pt,
+            ProductMarket.description_en,
+        ).where(
             ProductMarket.market_code == market_code,
             ProductMarket.product_id.in_(product_ids),
         )
     )).all()
-    product_vat = dict(product_market_rows)
+    product_vat = {row.product_id: row.vat_rate for row in product_market_rows}
+    localized_descriptions = {
+        row.product_id: (row.description_pt_pt, row.description_en)
+        for row in product_market_rows
+    }
     type_tax = dict((await db.execute(
         select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
             MarketTaxRate.market_code == market_code
@@ -433,10 +442,14 @@ async def create_order(
         ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
         total_ipi += ipi_value
 
+        localized_description = product.description
+        if market_code == "EU":
+            pt_pt, en = localized_descriptions.get(product.id, (None, None))
+            localized_description = (en if payload.locale == "en-GB" else pt_pt) or product.description
         order_items.append(OrderItem(
             id=uuid.uuid4(),
             product_code=product.product_code,
-            description=product.description,
+            description=localized_description,
             is_circular=product.is_circular,
             altura=product.altura,
             largura=product.largura,
@@ -462,7 +475,7 @@ async def create_order(
         market_code=market_code,
         price_list_code=price_list.code,
         currency=context.currency,
-        locale=context.locale,
+        locale=(payload.locale if market_code == "EU" and payload.locale else context.locale),
         code=code,
         number_owner_id=current_user.id,
         order_number=order_number,
@@ -703,13 +716,17 @@ async def update_order(
     payload: OrderUpdate,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
     # Edição é operação de operador interno, representante ou produtos — cliente-final nunca edita pedido (SEC-02).
     if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Operação não permitida.")
 
     result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
+        select(Order).where(
+            Order.id == order_id,
+            Order.market_code == principal.code,
+        ).with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -744,7 +761,9 @@ async def update_order(
         selected_rep = (
             await db.execute(
                 select(Representative).where(
-                    Representative.id == payload.rep_id
+                    Representative.id == payload.rep_id,
+                    Representative.market_code == principal.code,
+                    Representative.relationship_ended_at.is_(None),
                 )
             )
         ).scalar_one_or_none()
@@ -772,7 +791,10 @@ async def update_order(
         product_map, type_map = await _load_products_and_types(
             db, [i.product_code for i in payload.items]
         )
-        client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
+        client = (await db.execute(select(Client).where(
+            Client.id == order.client_id,
+            Client.market_code == principal.code,
+        ))).scalar_one_or_none()
         price_list = (await db.execute(select(PriceList).where(
             PriceList.market_code == order.market_code,
             PriceList.code == order.price_list_code,
@@ -790,10 +812,20 @@ async def update_order(
             ProductPrice.price_list_id == price_list.id,
             ProductPrice.product_id.in_(product_ids),
         ))).all())
-        product_vat = dict((await db.execute(select(ProductMarket.product_id, ProductMarket.vat_rate).where(
+        product_market_rows = (await db.execute(select(
+            ProductMarket.product_id,
+            ProductMarket.vat_rate,
+            ProductMarket.description_pt_pt,
+            ProductMarket.description_en,
+        ).where(
             ProductMarket.market_code == order.market_code,
             ProductMarket.product_id.in_(product_ids),
-        ))).all())
+        ))).all()
+        product_vat = {row.product_id: row.vat_rate for row in product_market_rows}
+        localized_descriptions = {
+            row.product_id: (row.description_pt_pt, row.description_en)
+            for row in product_market_rows
+        }
         type_tax = dict((await db.execute(select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
             MarketTaxRate.market_code == order.market_code
         ))).all())
@@ -802,7 +834,9 @@ async def update_order(
             rep = (
                 await db.execute(
                     select(Representative).where(
-                        Representative.id == order.rep_id
+                        Representative.id == order.rep_id,
+                        Representative.market_code == principal.code,
+                        Representative.relationship_ended_at.is_(None),
                     )
                 )
             ).scalar_one_or_none()
@@ -834,11 +868,15 @@ async def update_order(
             ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
             total_ipi += ipi_value
 
+            localized_description = product.description
+            if order.market_code == "EU":
+                pt_pt, en = localized_descriptions.get(product.id, (None, None))
+                localized_description = (en if order.locale == "en-GB" else pt_pt) or product.description
             new_items.append(OrderItem(
                 id=uuid.uuid4(),
                 order_id=order.id,
                 product_code=product.product_code,
-                description=product.description,
+                description=localized_description,
                 is_circular=product.is_circular,
                 altura=product.altura,
                 largura=product.largura,

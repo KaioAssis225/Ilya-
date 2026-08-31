@@ -14,6 +14,9 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { MarketSwitcher } from './components/MarketSwitcher'
 import { createPrivateQueryClient, disposePrivateQueryClient } from './lib/queryClient'
 import { MarketTransition } from './components/MarketTransition'
+import { LocaleProvider } from './contexts/LocaleContext'
+import { useLocale } from './hooks/useLocale'
+import { LanguageSwitcher } from './components/LanguageSwitcher'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
 const CadastroPage = lazy(() => import('./pages/CadastroPage'))
@@ -82,6 +85,7 @@ function DashboardFabGate() {
 function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const { t } = useLocale()
   // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
   const cartUnits = countCartUnits(useCartQuantities(user?.id, user?.active_market))
   if (!user || user.must_change_password) return null
@@ -96,10 +100,10 @@ function BottomNav() {
     }`
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe" aria-label="Navegação principal">
-      <NavLink to="/produtos" className={itemClass('/produtos')} aria-label="Produtos">
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe" aria-label={t('mainNavigation')}>
+      <NavLink to="/produtos" className={itemClass('/produtos')} aria-label={t('products')}>
         <LayoutGrid className="w-5 h-5" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider">Produtos</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider">{t('products')}</span>
       </NavLink>
       {canSeeOrcamentoPedidos(user) && (
         <NavLink
@@ -117,19 +121,19 @@ function BottomNav() {
               </span>
             )}
           </span>
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Orçamento</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{t('quote')}</span>
         </NavLink>
       )}
       {canSeeOrcamentoPedidos(user) && (
-        <NavLink to="/pedidos" className={itemClass('/pedidos')} aria-label="Pedidos">
+        <NavLink to="/pedidos" className={itemClass('/pedidos')} aria-label={t('orders')}>
           <ClipboardList className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Pedidos</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{t('orders')}</span>
         </NavLink>
       )}
       {canSeeCadastros(user) && (
-        <NavLink to="/cadastros" className={itemClass('/cadastros')} aria-label="Cadastros">
+        <NavLink to="/cadastros" className={itemClass('/cadastros')} aria-label={t('registrations')}>
           <Users className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Cadastros</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{t('registrations')}</span>
         </NavLink>
       )}
       {canSeeAdmin(user) && (
@@ -144,7 +148,7 @@ function BottomNav() {
         className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-muted-3 active:text-ink transition-colors"
       >
         <LogOut className="w-5 h-5" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider">Sair</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider">{t('logout')}</span>
       </button>
     </nav>
   )
@@ -155,6 +159,7 @@ function BottomNav() {
 function Nav() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const { locale, t } = useLocale()
   const [showProfile, setShowProfile] = useState(false)
   const [showNotifs, setShowNotifs] = useState(false)
   const { data: notifications = [] } = useNotifications(Boolean(user))
@@ -173,7 +178,7 @@ function Nav() {
 
   return (
     <>
-      <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label="Navegação principal">
+      <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label={t('mainNavigation')}>
         <div className="flex items-center gap-1">
           <div
             className="mr-3 whitespace-nowrap text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
@@ -183,11 +188,11 @@ function Nav() {
           </div>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
-              {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label="Cadastros">Cadastros</NavLink>}
-              <NavLink to="/produtos" className={linkClass} aria-label="Produtos">Produtos</NavLink>
+              {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
+              <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
-                Novo Orçamento
+                {t('quote')}
                 {cartUnits > 0 && (
                   <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-gold text-white text-[10px] font-bold tabular-nums align-middle">
                     {cartUnits > 99 ? '99+' : cartUnits}
@@ -195,12 +200,13 @@ function Nav() {
                 )}
               </NavLink>
             )}
-              {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label="Pedidos">Pedidos</NavLink>}
-              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label="Admin">Admin</NavLink>}
+              {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label={t('orders')}>{t('orders')}</NavLink>}
+              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
             </div>
           )}
         </div>
         <div className="flex items-center gap-3 md:gap-4 text-xs">
+          <LanguageSwitcher />
           <MarketSwitcher />
           <div className="relative">
             <button
@@ -234,7 +240,7 @@ function Nav() {
                       >
                         <p className="text-xs text-ink">{n.message}</p>
                         <p className="text-[10px] text-muted-3 mt-0.5">
-                          {new Date(n.created_at).toLocaleString('pt-BR')}
+                          {new Date(n.created_at).toLocaleString(user.active_market === 'EU' ? locale : 'pt-BR')}
                         </p>
                       </li>
                     ))}
@@ -255,7 +261,7 @@ function Nav() {
             onClick={logout}
             className="hidden md:block text-muted-2 hover:text-ink border border-line hover:border-ink px-3 py-1 rounded transition text-xs font-medium uppercase tracking-wider"
           >
-            Sair
+            {t('logout')}
           </button>
         </div>
       </nav>
@@ -288,13 +294,14 @@ export default function PrivateApp() {
   const sessionScope = `${user.id}:${user.active_market}`
 
   return (
-    <PrivateSessionBoundary key={sessionScope}>
-      <div data-market={user.active_market} className="min-h-screen bg-bg">
+    <LocaleProvider key={sessionScope}>
+      <PrivateSessionBoundary key={sessionScope}>
+        <div data-market={user.active_market} className="min-h-screen bg-bg">
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
           >
-            Pular para o conteúdo
+            Saltar para o conteúdo
           </a>
           <Nav />
           <main id="main-content">
@@ -349,7 +356,8 @@ export default function PrivateApp() {
           </main>
           <BottomNav />
           <DashboardFabGate />
-      </div>
-    </PrivateSessionBoundary>
+        </div>
+      </PrivateSessionBoundary>
+    </LocaleProvider>
   )
 }

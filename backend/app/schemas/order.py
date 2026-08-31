@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -31,6 +31,7 @@ class OrderCreate(BaseModel):
     rep_id: Optional[uuid.UUID] = None
     notes: Optional[str] = Field(None, max_length=10_000)
     items: List[OrderItemCreate] = Field(..., min_length=1, max_length=500)
+    locale: Optional[Literal["pt-PT", "en-GB"]] = None
 
 
 class OrderUpdate(BaseModel):

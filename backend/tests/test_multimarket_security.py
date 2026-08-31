@@ -19,7 +19,9 @@ from app.core.security import create_access_token, decode_access_token
 from app.models.client import Client
 from app.models.user import UserRole
 from app.api.routers.clients import get_client
-from app.api.routers.reps import get_representative
+from app.api.routers.orders import update_order
+from app.api.routers.reps import delete_representative, get_representative
+from app.schemas.order import OrderUpdate
 
 
 def _user(role=UserRole.vendedor, home="BR"):
@@ -132,6 +134,69 @@ def test_representative_lookup_always_contains_active_market_scope():
 
         statement = db.execute.await_args.args[0]
         assert "representatives.market_code" in str(statement)
+        assert "EU" in statement.compile().params.values()
+        assert exc.value.status_code == 404
+
+    asyncio.run(run())
+
+
+def test_deleting_eu_representative_retires_links_without_breaking_history():
+    async def run():
+        rep = SimpleNamespace(relationship_ended_at=None)
+        linked_user = SimpleNamespace(is_active=True, auth_version=4)
+        rep_result = MagicMock()
+        rep_result.scalar_one_or_none.return_value = rep
+        users_result = MagicMock()
+        users_result.scalars.return_value.all.return_value = [linked_user]
+        db = AsyncMock()
+        db.execute.side_effect = [rep_result, users_result, MagicMock()]
+        user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
+        principal = MarketPrincipal(user=user, market=MARKETS["EU"])
+
+        await delete_representative(
+            uuid.uuid4(),
+            db=db,
+            current_user=user,
+            principal=principal,
+        )
+
+        assert rep.relationship_ended_at is not None
+        assert linked_user.is_active is False
+        assert linked_user.auth_version == 5
+        assert "representatives.market_code" in str(db.execute.await_args_list[0].args[0])
+        assert "EU" in db.execute.await_args_list[0].args[0].compile().params.values()
+        client_unlink = db.execute.await_args_list[2].args[0]
+        assert "clients.market_code" in str(client_unlink)
+        assert "EU" in client_unlink.compile().params.values()
+        db.commit.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_updating_order_requires_the_active_eu_market_explicitly():
+    async def run():
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db = AsyncMock()
+        db.execute.return_value = result
+        user = SimpleNamespace(
+            id=uuid.uuid4(),
+            role=UserRole.admin,
+            linked_id=None,
+            rep_id=None,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await update_order(
+                uuid.uuid4(),
+                OrderUpdate(notes="Portugal"),
+                db=db,
+                current_user=user,
+                principal=MarketPrincipal(user=user, market=MARKETS["EU"]),
+            )
+
+        statement = db.execute.await_args.args[0]
+        assert "orders.market_code" in str(statement)
         assert "EU" in statement.compile().params.values()
         assert exc.value.status_code == 404
 

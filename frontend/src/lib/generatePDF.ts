@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
+import { formatDimensions } from './measurements'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
 import { isConjuntoType } from './productType'
 
@@ -237,7 +238,7 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
 
-  const fmtM = (v: number) => Number(v).toFixed(2).replace('.', ',')
+  const measurementLocale = locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
   // Respiro após a régua separadora. Sem este avanço, a próxima foto começava
   // apenas 1 mm abaixo da linha e o topo do texto ficava visualmente cortado.
   const ROW_SEPARATOR_GAP = 4
@@ -261,9 +262,7 @@ export async function generateOrderPDF(
     // próxima linha da tabela nem com as colunas numéricas (QTD/VALOR/IPI/TOTAL).
     const WRAP_WIDTH = 80
     const dimText = hasDims
-      ? `Dimensões: ${item.is_circular
-          ? `Ø ${fmtM(item.largura)} × A ${fmtM(item.altura)} m`
-          : `L ${fmtM(item.largura)} × P ${fmtM(item.profundidade)} × A ${fmtM(item.altura)} m`}`
+      ? `${locale === 'en-GB' ? 'Dimensions' : 'Dimensões'}: ${formatDimensions(item, order.market_code, measurementLocale)}`
       : null
     const obsText = item.observacao ? `Obs.: ${item.observacao}` : null
     const optText = optSlots.length > 0 ? 'Opcionais: ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ') : null
@@ -272,9 +271,7 @@ export async function generateOrderPDF(
     const obsLines: string[] = obsText ? doc.splitTextToSize(obsText, WRAP_WIDTH) : []
     const optLines: string[] = optText ? doc.splitTextToSize(optText, WRAP_WIDTH) : []
     const compLineGroups: string[][] = components.map((comp) => {
-      const compDim = comp.is_circular
-        ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
-        : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
+      const compDim = formatDimensions(comp, order.market_code, measurementLocale)
       // Acabamentos do componente ("Alumínio: Taupe, Teka: Polywood") — mesma
       // informação exibida no carrinho; sem ela o PDF omitia os acabamentos
       // dos itens internos de um conjunto.
