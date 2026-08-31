@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,7 +105,11 @@ def _to_read(product: Product, visible_profile: Optional[str] = None) -> Product
 
 
 async def _to_market_reads(
-    db: AsyncSession, products: list[Product], principal: MarketPrincipal, visible_profile: Optional[str]
+    db: AsyncSession,
+    products: list[Product],
+    principal: MarketPrincipal,
+    visible_profile: Optional[str],
+    language: Literal["pt-PT", "en-GB"] = "pt-PT",
 ) -> list[ProductRead]:
     market = principal.code
     context = principal.market
@@ -118,6 +123,22 @@ async def _to_market_reads(
     for product_id, code, amount in rows:
         if visible_profile is None or visible_profile == code:
             prices.setdefault(product_id, {})[code] = amount
+    localized_names: dict[uuid.UUID, tuple[str | None, str | None]] = {}
+    if market == "EU" and ids:
+        localized_rows = (await db.execute(
+            select(
+                ProductMarket.product_id,
+                ProductMarket.description_pt_pt,
+                ProductMarket.description_en,
+            ).where(
+                ProductMarket.market_code == "EU",
+                ProductMarket.product_id.in_(ids),
+            )
+        )).all()
+        localized_names = {
+            product_id: (description_pt_pt, description_en)
+            for product_id, description_pt_pt, description_en in localized_rows
+        }
     result = []
     for product in products:
         item = _to_read(product, visible_profile if market == "BR" else None)
@@ -125,6 +146,12 @@ async def _to_market_reads(
         item.currency = context.currency
         item.market_prices = prices.get(product.id, {})
         if market == "EU":
+            descriptions = localized_names.get(product.id)
+            if descriptions:
+                item.description_pt_pt, item.description_en = descriptions
+                translated_description = descriptions[1] if language == "en-GB" else descriptions[0]
+                if translated_description:
+                    item.description = translated_description
             item.price = item.market_prices.get(visible_profile or "lojista")
             item.price_lojista = item.market_prices.get("lojista")
             item.price_corporativo = item.market_prices.get("corporativo")
@@ -232,6 +259,7 @@ async def list_products(
         "price_corporativo",
     ] = Query(default="product_code"),
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
+    language: Literal["pt-PT", "en-GB"] = Query(default="pt-PT"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
     principal: MarketPrincipal = Depends(get_current_principal),
@@ -250,10 +278,19 @@ async def list_products(
     search = q.strip() if q else ""
     if search:
         search_pattern = literal_contains_pattern(search)
+        localized_description = (
+            ProductMarket.description_en if language == "en-GB"
+            else ProductMarket.description_pt_pt
+        )
         filters.append(
             or_(
                 Product.product_code.ilike(search_pattern, escape="\\"),
                 Product.description.ilike(search_pattern, escape="\\"),
+                exists().where(
+                    ProductMarket.product_id == Product.id,
+                    ProductMarket.market_code == active_market,
+                    localized_description.ilike(search_pattern, escape="\\"),
+                ),
             )
         )
     if product_type:
@@ -312,12 +349,13 @@ async def list_products(
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(products))
     visible_profile = await _visible_price_profile(db, current_user)
-    return await _to_market_reads(db, products, principal, visible_profile)
+    return await _to_market_reads(db, products, principal, visible_profile, language)
 
 
 @router.post("/batch", response_model=List[ProductRead])
 async def get_products_batch(
     payload: ProductBatchRequest,
+    language: Literal["pt-PT", "en-GB"] = Query(default="pt-PT"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
     principal: MarketPrincipal = Depends(get_current_principal),
@@ -339,7 +377,7 @@ async def get_products_batch(
     product_map = {product.product_code: product for product in products}
     visible_profile = await _visible_price_profile(db, current_user)
     ordered = [product_map[code] for code in codes if code in product_map]
-    return await _to_market_reads(db, ordered, principal, visible_profile)
+    return await _to_market_reads(db, ordered, principal, visible_profile, language)
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -392,6 +430,7 @@ async def create_product(
 @router.get("/{product_id}", response_model=ProductRead)
 async def get_product(
     product_id: uuid.UUID,
+    language: Literal["pt-PT", "en-GB"] = Query(default="pt-PT"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = _ANY,
     principal: MarketPrincipal = Depends(get_current_principal),
@@ -410,7 +449,7 @@ async def get_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user)))[0]
+    return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user), language))[0]
 
 
 @router.patch("/{product_id}", response_model=ProductRead)
@@ -421,13 +460,81 @@ async def update_product(
     current_user: User = _ADMIN_VENDEDOR,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if principal.code != "BR":
-        raise HTTPException(status_code=403, detail="Altere o catálogo-base no mercado Brasil.")
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    result = await db.execute(select(Product).where(
+        Product.id == product_id,
+        Product.is_active.is_(True),
+        exists().where(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == principal.code,
+            ProductMarket.is_available.is_(True),
+        ),
+    ))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    if principal.code == "EU":
+        price_changes = {
+            "lojista": payload.price_lojista,
+            "corporativo": payload.price_corporativo,
+            "pvp": payload.price_pvp,
+        }
+        translation_changes = {
+            "description_pt_pt": payload.description_pt_pt,
+            "description_en": payload.description_en,
+        }
+        if not any(amount is not None for amount in price_changes.values()) and not any(translation_changes.values()):
+            raise HTTPException(
+                status_code=422,
+                detail="Informe ao menos um nome localizado ou preço em EUR para atualizar.",
+            )
+        price_lists = (await db.execute(select(PriceList).where(
+            PriceList.market_code == "EU",
+            PriceList.is_active.is_(True),
+        ))).scalars().all()
+        lists_by_code = {price_list.code: price_list for price_list in price_lists}
+        if any(code not in lists_by_code for code in price_changes):
+            raise HTTPException(
+                status_code=422,
+                detail="As listas Lojista, Corporativo e PVP não estão configuradas em Portugal.",
+            )
+        for code, amount in price_changes.items():
+            if amount is None:
+                continue
+            price_list = lists_by_code[code]
+            existing_price = (await db.execute(select(ProductPrice).where(
+                ProductPrice.product_id == product.id,
+                ProductPrice.price_list_id == price_list.id,
+            ))).scalar_one_or_none()
+            if existing_price:
+                existing_price.amount = amount
+            else:
+                db.add(ProductPrice(
+                    product_id=product.id,
+                    price_list_id=price_list.id,
+                    amount=amount,
+                ))
+        if any(value is not None for value in translation_changes.values()):
+            localized = (await db.execute(select(ProductMarket).where(
+                ProductMarket.product_id == product.id,
+                ProductMarket.market_code == "EU",
+            ))).scalar_one()
+            for field, value in translation_changes.items():
+                if value is not None:
+                    setattr(localized, field, value.strip())
+        await db.commit()
+        await db.refresh(product)
+        return (await _to_market_reads(
+            db,
+            [product],
+            principal,
+            await _visible_price_profile(db, current_user),
+        ))[0]
+
     data = payload.model_dump(exclude_unset=True, exclude={"optional_ids", "set_items", "components"})
+    data.pop("price_pvp", None)
+    data.pop("description_pt_pt", None)
+    data.pop("description_en", None)
     optional_ids = payload.optional_ids
     set_items_in = payload.set_items
     components_in = payload.components
@@ -470,12 +577,24 @@ async def delete_product(
     current_user: User = _ADMIN,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if principal.code != "BR":
-        raise HTTPException(status_code=403, detail="Desative o catálogo-base no mercado Brasil.")
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    result = await db.execute(select(Product).where(
+        Product.id == product_id,
+        Product.is_active.is_(True),
+    ))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
+    if principal.code == "EU":
+        availability = (await db.execute(select(ProductMarket).where(
+            ProductMarket.product_id == product_id,
+            ProductMarket.market_code == "EU",
+            ProductMarket.is_available.is_(True),
+        ))).scalar_one_or_none()
+        if not availability:
+            raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        availability.is_available = False
+        await db.commit()
+        return
     # Migration/01 + decisão do Alto Comando (05/08/2026): desativação, não
     # exclusão física. O product_code permanece reservado (Opção A) e a foto
     # não é apagada — o produto pode ser reativado no futuro.

@@ -96,9 +96,10 @@ async def import_europe_catalog(
 ):
     """Importação atômica do subconjunto europeu.
 
-    Colunas: product_code, lojista, corporativo, pvp e opcionalmente vat_rate e
-    is_available. Sem vat_rate, copia a taxa já configurada no grupo do produto
-    no Ilya. A moeda não é aceita do arquivo: as listas EU são sempre EUR.
+    Colunas: product_code, lojista, corporativo, pvp e opcionalmente vat_rate,
+    is_available, description_pt_pt e description_en. Sem vat_rate, copia a
+    taxa já configurada no grupo do produto no Ilya. A moeda não é aceita do
+    arquivo: as listas EU são sempre EUR.
     """
     raw = await read_upload_limited(file, 10 * 1024 * 1024, max_size_label="10MB")
     try:
@@ -128,7 +129,14 @@ async def import_europe_catalog(
             errors.append(f"Linha {line}: preço negativo/inválido ou IVA fora de 0–100.")
             continue
         available = (row.get("is_available") or "true").strip().lower() in {"1", "true", "sim", "yes"}
-        parsed.append({"sku": sku, "prices": prices, "vat": vat, "available": available})
+        parsed.append({
+            "sku": sku,
+            "prices": prices,
+            "vat": vat,
+            "available": available,
+            "description_pt_pt": (row.get("description_pt_pt") or "").strip() or None,
+            "description_en": (row.get("description_en") or "").strip() or None,
+        })
     products = (await db.execute(
         select(Product.id, Product.product_code, ProductGroup.ipi)
         .outerjoin(ProductType, ProductType.name == Product.type)
@@ -150,10 +158,15 @@ async def import_europe_catalog(
         product_id = product_ids[row["sku"]]
         vat_rate = row["vat"] if row["vat"] is not None else inherited_tax[row["sku"]]
         await db.execute(pg_insert(ProductMarket).values(
-            product_id=product_id, market_code="EU", is_available=row["available"], vat_rate=vat_rate
+            product_id=product_id, market_code="EU", is_available=row["available"], vat_rate=vat_rate,
+            description_pt_pt=row["description_pt_pt"], description_en=row["description_en"],
         ).on_conflict_do_update(
             index_elements=[ProductMarket.product_id, ProductMarket.market_code],
-            set_={"is_available": row["available"], "vat_rate": vat_rate},
+            set_={
+                "is_available": row["available"], "vat_rate": vat_rate,
+                **({"description_pt_pt": row["description_pt_pt"]} if row["description_pt_pt"] else {}),
+                **({"description_en": row["description_en"]} if row["description_en"] else {}),
+            },
         ))
         for code, amount in row["prices"].items():
             await db.execute(pg_insert(ProductPrice).values(

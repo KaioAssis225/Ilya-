@@ -12,13 +12,13 @@ import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
 import { useAuth } from '../hooks/useAuth'
+import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
-
-function fmtM(v: number) { return Number(v).toFixed(2).replace('.', ',') }
+import { formatDimensions } from '../lib/measurements'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -40,13 +40,11 @@ function compFinishes(
     .join(' · ')
 }
 
-function dimLabel(p: Product) {
+function dimLabel(p: Product, market: 'BR' | 'EU', locale: 'pt-BR' | 'pt-PT' | 'en-GB') {
   // Conjunto é o agrupador comercial; as medidas pertencem exclusivamente aos
   // componentes internos e não devem aparecer como 0 × 0 × 0 no item-pai.
   if (p.is_set || isConjuntoType(p.type) || p.components.length > 0) return null
-  return p.is_circular
-    ? `Ø ${fmtM(p.largura)} × A ${fmtM(p.altura)} m`
-    : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
+  return formatDimensions(p, market, locale)
 }
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────
@@ -496,6 +494,8 @@ function MobileCartCard({
   currency: string
   locale: string
 }) {
+  const measurementMarket = currency === 'EUR' ? 'EU' : 'BR'
+  const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
 
@@ -520,9 +520,7 @@ function MobileCartCard({
                 <ul className="mt-0.5 space-y-0.5">
                   {item._product.components.map((comp) => (
                     <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
-                      • {comp.qty}x {comp.description} ({comp.is_circular
-                        ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
-                        : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
+                      • {comp.qty}x {comp.description} ({formatDimensions(comp, measurementMarket, measurementLocale)})
                       {comp.optionals.length > 0 && (
                         <span className="block text-muted pl-2.5">{compFinishes(comp.optionals, catLabel)}</span>
                       )}
@@ -765,10 +763,11 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 
 export default function OrcamentoPage() {
   const { user } = useAuth()
+  const { locale: europeanLocale } = useLocale()
   const userId = user?.id ?? ''
   const market = user?.active_market ?? 'BR'
   const currency = market === 'EU' ? 'EUR' : 'BRL'
-  const locale = market === 'EU' ? 'pt-PT' : 'pt-BR'
+  const locale = market === 'EU' ? europeanLocale : 'pt-BR'
   const taxLabel = market === 'EU' ? 'IVA' : 'IPI'
   const cartKey = cartStorageKey(userId, market)
   const clientStorageKey = `orcamento_client_id:${userId}:${market}`
@@ -1161,6 +1160,7 @@ export default function OrcamentoPage() {
             rep_id: repIdForSubmit,
             notes: notes || null,
             items: itemsPayload,
+            locale: market === 'EU' ? europeanLocale : undefined,
           }),
           new Promise<void>((r) => setTimeout(r, 3000)),
         ])
@@ -1266,7 +1266,7 @@ export default function OrcamentoPage() {
                 <div className="truncate">
                   <span className="text-gold font-mono font-medium">{p.product_code}</span>
                   <span className="text-ink ml-1.5 font-medium">{p.description}</span>
-                  {dimLabel(p) && <div className="type-meta font-mono mt-0.5">{dimLabel(p)}</div>}
+                  {dimLabel(p, market, locale) && <div className="type-meta font-mono mt-0.5">{dimLabel(p, market, locale)}</div>}
                 </div>
               </li>
             ))}
@@ -1459,9 +1459,7 @@ export default function OrcamentoPage() {
                                   <ul className="mt-0.5 space-y-0.5">
                                     {item._product.components.map((comp) => (
                                       <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
-                                        • {comp.qty}x {comp.description} ({comp.is_circular
-                                          ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
-                                          : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`})
+                                        • {comp.qty}x {comp.description} ({formatDimensions(comp, market, locale)})
                                         {comp.optionals.length > 0 && (
                                           <span className="block text-muted pl-2.5">{compFinishes(comp.optionals, catLabel)}</span>
                                         )}
@@ -1472,8 +1470,8 @@ export default function OrcamentoPage() {
                                 {item._product.observacao && (
                                   <div className="text-[11px] leading-snug text-gold italic mt-1">{item._product.observacao}</div>
                                 )}
-                                {dimLabel(item._product) && (
-                                  <div className="type-meta font-mono mt-1">{dimLabel(item._product)}</div>
+                                {dimLabel(item._product, market, locale) && (
+                                  <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
                                 )}
                                 <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} catLabel={catLabel} />
                               </div>

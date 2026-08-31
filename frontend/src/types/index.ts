@@ -62,6 +62,8 @@ export interface Product {
   id: string
   product_code: string
   description: string
+  description_pt_pt?: string | null
+  description_en?: string | null
   type: string
   is_circular: boolean
   is_set: boolean
@@ -90,6 +92,8 @@ export interface Product {
 export interface ProductCreate {
   product_code: string
   description: string
+  description_pt_pt?: string | null
+  description_en?: string | null
   type?: string
   is_circular: boolean
   is_set?: boolean
@@ -99,6 +103,7 @@ export interface ProductCreate {
   price: number
   price_lojista?: number
   price_corporativo?: number
+  price_pvp?: number
   observacao?: string | null
   all_optionals_categories?: string | null
   optional_ids?: string[]
@@ -177,6 +182,7 @@ export interface OrderCreate {
   rep_id?: string | null
   notes?: string | null
   items: OrderItemCreate[]
+  locale?: 'pt-PT' | 'en-GB'
 }
 
 export interface OrderUpdate {
@@ -249,7 +255,7 @@ export interface Order {
   market_code: 'BR' | 'EU'
   price_list_code: string
   currency: 'BRL' | 'EUR'
-  locale: 'pt-BR' | 'pt-PT'
+  locale: 'pt-BR' | 'pt-PT' | 'en-GB'
   client_id: string
   rep_id: string | null
   total_value: number

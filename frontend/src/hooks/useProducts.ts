@@ -1,6 +1,7 @@
 import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import type { PageResult, Product, ProductCreate, ProductUpdate } from '../types'
+import { useLocale } from './useLocale'
 
 const KEY = 'products'
 
@@ -13,6 +14,7 @@ export interface ProductPageParams {
   include_total?: boolean
   sort_by?: 'product_code' | 'description' | 'type' | 'price_lojista' | 'price_corporativo'
   sort_dir?: 'asc' | 'desc'
+  language?: 'pt-PT' | 'en-GB'
 }
 
 export function productsPageQueryOptions(params: ProductPageParams) {
@@ -32,16 +34,18 @@ export function productsPageQueryOptions(params: ProductPageParams) {
 }
 
 export function useProductsPage(params: ProductPageParams, enabled = true) {
+  const { locale } = useLocale()
   return useQuery({
-    ...productsPageQueryOptions(params),
+    ...productsPageQueryOptions({ ...params, language: locale }),
     enabled,
   })
 }
 
 export function useProductsByCodes(productCodes: string[], enabled = true) {
+  const { locale } = useLocale()
   const codes = Array.from(new Set(productCodes)).sort()
   return useQuery<Product[]>({
-    queryKey: [KEY, 'batch', codes],
+    queryKey: [KEY, 'batch', codes, locale],
     queryFn: async () => {
       const batches = Array.from(
         { length: Math.ceil(codes.length / 100) },
@@ -51,7 +55,7 @@ export function useProductsByCodes(productCodes: string[], enabled = true) {
         batches.map((productCodesBatch) =>
           api.post<Product[]>('/products/batch', {
             product_codes: productCodesBatch,
-          }),
+          }, { params: { language: locale } }),
         ),
       )
       return responses.flatMap((response) => response.data)

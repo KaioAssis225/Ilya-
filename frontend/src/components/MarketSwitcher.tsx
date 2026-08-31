@@ -3,11 +3,13 @@ import { Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { MarketFlag, type MarketCode } from './MarketFlag'
 import { MarketTransition } from './MarketTransition'
+import { useLocale } from '../hooks/useLocale'
 
 const LABELS: Record<MarketCode, string> = { BR: 'Brasil', EU: 'Portugal' }
 
 export function MarketSwitcher() {
   const { user, switchMarket } = useAuth()
+  const { locale } = useLocale()
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState<MarketCode | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -29,6 +31,9 @@ export function MarketSwitcher() {
   }, [open])
 
   if (!user) return null
+  const labels: Record<MarketCode, string> = locale === 'en-GB'
+    ? { BR: 'Brazil', EU: 'Portugal' }
+    : LABELS
   const canSwitch = user.allowed_markets.length > 1
 
   async function choose(market: MarketCode) {
@@ -52,7 +57,7 @@ export function MarketSwitcher() {
 
   if (!canSwitch) {
     return (
-      <span className="inline-flex h-11 w-11 items-center justify-center" title={`Ambiente ${LABELS[user.active_market]}`}>
+      <span className="inline-flex h-11 w-11 items-center justify-center" title={`${locale === 'en-GB' ? 'Environment' : 'Ambiente'} ${labels[user.active_market]}`}>
         <MarketFlag market={user.active_market} className="h-4 w-6 shadow-sm" />
       </span>
     )
@@ -67,7 +72,7 @@ export function MarketSwitcher() {
         type="button"
         onClick={() => setOpen(value => !value)}
         className="inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-lg hover:bg-bg-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
-        aria-label={`Ambiente ${LABELS[user.active_market]}. Trocar ambiente`}
+        aria-label={locale === 'en-GB' ? `${labels[user.active_market]} environment. Change environment` : `Ambiente ${labels[user.active_market]}. Trocar ambiente`}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={switching !== null}
@@ -76,7 +81,7 @@ export function MarketSwitcher() {
         <ChevronDown className={`h-3 w-3 text-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-line bg-white py-1.5 shadow-lg" role="menu" aria-label="Escolher ambiente">
+        <div className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-line bg-white py-1.5 shadow-lg" role="menu" aria-label={locale === 'en-GB' ? 'Choose environment' : 'Escolher ambiente'}>
           {user.allowed_markets.map(market => (
             <button
               key={market}
@@ -88,7 +93,7 @@ export function MarketSwitcher() {
               className="flex min-h-11 w-full items-center gap-3 px-3.5 text-left text-sm text-ink hover:bg-bg-2 focus-visible:bg-bg-2 focus-visible:outline-none disabled:opacity-60"
             >
               <MarketFlag market={market} className="h-4 w-6 shadow-sm" />
-              <span className="flex-1 font-medium">{LABELS[market]}</span>
+              <span className="flex-1 font-medium">{labels[market]}</span>
               {market === user.active_market && <Check className="h-4 w-4 text-gold" aria-hidden="true" />}
             </button>
           ))}

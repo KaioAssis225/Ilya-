@@ -1,9 +1,10 @@
 import uuid
+from datetime import datetime, timezone
 from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 
 from app.api.deps import (
     get_db_session,
@@ -92,7 +93,10 @@ async def list_representatives(
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
     market = principal.code
-    filters = [Representative.market_code == market]
+    filters = [
+        Representative.market_code == market,
+        Representative.relationship_ended_at.is_(None),
+    ]
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
             response.headers["X-Total-Count"] = "0"
@@ -278,6 +282,7 @@ async def get_representative(
     result = await db.execute(select(Representative).where(
         Representative.id == rep_id,
         Representative.market_code == market,
+        Representative.relationship_ended_at.is_(None),
     ))
     rep = result.scalar_one_or_none()
     if not rep:
@@ -307,6 +312,7 @@ async def update_representative(
     result = await db.execute(select(Representative).where(
         Representative.id == rep_id,
         Representative.market_code == market,
+        Representative.relationship_ended_at.is_(None),
     ))
     rep = result.scalar_one_or_none()
     if not rep:
@@ -384,11 +390,34 @@ async def delete_representative(
     result = await db.execute(select(Representative).where(
         Representative.id == rep_id,
         Representative.market_code == market,
+        Representative.relationship_ended_at.is_(None),
     ))
     rep = result.scalar_one_or_none()
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
-    await db.delete(rep)
+    # Retirada lógica: pedidos antigos continuam exibindo o representante,
+    # enquanto cadastros e contas ativas deixam de utilizá-lo. A exclusão
+    # física falhava para representantes com usuário ou histórico vinculado.
+    rep.relationship_ended_at = datetime.now(timezone.utc)
+    linked_users = (
+        await db.execute(
+            select(User).where(
+                or_(User.rep_id == rep_id, User.linked_id == rep_id)
+            )
+        )
+    ).scalars().all()
+    for linked_user in linked_users:
+        linked_user.is_active = False
+        linked_user.auth_version += 1
+
+    await db.execute(
+        update(Client)
+        .where(
+            Client.market_code == market,
+            Client.rep_id == rep_id,
+        )
+        .values(rep_id=None)
+    )
     await db.commit()
 
 

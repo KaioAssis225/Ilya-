@@ -88,6 +88,9 @@ class ProductUpdate(BaseModel):
     price: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     price_lojista: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     price_corporativo: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    price_pvp: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    description_pt_pt: Optional[str] = Field(None, min_length=1, max_length=20_000)
+    description_en: Optional[str] = Field(None, min_length=1, max_length=20_000)
     observacao: Optional[str] = Field(None, max_length=20_000)
     all_optionals_categories: Optional[str] = Field(None, max_length=2_000)
     optional_ids: Optional[List[uuid.UUID]] = Field(None, max_length=500)
@@ -122,6 +125,8 @@ class ProductRead(ProductBase):
     market_code: str = "BR"
     currency: str = "BRL"
     market_prices: dict[str, Decimal] = Field(default_factory=dict)
+    description_pt_pt: Optional[str] = None
+    description_en: Optional[str] = None
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     optionals: List[OptionalColorRead] = []

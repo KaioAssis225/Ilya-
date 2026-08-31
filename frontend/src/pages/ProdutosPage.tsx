@@ -4,12 +4,14 @@ import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown } f
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
+import { useLocale } from '../hooks/useLocale'
 import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useProductGroups } from '../hooks/useProductGroups'
 import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
 import type { PageResult, Product } from '../types'
+import { formatDimensions } from '../lib/measurements'
 
 const PAGE_SIZE = 24
 const FULL_IMAGE_WARMUP_COUNT = 4
@@ -198,11 +200,12 @@ function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
 }
 
 function PriceTableToggle({ value, onChange, available }: { value: PriceTable; onChange: (next: PriceTable) => void; available: PriceKey[] }) {
+  const { locale } = useLocale()
   const options = PRICE_TABLE_OPTIONS.filter(option => option.value === 'todos' || available.includes(option.value as PriceKey))
   return (
     <div
       role="group"
-      aria-label="Tabela de preço exibida"
+      aria-label={locale === 'en-GB' ? 'Displayed price list' : 'Tabela de preço apresentada'}
       className="flex w-full md:w-auto flex-shrink-0 items-center gap-0.5 p-0.5 bg-bg border border-line rounded-lg"
     >
       {options.map(({ value: option, label }) => {
@@ -218,7 +221,7 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            {label}
+            {locale === 'en-GB' && option === 'todos' ? 'All' : label}
           </button>
         )
       })}
@@ -232,6 +235,7 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
 // igual já era no mobile por não ter hover.)
 
 function CardText({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
+  const { locale } = useLocale()
   const prices = visiblePrices(product, priceTable)
 
   return (
@@ -239,7 +243,7 @@ function CardText({ product, priceTable }: { product: Product; priceTable: Price
       <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
         {product.description}
       </h3>
-      {prices.length > 0 && <CardPrice prices={prices} currency={product.currency} locale={product.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} />}
+      {prices.length > 0 && <CardPrice prices={prices} currency={product.currency} locale={product.market_code === 'EU' ? locale : 'pt-BR'} />}
     </>
   )
 }
@@ -275,6 +279,7 @@ function CardPrice({ prices, currency, locale }: { prices: VisiblePrice[]; curre
 }
 
 function DetailPrice({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
+  const { locale } = useLocale()
   const prices = visiblePrices(product, priceTable)
   if (prices.length === 0) return null
 
@@ -283,10 +288,10 @@ function DetailPrice({ product, priceTable }: { product: Product; priceTable: Pr
       {prices.map(({ label, value }) => (
         <div key={label} className="flex items-baseline justify-between gap-6">
           <span className="type-label flex-shrink-0">
-            {prices.length === 1 ? 'Preço' : label}
+            {prices.length === 1 ? (locale === 'en-GB' ? 'Price' : 'Preço') : label}
           </span>
           <span className="text-lg text-ink font-semibold tabular-nums">
-            <SafePrice value={value} currency={product.currency} locale={product.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} />
+            <SafePrice value={value} currency={product.currency} locale={product.market_code === 'EU' ? locale : 'pt-BR'} />
           </span>
         </div>
       ))}
@@ -310,6 +315,20 @@ const CAT_LABEL: Record<string, string> = {
   couro_soleta: 'Couro Soleta', couro_pele: 'Couro Pele',
 }
 
+function localizeFurnitureTerm(value: string, locale: 'pt-PT' | 'en-GB') {
+  const normalized = value.trim().toLocaleLowerCase('pt-PT')
+  const pt: Record<string, string> = {
+    banqueta: 'Banco alto', banquetas: 'Bancos altos', poltrona: 'Cadeirão', poltronas: 'Cadeirões',
+  }
+  const en: Record<string, string> = {
+    banqueta: 'Bar stool', banquetas: 'Bar stools', poltrona: 'Armchair', poltronas: 'Armchairs',
+    cadeira: 'Chair', cadeiras: 'Chairs', sofá: 'Sofa', sofás: 'Sofas', mesa: 'Table', mesas: 'Tables',
+    aparador: 'Console table', aparadores: 'Console tables', conjunto: 'Set', conjuntos: 'Sets',
+    luminária: 'Lamp', luminárias: 'Lamps', espreguiçadeira: 'Sun lounger', espreguiçadeiras: 'Sun loungers',
+  }
+  return (locale === 'en-GB' ? en : pt)[normalized] ?? value
+}
+
 function groupOptionalsByCategory(optionals: Product['optionals']) {
   const seen = new Set<string>()
   const groups: Product['optionals'] = []
@@ -321,14 +340,8 @@ function groupOptionalsByCategory(optionals: Product['optionals']) {
   return groups
 }
 
-function fmtM(v: number) {
-  return Number(v).toFixed(2).replace('.', ',')
-}
-
-function dimLabel(p: Product) {
-  return p.is_circular
-    ? `Ø ${fmtM(p.largura)} × A ${fmtM(p.altura)} m`
-    : `L ${fmtM(p.largura)} × P ${fmtM(p.profundidade)} × A ${fmtM(p.altura)} m`
+function dimLabel(p: Product, locale: 'pt-PT' | 'en-GB' = 'pt-PT') {
+  return formatDimensions(p, p.market_code === 'EU' ? 'EU' : 'BR', locale)
 }
 
 function addToCart(product: Product, userId: string, market: 'BR' | 'EU') {
@@ -425,6 +438,8 @@ function ProductFullView({
   onClose,
 }: { product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void }) {
   const [added, setAdded] = useState(false)
+  const { locale } = useLocale()
+  const english = locale === 'en-GB'
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
@@ -475,7 +490,7 @@ function ProductFullView({
           onClick={onClose}
           className="absolute top-4 right-4 z-20 w-11 h-11 flex items-center justify-center rounded-full bg-white/85 backdrop-blur-sm text-muted hover:text-ink shadow-sm transition-colors"
           style={{ touchAction: 'manipulation' }}
-          aria-label="Fechar"
+          aria-label={english ? 'Close' : 'Fechar'}
         >
           <X className="w-5 h-5" />
         </button>
@@ -485,7 +500,7 @@ function ProductFullView({
           {product.photo_url
             ? <FullProductImage product={product} />
             : <div className="w-full h-[40vh] md:h-full flex items-center justify-center">
-                <span className="text-muted text-sm tracking-widest uppercase">Sem foto</span>
+                <span className="text-muted text-sm tracking-widest uppercase">{english ? 'No photo' : 'Sem foto'}</span>
               </div>
           }
         </div>
@@ -495,7 +510,7 @@ function ProductFullView({
           <div className="min-h-full flex flex-col justify-center max-w-[480px] mx-auto w-full px-6 md:px-12 py-10 md:py-16 space-y-8" style={{ animation: 'slideUp 0.35s ease-out' }}>
             <div className="space-y-3">
               <p className="type-label">
-                {product.type}
+                {localizeFurnitureTerm(product.type, locale)}
                 <span className="mx-2 text-faint">·</span>
                 <span className="font-mono normal-case tracking-normal text-gold">{product.product_code}</span>
               </p>
@@ -507,26 +522,24 @@ function ProductFullView({
 
             {!isConjuntoType(product.type) && (
               <div className="flex items-baseline gap-6 py-4 border-b border-line-soft">
-                <span className="type-label flex-shrink-0">Dimensões</span>
-                <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product)}</span>
+                <span className="type-label flex-shrink-0">{english ? 'Dimensions' : 'Dimensões'}</span>
+                <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product, locale)}</span>
               </div>
             )}
 
             {product.observacao && (
               <div className="bg-surface-note border border-line-note rounded-xl p-3">
-                <p className="text-xs text-gold font-semibold mb-1 uppercase tracking-wide">Observação</p>
+                <p className="text-xs text-gold font-semibold mb-1 uppercase tracking-wide">{english ? 'Note' : 'Observação'}</p>
                 <p className="text-sm text-note-ink italic leading-snug">{product.observacao}</p>
               </div>
             )}
 
             {isConjuntoType(product.type) ? (
               <div>
-                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">Componentes deste Conjunto</p>
+                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">{english ? 'Items in this set' : 'Componentes deste conjunto'}</p>
                 <div className="space-y-2">
                   {product.components.map((comp, idx) => {
-                    const dimStr = comp.is_circular
-                      ? `Ø ${fmtM(comp.largura)} × A ${fmtM(comp.altura)} m`
-                      : `L ${fmtM(comp.largura)} × P ${fmtM(comp.profundidade)} × A ${fmtM(comp.altura)} m`
+                    const dimStr = formatDimensions(comp, market, locale)
                     const catGroups = Array.from(new Set(comp.optionals.map(o => o.category)))
                     return (
                       <div key={idx} className="p-3 rounded-xl border border-line bg-bg">
@@ -552,13 +565,13 @@ function ProductFullView({
                     )
                   })}
                   {product.components.length === 0 && (
-                    <p className="text-xs text-muted italic">Nenhum componente registrado.</p>
+                    <p className="text-xs text-muted italic">{english ? 'No items registered.' : 'Nenhum componente registado.'}</p>
                   )}
                 </div>
               </div>
             ) : product.is_set ? (
               <div>
-                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">Componentes deste Conjunto</p>
+                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">{english ? 'Items in this set' : 'Componentes deste conjunto'}</p>
                 <div className="space-y-2">
                   {product.set_items.map((item) => (
                     <div key={item.product_code} className="flex items-center gap-3 p-3 rounded-xl border border-line bg-bg">
@@ -574,13 +587,13 @@ function ProductFullView({
                     </div>
                   ))}
                   {product.set_items.length === 0 && (
-                    <p className="text-xs text-muted italic">Nenhum componente registrado.</p>
+                    <p className="text-xs text-muted italic">{english ? 'No items registered.' : 'Nenhum componente registado.'}</p>
                   )}
                 </div>
               </div>
             ) : optCategories.length > 0 ? (
               <div>
-                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">Opcionais</p>
+                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">{english ? 'Options' : 'Opcionais'}</p>
                 <div className="flex flex-wrap gap-5">
                   {optCategories.map(({ cat, opt }) => (
                     <div key={cat} className="flex flex-col items-center gap-2">
@@ -626,7 +639,9 @@ function ProductFullView({
               className={`w-full flex items-center justify-center gap-2.5 py-4 rounded-xl font-semibold text-[13px] uppercase tracking-[0.12em] text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
             >
               {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-              {added ? 'Adicionado ao Orçamento' : 'Adicionar ao Orçamento'}
+              {added
+                ? (english ? 'Added to quote' : 'Adicionado ao orçamento')
+                : (english ? 'Add to quote' : 'Adicionar ao orçamento')}
             </button>
           </div>
         </div>
@@ -645,6 +660,7 @@ function ProductFullView({
 
 export default function ProdutosPage() {
   const { user } = useAuth()
+  const { locale, t } = useLocale()
   const queryClient = useQueryClient()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
@@ -674,6 +690,7 @@ export default function ProdutosPage() {
     type: selectedTypeName || undefined,
     sort_by: 'product_code',
     sort_dir: 'asc',
+    language: locale,
   })
   const products = useMemo(() => productsPage?.items ?? [], [productsPage])
   const totalProducts = productsPage?.total ?? 0
@@ -734,6 +751,7 @@ export default function ProdutosPage() {
       type: selectedTypeName || undefined,
       sort_by: 'product_code',
       sort_dir: 'asc',
+      language: locale,
     })
     const timer = window.setTimeout(() => {
       void queryClient.prefetchQuery(options).then(() => {
@@ -756,6 +774,7 @@ export default function ProdutosPage() {
     selectedGroupId,
     selectedTypeName,
     totalPages,
+    locale,
   ])
 
   function handleGroupChange(groupId: string) {
@@ -798,9 +817,9 @@ export default function ProdutosPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="mb-5 md:mb-6">
           <h1 className="text-xl md:text-2xl font-semibold text-ink text-balance">
-            Catálogo de Produtos
+            {t('catalogTitle')}
           </h1>
-          <p className="text-sm text-muted mt-1">Selecione um produto para adicionar ao orçamento</p>
+          <p className="text-sm text-muted mt-1">{t('catalogSubtitle')}</p>
         </div>
 
         {/* ── Barra de Filtros ─────────────────────────────────────────────── */}
@@ -810,8 +829,8 @@ export default function ProdutosPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
             <input
               type="text"
-              aria-label="Buscar produtos"
-              placeholder="Buscar por código ou descrição..."
+              aria-label={t('searchProducts')}
+              placeholder={t('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value)
@@ -820,7 +839,7 @@ export default function ProdutosPage() {
               className="w-full min-h-11 lg:min-h-0 pl-9 pr-12 lg:pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder-faint focus:outline-none focus:ring-1 focus:ring-gold transition-all"
             />
             {searchTerm && (
-              <button aria-label="Limpar busca" onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-0 top-1/2 h-11 w-11 lg:right-1 lg:h-8 lg:w-8 -translate-y-1/2 flex items-center justify-center text-muted hover:text-ink">
+              <button aria-label={t('clearSearch')} onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-0 top-1/2 h-11 w-11 lg:right-1 lg:h-8 lg:w-8 -translate-y-1/2 flex items-center justify-center text-muted hover:text-ink">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -832,9 +851,9 @@ export default function ProdutosPage() {
             onChange={(e) => handleGroupChange(e.target.value)}
             className="w-full min-h-11 lg:min-h-0 md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
           >
-            <option value="">Todos os Grupos</option>
+            <option value="">{t('allGroups')}</option>
             {productGroups.map(g => (
-              <option key={g.id} value={g.id}>{g.name}</option>
+              <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale)}</option>
             ))}
           </select>
 
@@ -848,9 +867,9 @@ export default function ProdutosPage() {
             className="w-full min-h-11 lg:min-h-0 md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
             disabled={availableTypes.length === 0}
           >
-            <option value="">Todos os Subgrupos</option>
+            <option value="">{t('allSubgroups')}</option>
             {availableTypes.map(t => (
-              <option key={t.id} value={t.name}>{t.name}</option>
+              <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale)}</option>
             ))}
           </select>
 
@@ -864,7 +883,7 @@ export default function ProdutosPage() {
               className="min-h-11 lg:min-h-0 flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gold border border-gold-soft rounded-lg hover:bg-gold-wash transition-colors"
               style={{ touchAction: 'manipulation' }}
             >
-              <X className="w-3 h-3" /> Limpar
+              <X className="w-3 h-3" /> {t('clear')}
             </button>
           )}
         </div>
@@ -873,21 +892,23 @@ export default function ProdutosPage() {
         {hasFilters && !isLoading && (
           <p className="text-xs text-muted mb-3">
             {totalProducts === 0
-              ? 'Nenhum produto encontrado.'
-              : `${totalProducts} produto${totalProducts !== 1 ? 's' : ''} encontrado${totalProducts !== 1 ? 's' : ''}`}
+              ? t('noProducts')
+              : locale === 'en-GB'
+                ? `${totalProducts} product${totalProducts !== 1 ? 's' : ''} found`
+                : `${totalProducts} produto${totalProducts !== 1 ? 's' : ''} encontrado${totalProducts !== 1 ? 's' : ''}`}
           </p>
         )}
 
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 text-center text-muted py-20" role="status" aria-live="polite">
             <span className="w-4 h-4 rounded-full border-2 border-gold/25 border-t-gold animate-spin" aria-hidden="true" />
-            Carregando catálogo…
+            {t('loadingCatalog')}
           </div>
         ) : products.length === 0 ? (
           <div className="flex flex-col items-center py-20 gap-3">
-            <p className="text-muted">Nenhum produto encontrado.</p>
+            <p className="text-muted">{t('noProducts')}</p>
             {hasFilters && (
-              <button onClick={clearFilters} className="btn-secondary min-h-11 px-4 text-xs">Limpar filtros</button>
+              <button onClick={clearFilters} className="btn-secondary min-h-11 px-4 text-xs">{t('clearFilters')}</button>
             )}
           </div>
         ) : (
@@ -923,7 +944,7 @@ export default function ProdutosPage() {
                   {product.photo_url
                     ? <CatalogImage product={product} />
                     : <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-muted text-[11px] uppercase tracking-widest">Sem foto</span>
+                        <span className="text-muted text-[11px] uppercase tracking-widest">{locale === 'en-GB' ? 'No photo' : 'Sem foto'}</span>
                       </div>
                   }
                 </div>
@@ -931,7 +952,7 @@ export default function ProdutosPage() {
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="type-code">{product.product_code}</span>
                     {selectedGroupId === '' && product.type && (
-                      <span className="type-label whitespace-nowrap">{product.type}</span>
+                      <span className="type-label whitespace-nowrap">{localizeFurnitureTerm(product.type, locale)}</span>
                     )}
                   </div>
                   <CardText product={product} priceTable={priceTable} />
@@ -1007,7 +1028,9 @@ export default function ProdutosPage() {
                     <button
                       type="button"
                       onClick={() => setExpandedOptionalsCode(current => current === product.product_code ? null : product.product_code)}
-                      aria-label={expandedOptionalsCode === product.product_code ? 'Ocultar opcionais' : 'Ver opcionais'}
+                      aria-label={expandedOptionalsCode === product.product_code
+                        ? (locale === 'en-GB' ? 'Hide options' : 'Ocultar opcionais')
+                        : (locale === 'en-GB' ? 'View options' : 'Ver opcionais')}
                       aria-expanded={expandedOptionalsCode === product.product_code}
                       style={{ touchAction: 'manipulation' }}
                       className="pointer-events-auto absolute bottom-0 left-1/2 z-10 flex h-11 w-11 -translate-x-1/2 translate-y-1/2 items-center justify-center
@@ -1048,7 +1071,7 @@ export default function ProdutosPage() {
                 <button
                   type="button"
                   onClick={() => user && addToCart(product, user.id, user.active_market)}
-                  aria-label={`Adicionar ${product.description} ao orçamento`}
+                  aria-label={locale === 'en-GB' ? `Add ${product.description} to quote` : `Adicionar ${product.description} ao orçamento`}
                   style={{ touchAction: 'manipulation' }}
                   className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
                              flex items-center justify-center transition-transform duration-150
@@ -1073,10 +1096,10 @@ export default function ProdutosPage() {
               onClick={() => changePage(page - 1)}
               className="min-h-11 lg:min-h-0 px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
-              Anterior
+              {locale === 'en-GB' ? 'Previous' : 'Anterior'}
             </button>
             <span className="text-sm text-muted">
-              Página <strong className="text-ink">{page}</strong> de {totalPages}
+              {locale === 'en-GB' ? 'Page' : 'Página'} <strong className="text-ink">{page}</strong> {locale === 'en-GB' ? 'of' : 'de'} {totalPages}
             </span>
             <button
               type="button"
@@ -1084,7 +1107,7 @@ export default function ProdutosPage() {
               onClick={() => changePage(page + 1)}
               className="min-h-11 lg:min-h-0 px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
-              Próxima
+              {locale === 'en-GB' ? 'Next' : 'Próxima'}
             </button>
           </div>
         )}

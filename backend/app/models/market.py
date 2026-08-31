@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 
 from datetime import datetime
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -61,6 +61,11 @@ class ProductMarket(Base, TimestampMixin):
     )
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Nomes comerciais pertencem ao mercado. O catálogo-base continua único,
+    # mas Portugal pode usar terminologia pt-PT e uma versão inglesa sem
+    # alterar a descrição brasileira.
+    description_pt_pt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_en: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint("vat_rate IS NULL OR (vat_rate >= 0 AND vat_rate <= 100)", name="ck_product_markets_vat"),

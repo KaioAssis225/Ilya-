@@ -9,7 +9,7 @@ tests/test_order_numbering.py e tests/test_discount_validation.py.
 import asyncio
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -19,10 +19,11 @@ from app.api.routers.products import (
     get_product,
     get_products_batch,
     list_products,
+    update_product,
 )
 from app.core.markets import MARKETS, MarketPrincipal
 from app.models.user import UserRole
-from app.schemas.product import ProductBatchRequest
+from app.schemas.product import ProductBatchRequest, ProductUpdate
 
 
 class _ScalarResult:
@@ -63,6 +64,7 @@ def _capturing_db(wheres: list[str]):
 
 ADMIN = SimpleNamespace(role=UserRole.admin, linked_id=None)
 BR_PRINCIPAL = MarketPrincipal(user=ADMIN, market=MARKETS["BR"])
+EU_PRINCIPAL = MarketPrincipal(user=ADMIN, market=MARKETS["EU"])
 
 
 def test_delete_product_desativa_em_vez_de_excluir():
@@ -93,6 +95,120 @@ def test_delete_product_desativa_em_vez_de_excluir():
             db.commit.assert_awaited_once()
             # Produto desativado pode ser reativado: a foto não é apagada.
             mock_delete_upload.assert_not_called()
+
+    asyncio.run(run_test())
+
+
+def test_delete_product_in_europe_removes_only_european_availability():
+    async def run_test():
+        product = SimpleNamespace(id=uuid.uuid4(), is_active=True, source_version=7)
+        availability = SimpleNamespace(is_available=True)
+        db = AsyncMock()
+        db.execute.side_effect = [_ScalarResult(product), _ScalarResult(availability)]
+
+        await delete_product(
+            product.id,
+            db=db,
+            current_user=ADMIN,
+            principal=EU_PRINCIPAL,
+        )
+
+        assert availability.is_available is False
+        assert product.is_active is True
+        assert product.source_version == 7
+        db.commit.assert_awaited_once()
+
+    asyncio.run(run_test())
+
+
+def test_update_product_in_europe_changes_only_three_euro_prices():
+    async def run_test():
+        product = SimpleNamespace(id=uuid.uuid4())
+        price_lists = [
+            SimpleNamespace(id=uuid.uuid4(), code="lojista"),
+            SimpleNamespace(id=uuid.uuid4(), code="corporativo"),
+            SimpleNamespace(id=uuid.uuid4(), code="pvp"),
+        ]
+        stored_prices = [SimpleNamespace(amount=0) for _ in price_lists]
+        product_result = _ScalarResult(product)
+        lists_result = MagicMock()
+        lists_result.scalars.return_value.all.return_value = price_lists
+        db = AsyncMock()
+        db.execute.side_effect = [
+            product_result,
+            lists_result,
+            *[_ScalarResult(price) for price in stored_prices],
+        ]
+        returned = SimpleNamespace(id=product.id)
+
+        with (
+            patch(
+                "app.api.routers.products._visible_price_profile",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "app.api.routers.products._to_market_reads",
+                new_callable=AsyncMock,
+                return_value=[returned],
+            ),
+        ):
+            result = await update_product(
+                product.id,
+                ProductUpdate(
+                    price_lojista=100,
+                    price_corporativo=200,
+                    price_pvp=300,
+                ),
+                db=db,
+                current_user=ADMIN,
+                principal=EU_PRINCIPAL,
+            )
+
+        assert [price.amount for price in stored_prices] == [100, 200, 300]
+        assert result is returned
+        db.commit.assert_awaited_once()
+
+    asyncio.run(run_test())
+
+
+def test_update_product_in_europe_keeps_separate_portuguese_and_english_names():
+    async def run_test():
+        product = SimpleNamespace(id=uuid.uuid4())
+        price_lists = [
+            SimpleNamespace(id=uuid.uuid4(), code=code)
+            for code in ("lojista", "corporativo", "pvp")
+        ]
+        lists_result = MagicMock()
+        lists_result.scalars.return_value.all.return_value = price_lists
+        localized = SimpleNamespace(description_pt_pt=None, description_en=None)
+        localized_result = MagicMock()
+        localized_result.scalar_one.return_value = localized
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _ScalarResult(product),
+            lists_result,
+            localized_result,
+        ]
+
+        with (
+            patch("app.api.routers.products._visible_price_profile", new_callable=AsyncMock, return_value=None),
+            patch("app.api.routers.products._to_market_reads", new_callable=AsyncMock, return_value=[product]),
+        ):
+            await update_product(
+                product.id,
+                ProductUpdate(
+                    description_pt_pt="BANCO ALTO LOTUS SEM BRAÇOS",
+                    description_en="LOTUS BAR STOOL WITHOUT ARMS",
+                ),
+                db=db,
+                current_user=ADMIN,
+                principal=EU_PRINCIPAL,
+            )
+
+        assert localized.description_pt_pt == "BANCO ALTO LOTUS SEM BRAÇOS"
+        assert localized.description_en == "LOTUS BAR STOOL WITHOUT ARMS"
+        db.commit.assert_awaited_once()
 
     asyncio.run(run_test())
 

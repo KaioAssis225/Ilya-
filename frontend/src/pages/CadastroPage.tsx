@@ -19,6 +19,7 @@ import { useAuth } from '../hooks/useAuth'
 import { NumberField } from '../components/NumberField'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
+import { formatDimensions } from '../lib/measurements'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
@@ -321,7 +322,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', type: 'Outro', is_circular: false,
   is_set: false, set_items: [], components: [],
-  altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, observacao: null,
+  altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, observacao: null,
   all_optionals_categories: null, optional_ids: [],
 }
 
@@ -867,6 +868,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     setForm({
       product_code: p.product_code,
       description: p.description,
+      description_pt_pt: p.description_pt_pt ?? p.description,
+      description_en: p.description_en ?? '',
       type: p.type ?? 'Outro',
       is_circular: p.is_circular,
       is_set: p.is_set,
@@ -876,6 +879,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       price: p.price ?? 0,
       price_lojista: p.price_lojista ?? 0,
       price_corporativo: p.price_corporativo ?? 0,
+      price_pvp: p.market_prices?.pvp ?? 0,
       observacao: p.observacao ?? null,
       optional_ids: isConjunto ? [] : p.optionals.map((o) => o.id),
       set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
@@ -936,8 +940,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     }
     try {
       if (editing) {
-        const updated = await updateM.mutateAsync({ id: editing.id, data: payload })
-        if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
+        const updatePayload = isEurope
+          ? {
+              price_lojista: form.price_lojista ?? 0,
+              price_corporativo: form.price_corporativo ?? 0,
+              price_pvp: form.price_pvp ?? 0,
+              description_pt_pt: form.description_pt_pt?.trim() || undefined,
+              description_en: form.description_en?.trim() || undefined,
+            }
+          : payload
+        const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
+        if (!isEurope && pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
       } else {
         const created = await createM.mutateAsync(payload)
         if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
@@ -969,7 +982,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       </div>
       {isEurope && (
         <p className="mb-4 rounded-lg bg-bg-2 px-3 py-2 text-xs text-ink-2">
-          Catálogo Portugal — preços em EUR geridos pela importação validada.
+          Em Portugal, pode editar os nomes em português e inglês e os preços em EUR; excluir remove o produto apenas deste catálogo.
         </p>
       )}
 
@@ -991,20 +1004,18 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
                       <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
                     </div>
-                    {!isEurope && <div className="flex gap-0 flex-shrink-0">
+                    <div className="flex gap-0 flex-shrink-0">
                       <button onClick={() => openEdit(p)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button onClick={() => setDeleting(p)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
-                    </div>}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] text-muted">
-                      {isConjuntoType(p.type) ? '' : p.is_circular
-                        ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} m`
-                        : `${Number(p.largura).toFixed(2).replace('.', ',')} × ${Number(p.profundidade).toFixed(2).replace('.', ',')} × ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
+                      {isConjuntoType(p.type) ? '' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}
                     </span>
                     <span className="space-y-0.5 text-right">
                       <span className="block text-[10px] text-muted">Lojista <strong className="text-sm text-ink">{money(marketPrice(p, 'lojista'))}</strong></span>
@@ -1080,9 +1091,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td data-product-col="code" className="px-4 py-3 font-mono text-sm font-medium border-r border-line whitespace-normal break-words align-top" style={{ color }}>{p.product_code}</td>
                     <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>{p.description}</td>
                     <td data-product-col="dimensions" className="px-4 py-3 text-ink-2 text-xs border-r border-line whitespace-normal break-words align-top">
-                      {isConjuntoType(p.type) ? '—' : p.is_circular
-                        ? `Ø ${Number(p.largura).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`
-                        : `L ${Number(p.largura).toFixed(2).replace('.', ',')} × P ${Number(p.profundidade).toFixed(2).replace('.', ',')} × A ${Number(p.altura).toFixed(2).replace('.', ',')} m`}
+                      {isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}
                     </td>
                     <td data-product-col="price_lojista" className="px-4 py-3 text-sm font-medium text-ink border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'lojista'))}</td>
                     <td data-product-col="price_corporativo" className="px-4 py-3 text-sm text-ink-2 border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'corporativo'))}</td>
@@ -1098,14 +1107,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         : <ImageIcon className="w-6 h-6 text-faint" />}
                     </td>
                     <td data-product-col="actions" className="px-2 py-3 align-top">
-                      {!isEurope && (
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label="Editar" className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
                         <button onClick={() => setDeleting(p)} aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -1147,7 +1154,55 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         </Modal>
       )}
 
-      {showForm && (
+      {showForm && isEurope && editing && (
+        <Modal title="Editar Produto em Portugal" onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {formError && (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-snug text-red-700">
+                {formError}
+              </div>
+            )}
+            <div className="rounded-xl bg-bg-2 px-4 py-3">
+              <span className="block font-mono text-xs font-semibold" style={{ color }}>{editing.product_code}</span>
+              <p className="mt-2 text-xs leading-relaxed text-ink-2">
+                O SKU, a fotografia e a estrutura são partilhados com o Brasil. Os nomes comerciais abaixo pertencem apenas a Portugal.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted">Nome em português (Portugal)</span>
+                <input className="input" maxLength={20000} value={form.description_pt_pt ?? ''} onChange={(event) => setForm({ ...form, description_pt_pt: event.target.value })} required />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted">Nome em inglês</span>
+                <input className="input" maxLength={20000} lang="en-GB" value={form.description_en ?? ''} onChange={(event) => setForm({ ...form, description_en: event.target.value })} required />
+              </label>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted">Lojista (€)</span>
+                <NumberField className="input" min="0" step="0.01" value={form.price_lojista} onValueChange={(value) => setForm({ ...form, price_lojista: value })} required />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted">Corporativo (€)</span>
+                <NumberField className="input" min="0" step="0.01" value={form.price_corporativo} onValueChange={(value) => setForm({ ...form, price_corporativo: value })} required />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted">PVP (€)</span>
+                <NumberField className="input" min="0" step="0.01" value={form.price_pvp} onValueChange={(value) => setForm({ ...form, price_pvp: value })} required />
+              </label>
+            </div>
+            <div className="flex justify-end gap-3 pt-1">
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={updateM.isPending}>
+                {updateM.isPending ? 'A guardar…' : 'Guardar nomes e preços'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showForm && !isEurope && (
         <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
@@ -1621,7 +1676,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       )}
 
       {deleting && (
-        <ConfirmDelete name={deleting.description}
+        <ConfirmDelete name={isEurope ? `${deleting.description} do catálogo Portugal` : deleting.description}
           onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
           onCancel={() => setDeleting(null)} />
       )}
