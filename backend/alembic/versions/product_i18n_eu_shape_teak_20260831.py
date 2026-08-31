@@ -16,30 +16,21 @@ depends_on = None
 def upgrade() -> None:
     # Product names keep the Brazilian order/model code, while shape terms
     # are consistently localized for the English EU catalog. Teka is a wood
-    # species/material name and is intentionally omitted from the English
-    # display title rather than translated.
+    # species/material name and remains unchanged in the English title.
     op.execute(r"""
         UPDATE product_markets
         SET description_en = trim(
             regexp_replace(
                 regexp_replace(
-                    regexp_replace(
-                        regexp_replace(
-                            regexp_replace(
-                                regexp_replace(description_en,
-                                    '\mREDONDO\M', 'ROUND', 'gi'),
-                                '\mREDONDA\M', 'ROUND', 'gi'),
-                            '\mRETANGULAR\M', 'RECTANGULAR', 'gi'),
-                        '\mWITH[[:space:]]+TEAK\M', '', 'gi'),
-                    '\mCOM[[:space:]]+TEKA\M', '', 'gi'),
-                '\mTEKA\M', '', 'gi'),
-            '[[:space:]]{2,}', ' ', 'g')
+                    regexp_replace(description_en,
+                        '\mREDONDO\M', 'ROUND', 'gi'),
+                    '\mREDONDA\M', 'ROUND', 'gi'),
+                '\mRETANGULAR\M', 'RECTANGULAR', 'gi')
         )
         WHERE market_code = 'EU' AND description_en IS NOT NULL
     """)
 
 
 def downgrade() -> None:
-    # The English display value is derived from the Brazilian source title;
-    # restoring removed material words would be ambiguous.
+    # The English display value is derived from the Brazilian source title.
     pass
