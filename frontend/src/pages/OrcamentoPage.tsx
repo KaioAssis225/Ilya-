@@ -765,6 +765,7 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 export default function OrcamentoPage() {
   const { user } = useAuth()
   const { locale: europeanLocale } = useLocale()
+  const isEnglish = europeanLocale === 'en-GB'
   const userId = user?.id ?? ''
   const market = user?.active_market ?? 'BR'
   const currency = market === 'EU' ? 'EUR' : 'BRL'
