@@ -15,6 +15,7 @@ import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
 import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
 import { formatDimensions } from '../lib/measurements'
+import { useLocale } from '../hooks/useLocale'
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
@@ -740,6 +741,8 @@ function MobileOrderCard({
 
 export default function PedidosPage() {
   const { user } = useAuth()
+  const { locale } = useLocale()
+  const isEnglish = locale === 'en-GB'
   const navigate = useNavigate()
   const isLegacyClient = user?.role === 'vendedor' && !!user.linked_id
   const isInternalSeller = user?.role === 'vendedor' && !user.linked_id
@@ -856,16 +859,16 @@ export default function PedidosPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl text-ink font-medium">
-              {isAuditActive ? 'Auditoria Geral' : 'Pedidos'}
+              {isAuditActive ? (isEnglish ? 'General audit' : 'Auditoria Geral') : (isEnglish ? 'Orders' : 'Pedidos')}
               <span className="ml-2 text-xs bg-bg-2 text-gold px-2 py-0.5 rounded-full">
-                Nesta página: {isAuditActive ? globalHistory.length : orders.length}
+                {isEnglish ? 'On this page' : 'Nesta página'}: {isAuditActive ? globalHistory.length : orders.length}
               </span>
             </h1>
             {canViewGlobalAudit && (
               <div className="flex gap-1 border border-line rounded-lg p-0.5 bg-white">
-                <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>Pedidos</button>
+                <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>{isEnglish ? 'Orders' : 'Pedidos'}</button>
                 <button onClick={() => setActiveTab('audit')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${activeTab === 'audit' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>
-                  <History className="w-3 h-3" /> Auditoria
+                  <History className="w-3 h-3" /> {isEnglish ? 'Audit' : 'Auditoria'}
                 </button>
               </div>
             )}
@@ -875,10 +878,10 @@ export default function PedidosPage() {
             <div className="flex items-center gap-2">
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-                <input aria-label="Filtrar pedidos por cliente ou número" className="input pl-9" placeholder="Filtrar por cliente, pedido..." value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <input aria-label={isEnglish ? 'Filter orders by client or number' : 'Filtrar pedidos por cliente ou número'} className="input pl-9" placeholder={isEnglish ? 'Filter by client, order...' : 'Filtrar por cliente, pedido...'} value={filter} onChange={(e) => setFilter(e.target.value)} />
               </div>
               <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors ${hasFilters ? 'border-gold text-gold bg-gold-wash' : 'border-line text-muted hover:border-faint'}`}>
-                <Filter className="w-3.5 h-3.5" /> Filtros{hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-gold" />}
+                <Filter className="w-3.5 h-3.5" /> {isEnglish ? 'Filters' : 'Filtros'}{hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-gold" />}
               </button>
             </div>
           )}
@@ -1019,8 +1022,8 @@ export default function PedidosPage() {
                       <p className="text-ink-3 text-sm">Nenhum pedido encontrado com este filtro.</p>
                     ) : (
                       <>
-                        <p className="text-ink-3 text-sm">Nenhum pedido ainda.</p>
-                        {canManage && <button onClick={() => navigate('/orcamentos')} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">Criar primeiro pedido</button>}
+                        <p className="text-ink-3 text-sm">{isEnglish ? 'No orders yet.' : 'Nenhum pedido ainda.'}</p>
+                        {canManage && <button onClick={() => navigate('/orcamentos')} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'Create first order' : 'Criar primeiro pedido'}</button>}
                       </>
                     )}
                   </div>
@@ -1031,14 +1034,14 @@ export default function PedidosPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-bg-2">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">Pedido</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">Orçamento</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">Representante</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">Itens</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-ink-3 uppercase">Total</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">Data</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-ink-3 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Order' : 'Pedido'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Quote' : 'Orçamento'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Client' : 'Cliente'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Representative' : 'Representante'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Items' : 'Itens'}</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Total' : 'Total'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Date' : 'Data'}</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Status' : 'Status'}</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
@@ -1084,8 +1087,8 @@ export default function PedidosPage() {
                           <span className="text-ink-3">Nenhum pedido encontrado com este filtro.</span>
                         ) : (
                           <div className="flex flex-col items-center gap-3">
-                            <span className="text-ink-3">Nenhum pedido ainda.</span>
-                            {canManage && <button onClick={() => navigate('/orcamentos')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">Criar primeiro pedido</button>}
+                            <span className="text-ink-3">{isEnglish ? 'No orders yet.' : 'Nenhum pedido ainda.'}</span>
+                            {canManage && <button onClick={() => navigate('/orcamentos')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'Create first order' : 'Criar primeiro pedido'}</button>}
                           </div>
                         )}
                       </td></tr>
