@@ -187,11 +187,27 @@ async function fetchCep(cep: string, signal?: AbortSignal): Promise<ViaCepRespon
   }
 }
 
+async function fetchPortugalPostalCode(postalCode: string, signal?: AbortSignal): Promise<ViaCepResponse | null> {
+  const clean = postalCode.replace(/\D/g, '')
+  if (clean.length !== 7) return null
+  try {
+    const r = await api.get<ViaCepResponse>(`/utils/postal-code/${clean}`, { signal })
+    return r.data
+  } catch {
+    return null
+  }
+}
+
 // ── Address form fields ──────────────────────────────────────────────────────
 
 function formatCep(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 8)
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
+}
+
+function formatPortugalPostalCode(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 7)
+  return digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits
 }
 
 function formatOnlyNumbers(value: string): string {
@@ -221,19 +237,22 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
   useEffect(() => () => cepAbortRef.current?.abort(), [])
 
   async function handleCepBlur() {
-    if (market !== 'BR') return
+    if (market !== 'BR' && market !== 'EU') return
     cepAbortRef.current?.abort()
     const controller = new AbortController()
     cepAbortRef.current = controller
     setCepLoading(true)
-    const data = await fetchCep(form.cep, controller.signal)
+    const data = market === 'BR'
+      ? await fetchCep(form.cep, controller.signal)
+      : await fetchPortugalPostalCode(form.cep, controller.signal)
     if (controller.signal.aborted) return
     if (data) {
       setForm({
         ...form,
-        address: `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}`,
+        address: data.logradouro ? `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}` : form.address,
         city: data.localidade,
-        state: data.uf,
+        state: market === 'BR' ? data.uf : '--',
+        region: market === 'EU' ? (data.regiao ?? form.region) : form.region,
       })
     }
     setCepLoading(false)
@@ -259,7 +278,7 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
       </label>
       <label className="flex flex-col gap-1 relative">
         <span className="text-xs text-muted">{market === 'EU' ? 'Código postal *' : 'CEP *'}</span>
-        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: market === 'BR' ? formatCep(e.target.value) : e.target.value })} onBlur={handleCepBlur} maxLength={20} required />
+        <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: market === 'BR' ? formatCep(e.target.value) : formatPortugalPostalCode(e.target.value) })} onBlur={handleCepBlur} maxLength={market === 'BR' ? 9 : 8} required />
         {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
       </label>
       <label className="flex flex-col gap-1">
