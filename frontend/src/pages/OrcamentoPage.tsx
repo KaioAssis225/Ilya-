@@ -607,7 +607,7 @@ function OrderForm({
   onQuickAddRep, onQuickAddClient,
   budgetCode, cart, onSubmit, isGenerating,
   repLocked, clientLocked,
-  editMode, editCode,
+  editMode, editCode, isEnglish,
 }: {
   reps: Representative[]; clients: Client[]
   selectedRep: Representative | null; selectedClient: Client | null; notes: string
@@ -624,11 +624,12 @@ function OrderForm({
   onSubmit: () => void; isGenerating: boolean
   repLocked?: boolean; clientLocked?: boolean
   editMode?: boolean; editCode?: string
+  isEnglish?: boolean
 }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between pb-3 border-b border-line-soft">
-        <h2 className="text-base font-semibold text-ink">{editMode ? 'Editar Pedido' : 'Novo Orçamento'}</h2>
+        <h2 className="text-base font-semibold text-ink">{editMode ? (isEnglish ? 'Edit Order' : 'Editar Pedido') : (isEnglish ? 'New Quote' : 'Novo Orçamento')}</h2>
         <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wider ${editMode ? 'bg-gold/10 text-gold' : 'bg-olive/10 text-olive'}`}>
           {editMode ? editCode : budgetCode}
         </span>
@@ -636,14 +637,14 @@ function OrderForm({
 
       {repLocked ? (
         <LockedField
-          label="Representante"
+          label={isEnglish ? 'Representative' : 'Representante'}
           value={selectedRep ? `${selectedRep.name} — ${selectedRep.city}/${selectedRep.state}` : '—'}
         />
       ) : (
         <div className="space-y-1">
-          <span className="type-label block">Representante</span>
+          <span className="type-label block">{isEnglish ? 'Representative' : 'Representante'}</span>
           <Autocomplete
-            searchPlaceholder="Buscar representante..."
+            searchPlaceholder={isEnglish ? 'Search representative...' : 'Buscar representante...'}
             items={reps}
             value={selectedRep}
             query={repQuery}
@@ -653,7 +654,7 @@ function OrderForm({
             onClear={() => onRepChange(null)}
             onQueryChange={onRepSearch}
             isLoading={repsLoading}
-            displayPlaceholder="Nenhum"
+            displayPlaceholder={isEnglish ? 'None' : 'Nenhum'}
             showQuickAdd
             onQuickAdd={onQuickAddRep}
           />
@@ -661,12 +662,12 @@ function OrderForm({
       )}
 
       {clientLocked && selectedClient ? (
-        <LockedField label="Cliente" value={`${selectedClient.name} — ${selectedClient.city}/${selectedClient.state}`} />
+        <LockedField label={isEnglish ? 'Client' : 'Cliente'} value={`${selectedClient.name} — ${selectedClient.city}/${selectedClient.state}`} />
       ) : (
         <div className="space-y-1">
-          <span className="type-label block">Cliente</span>
+          <span className="type-label block">{isEnglish ? 'Client' : 'Cliente'}</span>
           <Autocomplete
-            searchPlaceholder="Buscar cliente..."
+            searchPlaceholder={isEnglish ? 'Search client...' : 'Buscar cliente...'}
             items={clients}
             value={selectedClient}
             query={clientQuery}
@@ -676,7 +677,7 @@ function OrderForm({
             onClear={() => onClientChange(null)}
             onQueryChange={onClientSearch}
             isLoading={clientsLoading}
-            displayPlaceholder="Selecione o cliente..."
+            displayPlaceholder={isEnglish ? 'Select a client...' : 'Selecione o cliente...'}
             showQuickAdd
             onQuickAdd={onQuickAddClient}
           />
@@ -684,11 +685,11 @@ function OrderForm({
       )}
 
       <div className="space-y-1">
-        <span className="type-label block">Observações</span>
+        <span className="type-label block">{isEnglish ? 'Notes' : 'Observações'}</span>
         <textarea
           className="input resize-none text-xs"
           rows={3}
-          placeholder="Observações do orçamento..."
+          placeholder={isEnglish ? 'Quote notes...' : 'Observações do orçamento...'}
           value={notes}
           onChange={(e) => onNotesChange(e.target.value)}
         />
@@ -697,7 +698,7 @@ function OrderForm({
 
       {(!selectedClient || cart.length === 0) && !isGenerating && (
         <p className="type-meta text-center -mt-1">
-          {cart.length === 0 ? 'Adicione ao menos um produto ao orçamento.' : 'Selecione um cliente para continuar.'}
+          {cart.length === 0 ? (isEnglish ? 'Add at least one product to the quote.' : 'Adicione ao menos um produto ao orçamento.') : (isEnglish ? 'Select a client to continue.' : 'Selecione um cliente para continuar.')}
         </p>
       )}
       <button
@@ -706,7 +707,7 @@ function OrderForm({
         style={{ touchAction: 'manipulation' }}
         className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-gold hover:bg-gold-600 active:bg-gold-700 disabled:bg-faint disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
       >
-        {editMode ? 'Salvar Alterações' : 'Finalizar Orçamento'}
+        {editMode ? (isEnglish ? 'Save Changes' : 'Salvar Alterações') : (isEnglish ? 'Finalize Quote' : 'Finalizar Orçamento')}
       </button>
     </div>
   )
@@ -764,6 +765,7 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 export default function OrcamentoPage() {
   const { user } = useAuth()
   const { locale: europeanLocale } = useLocale()
+  const isEnglish = europeanLocale === 'en-GB'
   const userId = user?.id ?? ''
   const market = user?.active_market ?? 'BR'
   const currency = market === 'EU' ? 'EUR' : 'BRL'
@@ -1345,7 +1347,7 @@ export default function OrcamentoPage() {
           <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-line flex flex-col gap-3 bg-white flex-shrink-0 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
               <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4" /> Itens do Orçamento
+                <ShoppingCart className="w-4 h-4" /> {isEnglish ? 'Quote Items' : 'Itens do Orçamento'}
               </h2>
               <output
                 aria-live="polite"
@@ -1353,7 +1355,7 @@ export default function OrcamentoPage() {
                 title={selectedClient ? `Tabela de preço de ${selectedClient.name}` : 'Tabela padrão até selecionar um cliente'}
                 className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
               >
-                <span className="px-2.5 text-muted">Preço consultado</span>
+                <span className="px-2.5 text-muted">{isEnglish ? 'Price checked' : 'Preço consultado'}</span>
                 <strong className="self-stretch border-l border-line bg-white px-2.5 inline-flex items-center font-semibold text-gold">
                   {priceProfileLabel}
                 </strong>
@@ -1374,7 +1376,7 @@ export default function OrcamentoPage() {
                   <input
                     className="input pl-8 w-full text-xs border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
                     aria-label="Buscar nos itens do orçamento"
-                    placeholder="Buscar itens..."
+                    placeholder={isEnglish ? 'Search items...' : 'Buscar itens...'}
                   value={cartFilter}
                   onChange={(e) => setCartFilter(e.target.value)}
                 />
@@ -1387,11 +1389,11 @@ export default function OrcamentoPage() {
               <div className="flex flex-col items-center justify-center py-20 text-muted space-y-3">
                 <Clipboard className="w-10 h-10 text-faint stroke-[1.2]" />
                 <p className="text-sm font-medium text-ink-3">
-                  {cart.length === 0 ? 'Seu orçamento ainda está vazio.' : 'Nenhum item corresponde à busca.'}
+                  {cart.length === 0 ? (isEnglish ? 'Your quote is empty.' : 'Seu orçamento ainda está vazio.') : (isEnglish ? 'No items match your search.' : 'Nenhum item corresponde à busca.')}
                 </p>
                 {cart.length === 0 ? (
                   <Link to="/produtos" className="btn-secondary min-h-11 px-4 inline-flex items-center justify-center text-xs">
-                    Escolher produtos
+                    {isEnglish ? 'Choose products' : 'Escolher produtos'}
                   </Link>
                 ) : (
                   <button type="button" onClick={() => setCartFilter('')} className="btn-secondary min-h-11 px-4 text-xs">
@@ -1561,7 +1563,7 @@ export default function OrcamentoPage() {
                 budgetCode={budgetCode} cart={cart}
                 onSubmit={handleSubmit} isGenerating={isGenerating}
                 repLocked={repLocked} clientLocked={clientLocked}
-                editMode={!!editId} editCode={editOrder?.code}
+                editMode={!!editId} editCode={editOrder?.code} isEnglish={isEnglish}
               />
             </fieldset>
             {productSearchCard}
@@ -1613,7 +1615,7 @@ export default function OrcamentoPage() {
             budgetCode={budgetCode} cart={cart}
             onSubmit={handleSubmit} isGenerating={isGenerating}
             repLocked={repLocked} clientLocked={clientLocked}
-            editMode={!!editId} editCode={editOrder?.code}
+            editMode={!!editId} editCode={editOrder?.code} isEnglish={isEnglish}
           />
         </fieldset>
       </BottomDrawer>
