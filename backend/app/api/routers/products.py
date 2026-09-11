@@ -250,6 +250,7 @@ async def list_products(
         max_length=50,
     ),
     group_id: uuid.UUID | None = Query(default=None),
+    catalog_id: uuid.UUID | None = Query(default=None),
     include_total: bool = Query(default=True),
     sort_by: Literal[
         "product_code",
@@ -298,6 +299,8 @@ async def list_products(
             _normalized_product_type_expression(Product.type)
             == _normalized_product_type_value(product_type)
         )
+    if catalog_id:
+        filters.append(Product.catalog_id == catalog_id)
     if group_id:
         filters.append(
             _normalized_product_type_expression(Product.type).in_(

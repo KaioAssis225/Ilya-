@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
 from app.models.optional_color import product_optionals, OptionalColor
+from app.models.catalog import Catalog
 
 product_set_component_optionals = Table(
     "product_set_component_optionals",
@@ -21,6 +22,7 @@ class Product(Base, TimestampMixin):
     product_code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
+    catalog_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalogs.id"), nullable=True, index=True)
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
@@ -40,6 +42,7 @@ class Product(Base, TimestampMixin):
     source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
 
+    catalog: Mapped["Catalog | None"] = relationship("Catalog", lazy="selectin")
     optionals: Mapped[list["OptionalColor"]] = relationship(
         "OptionalColor", secondary=product_optionals, lazy="selectin"
     )
