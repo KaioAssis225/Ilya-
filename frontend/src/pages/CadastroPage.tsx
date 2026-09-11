@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen } from 'lucide-react'
 import { useProductsPage, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
 import { useProductTypes, useCreateProductType, useUpdateProductType, useDeleteProductType } from '../hooks/useProductTypes'
 import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup } from '../hooks/useProductGroups'
+import { useCatalogs, useCreateCatalog, useUpdateCatalog, useDeleteCatalog } from '../hooks/useCatalogs'
+import type { Catalog } from '../hooks/useCatalogs'
 import type { ProductGroup } from '../hooks/useProductGroups'
 import type { ProductType } from '../hooks/useProductTypes'
 import { useOptionalCategories, useCreateOptionalCategory, useUpdateOptionalCategory, useDeleteOptionalCategory } from '../hooks/useOptionalCategories'
@@ -21,7 +23,7 @@ import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
-type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'importacao'
+type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao'
 type SortDir = 'asc' | 'desc'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -47,6 +49,7 @@ const TAB_PALETTE = {
   representantes:  { color: '#507a9b', label: 'Azul Mineral' },
   opcionais:       { color: '#c47e4a', label: 'Âmbar' },
   tipos:           { color: '#7a5c9b', label: 'Violeta' },
+  catalogos:       { color: '#8a6d3b', label: 'Bronze' },
   importacao:      { color: '#3f6f6f', label: 'Petróleo' },
 } as const
 
@@ -313,7 +316,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 // ── PRODUTOS ──────────────────────────────────────────────────────────────────
 
 const EMPTY_PRODUCT: ProductCreate = {
-  product_code: '', description: '', type: 'Outro', is_circular: false,
+  product_code: '', description: '', type: 'Outro', catalog_id: null, is_circular: false,
   is_set: false, set_items: [], components: [],
   altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, observacao: null,
   all_optionals_categories: null, optional_ids: [],
@@ -712,6 +715,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
 
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const [search, setSearch] = useState('')
+  const [filterCatalogId, setFilterCatalogId] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)
   const [sortKey, setSortKey] = useState<'product_code' | 'description' | 'price_lojista'>('product_code')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -727,6 +731,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     skip: (page - 1) * ITEMS_PER_PAGE,
     limit: ITEMS_PER_PAGE,
     q: debouncedSearch || undefined,
+    catalog_id: filterCatalogId || undefined,
     sort_by: sortKey,
     sort_dir: sortDir,
   })
@@ -743,6 +748,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   }, [productsPage, safePage, page, onPage])
   const { data: allOptionals = [] } = useOptionals()
   const { data: allTypes = [] } = useProductTypes()
+  const { data: allCatalogs = [] } = useCatalogs()
   const { data: optCategories = [] } = useOptionalCategories()
   const createM = useCreateProduct()
   const updateM = useUpdateProduct()
@@ -852,6 +858,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       product_code: p.product_code,
       description: p.description,
       type: p.type ?? 'Outro',
+      catalog_id: p.catalog_id ?? null,
       is_circular: p.is_circular,
       is_set: p.is_set,
       altura: p.altura,
@@ -944,6 +951,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
             <input className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
+          <select
+            className="input w-full sm:w-44 flex-shrink-0"
+            value={filterCatalogId}
+            onChange={(e) => { setFilterCatalogId(e.target.value); onPage(1) }}
+          >
+            <option value="">Todos os Catálogos</option>
+            {allCatalogs.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
           </button>
@@ -1165,6 +1182,19 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <option key={t} value={t}>{t}</option>
                   ))}
                   <option value="__new__">+ Adicionar Novo...</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted">Catálogo</span>
+                <select
+                  className="input"
+                  value={form.catalog_id ?? ''}
+                  onChange={(e) => setForm({ ...form, catalog_id: e.target.value || null })}
+                >
+                  <option value="">Sem catálogo</option>
+                  {allCatalogs.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -2516,6 +2546,127 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
   )
 }
 
+// ── CatalogsTab ───────────────────────────────────────────────────────────────
+// Catálogo é a linha comercial (Ilya, IBTW, Cerâmica…), independente de
+// Grupo/Subgrupo — grupo carrega o IPI e não descreve a linha comercial.
+
+function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) {
+  const { data: catalogs = [], isLoading } = useCatalogs()
+  const createM = useCreateCatalog()
+  const updateM = useUpdateCatalog()
+  const deleteM = useDeleteCatalog()
+
+  const [modal, setModal] = useState<{ kind: 'new' } | { kind: 'edit'; catalog: Catalog } | null>(null)
+  const [deleting, setDeleting] = useState<Catalog | null>(null)
+  const [name, setName] = useState('')
+  const [err, setErr] = useState('')
+
+  function openNew() { setName(''); setErr(''); setModal({ kind: 'new' }) }
+  function openEdit(c: Catalog) { setName(c.name); setErr(''); setModal({ kind: 'edit', catalog: c }) }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault(); setErr('')
+    const trimmed = name.trim()
+    if (!trimmed) { setErr('Informe o nome do catálogo.'); return }
+    try {
+      if (modal?.kind === 'edit') await updateM.mutateAsync({ id: modal.catalog.id, name: trimmed })
+      else await createM.mutateAsync({ name: trimmed })
+      setModal(null)
+    } catch (ex: unknown) {
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao salvar catálogo.')
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleting) return
+    setErr('')
+    try {
+      await deleteM.mutateAsync(deleting.id)
+      setDeleting(null)
+    } catch (ex: unknown) {
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao excluir catálogo.')
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-medium text-ink">Catálogos</h2>
+          <p className="text-sm text-muted mt-0.5">Linhas comerciais usadas como filtro na tela de Produtos.</p>
+        </div>
+        {!readOnly && (
+          <button
+            onClick={openNew}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
+            style={{ backgroundColor: color }}
+          >
+            <Plus className="w-4 h-4" /> Novo Catálogo
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted py-8 text-center">Carregando…</p>
+      ) : catalogs.length === 0 ? (
+        <p className="text-sm text-muted py-8 text-center">Nenhum catálogo cadastrado.</p>
+      ) : (
+        <div className="bg-white border border-line rounded-xl overflow-hidden">
+          {catalogs.map((c, i) => (
+            <div key={c.id} className={`flex items-center justify-between px-4 py-3 ${i > 0 ? 'border-t border-line' : ''}`}>
+              <span className="text-sm text-ink font-medium">{c.name}</span>
+              {!readOnly && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit(c)} className="p-1.5 text-muted hover:text-ink transition-colors" title="Editar">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => { setErr(''); setDeleting(c) }} className="p-1.5 text-muted hover:text-terracotta transition-colors" title="Excluir">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal && (
+        <Modal onClose={() => setModal(null)} title={modal.kind === 'edit' ? 'Editar Catálogo' : 'Novo Catálogo'}>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <label className="block">
+              <span className="text-xs text-muted">Nome</span>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                maxLength={50}
+                autoFocus
+                className="mt-1 w-full py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink focus:outline-none focus:ring-1 focus:ring-gold"
+                placeholder="Ex.: Cerâmica"
+              />
+            </label>
+            {err && <p className="text-xs text-terracotta">{err}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
+              <button type="submit" disabled={createM.isPending || updateM.isPending} className="flex-1 py-2 text-white rounded-lg text-sm disabled:opacity-60" style={{ backgroundColor: color }}>Salvar</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {deleting && (
+        <Modal onClose={() => setDeleting(null)} title="Excluir Catálogo">
+          <p className="text-sm text-ink-2">Excluir o catálogo <strong>{deleting.name}</strong>?</p>
+          {err && <p className="text-xs text-terracotta mt-2">{err}</p>}
+          <div className="flex gap-2 pt-3">
+            <button type="button" onClick={() => setDeleting(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
+            <button type="button" onClick={handleDelete} disabled={deleteM.isPending} className="flex-1 py-2 bg-terracotta text-white rounded-lg text-sm disabled:opacity-60">Excluir</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 
 // ── IMPORTAÇÃO CSV (Bloco 63) ──────────────────────────────────────────────────
@@ -2525,6 +2676,7 @@ type ImportResult = { table: string; processed: number; created: number; updated
 const SUPPORT_TABLES: { value: string; label: string; columns: string }[] = [
   { value: 'product-groups',  label: 'Grupos de Produto',  columns: 'name, ipi' },
   { value: 'product-types',   label: 'Tipos de Produto',   columns: 'name, group' },
+  { value: 'catalogs',        label: 'Catálogos',          columns: 'name' },
   { value: 'optionals',       label: 'Opcionais',          columns: 'category, color_name' },
   { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state' },
   { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state, price_profile, rep_email' },
@@ -2642,6 +2794,7 @@ const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
   { key: 'representantes', label: 'Representantes',  Icon: UserCheck   },
   { key: 'opcionais',      label: 'Opcionais',       Icon: Tag         },
   { key: 'tipos',          label: 'Grupos & Subgrupos', Icon: LayoutGrid  },
+  { key: 'catalogos',      label: 'Catálogos',      Icon: BookOpen    },
   { key: 'importacao',     label: 'Importação CSV', Icon: Upload      },
 ]
 
@@ -2711,6 +2864,7 @@ export default function CadastroPage() {
   const { data: repsCount } = useRepresentativesPage({ skip: 0, limit: 1 })
   const { data: optionals } = useOptionals()
   const { data: productGroups } = useProductGroups()
+  const { data: catalogsCount } = useCatalogs()
 
   const createClient = useCreateClient(); const updateClient = useUpdateClient(); const deleteClient = useDeleteClient()
 
@@ -2722,6 +2876,7 @@ export default function CadastroPage() {
     representantes: repsCount?.total     ?? 0,
     opcionais:      optionals?.length ?? 0,
     tipos:          productGroups?.length ?? 0,
+    catalogos:      catalogsCount?.length ?? 0,
     importacao:     0,
   }
 
@@ -2834,6 +2989,8 @@ export default function CadastroPage() {
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
             {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} />}
+
+            {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
 
             {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} />}
           </main>

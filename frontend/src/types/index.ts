@@ -63,6 +63,8 @@ export interface Product {
   product_code: string
   description: string
   type: string
+  catalog_id: string | null
+  catalog: { id: string; name: string } | null
   is_circular: boolean
   is_set: boolean
   altura: number
@@ -88,6 +90,7 @@ export interface ProductCreate {
   product_code: string
   description: string
   type?: string
+  catalog_id?: string | null
   is_circular: boolean
   is_set?: boolean
   altura: number

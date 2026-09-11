@@ -6,6 +6,7 @@ import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
+import { useCatalogs } from '../hooks/useCatalogs'
 import { useProductGroups } from '../hooks/useProductGroups'
 import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
@@ -595,8 +596,10 @@ export default function ProdutosPage() {
   const queryClient = useQueryClient()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
+  const { data: catalogs = [] } = useCatalogs()
 
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCatalogId, setSelectedCatalogId] = useState<string>('')
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
   const [selected, setSelected] = useState<Product | null>(null)
@@ -617,6 +620,7 @@ export default function ProdutosPage() {
     skip: (page - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
     q: debouncedSearch || undefined,
+    catalog_id: selectedCatalogId || undefined,
     group_id: selectedGroupId || undefined,
     type: selectedTypeName || undefined,
     sort_by: 'product_code',
@@ -667,6 +671,7 @@ export default function ProdutosPage() {
       skip: page * PAGE_SIZE,
       limit: PAGE_SIZE,
       q: debouncedSearch || undefined,
+      catalog_id: selectedCatalogId || undefined,
       group_id: selectedGroupId || undefined,
       type: selectedTypeName || undefined,
       sort_by: 'product_code',
@@ -690,6 +695,7 @@ export default function ProdutosPage() {
     page,
     productsPage,
     queryClient,
+    selectedCatalogId,
     selectedGroupId,
     selectedTypeName,
     totalPages,
@@ -706,10 +712,11 @@ export default function ProdutosPage() {
     ? productTypes.filter(t => t.group_id === selectedGroupId)
     : productTypes
 
-  const hasFilters = searchTerm || selectedGroupId || selectedTypeName
+  const hasFilters = searchTerm || selectedCatalogId || selectedGroupId || selectedTypeName
 
   function clearFilters() {
     setSearchTerm('')
+    setSelectedCatalogId('')
     setSelectedGroupId('')
     setSelectedTypeName('')
     setPage(1)
@@ -761,6 +768,21 @@ export default function ProdutosPage() {
               </button>
             )}
           </div>
+
+          {/* Catálogo — dimensão independente de Grupo/Subgrupo (linha comercial) */}
+          <select
+            value={selectedCatalogId}
+            onChange={(e) => {
+              setSelectedCatalogId(e.target.value)
+              setPage(1)
+            }}
+            className="w-full md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+          >
+            <option value="">Todos os Catálogos</option>
+            {catalogs.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
 
           {/* Group dropdown */}
           <select

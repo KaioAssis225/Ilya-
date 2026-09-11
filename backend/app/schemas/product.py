@@ -5,6 +5,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.schemas.optional import OptionalColorRead
+from app.schemas.catalog import CatalogRead
 
 
 def _strip_product_type(value: Optional[str]) -> Optional[str]:
@@ -53,6 +54,7 @@ class ProductBase(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1, max_length=20_000)
     type: str = Field(default="Outro", min_length=1, max_length=50)
+    catalog_id: Optional[uuid.UUID] = None
     is_circular: bool = False
     is_set: bool = False
     altura: Decimal = Field(..., ge=0, decimal_places=2)
@@ -80,6 +82,7 @@ class ProductUpdate(BaseModel):
     product_code: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, min_length=1, max_length=20_000)
     type: Optional[str] = Field(None, min_length=1, max_length=50)
+    catalog_id: Optional[uuid.UUID] = None
     is_circular: Optional[bool] = None
     is_set: Optional[bool] = None
     altura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
@@ -121,6 +124,7 @@ class ProductRead(ProductBase):
     price_corporativo: Optional[Decimal] = None
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    catalog: Optional[CatalogRead] = None
     optionals: List[OptionalColorRead] = []
     set_items: List[ProductSetItemRead] = []
     components: List[ProductSetComponentRead] = []
