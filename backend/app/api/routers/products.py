@@ -390,8 +390,6 @@ async def create_product(
     current_user: User = _ADMIN_VENDEDOR,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if principal.code != "BR":
-        raise HTTPException(status_code=403, detail="O catálogo-base é mantido no mercado Brasil; use a importação europeia para disponibilidade e preços.")
     holder_is_active = (
         await db.execute(
             select(Product.is_active).where(Product.product_code == payload.product_code)
@@ -410,7 +408,14 @@ async def create_product(
             )
         )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-    product_data = payload.model_dump(exclude={"optional_ids", "set_items", "components"})
+    product_data = payload.model_dump(exclude={
+        "optional_ids",
+        "set_items",
+        "components",
+        "price_pvp",
+        "description_pt_pt",
+        "description_en",
+    })
     product = Product(**product_data)
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
     if payload.is_set:
@@ -419,15 +424,52 @@ async def create_product(
         product.components = await _resolve_components(db, payload.components)
     db.add(product)
     await db.flush()
-    db.add(ProductMarket(product_id=product.id, market_code="BR", is_available=True))
-    lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
-    amounts = {"lojista": payload.price_lojista, "corporativo": payload.price_corporativo}
+    market_code = principal.code
+    localized_fields = (
+        {
+            "description_pt_pt": payload.description_pt_pt.strip(),
+            "description_en": payload.description_en.strip(),
+        }
+        if market_code == "EU" and payload.description_pt_pt and payload.description_en
+        else {}
+    )
+    if market_code == "EU" and len(localized_fields) != 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe os nomes do produto em português de Portugal e inglês.",
+        )
+    db.add(ProductMarket(
+        product_id=product.id,
+        market_code=market_code,
+        is_available=True,
+        **localized_fields,
+    ))
+    lists = (await db.execute(select(PriceList).where(PriceList.market_code == market_code))).scalars().all()
+    amounts = {
+        "lojista": payload.price_lojista,
+        "corporativo": payload.price_corporativo,
+        **({"pvp": payload.price_pvp} if market_code == "EU" else {}),
+    }
+    required_lists = set(amounts)
+    available_lists = {price_list.code for price_list in lists}
+    if not required_lists.issubset(available_lists):
+        raise HTTPException(
+            status_code=422,
+            detail=f"As listas de preços obrigatórias não estão configuradas no mercado {market_code}.",
+        )
     for price_list in lists:
         if price_list.code in amounts:
             db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=amounts[price_list.code]))
     await db.commit()
     await db.refresh(product)
-    return _to_read(product)
+    if market_code == "BR":
+        return _to_read(product)
+    return (await _to_market_reads(
+        db,
+        [product],
+        principal,
+        await _visible_price_profile(db, current_user),
+    ))[0]
 
 
 @router.get("/{product_id}", response_model=ProductRead)
@@ -614,12 +656,26 @@ async def upload_photo(
     current_user: User = _ADMIN_VENDEDOR,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    if principal.code != "BR":
-        raise HTTPException(status_code=403, detail="Altere as fotos do catálogo-base no mercado Brasil.")
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    result = await db.execute(select(Product).where(
+        Product.id == product_id,
+        Product.is_active.is_(True),
+        exists().where(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == principal.code,
+            ProductMarket.is_available.is_(True),
+        ),
+    ))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
+    if principal.code == "EU":
+        is_shared_with_br = (await db.execute(select(exists().where(
+            ProductMarket.product_id == product_id,
+            ProductMarket.market_code == "BR",
+            ProductMarket.is_available.is_(True),
+        )))).scalar_one()
+        if is_shared_with_br:
+            raise HTTPException(status_code=403, detail="Altere as fotos do catálogo-base no mercado Brasil.")
     content, ext = await sanitize_image_upload(
         file,
         max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
@@ -639,4 +695,11 @@ async def upload_photo(
         raise
     await delete_upload(old_photo_path)
     await db.refresh(product)
-    return _to_read(product)
+    if principal.code == "BR":
+        return _to_read(product)
+    return (await _to_market_reads(
+        db,
+        [product],
+        principal,
+        await _visible_price_profile(db, current_user),
+    ))[0]

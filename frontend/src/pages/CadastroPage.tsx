@@ -1009,16 +1009,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          {!isEurope && (
-            <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
-              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
-            </button>
-          )}
+          <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
+          </button>
         </div>
       </div>
       {isEurope && (
         <p className="mb-4 rounded-lg bg-bg-2 px-3 py-2 text-xs text-ink-2">
-          Em Portugal, pode editar os nomes em português e inglês e os preços em EUR; excluir remove o produto apenas deste catálogo.
+          Em Portugal, pode cadastrar produtos exclusivos deste mercado, editar os nomes em português e inglês e os preços em EUR; excluir remove o produto apenas deste catálogo.
         </p>
       )}
 
@@ -1238,8 +1236,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         </Modal>
       )}
 
-      {showForm && !isEurope && (
-        <Modal title={editing ? 'Editar Produto' : 'Novo Produto'} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
+      {showForm && (!isEurope || !editing) && (
+        <Modal title={editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto')} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
               <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
@@ -1252,17 +1250,38 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 <input className="input" value={form.product_code} onChange={(e) => setForm({ ...form, product_code: e.target.value })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Preço Lojista (R$) *</span>
+                <span className="text-xs text-muted">Preço Lojista ({isEurope ? '€' : 'R$'}) *</span>
                 <NumberField className="input" min="0" step="0.01" value={form.price_lojista} onValueChange={(v) => setForm({ ...form, price_lojista: v })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Preço Corporativo (R$) *</span>
+                <span className="text-xs text-muted">Preço Corporativo ({isEurope ? '€' : 'R$'}) *</span>
                 <NumberField className="input" min="0" step="0.01" value={form.price_corporativo} onValueChange={(v) => setForm({ ...form, price_corporativo: v })} required />
               </label>
+              {isEurope && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-muted">Preço PVP (€) *</span>
+                  <NumberField className="input" min="0" step="0.01" value={form.price_pvp} onValueChange={(v) => setForm({ ...form, price_pvp: v })} required />
+                </label>
+              )}
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-muted">Descrição *</span>
-                <input className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
+                <span className="text-xs text-muted">{isEurope ? 'Nome em português (Portugal)' : 'Descrição'} *</span>
+                <input
+                  className="input"
+                  value={isEurope ? (form.description_pt_pt ?? '') : form.description}
+                  onChange={(e) => setForm({
+                    ...form,
+                    description: e.target.value,
+                    ...(isEurope ? { description_pt_pt: e.target.value } : {}),
+                  })}
+                  required
+                />
               </label>
+              {isEurope && (
+                <label className="flex flex-col gap-1 col-span-2">
+                  <span className="text-xs text-muted">Nome em inglês *</span>
+                  <input className="input" lang="en-GB" value={form.description_en ?? ''} onChange={(e) => setForm({ ...form, description_en: e.target.value })} required />
+                </label>
+              )}
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-muted">Observação</span>
                 <textarea

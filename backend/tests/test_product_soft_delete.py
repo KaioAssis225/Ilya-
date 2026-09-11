@@ -15,6 +15,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.routers.products import (
+    create_product,
     delete_product,
     get_product,
     get_products_batch,
@@ -22,8 +23,10 @@ from app.api.routers.products import (
     update_product,
 )
 from app.core.markets import MARKETS, MarketPrincipal
+from app.models.market import ProductMarket, ProductPrice
+from app.models.product import Product
 from app.models.user import UserRole
-from app.schemas.product import ProductBatchRequest, ProductUpdate
+from app.schemas.product import ProductBatchRequest, ProductCreate, ProductUpdate
 
 
 class _ScalarResult:
@@ -65,6 +68,62 @@ def _capturing_db(wheres: list[str]):
 ADMIN = SimpleNamespace(role=UserRole.admin, linked_id=None)
 BR_PRINCIPAL = MarketPrincipal(user=ADMIN, market=MARKETS["BR"])
 EU_PRINCIPAL = MarketPrincipal(user=ADMIN, market=MARKETS["EU"])
+
+
+def test_create_product_in_europe_creates_only_european_availability_and_prices():
+    async def run_test():
+        price_lists = [
+            SimpleNamespace(id=uuid.uuid4(), code=code)
+            for code in ("lojista", "corporativo", "pvp")
+        ]
+        lists_result = MagicMock()
+        lists_result.scalars.return_value.all.return_value = price_lists
+        db = AsyncMock()
+        db.execute.side_effect = [_ScalarResult(None), lists_result]
+        added = []
+        db.add = MagicMock(side_effect=added.append)
+        returned = SimpleNamespace(product_code="EU-ONLY-001")
+
+        with patch(
+            "app.api.routers.products._to_market_reads",
+            new_callable=AsyncMock,
+            return_value=[returned],
+        ):
+            result = await create_product(
+                ProductCreate(
+                    product_code="EU-ONLY-001",
+                    description="CADEIRA ALBA",
+                    description_pt_pt="CADEIRA ALBA",
+                    description_en="ALBA CHAIR",
+                    type="Cadeira",
+                    altura=0.86,
+                    largura=0.56,
+                    profundidade=0.60,
+                    price_lojista=100,
+                    price_corporativo=90,
+                    price_pvp=150,
+                ),
+                db=db,
+                current_user=ADMIN,
+                principal=EU_PRINCIPAL,
+            )
+
+        availability = next(item for item in added if isinstance(item, ProductMarket))
+        product = next(item for item in added if isinstance(item, Product))
+        prices = [item for item in added if isinstance(item, ProductPrice)]
+        assert availability.market_code == "EU"
+        assert availability.description_pt_pt == "CADEIRA ALBA"
+        assert availability.description_en == "ALBA CHAIR"
+        assert not any(
+            isinstance(item, ProductMarket) and item.market_code == "BR"
+            for item in added
+        )
+        assert {price.amount for price in prices} == {90, 100, 150}
+        assert product.product_code == "EU-ONLY-001"
+        assert result is returned
+        db.commit.assert_awaited_once()
+
+    asyncio.run(run_test())
 
 
 def test_delete_product_desativa_em_vez_de_excluir():

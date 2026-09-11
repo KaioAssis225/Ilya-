@@ -73,6 +73,9 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
+    price_pvp: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
+    description_pt_pt: Optional[str] = Field(None, min_length=1, max_length=20_000)
+    description_en: Optional[str] = Field(None, min_length=1, max_length=20_000)
     optional_ids: List[uuid.UUID] = Field(default_factory=list, max_length=500)
     set_items: List[ProductSetItemCreate] = Field(default_factory=list, max_length=500)
     components: List[ProductSetComponentCreate] = Field(default_factory=list, max_length=500)
