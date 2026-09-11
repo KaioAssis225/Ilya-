@@ -65,6 +65,8 @@ export interface Product {
   description_pt_pt?: string | null
   description_en?: string | null
   type: string
+  catalog_id: string | null
+  catalog: { id: string; name: string } | null
   is_circular: boolean
   is_set: boolean
   altura: number
@@ -95,6 +97,7 @@ export interface ProductCreate {
   description_pt_pt?: string | null
   description_en?: string | null
   type?: string
+  catalog_id?: string | null
   is_circular: boolean
   is_set?: boolean
   altura: number

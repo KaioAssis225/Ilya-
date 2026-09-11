@@ -11,6 +11,7 @@ export interface ProductPageParams {
   q?: string
   type?: string
   group_id?: string
+  catalog_id?: string
   include_total?: boolean
   sort_by?: 'product_code' | 'description' | 'type' | 'price_lojista' | 'price_corporativo'
   sort_dir?: 'asc' | 'desc'

@@ -27,6 +27,7 @@ from app.models.user import User, UserRole
 from app.models.product import Product
 from app.models.product_type import ProductType
 from app.models.product_group import ProductGroup
+from app.models.catalog import Catalog
 from app.models.optional_color import OptionalColor, product_optionals
 from app.models.client import Client
 from app.models.representative import Representative
@@ -363,6 +364,42 @@ def _address_fields(row: dict) -> dict:
 
 
 # ── Cadastros de apoio ─────────────────────────────────────────────────────────
+
+@router.post("/catalogs")
+async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+    """Colunas: name. Upsert por name."""
+    rows = await _load_rows(file)
+    await _acquire_import_lock(db)
+    names = {_first(row, "name", "nome") for row in rows}
+    names.discard(None)
+    existing = {
+        catalog.name: catalog
+        for catalog in await _load_chunked(
+            db,
+            names,
+            lambda chunk: select(Catalog).where(Catalog.name.in_(chunk)),
+        )
+    }
+    created = 0
+    errors: list[dict] = []
+    for i, row in enumerate(rows, start=2):
+        try:
+            name = _bounded(
+                _require(row, "name", "name", "nome"),
+                "name",
+                50,
+            )
+            # Só o nome identifica o catálogo: repetido no CSV é no-op, não erro.
+            if name not in existing:
+                catalog = Catalog(name=name)
+                db.add(catalog)
+                existing[name] = catalog
+                created += 1
+        except Exception as e:
+            _record_error(errors, i, e)
+    committed = await _finalize(db, errors)
+    return _summary("catalogs", len(rows), created, 0, errors, committed)
+
 
 @router.post("/product-groups")
 async def import_product_groups(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):

@@ -5,6 +5,7 @@ from app.api.routers.orders import router as orders_router
 from app.api.routers.optionals import router as optionals_router
 from app.api.routers.product_types import router as product_types_router
 from app.api.routers.product_groups import router as product_groups_router
+from app.api.routers.catalogs import router as catalogs_router
 from app.api.routers.optional_categories import router as optional_categories_router
 from app.api.routers.auth import router as auth_router
 from app.api.routers.users import router as users_router
@@ -17,4 +18,4 @@ from app.api.routers.integrations import router as integrations_router
 from app.api.routers.privacy import router as privacy_router
 from app.api.routers.markets import router as markets_router
 
-__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router", "privacy_router", "markets_router"]
+__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "catalogs_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router", "privacy_router", "markets_router"]
