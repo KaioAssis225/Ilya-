@@ -67,12 +67,18 @@ def dummy_verify() -> None:
 
 # ── JWT Access Token ──────────────────────────────────────────────────────────
 
-def create_access_token(user_id: uuid.UUID, role: str, auth_version: int = 0) -> str:
+def create_access_token(
+    user_id: uuid.UUID,
+    role: str,
+    auth_version: int = 0,
+    application: str = "ilya",
+) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES)
     payload = {
         "sub": str(user_id),
         "role": role,
         "ver": auth_version,
+        "app": application,
         "exp": expire,
         "type": "access",
     }

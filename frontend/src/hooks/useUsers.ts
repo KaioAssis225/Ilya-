@@ -10,6 +10,8 @@ export interface UserRead {
   role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id: string | null
   is_active: boolean
+  has_ilya_access: boolean
+  has_stock_access: boolean
   can_view_dashboard: boolean
 }
 
@@ -19,6 +21,8 @@ export interface UserCreate {
   full_name: string
   role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id?: string | null
+  has_ilya_access: boolean
+  has_stock_access: boolean
 }
 
 export interface UserUpdate {
@@ -28,6 +32,8 @@ export interface UserUpdate {
   role?: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id?: string | null
   is_active?: boolean
+  has_ilya_access?: boolean
+  has_stock_access?: boolean
   can_view_dashboard?: boolean
 }
 

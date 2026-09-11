@@ -32,6 +32,8 @@ async def get_authenticated_user(
     payload = decode_access_token(token)
     if payload is None:
         raise credentials_exception
+    if payload.get("app", "ilya") != "ilya":
+        raise credentials_exception
 
     user_id: str = payload.get("sub")
     if user_id is None:
@@ -42,7 +44,13 @@ async def get_authenticated_user(
     except ValueError:
         raise credentials_exception
 
-    result = await db.execute(select(User).where(User.id == user_uuid, User.is_active.is_(True)))
+    result = await db.execute(
+        select(User).where(
+            User.id == user_uuid,
+            User.is_active.is_(True),
+            User.has_ilya_access.is_(True),
+        )
+    )
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception

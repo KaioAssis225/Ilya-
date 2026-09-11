@@ -55,7 +55,7 @@ async def _validated_rep_assignment(
         return None
     if not rep_id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Usuário representante precisa estar vinculado a um representante.",
         )
     exists = (
@@ -153,10 +153,10 @@ async def create_user(
     try:
         validate_password_strength(body.password)
     except ValueError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
     if body.role == UserRole.cliente:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             "Contas de cliente devem ser criadas a partir do cadastro do cliente.",
         )
     normalized_email = str(body.email).lower()
@@ -186,6 +186,8 @@ async def create_user(
         role=body.role,
         rep_id=rep_id,
         linked_id=rep_id,
+        has_ilya_access=body.has_ilya_access,
+        has_stock_access=body.has_stock_access,
     )
     db.add(user)
     try:
@@ -262,7 +264,7 @@ async def update_user(
     elif target_role == UserRole.cliente:
         if user.role == UserRole.representante or user.linked_id is None:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "Vincule a conta a um cliente pelo fluxo de cadastro.",
             )
         changes["linked_id"] = user.linked_id
@@ -274,7 +276,7 @@ async def update_user(
         changes["linked_id"] = None
     security_changed = any(
         field in changes and changes[field] != getattr(user, field)
-        for field in ("username", "role", "rep_id", "linked_id", "is_active")
+        for field in ("username", "role", "rep_id", "linked_id", "is_active", "has_ilya_access")
     )
     for field, value in changes.items():
         setattr(user, field, value)
@@ -308,7 +310,7 @@ async def reset_password(
     try:
         validate_password_strength(body.new_password)
     except ValueError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:

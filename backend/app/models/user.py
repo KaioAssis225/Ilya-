@@ -27,6 +27,8 @@ class User(Base, TimestampMixin):
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole, name="userrole"), nullable=False, default=UserRole.vendedor)
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    has_ilya_access: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    has_stock_access: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     linked_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

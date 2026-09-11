@@ -30,6 +30,7 @@ type ModalMode = 'create' | 'edit' | 'password' | 'delete'
 
 const EMPTY_CREATE: UserCreate = {
   email: '', password: '', full_name: '', role: 'vendedor', rep_id: null,
+  has_ilya_access: true, has_stock_access: false,
 }
 
 const USERS_PER_PAGE = 25
@@ -113,7 +114,7 @@ export default function AdminPage() {
   }
 
   function openEdit(u: UserRead) {
-    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard })
+    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, has_ilya_access: u.has_ilya_access, has_stock_access: u.has_stock_access, can_view_dashboard: u.can_view_dashboard })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })
@@ -224,15 +225,16 @@ export default function AdminPage() {
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Nome</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">E-mail</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Perfil</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Aplicações</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Status</th>
                 <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={5} className="text-center py-10 text-muted">Carregando…</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-muted">Carregando…</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-10 text-muted">Nenhum usuário encontrado.</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-muted">Nenhum usuário encontrado.</td></tr>
               ) : users.map(u => (
                 <tr key={u.id} className="border-t border-line hover:bg-[#fdfcfa] transition-colors">
                   <td className="px-5 py-3 font-medium text-ink">{u.full_name}</td>
@@ -241,6 +243,13 @@ export default function AdminPage() {
                     <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: `${ROLE_COLOR[u.role]}18`, color: ROLE_COLOR[u.role] }}>
                       {ROLE_LABEL[u.role]}
                     </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {u.has_ilya_access && <span className="rounded-full bg-mineral/10 px-2 py-0.5 text-xs text-mineral">Ilya</span>}
+                      {u.has_stock_access && <span className="rounded-full bg-olive/10 px-2 py-0.5 text-xs text-olive">Estoque</span>}
+                      {!u.has_ilya_access && !u.has_stock_access && <span className="text-xs text-muted">Nenhuma</span>}
+                    </div>
                   </td>
                   <td className="px-5 py-3">
                     {u.is_active
@@ -343,6 +352,17 @@ export default function AdminPage() {
                     {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
                   </label>
                 )}
+                <fieldset className="space-y-2 rounded-xl border border-line p-3">
+                  <legend className="px-1 text-xs text-muted">Acesso às aplicações</legend>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.has_ilya_access} onChange={e => setForm({ ...form, has_ilya_access: e.target.checked })} className="w-4 h-4 accent-gold" />
+                    <span className="text-sm text-ink-2">Acesso ao Ilya</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.has_stock_access} onChange={e => setForm({ ...form, has_stock_access: e.target.checked })} className="w-4 h-4 accent-gold" />
+                    <span className="text-sm text-ink-2">Acesso ao Estoque</span>
+                  </label>
+                </fieldset>
                 {error && <p className="text-xs text-terracotta">{error}</p>}
                 <div className="flex gap-2 pt-1">
                   <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
@@ -416,6 +436,17 @@ export default function AdminPage() {
                   <input type="checkbox" checked={editForm.is_active ?? true} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} className="w-4 h-4 accent-gold" />
                   <span className="text-sm text-ink-2">Usuário ativo</span>
                 </label>
+                <fieldset className="space-y-2 rounded-xl border border-line p-3">
+                  <legend className="px-1 text-xs text-muted">Acesso às aplicações</legend>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={editForm.has_ilya_access ?? true} onChange={e => setEditForm({ ...editForm, has_ilya_access: e.target.checked })} className="w-4 h-4 accent-gold" />
+                    <span className="text-sm text-ink-2">Acesso ao Ilya</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={editForm.has_stock_access ?? false} onChange={e => setEditForm({ ...editForm, has_stock_access: e.target.checked })} className="w-4 h-4 accent-gold" />
+                    <span className="text-sm text-ink-2">Acesso ao Estoque</span>
+                  </label>
+                </fieldset>
                 {editForm.role !== 'executivo' && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={editForm.can_view_dashboard ?? false} onChange={e => setEditForm({ ...editForm, can_view_dashboard: e.target.checked })} className="w-4 h-4 accent-gold" />

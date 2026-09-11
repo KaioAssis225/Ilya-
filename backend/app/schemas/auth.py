@@ -1,7 +1,7 @@
 import re
 import uuid
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.models.user import UserRole
 
@@ -14,6 +14,7 @@ _USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,100}$")
 class LoginRequest(BaseModel):
     identifier: str  # accepts email or username
     password: str = Field(min_length=1, max_length=128)
+    application: Literal["ilya", "stock"] = "ilya"
 
     @field_validator("identifier")
     @classmethod
@@ -38,6 +39,8 @@ class UserRead(BaseModel):
     rep_id: uuid.UUID | None
     linked_id: uuid.UUID | None
     is_active: bool
+    has_ilya_access: bool = True
+    has_stock_access: bool = False
     must_change_password: bool
     max_discount: Decimal = Decimal("0.00")
     can_view_dashboard: bool = False
@@ -54,6 +57,8 @@ class UserCreate(BaseModel):
     full_name: str
     role: UserRole = UserRole.vendedor
     rep_id: Optional[uuid.UUID] = None
+    has_ilya_access: bool = True
+    has_stock_access: bool = False
 
     @field_validator("username")
     @classmethod
@@ -78,6 +83,8 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     rep_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
+    has_ilya_access: Optional[bool] = None
+    has_stock_access: Optional[bool] = None
     can_view_dashboard: Optional[bool] = None
 
     @field_validator("username")

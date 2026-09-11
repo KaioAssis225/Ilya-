@@ -128,7 +128,14 @@ async def login(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not user.is_active:
+    has_application_access = bool(
+        user
+        and (
+            (payload.application == "ilya" and user.has_ilya_access)
+            or (payload.application == "stock" and user.has_stock_access)
+        )
+    )
+    if not user or not user.is_active or not has_application_access:
         dummy_verify()
         logger.warning(
             "Falha de login: request_id=%s",
@@ -170,11 +177,17 @@ async def login(
     user.locked_until = None
     logger.info("Login: user_id=%s role=%s", user.id, user.role.value)
 
-    access_token = create_access_token(user.id, user.role.value, user.auth_version)
+    access_token = create_access_token(
+        user.id,
+        user.role.value,
+        user.auth_version,
+        application=payload.application,
+    )
     raw_refresh = generate_refresh_token()
     family_id = uuid.uuid4()
     db.add(RefreshToken(
         user_id=user.id,
+        application=payload.application,
         token_hash=hash_refresh_token(raw_refresh),
         expires_at=refresh_token_expiry(),
         family_id=family_id,
@@ -237,8 +250,17 @@ async def refresh(
         await db.commit()
         raise invalid_exc
 
+    application_access = (
+        User.has_stock_access.is_(True)
+        if stored.application == "stock"
+        else User.has_ilya_access.is_(True)
+    )
     user_result = await db.execute(
-        select(User).where(User.id == stored.user_id, User.is_active.is_(True))
+        select(User).where(
+            User.id == stored.user_id,
+            User.is_active.is_(True),
+            application_access,
+        )
     )
     user = user_result.scalar_one_or_none()
     if not user:
@@ -250,6 +272,7 @@ async def refresh(
     new_refresh_raw = generate_refresh_token()
     db.add(RefreshToken(
         user_id=user.id,
+        application=stored.application,
         token_hash=hash_refresh_token(new_refresh_raw),
         expires_at=refresh_token_expiry(),
         family_id=stored.family_id,
@@ -259,7 +282,12 @@ async def refresh(
 
     _set_refresh_cookie(response, new_refresh_raw)
     return AccessTokenResponse(
-        access_token=create_access_token(user.id, user.role.value, user.auth_version)
+        access_token=create_access_token(
+            user.id,
+            user.role.value,
+            user.auth_version,
+            application=stored.application,
+        )
     )
 
 
@@ -317,7 +345,7 @@ async def change_password(
     try:
         validate_password_strength(body.new_password)
     except ValueError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
     if not user.must_change_password:

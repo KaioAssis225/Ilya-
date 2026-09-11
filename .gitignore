@@ -66,3 +66,7 @@ backups/
 /test_*.py
 /test_*.js
 /cookie.txt
+
+# Checkpoints locais de sessão (snapshots de trabalho, não são código)
+/checkpoint-*.patch
+/checkpoint-*.zip

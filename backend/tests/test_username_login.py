@@ -7,7 +7,7 @@ seriam impossíveis de digitar ou que se confundiriam com um e-mail.
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.auth import UserCreate, UserUpdate
+from app.schemas.auth import LoginRequest, UserCreate, UserUpdate
 
 BASE = {
     "email": "rep@empresa.com.br",
@@ -24,6 +24,32 @@ def _build(**extra):
 def test_username_ausente_continua_valido():
     """Contas antigas entram só pelo e-mail — comportamento preservado."""
     assert _build().username is None
+
+
+def test_novo_usuario_tem_apenas_acesso_ilya_por_padrao():
+    user = _build()
+
+    assert user.has_ilya_access is True
+    assert user.has_stock_access is False
+
+
+def test_acessos_das_aplicacoes_sao_independentes():
+    user = _build(has_ilya_access=False, has_stock_access=True)
+
+    assert user.has_ilya_access is False
+    assert user.has_stock_access is True
+
+
+def test_login_tem_ilya_como_aplicacao_padrao():
+    login = LoginRequest(identifier="usuario", password="senha")
+
+    assert login.application == "ilya"
+
+
+def test_login_pode_ser_destinado_ao_estoque():
+    login = LoginRequest(identifier="usuario", password="senha", application="stock")
+
+    assert login.application == "stock"
 
 
 def test_username_normaliza_para_minusculas():
