@@ -958,7 +958,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
                     setattr(p, k, v)
                 is_update = True
             else:
-                p = Product(product_code=code, **fields)
+                p = Product(market_code=principal.code, product_code=code, **fields)
                 db.add(p)
                 is_update = False
             existing[code] = p

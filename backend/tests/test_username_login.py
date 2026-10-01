@@ -14,6 +14,9 @@ BASE = {
     "password": "Green@01",
     "full_name": "Fulano de Tal",
     "role": "representante",
+    "market_accesses": [
+        {"market_code": "BR", "role": "vendedor", "status": "active"}
+    ],
 }
 
 

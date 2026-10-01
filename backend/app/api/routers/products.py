@@ -416,7 +416,7 @@ async def create_product(
         "description_pt_pt",
         "description_en",
     })
-    product = Product(**product_data)
+    product = Product(market_code=principal.code, **product_data)
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
     if payload.is_set:
         product.set_items = await _resolve_set_items(db, payload.set_items, payload.product_code)
@@ -519,6 +519,13 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
 
     if principal.code == "EU":
+        product_changes = payload.model_dump(
+            exclude_unset=True,
+            exclude={
+                "optional_ids", "set_items", "components", "price_pvp",
+                "description_pt_pt", "description_en",
+            },
+        )
         price_changes = {
             "lojista": payload.price_lojista,
             "corporativo": payload.price_corporativo,
@@ -528,7 +535,16 @@ async def update_product(
             "description_pt_pt": payload.description_pt_pt,
             "description_en": payload.description_en,
         }
-        if not any(amount is not None for amount in price_changes.values()) and not any(translation_changes.values()):
+        relationship_change = any(
+            name in payload.model_fields_set
+            for name in ("optional_ids", "set_items", "components")
+        )
+        if (
+            not product_changes
+            and not relationship_change
+            and not any(amount is not None for amount in price_changes.values())
+            and not any(translation_changes.values())
+        ):
             raise HTTPException(
                 status_code=422,
                 detail="Informe ao menos um nome localizado ou preço em EUR para atualizar.",
@@ -559,6 +575,21 @@ async def update_product(
                     price_list_id=price_list.id,
                     amount=amount,
                 ))
+        for field, value in product_changes.items():
+            setattr(product, field, value)
+        product.source_version += 1
+        if payload.optional_ids is not None:
+            product.optionals = await _resolve_optionals(db, payload.optional_ids)
+        if payload.set_items is not None:
+            product.set_items = (
+                await _resolve_set_items(db, payload.set_items, product.product_code)
+                if product.is_set else []
+            )
+        if payload.components is not None:
+            product.components = (
+                await _resolve_components(db, payload.components)
+                if _is_conjunto_type(product.type) else []
+            )
         if any(value is not None for value in translation_changes.values()):
             localized = (await db.execute(select(ProductMarket).where(
                 ProductMarket.product_id == product.id,
@@ -638,6 +669,8 @@ async def delete_product(
         if not availability:
             raise HTTPException(status_code=404, detail="Produto não encontrado.")
         availability.is_available = False
+        product.is_active = False
+        product.source_version += 1
         await db.commit()
         return
     # Migration/01 + decisão do Alto Comando (05/08/2026): desativação, não

@@ -6,7 +6,14 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select, update
 
-from app.api.deps import get_db_session, get_authenticated_user, get_market_principal, get_current_user, is_client_account
+from app.api.deps import (
+    get_db_session,
+    get_authenticated_user,
+    get_market_principal,
+    get_platform_principal,
+    get_current_user,
+    is_client_account,
+)
 from app.core.limiter import limiter, refresh_rate_limit_key
 from app.core.lifecycle import touch_client_activity
 from app.core.origin_guard import require_trusted_cookie_origin
@@ -28,8 +35,15 @@ from app.models.user import User, UserRole
 from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.refresh_token import RefreshToken
-from app.core.markets import MarketPrincipal, allowed_markets, require_allowed_market
+from app.core.markets import (
+    MarketPrincipal,
+    PlatformPrincipal,
+    allowed_market_accesses,
+    allowed_markets,
+    require_market_access,
+)
 from app.models.notification import Notification
+from app.models.market import ProductMarket, UserPlatformPermission, VAT_APPROVED
 from app.models.order import Order
 from app.models.order_history import OrderHistory
 from app.models.privacy_event import PrivacyEvent
@@ -172,8 +186,15 @@ async def login(
     user.locked_until = None
     logger.info("Login: user_id=%s role=%s", user.id, user.role.value)
 
-    market = await require_allowed_market(db, user, user.home_market)
-    access_token = create_access_token(user.id, user.role.value, user.auth_version, market)
+    accesses = await allowed_market_accesses(db, user)
+    if not accesses:
+        await db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Conta sem acesso comercial ativo.")
+    access = next(
+        (item for item in accesses if item.market_code == user.home_market), accesses[0]
+    )
+    market = access.market_code
+    access_token = create_access_token(user.id, access.role, user.auth_version, market)
     raw_refresh = generate_refresh_token()
     family_id = uuid.uuid4()
     db.add(RefreshToken(
@@ -182,9 +203,10 @@ async def login(
         expires_at=refresh_token_expiry(),
         family_id=family_id,
         active_market=market,
+        scope="market",
     ))
-    if user.role == UserRole.cliente and user.linked_id is not None:
-        await touch_client_activity(db, user.linked_id, now)
+    if access.role == UserRole.cliente.value and access.linked_client_id is not None:
+        await touch_client_activity(db, access.linked_client_id, now)
     await db.commit()
 
     _set_refresh_cookie(response, raw_refresh)
@@ -248,12 +270,33 @@ async def refresh(
     if not user:
         raise invalid_exc
 
-    try:
-        active_market = await require_allowed_market(db, user, stored.active_market)
-    except HTTPException:
-        stored.revoked = True
-        stored.revoked_at = now
-        await db.commit()
+    role: str | None = None
+    active_market: str | None = None
+    if stored.scope == "market":
+        if stored.active_market is None:
+            raise invalid_exc
+        try:
+            access = await require_market_access(db, user, stored.active_market)
+        except HTTPException:
+            stored.revoked = True
+            stored.revoked_at = now
+            await db.commit()
+            raise invalid_exc
+        active_market = access.market_code
+        role = access.role
+    elif stored.scope == "platform":
+        capabilities = set((await db.execute(
+            select(UserPlatformPermission.capability).where(
+                UserPlatformPermission.user_id == user.id,
+                UserPlatformPermission.is_active.is_(True),
+            )
+        )).scalars().all())
+        if not capabilities:
+            stored.revoked = True
+            stored.revoked_at = now
+            await db.commit()
+            raise invalid_exc
+    else:
         raise invalid_exc
 
     stored.revoked = True
@@ -267,13 +310,90 @@ async def refresh(
         family_id=stored.family_id,
         parent_id=stored.id,
         active_market=active_market,
+        scope=stored.scope,
     ))
     await db.commit()
 
     _set_refresh_cookie(response, new_refresh_raw)
     return AccessTokenResponse(
-        access_token=create_access_token(user.id, user.role.value, user.auth_version, active_market)
+        access_token=create_access_token(
+            user.id, role, user.auth_version, active_market, scope=stored.scope
+        )
     )
+
+
+@router.post("/platform/login", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_LOGIN)
+async def platform_login(
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Abre uma sessão administrativa sem mercado comercial ativo."""
+    normalized_identifier = payload.identifier.lower()
+    user = (await db.execute(select(User).where(
+        or_(
+            func.lower(User.email) == normalized_identifier,
+            User.username == normalized_identifier,
+        )
+    ))).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if user is None or not user.is_active:
+        dummy_verify()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha incorretos.")
+    locked_until = user.locked_until
+    if locked_until and locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=timezone.utc)
+    if locked_until is not None and locked_until > now:
+        dummy_verify()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha incorretos.")
+    if not verify_password(payload.password, user.hashed_password):
+        user.failed_login_attempts += 1
+        if user.failed_login_attempts >= _LOGIN_LOCK_THRESHOLD:
+            user.locked_until = now + timedelta(minutes=_LOGIN_LOCK_MINUTES)
+            user.failed_login_attempts = 0
+        await db.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha incorretos.")
+
+    has_platform_access = (await db.execute(select(
+        UserPlatformPermission.user_id
+    ).where(
+        UserPlatformPermission.user_id == user.id,
+        UserPlatformPermission.is_active.is_(True),
+    ).limit(1))).scalar_one_or_none()
+    if has_platform_access is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Acesso de plataforma não concedido.")
+
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    raw_refresh = generate_refresh_token()
+    db.add(RefreshToken(
+        user_id=user.id,
+        token_hash=hash_refresh_token(raw_refresh),
+        expires_at=refresh_token_expiry(),
+        family_id=uuid.uuid4(),
+        active_market=None,
+        scope="platform",
+    ))
+    await db.commit()
+    _set_refresh_cookie(response, raw_refresh)
+    return AccessTokenResponse(access_token=create_access_token(
+        user.id, None, user.auth_version, None, scope="platform"
+    ))
+
+
+@router.get("/platform/me")
+async def platform_me(
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+):
+    return {
+        "id": principal.user.id,
+        "email": principal.user.email,
+        "full_name": principal.user.full_name,
+        "scope": "platform",
+        "capabilities": sorted(principal.capabilities),
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -312,7 +432,7 @@ async def me(
     db: AsyncSession = Depends(get_db_session),
     principal: MarketPrincipal = Depends(get_market_principal),
 ):
-    current_user = principal.user
+    current_user = principal.actor
     max_discount = await _resolve_max_discount(db, current_user)
     data = UserRead.model_validate(current_user).model_dump()
     data["max_discount"] = max_discount
@@ -333,7 +453,8 @@ async def switch_market(
     """Troca explícita de escopo. O mercado vem da permissão persistida,
     nunca de IP, query string ou cabeçalho fornecido pelo cliente."""
     current_user = principal.user
-    market = await require_allowed_market(db, current_user, body.market)
+    access = await require_market_access(db, current_user, body.market)
+    market = access.market_code
     if not refresh_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão renovável não encontrada.")
     stored = (await db.execute(
@@ -341,6 +462,7 @@ async def switch_market(
             RefreshToken.token_hash == hash_refresh_token(refresh_token),
             RefreshToken.user_id == current_user.id,
             RefreshToken.revoked.is_(False),
+            RefreshToken.scope == "market",
         )
     )).scalar_one_or_none()
     if not stored:
@@ -349,7 +471,7 @@ async def switch_market(
     await db.commit()
     return AccessTokenResponse(
         access_token=create_access_token(
-            current_user.id, current_user.role.value, current_user.auth_version, market
+            current_user.id, access.role, current_user.auth_version, market
         )
     )
 
@@ -453,7 +575,7 @@ async def delete_my_account(
     response: Response,
     body: ReauthenticationRequest,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
 ):
     """Bloco 93: exclusão da própria conta pelo titular.
 
@@ -463,18 +585,40 @@ async def delete_my_account(
     vinculado NÃO é excluído; para dados pessoais há o fluxo de anonimização."""
     _require_reauthentication(body, current_user)
 
-    if current_user.role == UserRole.admin:
-        others = await db.execute(
-            select(User).where(
-                User.role == UserRole.admin,
-                User.is_active.is_(True),
-                User.id != current_user.id,
-            )
+    approved_vat = (await db.execute(
+        select(ProductMarket.product_id).where(
+            ProductMarket.approved_by_user_id == current_user.id,
+            ProductMarket.vat_status == VAT_APPROVED,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if approved_vat is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A conta possui aprovações fiscais ativas e não pode ser excluída.",
         )
-        if not others.scalars().first():
+
+    has_platform_admin = (await db.execute(select(
+        UserPlatformPermission.user_id
+    ).where(
+        UserPlatformPermission.user_id == current_user.id,
+        UserPlatformPermission.capability == "platform_admin",
+        UserPlatformPermission.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if has_platform_admin is not None:
+        other = (await db.execute(
+            select(UserPlatformPermission.user_id)
+            .join(User, User.id == UserPlatformPermission.user_id)
+            .where(
+                UserPlatformPermission.capability == "platform_admin",
+                UserPlatformPermission.is_active.is_(True),
+                UserPlatformPermission.user_id != current_user.id,
+                User.is_active.is_(True),
+            ).limit(1)
+        )).scalar_one_or_none()
+        if other is None:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "Não é possível excluir o único administrador ativo do sistema.",
+                status.HTTP_409_CONFLICT,
+                "A plataforma precisa manter ao menos um administrador ativo.",
             )
 
     await db.execute(delete(Notification).where(Notification.user_id == current_user.id))

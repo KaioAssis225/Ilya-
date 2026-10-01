@@ -14,9 +14,11 @@ from app.core.markets import (
     build_market_principal,
     allowed_markets,
     require_allowed_market,
+    require_market_access,
 )
 from app.core.security import create_access_token, decode_access_token
 from app.models.client import Client
+from app.models.product import Product
 from app.models.user import UserRole
 from app.api.routers.clients import get_client
 from app.api.routers.orders import update_order
@@ -31,13 +33,15 @@ def _user(role=UserRole.vendedor, home="BR"):
 def test_access_token_signs_market_scope():
     token = create_access_token(uuid.uuid4(), "admin", market="EU")
     assert decode_access_token(token)["market"] == "EU"
+    assert decode_access_token(token)["scope"] == "market"
 
 
 def test_market_principal_binds_only_the_validated_market():
     async def run():
         db = AsyncMock()
         db.sync_session = SimpleNamespace(info={})
-        with patch("app.core.markets.require_allowed_market", AsyncMock(return_value="EU")):
+        access = SimpleNamespace(market_code="EU", role="admin")
+        with patch("app.core.markets.require_market_access", AsyncMock(return_value=access)):
             principal = await build_market_principal(db, _user(UserRole.admin), "EU")
         assert principal.code == "EU"
         assert principal.market is MARKETS["EU"]
@@ -46,23 +50,23 @@ def test_market_principal_binds_only_the_validated_market():
     asyncio.run(run())
 
 
-def test_admin_receives_both_markets_only_when_europe_flag_enabled():
+def test_global_admin_without_active_user_market_receives_no_market():
     async def run():
         db = AsyncMock()
         result = MagicMock()
-        result.scalars.return_value.all.return_value = ["BR", "EU"]
+        result.scalars.return_value.all.return_value = []
         db.execute.return_value = result
         with patch("app.core.markets.settings.EUROPE_MARKET_ENABLED", True):
-            assert await allowed_markets(db, _user(UserRole.admin)) == ["BR", "EU"]
+            assert await allowed_markets(db, _user(UserRole.admin)) == []
     asyncio.run(run())
 
 
 def test_non_admin_cannot_switch_to_unlinked_market():
     async def run():
         db = AsyncMock()
-        links = MagicMock(); links.scalars.return_value.all.return_value = ["BR"]
-        enabled = MagicMock(); enabled.scalars.return_value.all.return_value = ["BR"]
-        db.execute.side_effect = [links, enabled]
+        links = MagicMock()
+        links.scalars.return_value.all.return_value = [SimpleNamespace(market_code="BR")]
+        db.execute.return_value = links
         with patch("app.core.markets.settings.EUROPE_MARKET_ENABLED", True):
             with pytest.raises(HTTPException) as exc:
                 await require_allowed_market(db, _user(), "EU")
@@ -73,7 +77,8 @@ def test_non_admin_cannot_switch_to_unlinked_market():
 def test_feature_flag_blocks_europe_even_for_admin():
     async def run():
         db = AsyncMock()
-        result = MagicMock(); result.scalars.return_value.all.return_value = ["BR"]
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [SimpleNamespace(market_code="EU")]
         db.execute.return_value = result
         with patch("app.core.markets.settings.EUROPE_MARKET_ENABLED", False):
             with pytest.raises(HTTPException) as exc:
@@ -214,10 +219,21 @@ def test_orm_market_scope_does_not_reuse_previous_market():
             "('00000000000000000000000000000001', 'BR'), "
             "('00000000000000000000000000000002', 'EU')"
         ))
+        connection.execute(text(
+            "CREATE TABLE products (id CHAR(32) PRIMARY KEY, market_code VARCHAR(2) NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO products (id, market_code) VALUES "
+            "('00000000000000000000000000000003', 'BR'), "
+            "('00000000000000000000000000000004', 'EU')"
+        ))
 
     with Session(engine) as session:
         count_query = select(func.count()).select_from(Client)
+        product_count_query = select(func.count()).select_from(Product)
         session.info["active_market"] = "BR"
         assert session.execute(count_query).scalar_one() == 1
+        assert session.execute(product_count_query).scalar_one() == 1
         session.info["active_market"] = "EU"
         assert session.execute(count_query).scalar_one() == 1
+        assert session.execute(product_count_query).scalar_one() == 1

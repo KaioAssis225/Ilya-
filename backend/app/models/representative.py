@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, func, text
+from sqlalchemy import CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -35,6 +35,7 @@ class Representative(Base, TimestampMixin):
         nullable=True,
     )
     __table_args__ = (
+        UniqueConstraint("id", "market_code", name="uq_representatives_id_market"),
         CheckConstraint(
             "market_code <> 'BR' OR state ~ '^[A-Z]{2}$'",
             name="ck_representatives_state_uf",

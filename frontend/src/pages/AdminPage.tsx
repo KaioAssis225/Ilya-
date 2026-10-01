@@ -127,7 +127,7 @@ export default function AdminPage() {
   }
 
   function openEdit(u: UserRead) {
-    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard, home_market: u.home_market, allowed_markets: u.allowed_markets })
+    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard, home_market: u.home_market, allowed_markets: u.allowed_markets, market_accesses: u.market_accesses })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })

@@ -158,7 +158,7 @@ def test_delete_product_desativa_em_vez_de_excluir():
     asyncio.run(run_test())
 
 
-def test_delete_product_in_europe_removes_only_european_availability():
+def test_delete_product_in_europe_deactivates_the_independent_european_product():
     async def run_test():
         product = SimpleNamespace(id=uuid.uuid4(), is_active=True, source_version=7)
         availability = SimpleNamespace(is_available=True)
@@ -173,8 +173,8 @@ def test_delete_product_in_europe_removes_only_european_availability():
         )
 
         assert availability.is_available is False
-        assert product.is_active is True
-        assert product.source_version == 7
+        assert product.is_active is False
+        assert product.source_version == 8
         db.commit.assert_awaited_once()
 
     asyncio.run(run_test())
@@ -182,7 +182,7 @@ def test_delete_product_in_europe_removes_only_european_availability():
 
 def test_update_product_in_europe_changes_only_three_euro_prices():
     async def run_test():
-        product = SimpleNamespace(id=uuid.uuid4())
+        product = SimpleNamespace(id=uuid.uuid4(), source_version=1)
         price_lists = [
             SimpleNamespace(id=uuid.uuid4(), code="lojista"),
             SimpleNamespace(id=uuid.uuid4(), code="corporativo"),
@@ -233,7 +233,7 @@ def test_update_product_in_europe_changes_only_three_euro_prices():
 
 def test_update_product_in_europe_keeps_separate_portuguese_and_english_names():
     async def run_test():
-        product = SimpleNamespace(id=uuid.uuid4())
+        product = SimpleNamespace(id=uuid.uuid4(), source_version=1)
         price_lists = [
             SimpleNamespace(id=uuid.uuid4(), code=code)
             for code in ("lojista", "corporativo", "pvp")

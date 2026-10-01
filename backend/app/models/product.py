@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, Index, Table, Column, func
+from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, Index, Table, Column, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
@@ -19,7 +19,10 @@ class Product(Base, TimestampMixin):
     __tablename__ = "products"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    product_code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    market_code: Mapped[str] = mapped_column(
+        ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR"
+    )
+    product_code: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
     catalog_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalogs.id"), nullable=True, index=True)
@@ -56,6 +59,8 @@ class Product(Base, TimestampMixin):
     )
 
     __table_args__ = (
+        UniqueConstraint("market_code", "product_code", name="uq_products_market_code"),
+        Index("ix_products_market_id", "market_code", "id"),
         Index(
             "ix_products_description_prefix_id",
             func.left(description, 512),

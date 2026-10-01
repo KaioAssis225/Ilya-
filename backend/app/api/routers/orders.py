@@ -35,7 +35,7 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
-from app.models.market import ProductMarket, ProductPrice, PriceList, MarketTaxRate
+from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
@@ -274,6 +274,26 @@ def _resolve_max_discount(
     return _HUNDRED  # admin / produtos
 
 
+def _resolve_eu_vat(
+    product_code: str,
+    vat_rate: Decimal | None,
+    vat_status: str | None,
+) -> Decimal:
+    """IVA faturável de Portugal: só taxa aprovada por uma pessoa conta.
+
+    Sem herança do IPI do grupo e sem fallback para zero — se o SKU não tem
+    `vat_status == approved` com uma taxa definida, o pedido é recusado. Como o
+    fluxo de aprovação (RBAC P2) ainda não existe, nenhum item EU é faturável
+    hoje: aprovação manual permanece pendente, de propósito.
+    """
+    if vat_status != VAT_APPROVED or vat_rate is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Produto '{product_code}' não possui IVA aprovado para o mercado europeu.",
+        )
+    return _decimal(vat_rate)
+
+
 def _validate_discount(
     discount: Decimal | float,
     max_discount: Decimal | float,
@@ -398,6 +418,7 @@ async def create_order(
         select(
             ProductMarket.product_id,
             ProductMarket.vat_rate,
+            ProductMarket.vat_status,
             ProductMarket.description_pt_pt,
             ProductMarket.description_en,
         ).where(
@@ -405,16 +426,13 @@ async def create_order(
             ProductMarket.product_id.in_(product_ids),
         )
     )).all()
-    product_vat = {row.product_id: row.vat_rate for row in product_market_rows}
+    product_vat = {
+        row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
+    }
     localized_descriptions = {
         row.product_id: (row.description_pt_pt, row.description_en)
         for row in product_market_rows
     }
-    type_tax = dict((await db.execute(
-        select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
-            MarketTaxRate.market_code == market_code
-        )
-    )).all())
 
     total = _ZERO
     total_ipi = _ZERO
@@ -436,7 +454,8 @@ async def create_order(
 
         product_type = type_map.get(product.type)
         if market_code == "EU":
-            ipi_rate = _decimal(product_vat.get(product.id) if product_vat.get(product.id) is not None else type_tax.get(product.type, 0))
+            vat_rate, vat_status = product_vat.get(product.id, (None, None))
+            ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
         else:
             ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
         ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
@@ -815,20 +834,20 @@ async def update_order(
         product_market_rows = (await db.execute(select(
             ProductMarket.product_id,
             ProductMarket.vat_rate,
+            ProductMarket.vat_status,
             ProductMarket.description_pt_pt,
             ProductMarket.description_en,
         ).where(
             ProductMarket.market_code == order.market_code,
             ProductMarket.product_id.in_(product_ids),
         ))).all()
-        product_vat = {row.product_id: row.vat_rate for row in product_market_rows}
+        product_vat = {
+            row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
+        }
         localized_descriptions = {
             row.product_id: (row.description_pt_pt, row.description_en)
             for row in product_market_rows
         }
-        type_tax = dict((await db.execute(select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
-            MarketTaxRate.market_code == order.market_code
-        ))).all())
         rep = selected_rep
         if rep is None and order.rep_id:
             rep = (
@@ -862,7 +881,8 @@ async def update_order(
 
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
-                ipi_rate = _decimal(product_vat.get(product.id) if product_vat.get(product.id) is not None else type_tax.get(product.type, 0))
+                vat_rate, vat_status = product_vat.get(product.id, (None, None))
+                ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
             else:
                 ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
             ipi_value = _money(subtotal * ipi_rate / _HUNDRED)

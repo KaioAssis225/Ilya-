@@ -10,9 +10,10 @@ from app.models.client import Client
 from app.models.notification import Notification
 from app.models.order import Order
 from app.models.representative import Representative
+from app.models.product import Product
 
 
-MARKET_SCOPED_MODELS = (Client, Representative, Order, Notification)
+MARKET_SCOPED_MODELS = (Client, Representative, Order, Notification, Product)
 
 
 @event.listens_for(Session, "do_orm_execute")

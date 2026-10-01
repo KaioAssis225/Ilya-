@@ -5,22 +5,69 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import exists, func, or_, select, update
 
-from app.api.deps import get_db_session, get_current_user, require_roles
+from app.api.deps import (
+    get_db_session,
+    get_current_user,
+    require_platform_capability,
+    require_roles,
+)
+from app.core.markets import PlatformPrincipal
 from app.core.security import hash_password, validate_password_strength
 from app.core.search import literal_contains_pattern
 from app.models.user import User, UserRole
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
-from app.models.market import UserMarket
-from app.schemas.auth import UserRead, UserCreate, UserUpdate, UserPasswordReset, UserCreateResponse
+from app.models.market import (
+    PLATFORM_CAPABILITIES,
+    ProductMarket,
+    UserMarket,
+    UserPlatformPermission,
+    VAT_APPROVED,
+)
+from app.schemas.auth import (
+    UserRead,
+    UserCreate,
+    UserUpdate,
+    UserPasswordReset,
+    UserCreateResponse,
+    UserMarketAccessInput,
+)
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 _admin_only = require_roles(UserRole.admin)
+
+
+class PlatformPermissionsUpdate(BaseModel):
+    capabilities: set[Literal["platform_admin", "activate_market", "read_outbox"]]
+
+
+async def _would_remove_last_platform_admin(
+    db: AsyncSession, user_id: uuid.UUID
+) -> bool:
+    target_has_admin = (await db.execute(select(UserPlatformPermission.user_id).where(
+        UserPlatformPermission.user_id == user_id,
+        UserPlatformPermission.capability == "platform_admin",
+        UserPlatformPermission.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if target_has_admin is None:
+        return False
+    other = (await db.execute(
+        select(UserPlatformPermission.user_id)
+        .join(User, User.id == UserPlatformPermission.user_id)
+        .where(
+            UserPlatformPermission.capability == "platform_admin",
+            UserPlatformPermission.is_active.is_(True),
+            User.is_active.is_(True),
+            UserPlatformPermission.user_id != user_id,
+        ).limit(1)
+    )).scalar_one_or_none()
+    return other is None
 
 
 def _normalize_username(full_name: str) -> str:
@@ -72,6 +119,58 @@ async def _validated_rep_assignment(
             detail="Representante vinculado não encontrado.",
         )
     return rep_id
+
+
+async def _build_market_links(
+    items: list[UserMarketAccessInput | dict], db: AsyncSession
+) -> list[UserMarket]:
+    items = [
+        item if isinstance(item, UserMarketAccessInput) else UserMarketAccessInput.model_validate(item)
+        for item in items
+    ]
+    codes = [item.market_code for item in items]
+    if len(codes) != len(set(codes)):
+        raise HTTPException(422, "Cada mercado pode aparecer apenas uma vez.")
+    links: list[UserMarket] = []
+    for item in items:
+        direct_role = item.role in {
+            UserRole.admin,
+            UserRole.vendedor,
+            UserRole.cadastros,
+            UserRole.produtos,
+            UserRole.executivo,
+        }
+        if item.role == UserRole.cliente:
+            if item.linked_client_id is None or item.rep_id is not None:
+                raise HTTPException(422, "Papel cliente exige somente linked_client_id.")
+            valid = (await db.execute(select(Client.id).where(
+                Client.id == item.linked_client_id,
+                Client.market_code == item.market_code,
+            ))).scalar_one_or_none()
+            if valid is None:
+                raise HTTPException(422, "Cliente não pertence ao mercado informado.")
+        elif item.role == UserRole.representante:
+            if item.rep_id is None or item.linked_client_id is not None:
+                raise HTTPException(422, "Papel representante exige somente rep_id.")
+            valid = (await db.execute(select(Representative.id).where(
+                Representative.id == item.rep_id,
+                Representative.market_code == item.market_code,
+            ))).scalar_one_or_none()
+            if valid is None:
+                raise HTTPException(422, "Representante não pertence ao mercado informado.")
+        elif direct_role:
+            if item.linked_client_id is not None or item.rep_id is not None:
+                raise HTTPException(422, "Este papel não aceita vínculo comercial.")
+        links.append(UserMarket(
+            market_code=item.market_code,
+            role=item.role.value,
+            status=item.status,
+            linked_client_id=item.linked_client_id,
+            rep_id=item.rep_id,
+            can_view_dashboard=item.can_view_dashboard,
+            can_approve_tax=item.can_approve_tax,
+        ))
+    return links
 
 
 @router.get("", response_model=list[UserRead])
@@ -177,26 +276,21 @@ async def create_user(
         )
         if taken.scalar_one_or_none():
             raise HTTPException(status.HTTP_409_CONFLICT, "Usuário já cadastrado.")
-    rep_id = await _validated_rep_assignment(
-        body.role,
-        body.rep_id,
-        db,
-    )
-    allowed_codes = set(body.allowed_markets)
-    allowed_codes.add(body.home_market)
-    if body.role == UserRole.admin:
-        allowed_codes.update(("BR", "EU"))
+    links = await _build_market_links(body.market_accesses, db)
+    if body.home_market not in {link.market_code for link in links}:
+        raise HTTPException(422, "home_market deve existir em market_accesses.")
+    home_link = next(link for link in links if link.market_code == body.home_market)
     user = User(
         email=normalized_email,
         username=body.username,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
         role=body.role,
-        rep_id=rep_id,
-        linked_id=rep_id,
+        rep_id=home_link.rep_id,
+        linked_id=home_link.linked_client_id,
         home_market=body.home_market,
     )
-    user.allowed_market_links = [UserMarket(market_code=code) for code in sorted(allowed_codes)]
+    user.allowed_market_links = links
     db.add(user)
     try:
         await db.commit()
@@ -208,6 +302,43 @@ async def create_user(
         )
     await db.refresh(user)
     return user
+
+
+@router.put("/{user_id}/platform-permissions")
+async def replace_platform_permissions(
+    user_id: uuid.UUID,
+    body: PlatformPermissionsUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    if (
+        "platform_admin" not in body.capabilities
+        and await _would_remove_last_platform_admin(db, user_id)
+    ):
+        raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
+    existing = list((await db.execute(select(UserPlatformPermission).where(
+        UserPlatformPermission.user_id == user_id
+    ))).scalars().all())
+    by_capability = {item.capability: item for item in existing}
+    for capability in PLATFORM_CAPABILITIES:
+        permission = by_capability.get(capability)
+        should_be_active = capability in body.capabilities
+        if permission is None and should_be_active:
+            db.add(UserPlatformPermission(
+                user_id=user_id, capability=capability, is_active=True
+            ))
+        elif permission is not None:
+            permission.is_active = should_be_active
+    await db.execute(update(RefreshToken).where(
+        RefreshToken.user_id == user_id,
+        RefreshToken.scope == "platform",
+        RefreshToken.revoked.is_(False),
+    ).values(revoked=True, revoked_at=datetime.now(timezone.utc)))
+    await db.commit()
+    return {"user_id": user_id, "capabilities": sorted(body.capabilities)}
 
 
 @router.patch("/{user_id}", response_model=UserRead)
@@ -227,17 +358,16 @@ async def update_user(
         for field, value in submitted.items()
         if value is not None or field == "rep_id"
     }
-    allowed_codes = changes.pop("allowed_markets", None)
-    market_access_changed = allowed_codes is not None
-    if allowed_codes is not None:
-        allowed_codes = set(allowed_codes)
-        allowed_codes.add(changes.get("home_market", user.home_market))
-        if changes.get("role", user.role) == UserRole.admin:
-            allowed_codes.update(("BR", "EU"))
-        user.allowed_market_links = [UserMarket(market_code=code) for code in sorted(allowed_codes)]
+    market_accesses = changes.pop("market_accesses", None)
+    market_access_changed = market_accesses is not None
+    if market_accesses is not None:
+        links = await _build_market_links(market_accesses, db)
+        target_home = changes.get("home_market", user.home_market)
+        if target_home not in {link.market_code for link in links}:
+            raise HTTPException(422, "home_market deve existir em market_accesses.")
+        user.allowed_market_links = links
     elif "home_market" in changes and changes["home_market"] not in user.allowed_markets:
-        user.allowed_market_links.append(UserMarket(market_code=changes["home_market"]))
-        market_access_changed = True
+        raise HTTPException(422, "home_market deve existir nos vínculos atuais.")
     new_email = changes.get("email")
     if new_email:
         normalized_email = str(new_email).lower()
@@ -297,6 +427,8 @@ async def update_user(
         field in changes and changes[field] != getattr(user, field)
         for field in ("username", "role", "rep_id", "linked_id", "is_active", "home_market")
     )
+    if changes.get("is_active") is False and await _would_remove_last_platform_admin(db, user.id):
+        raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
     for field, value in changes.items():
         setattr(user, field, value)
     if security_changed:
@@ -356,6 +488,19 @@ async def delete_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
+    approved_vat = (await db.execute(
+        select(ProductMarket.product_id).where(
+            ProductMarket.approved_by_user_id == user_id,
+            ProductMarket.vat_status == VAT_APPROVED,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if approved_vat is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A conta possui aprovações fiscais ativas e não pode ser excluída.",
+        )
+    if await _would_remove_last_platform_admin(db, user_id):
+        raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked.is_(False))
@@ -408,7 +553,12 @@ async def create_user_from_client(
         linked_id=client_id,
         home_market=client.market_code,
     )
-    user.allowed_market_links = [UserMarket(market_code=client.market_code)]
+    user.allowed_market_links = [UserMarket(
+        market_code=client.market_code,
+        role=UserRole.cliente.value,
+        status="active",
+        linked_client_id=client.id,
+    )]
     db.add(user)
     try:
         await db.commit()
@@ -468,7 +618,12 @@ async def create_user_from_rep(
         linked_id=rep_id,
         home_market=rep.market_code,
     )
-    user.allowed_market_links = [UserMarket(market_code=rep.market_code)]
+    user.allowed_market_links = [UserMarket(
+        market_code=rep.market_code,
+        role=UserRole.representante.value,
+        status="active",
+        rep_id=rep.id,
+    )]
     db.add(user)
     try:
         await db.commit()

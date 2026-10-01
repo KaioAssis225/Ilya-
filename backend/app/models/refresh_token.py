@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import String, ForeignKey, DateTime, Boolean, func, delete, Index, text
+from sqlalchemy import CheckConstraint, String, ForeignKey, DateTime, Boolean, func, delete, Index, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
@@ -15,7 +15,12 @@ class RefreshToken(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    active_market: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR")
+    # R2a: scope separa sessões de mercado (active_market obrigatório) das de
+    # plataforma (active_market NULL). Antigos tokens ficam scope='market'.
+    # active_market perde server_default='BR': novos tokens devem informar
+    # explicitamente o mercado (market) ou omitir (platform).
+    scope: Mapped[str] = mapped_column(String(20), nullable=False, default="market", server_default="market")
+    active_market: Mapped[str | None] = mapped_column(ForeignKey("markets.code"), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     family_id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4, index=True, nullable=False)
@@ -37,6 +42,15 @@ class RefreshToken(Base):
             "user_id",
             "created_at",
             postgresql_where=text("revoked = false"),
+        ),
+        CheckConstraint(
+            "(scope = 'market' AND active_market IS NOT NULL)"
+            " OR (scope = 'platform' AND active_market IS NULL)",
+            name="ck_refresh_tokens_scope_market",
+        ),
+        CheckConstraint(
+            "scope IN ('market', 'platform')",
+            name="ck_refresh_tokens_scope_values",
         ),
     )
 

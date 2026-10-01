@@ -46,6 +46,10 @@ class User(Base, TimestampMixin):
     def allowed_markets(self) -> list[str]:
         return sorted(link.market_code for link in self.allowed_market_links)
 
+    @property
+    def market_accesses(self):
+        return sorted(self.allowed_market_links, key=lambda link: link.market_code)
+
     __table_args__ = (
         Index("ix_users_rep_id", "rep_id"),
         Index("ix_users_full_name_id", "full_name", "id"),

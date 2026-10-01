@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import CheckConstraint, DateTime, String, ForeignKey, Numeric, Index, func
+from sqlalchemy import CheckConstraint, DateTime, String, ForeignKey, Numeric, Index, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -41,6 +41,7 @@ class Client(Base, TimestampMixin):
     )
 
     __table_args__ = (
+        UniqueConstraint("id", "market_code", name="uq_clients_id_market"),
         CheckConstraint(
             "market_code <> 'BR' OR state ~ '^[A-Z]{2}$'",
             name="ck_clients_state_uf",
