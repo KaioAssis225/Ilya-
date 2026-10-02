@@ -13,8 +13,9 @@ from fastapi import (
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session, require_roles
+from app.api.deps import get_db_session, require_platform_capability
 from app.core.limiter import limiter
+from app.core.markets import PlatformPrincipal
 from app.core.privacy_audit import record_privacy_event
 from app.core.security import verify_password
 from app.models.client import Client
@@ -43,7 +44,18 @@ from app.schemas.retention import (
 )
 
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
-_ADMIN = Depends(require_roles(UserRole.admin))
+
+
+def _platform_admin_user(
+    principal: PlatformPrincipal = Depends(
+        require_platform_capability("platform_admin")
+    ),
+) -> User:
+    """Mantém a assinatura dos fluxos LGPD com uma identidade global."""
+    return principal.user
+
+
+_ADMIN = Depends(_platform_admin_user)
 
 _POLICY_VERSION = "2026-08-05-v3"
 _MAX_SNAPSHOT_CANDIDATES = 5_000
