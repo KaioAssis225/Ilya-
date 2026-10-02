@@ -865,7 +865,10 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             codes,
             lambda chunk: (
                 select(Product)
-                .where(Product.product_code.in_(chunk))
+                .where(
+                    Product.market_code == principal.code,
+                    Product.product_code.in_(chunk),
+                )
                 .options(
                     noload(Product.optionals),
                     noload(Product.set_items),
@@ -989,7 +992,12 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
 
 
 @router.post("/product-optionals")
-async def import_product_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_product_optionals(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    _: object = _ADMIN_CADASTROS,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
     """Etapa 2 — Colunas: product_code, category, color_name. Cria os vínculos
     N:N produto↔opcional (idempotente via ON CONFLICT DO NOTHING)."""
     rows = await _load_rows(file)
@@ -1005,7 +1013,10 @@ async def import_product_optionals(file: UploadFile = File(...), db: AsyncSessio
             codes,
             lambda chunk: (
                 select(Product)
-                .where(Product.product_code.in_(chunk))
+                .where(
+                    Product.market_code == principal.code,
+                    Product.product_code.in_(chunk),
+                )
                 .options(
                     load_only(Product.id, Product.product_code),
                     noload(Product.optionals),

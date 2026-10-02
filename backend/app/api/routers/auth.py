@@ -134,26 +134,23 @@ def _clear_refresh_cookie(response: Response, *, scope: str | None = None) -> No
         )
 
 
-@router.post("/login", response_model=AccessTokenResponse)
-@limiter.limit(settings.RATE_LIMIT_LOGIN)
-async def login(
+async def _authenticate_credentials(
     request: Request,
-    response: Response,
     payload: LoginRequest,
-    db: AsyncSession = Depends(get_db_session),
-):
+    db: AsyncSession,
+) -> User:
+    """Aplica uma única política de senha e bloqueio aos dois tipos de sessão."""
     normalized_identifier = payload.identifier.lower()
-    result = await db.execute(
+    user = (await db.execute(
         select(User).where(
             or_(
                 func.lower(User.email) == normalized_identifier,
                 User.username == normalized_identifier,
             )
         )
-    )
-    user = result.scalar_one_or_none()
+    )).scalar_one_or_none()
 
-    if not user or not user.is_active:
+    if user is None or not user.is_active:
         dummy_verify()
         logger.warning(
             "Falha de login: request_id=%s",
@@ -193,6 +190,18 @@ async def login(
 
     user.failed_login_attempts = 0
     user.locked_until = None
+    return user
+
+
+@router.post("/login", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_LOGIN)
+async def login(
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    user = await _authenticate_credentials(request, payload, db)
     logger.info("Login: user_id=%s role=%s", user.id, user.role.value)
 
     accesses = await allowed_market_accesses(db, user)
@@ -348,30 +357,7 @@ async def platform_login(
     db: AsyncSession = Depends(get_db_session),
 ):
     """Abre uma sessão administrativa sem mercado comercial ativo."""
-    normalized_identifier = payload.identifier.lower()
-    user = (await db.execute(select(User).where(
-        or_(
-            func.lower(User.email) == normalized_identifier,
-            User.username == normalized_identifier,
-        )
-    ))).scalar_one_or_none()
-    now = datetime.now(timezone.utc)
-    if user is None or not user.is_active:
-        dummy_verify()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha incorretos.")
-    locked_until = user.locked_until
-    if locked_until and locked_until.tzinfo is None:
-        locked_until = locked_until.replace(tzinfo=timezone.utc)
-    if locked_until is not None and locked_until > now:
-        dummy_verify()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha incorretos.")
-    if not verify_password(payload.password, user.hashed_password):
-        user.failed_login_attempts += 1
-        if user.failed_login_attempts >= _LOGIN_LOCK_THRESHOLD:
-            user.locked_until = now + timedelta(minutes=_LOGIN_LOCK_MINUTES)
-            user.failed_login_attempts = 0
-        await db.commit()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha incorretos.")
+    user = await _authenticate_credentials(request, payload, db)
 
     has_platform_access = (await db.execute(select(
         UserPlatformPermission.user_id
@@ -382,8 +368,6 @@ async def platform_login(
     if has_platform_access is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Acesso de plataforma não concedido.")
 
-    user.failed_login_attempts = 0
-    user.locked_until = None
     raw_refresh = generate_refresh_token()
     db.add(RefreshToken(
         user_id=user.id,

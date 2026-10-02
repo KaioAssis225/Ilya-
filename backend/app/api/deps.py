@@ -21,6 +21,34 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 
+def _decode_token_payload(
+    token: str,
+    credentials_exception: HTTPException,
+) -> dict:
+    payload = decode_access_token(token)
+    if payload is None:
+        raise credentials_exception
+    return payload
+
+
+async def _load_token_identity(
+    payload: dict,
+    db: AsyncSession,
+    credentials_exception: HTTPException,
+) -> User:
+    """Valida identidade ativa e versão comum a todo access token."""
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise credentials_exception
+    user = (await db.execute(
+        select(User).where(User.id == user_id, User.is_active.is_(True))
+    )).scalar_one_or_none()
+    if user is None or payload.get("ver") != user.auth_version:
+        raise credentials_exception
+    return user
+
+
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_db():
         yield session
@@ -36,9 +64,7 @@ async def get_market_principal(
         detail="Credenciais inválidas ou token expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    payload = decode_access_token(token)
-    if payload is None:
-        raise credentials_exception
+    payload = _decode_token_payload(token, credentials_exception)
 
     # Tokens anteriores a P2 não tinham claim scope e pertenciam ao fluxo
     # comercial. A tolerância é somente de leitura e termina com o TTL curto do
@@ -46,21 +72,8 @@ async def get_market_principal(
     if payload.get("scope", "market") != "market":
         raise credentials_exception
 
-    user_id: str = payload.get("sub")
-    if user_id is None:
-        raise credentials_exception
+    user = await _load_token_identity(payload, db, credentials_exception)
 
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise credentials_exception
-
-    result = await db.execute(select(User).where(User.id == user_uuid, User.is_active.is_(True)))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise credentials_exception
-    if payload.get("ver") != user.auth_version:
-        raise credentials_exception
     token_market = payload.get("market")
     if not isinstance(token_market, str):
         raise credentials_exception
@@ -81,18 +94,8 @@ async def get_authenticated_user(
         detail="Credenciais inválidas ou token expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    payload = decode_access_token(token)
-    if payload is None:
-        raise credentials_exception
-    try:
-        user_id = uuid.UUID(payload["sub"])
-    except (KeyError, TypeError, ValueError):
-        raise credentials_exception
-    user = (await db.execute(
-        select(User).where(User.id == user_id, User.is_active.is_(True))
-    )).scalar_one_or_none()
-    if user is None or payload.get("ver") != user.auth_version:
-        raise credentials_exception
+    payload = _decode_token_payload(token, credentials_exception)
+    user = await _load_token_identity(payload, db, credentials_exception)
     scope = payload.get("scope", "market")
     if scope == "market":
         market = payload.get("market")
@@ -141,18 +144,10 @@ async def get_platform_principal(
         detail="Credenciais de plataforma inválidas ou expiradas.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    payload = decode_access_token(token)
-    if payload is None or payload.get("scope") != "platform" or "market" in payload:
+    payload = _decode_token_payload(token, credentials_exception)
+    if payload.get("scope") != "platform" or "market" in payload:
         raise credentials_exception
-    try:
-        user_id = uuid.UUID(payload["sub"])
-    except (KeyError, TypeError, ValueError):
-        raise credentials_exception
-    user = (await db.execute(
-        select(User).where(User.id == user_id, User.is_active.is_(True))
-    )).scalar_one_or_none()
-    if user is None or payload.get("ver") != user.auth_version:
-        raise credentials_exception
+    user = await _load_token_identity(payload, db, credentials_exception)
     capabilities = frozenset((await db.execute(
         select(UserPlatformPermission.capability).where(
             UserPlatformPermission.user_id == user.id,

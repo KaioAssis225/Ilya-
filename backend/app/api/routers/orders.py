@@ -216,12 +216,15 @@ def _decode_order_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 
 async def _load_products_and_types(
-    db: AsyncSession, codes: list[str]
+    db: AsyncSession, codes: list[str], market_code: str
 ) -> tuple[dict[str, Product], dict[str, ProductType]]:
     """Carrega produtos e seus tipos em 2 queries (evita N+1 por item — V-B1)."""
     products = (await db.execute(
         select(Product)
-        .where(Product.product_code.in_(codes))
+        .where(
+            Product.market_code == market_code,
+            Product.product_code.in_(codes),
+        )
         .options(
             load_only(
                 Product.id,
@@ -388,7 +391,9 @@ async def create_order(
     max_discount = _resolve_max_discount(current_user, client, rep)
 
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
-    product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
+    product_map, type_map = await _load_products_and_types(
+        db, [i.product_code for i in payload.items], principal.code
+    )
     market_code = principal.code
     context = principal.market
     price_list = (await db.execute(
@@ -808,7 +813,7 @@ async def update_order(
         # Valida e calcula TODOS os itens novos ANTES de deletar os antigos (V-B2).
         # Batch-fetch de produtos/tipos elimina N+1 (V-B1).
         product_map, type_map = await _load_products_and_types(
-            db, [i.product_code for i in payload.items]
+            db, [i.product_code for i in payload.items], principal.code
         )
         client = (await db.execute(select(Client).where(
             Client.id == order.client_id,

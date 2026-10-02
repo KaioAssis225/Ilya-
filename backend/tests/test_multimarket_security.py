@@ -21,7 +21,7 @@ from app.models.client import Client
 from app.models.product import Product
 from app.models.user import UserRole
 from app.api.routers.clients import get_client
-from app.api.routers.orders import update_order
+from app.api.routers.orders import _load_products_and_types, update_order
 from app.api.routers.reps import delete_representative, get_representative
 from app.schemas.order import OrderUpdate
 
@@ -204,6 +204,24 @@ def test_updating_order_requires_the_active_eu_market_explicitly():
         assert "orders.market_code" in str(statement)
         assert "EU" in statement.compile().params.values()
         assert exc.value.status_code == 404
+
+    asyncio.run(run())
+
+
+def test_order_product_lookup_contains_market_even_without_listener():
+    async def run():
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        db = AsyncMock()
+        db.execute.return_value = result
+
+        products, types = await _load_products_and_types(db, ["EU-1"], "EU")
+
+        statement = db.execute.await_args.args[0]
+        assert "products.market_code" in str(statement)
+        assert "EU" in statement.compile().params.values()
+        assert products == {}
+        assert types == {}
 
     asyncio.run(run())
 
