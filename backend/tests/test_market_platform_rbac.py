@@ -9,13 +9,13 @@ from fastapi import HTTPException
 from app.api.deps import get_market_principal, get_platform_principal, require_platform_capability
 from app.api.routers.auth import _rotate_refresh_token, login, platform_login, switch_market
 from app.api.routers.markets import VatDecisionRequest, decide_europe_vat
-from app.api.routers.users import _build_market_links, _replace_market_links
+from app.api.routers.users import _build_market_links, _replace_market_links, create_user
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.core.platform import lock_platform_admin_guard
 from app.core.security import create_access_token, decode_access_token
 from app.models.market import UserMarket
 from app.models.user import User, UserRole
-from app.schemas.auth import LoginRequest, SwitchMarketRequest, UserMarketAccessInput
+from app.schemas.auth import LoginRequest, SwitchMarketRequest, UserCreate, UserMarketAccessInput
 
 
 def _user(**overrides):
@@ -279,6 +279,43 @@ def test_replacing_market_links_updates_each_market_without_reinserting_primary_
         assert eu.rep_id == new_eu_rep
         assert eu.can_approve_tax is True
         assert user.allowed_market_links == [br, eu]
+    asyncio.run(run())
+
+
+def test_platform_identity_can_be_created_without_commercial_market():
+    async def run():
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.execute.return_value = _result()
+        body = UserCreate(
+            email="platform-only@example.com",
+            full_name="Platform Operator",
+            password="Strong-password-123!",
+            market_accesses=[],
+        )
+        with patch("app.api.routers.users.hash_password", return_value="hashed"):
+            created = await create_user(body=body, db=db, _=MagicMock())
+        assert created.allowed_market_links == []
+        assert created.allowed_markets == []
+        assert created.home_market == "BR"
+        assert created.role == UserRole.vendedor
+        assert created.rep_id is None
+        assert created.linked_id is None
+        db.add.assert_called_once_with(created)
+        db.commit.assert_awaited_once()
+    asyncio.run(run())
+
+
+def test_replacing_last_market_link_keeps_platform_identity_without_access():
+    async def run():
+        user = _user()
+        br = UserMarket(user_id=user.id, market_code="BR", role="admin", status="active")
+        user.allowed_market_links = [br]
+        db = AsyncMock()
+        await _replace_market_links(db, user, [])
+        db.delete.assert_awaited_once_with(br)
+        assert user.allowed_market_links == []
+        assert user.allowed_markets == []
     asyncio.run(run())
 
 

@@ -191,6 +191,7 @@ async def _replace_market_links(
     for code, current in existing.items():
         if code not in desired_codes:
             await db.delete(current)
+            user.allowed_market_links.remove(current)
     for incoming in desired:
         current = existing.get(incoming.market_code)
         if current is None:
@@ -307,22 +308,30 @@ async def create_user(
         if taken.scalar_one_or_none():
             raise HTTPException(status.HTTP_409_CONFLICT, "Usuário já cadastrado.")
     links = await _build_market_links(body.market_accesses, db)
-    if body.home_market not in {link.market_code for link in links}:
-        raise HTTPException(422, "home_market deve existir em market_accesses.")
-    home_link = next(link for link in links if link.market_code == body.home_market)
-    if body.role.value != home_link.role:
-        raise HTTPException(422, "role deve corresponder ao papel do mercado principal.")
-    if body.rep_id != home_link.rep_id:
-        raise HTTPException(422, "rep_id deve corresponder ao vínculo do mercado principal.")
+    home_link = None
+    if links:
+        if body.home_market not in {link.market_code for link in links}:
+            raise HTTPException(422, "home_market deve existir em market_accesses.")
+        home_link = next(link for link in links if link.market_code == body.home_market)
+        if body.role.value != home_link.role:
+            raise HTTPException(422, "role deve corresponder ao papel do mercado principal.")
+        if body.rep_id != home_link.rep_id:
+            raise HTTPException(422, "rep_id deve corresponder ao vínculo do mercado principal.")
+    elif body.role != UserRole.vendedor or body.rep_id is not None:
+        raise HTTPException(
+            422,
+            "Identidade sem mercado usa o papel técnico vendedor e não aceita vínculo comercial.",
+        )
     user = User(
         email=normalized_email,
         username=body.username,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
-        role=body.role,
-        rep_id=home_link.rep_id,
-        linked_id=home_link.linked_client_id,
-        home_market=body.home_market,
+        role=body.role if home_link else UserRole.vendedor,
+        rep_id=home_link.rep_id if home_link else None,
+        linked_id=home_link.linked_client_id if home_link else None,
+        # Coluna legada ainda é NOT NULL. Sem user_markets ela não concede BR.
+        home_market=body.home_market if home_link else "BR",
     )
     user.allowed_market_links = links
     db.add(user)
@@ -415,20 +424,29 @@ async def update_user(
     legacy_identity_synced = False
     if market_accesses is not None:
         links = await _build_market_links(market_accesses, db)
-        target_home = changes.get("home_market", user.home_market)
-        if target_home not in {link.market_code for link in links}:
-            raise HTTPException(422, "home_market deve existir em market_accesses.")
-        home_link = next(link for link in links if link.market_code == target_home)
-        submitted_role = changes.get("role")
-        if submitted_role is not None and submitted_role.value != home_link.role:
-            raise HTTPException(422, "role deve corresponder ao papel do mercado principal.")
-        submitted_rep_id = changes.get("rep_id")
-        if "rep_id" in changes and submitted_rep_id != home_link.rep_id:
-            raise HTTPException(422, "rep_id deve corresponder ao vínculo do mercado principal.")
-        changes["role"] = UserRole(home_link.role)
-        changes["rep_id"] = home_link.rep_id
-        changes["linked_id"] = home_link.linked_client_id
-        changes["can_view_dashboard"] = home_link.can_view_dashboard
+        if links:
+            target_home = changes.get("home_market", user.home_market)
+            if target_home not in {link.market_code for link in links}:
+                raise HTTPException(422, "home_market deve existir em market_accesses.")
+            home_link = next(link for link in links if link.market_code == target_home)
+            submitted_role = changes.get("role")
+            if submitted_role is not None and submitted_role.value != home_link.role:
+                raise HTTPException(422, "role deve corresponder ao papel do mercado principal.")
+            submitted_rep_id = changes.get("rep_id")
+            if "rep_id" in changes and submitted_rep_id != home_link.rep_id:
+                raise HTTPException(422, "rep_id deve corresponder ao vínculo do mercado principal.")
+            changes["role"] = UserRole(home_link.role)
+            changes["rep_id"] = home_link.rep_id
+            changes["linked_id"] = home_link.linked_client_id
+            changes["can_view_dashboard"] = home_link.can_view_dashboard
+        else:
+            # Espelhos legados neutros. Sem linha em user_markets não há acesso
+            # comercial, mesmo com home_market='BR' na coluna NOT NULL antiga.
+            changes["home_market"] = "BR"
+            changes["role"] = UserRole.vendedor
+            changes["rep_id"] = None
+            changes["linked_id"] = None
+            changes["can_view_dashboard"] = False
         await _replace_market_links(db, user, links)
         legacy_identity_synced = True
     elif "home_market" in changes:

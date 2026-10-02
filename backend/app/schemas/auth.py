@@ -71,7 +71,7 @@ class UserCreate(BaseModel):
     role: UserRole = UserRole.vendedor
     rep_id: Optional[uuid.UUID] = None
     home_market: Literal["BR", "EU"] = "BR"
-    market_accesses: list[UserMarketAccessInput] = Field(min_length=1)
+    market_accesses: list[UserMarketAccessInput] = Field(default_factory=list)
 
     @field_validator("username")
     @classmethod
