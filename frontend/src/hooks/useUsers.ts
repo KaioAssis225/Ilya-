@@ -108,26 +108,34 @@ export function useUpdateUser() {
       const existingByMarket = new Map(
         (existingAccesses ?? []).map(access => [access.market_code, access]),
       )
-      const market_accesses = allowed_markets?.map(market_code => ({
-        ...(existingByMarket.get(market_code) ?? {
-          market_code,
-          status: 'active' as const,
-          linked_client_id: null,
-          rep_id: null,
-          can_view_dashboard: false,
-          can_approve_tax: false,
-        }),
-        role: body.role ?? existingByMarket.get(market_code)?.role ?? 'vendedor',
-        linked_client_id: (body.role ?? existingByMarket.get(market_code)?.role) === 'cliente'
-          ? (existingByMarket.get(market_code)?.linked_client_id ?? null)
-          : null,
-        rep_id: (body.role ?? existingByMarket.get(market_code)?.role) === 'representante'
-          ? (body.rep_id ?? existingByMarket.get(market_code)?.rep_id ?? null)
-          : null,
-        can_view_dashboard: body.can_view_dashboard
-          ?? existingByMarket.get(market_code)?.can_view_dashboard
-          ?? false,
-      }))
+      const homeMarket = body.home_market
+      const market_accesses = allowed_markets?.map(market_code => {
+        const existing = existingByMarket.get(market_code)
+        const isEditedHome = market_code === homeMarket
+        const role = isEditedHome
+          ? (body.role ?? existing?.role ?? 'vendedor')
+          : (existing?.role ?? 'vendedor')
+        return {
+          ...(existing ?? {
+            market_code,
+            status: 'active' as const,
+            linked_client_id: null,
+            rep_id: null,
+            can_view_dashboard: false,
+            can_approve_tax: false,
+          }),
+          role,
+          linked_client_id: role === 'cliente'
+            ? (existing?.linked_client_id ?? null)
+            : null,
+          rep_id: role === 'representante'
+            ? (isEditedHome ? (body.rep_id ?? existing?.rep_id ?? null) : (existing?.rep_id ?? null))
+            : null,
+          can_view_dashboard: isEditedHome
+            ? (body.can_view_dashboard ?? existing?.can_view_dashboard ?? false)
+            : (existing?.can_view_dashboard ?? false),
+        }
+      })
       return api.patch(`/users/${id}`, {
         ...identity,
         ...(market_accesses ? { market_accesses } : {}),

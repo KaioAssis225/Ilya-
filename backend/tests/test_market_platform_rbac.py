@@ -9,11 +9,13 @@ from fastapi import HTTPException
 from app.api.deps import get_market_principal, get_platform_principal, require_platform_capability
 from app.api.routers.auth import login, platform_login, switch_market
 from app.api.routers.markets import VatDecisionRequest, decide_europe_vat
+from app.api.routers.users import _build_market_links, _replace_market_links
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
+from app.core.platform import lock_platform_admin_guard
 from app.core.security import create_access_token, decode_access_token
 from app.models.market import UserMarket
 from app.models.user import User, UserRole
-from app.schemas.auth import LoginRequest, SwitchMarketRequest
+from app.schemas.auth import LoginRequest, SwitchMarketRequest, UserMarketAccessInput
 
 
 def _user(**overrides):
@@ -96,6 +98,7 @@ def test_platform_login_does_not_require_a_commercial_market():
     async def run():
         user = _user()
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute.side_effect = [
             _result(scalar=user),
             _result(scalar=user.id),
@@ -191,4 +194,83 @@ def test_vat_approval_requires_permission_in_the_active_eu_market():
             with pytest.raises(HTTPException) as exc:
                 await decide_europe_vat(uuid.uuid4(), body, AsyncMock(), principal)
             assert exc.value.status_code == 403
+    asyncio.run(run())
+
+
+def test_market_link_validation_bypasses_session_scope_but_filters_market_explicitly():
+    async def run():
+        rep_id = uuid.uuid4()
+        db = AsyncMock()
+        db.execute.return_value = _result(scalar=rep_id)
+        links = await _build_market_links(
+            [UserMarketAccessInput(
+                market_code="EU",
+                role=UserRole.representante,
+                status="active",
+                rep_id=rep_id,
+            )],
+            db,
+        )
+        statement = db.execute.call_args.args[0]
+        assert statement.get_execution_options()["skip_market_scope"] is True
+        assert "representatives.market_code" in str(statement)
+        assert links[0].market_code == "EU"
+        assert links[0].rep_id == rep_id
+    asyncio.run(run())
+
+
+def test_replacing_market_links_updates_each_market_without_reinserting_primary_keys():
+    async def run():
+        user = _user()
+        br = UserMarket(
+            user_id=user.id,
+            market_code="BR",
+            role="admin",
+            status="active",
+            can_view_dashboard=True,
+        )
+        eu = UserMarket(
+            user_id=user.id,
+            market_code="EU",
+            role="representante",
+            status="active",
+            rep_id=uuid.uuid4(),
+        )
+        user.allowed_market_links = [br, eu]
+        new_eu_rep = uuid.uuid4()
+        desired = [
+            UserMarket(
+                market_code="BR",
+                role="admin",
+                status="active",
+                can_view_dashboard=False,
+                can_approve_tax=False,
+            ),
+            UserMarket(
+                market_code="EU",
+                role="representante",
+                status="suspended",
+                rep_id=new_eu_rep,
+                can_approve_tax=True,
+            ),
+        ]
+        db = AsyncMock()
+        await _replace_market_links(db, user, desired)
+        db.delete.assert_not_awaited()
+        assert br.role == "admin"
+        assert br.can_view_dashboard is False
+        assert eu.role == "representante"
+        assert eu.status == "suspended"
+        assert eu.rep_id == new_eu_rep
+        assert eu.can_approve_tax is True
+        assert user.allowed_market_links == [br, eu]
+    asyncio.run(run())
+
+
+def test_platform_admin_guard_uses_transaction_advisory_lock():
+    async def run():
+        db = AsyncMock()
+        await lock_platform_admin_guard(db)
+        statement = str(db.execute.await_args.args[0])
+        assert "pg_advisory_xact_lock" in statement
     asyncio.run(run())

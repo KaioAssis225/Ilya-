@@ -18,6 +18,7 @@ from app.core.limiter import limiter, refresh_rate_limit_key
 from app.core.lifecycle import touch_client_activity
 from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.privacy_audit import record_privacy_event
+from app.core.platform import lock_platform_admin_guard
 from app.core.security import (
     verify_password,
     dummy_verify,
@@ -597,6 +598,7 @@ async def delete_my_account(
             "A conta possui aprovações fiscais ativas e não pode ser excluída.",
         )
 
+    await lock_platform_admin_guard(db)
     has_platform_admin = (await db.execute(select(
         UserPlatformPermission.user_id
     ).where(

@@ -17,6 +17,7 @@ from app.api.deps import (
     require_roles,
 )
 from app.core.markets import PlatformPrincipal
+from app.core.platform import lock_platform_admin_guard
 from app.core.security import hash_password, validate_password_strength
 from app.core.search import literal_contains_pattern
 from app.models.user import User, UserRole
@@ -98,6 +99,7 @@ async def _validated_rep_assignment(
     role: UserRole,
     rep_id: uuid.UUID | None,
     db: AsyncSession,
+    market_code: str | None = None,
 ) -> uuid.UUID | None:
     if role != UserRole.representante:
         return None
@@ -109,7 +111,14 @@ async def _validated_rep_assignment(
     exists = (
         await db.execute(
             select(Representative.id)
-            .where(Representative.id == rep_id)
+            .where(
+                Representative.id == rep_id,
+                *(
+                    (Representative.market_code == market_code,)
+                    if market_code is not None else ()
+                ),
+            )
+            .execution_options(skip_market_scope=True)
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -146,7 +155,7 @@ async def _build_market_links(
             valid = (await db.execute(select(Client.id).where(
                 Client.id == item.linked_client_id,
                 Client.market_code == item.market_code,
-            ))).scalar_one_or_none()
+            ).execution_options(skip_market_scope=True))).scalar_one_or_none()
             if valid is None:
                 raise HTTPException(422, "Cliente não pertence ao mercado informado.")
         elif item.role == UserRole.representante:
@@ -155,7 +164,7 @@ async def _build_market_links(
             valid = (await db.execute(select(Representative.id).where(
                 Representative.id == item.rep_id,
                 Representative.market_code == item.market_code,
-            ))).scalar_one_or_none()
+            ).execution_options(skip_market_scope=True))).scalar_one_or_none()
             if valid is None:
                 raise HTTPException(422, "Representante não pertence ao mercado informado.")
         elif direct_role:
@@ -171,6 +180,27 @@ async def _build_market_links(
             can_approve_tax=item.can_approve_tax,
         ))
     return links
+
+
+async def _replace_market_links(
+    db: AsyncSession, user: User, desired: list[UserMarket]
+) -> None:
+    """Reconcilia vínculos sem reinserir uma PK `(user_id, market_code)` existente."""
+    existing = {link.market_code: link for link in user.allowed_market_links}
+    desired_codes = {link.market_code for link in desired}
+    for code, current in existing.items():
+        if code not in desired_codes:
+            await db.delete(current)
+    for incoming in desired:
+        current = existing.get(incoming.market_code)
+        if current is None:
+            user.allowed_market_links.append(incoming)
+            continue
+        for field in (
+            "role", "status", "linked_client_id", "rep_id",
+            "can_view_dashboard", "can_approve_tax",
+        ):
+            setattr(current, field, getattr(incoming, field))
 
 
 @router.get("", response_model=list[UserRead])
@@ -280,6 +310,10 @@ async def create_user(
     if body.home_market not in {link.market_code for link in links}:
         raise HTTPException(422, "home_market deve existir em market_accesses.")
     home_link = next(link for link in links if link.market_code == body.home_market)
+    if body.role.value != home_link.role:
+        raise HTTPException(422, "role deve corresponder ao papel do mercado principal.")
+    if body.rep_id != home_link.rep_id:
+        raise HTTPException(422, "rep_id deve corresponder ao vínculo do mercado principal.")
     user = User(
         email=normalized_email,
         username=body.username,
@@ -314,6 +348,7 @@ async def replace_platform_permissions(
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "Usuário não encontrado.")
+    await lock_platform_admin_guard(db)
     if (
         "platform_admin" not in body.capabilities
         and await _would_remove_last_platform_admin(db, user_id)
@@ -360,14 +395,44 @@ async def update_user(
     }
     market_accesses = changes.pop("market_accesses", None)
     market_access_changed = market_accesses is not None
+    legacy_identity_synced = False
     if market_accesses is not None:
         links = await _build_market_links(market_accesses, db)
         target_home = changes.get("home_market", user.home_market)
         if target_home not in {link.market_code for link in links}:
             raise HTTPException(422, "home_market deve existir em market_accesses.")
-        user.allowed_market_links = links
-    elif "home_market" in changes and changes["home_market"] not in user.allowed_markets:
-        raise HTTPException(422, "home_market deve existir nos vínculos atuais.")
+        home_link = next(link for link in links if link.market_code == target_home)
+        submitted_role = changes.get("role")
+        if submitted_role is not None and submitted_role.value != home_link.role:
+            raise HTTPException(422, "role deve corresponder ao papel do mercado principal.")
+        submitted_rep_id = changes.get("rep_id")
+        if "rep_id" in changes and submitted_rep_id != home_link.rep_id:
+            raise HTTPException(422, "rep_id deve corresponder ao vínculo do mercado principal.")
+        changes["role"] = UserRole(home_link.role)
+        changes["rep_id"] = home_link.rep_id
+        changes["linked_id"] = home_link.linked_client_id
+        changes["can_view_dashboard"] = home_link.can_view_dashboard
+        await _replace_market_links(db, user, links)
+        legacy_identity_synced = True
+    elif "home_market" in changes:
+        if changes["home_market"] not in user.allowed_markets:
+            raise HTTPException(422, "home_market deve existir nos vínculos atuais.")
+        home_link = next(
+            link for link in user.allowed_market_links
+            if link.market_code == changes["home_market"]
+        )
+        if home_link.role is None:
+            raise HTTPException(422, "O mercado principal precisa ter papel definido.")
+        changes["role"] = UserRole(home_link.role)
+        changes["rep_id"] = home_link.rep_id
+        changes["linked_id"] = home_link.linked_client_id
+        changes["can_view_dashboard"] = home_link.can_view_dashboard
+        legacy_identity_synced = True
+    elif any(field in changes for field in ("role", "rep_id", "can_view_dashboard")):
+        raise HTTPException(
+            422,
+            "Alterações de papel e vínculo devem incluir market_accesses.",
+        )
     new_email = changes.get("email")
     if new_email:
         normalized_email = str(new_email).lower()
@@ -403,12 +468,18 @@ async def update_user(
             )
     target_role = changes.get("role", user.role)
     target_rep_id = changes.get("rep_id", user.rep_id)
+    target_home_market = changes.get("home_market", user.home_market)
     changes["rep_id"] = await _validated_rep_assignment(
         target_role,
         target_rep_id,
         db,
+        target_home_market,
     )
-    if target_role == UserRole.representante:
+    if legacy_identity_synced:
+        # Os campos globais permanecem apenas como espelho compatível do
+        # vínculo do mercado principal; a autoridade está em user_markets.
+        pass
+    elif target_role == UserRole.representante:
         changes["linked_id"] = changes["rep_id"]
     elif target_role == UserRole.cliente:
         if user.role == UserRole.representante or user.linked_id is None:
@@ -427,8 +498,10 @@ async def update_user(
         field in changes and changes[field] != getattr(user, field)
         for field in ("username", "role", "rep_id", "linked_id", "is_active", "home_market")
     )
-    if changes.get("is_active") is False and await _would_remove_last_platform_admin(db, user.id):
-        raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
+    if changes.get("is_active") is False:
+        await lock_platform_admin_guard(db)
+        if await _would_remove_last_platform_admin(db, user.id):
+            raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
     for field, value in changes.items():
         setattr(user, field, value)
     if security_changed:
@@ -499,6 +572,7 @@ async def delete_user(
             status.HTTP_409_CONFLICT,
             "A conta possui aprovações fiscais ativas e não pode ser excluída.",
         )
+    await lock_platform_admin_guard(db)
     if await _would_remove_last_platform_admin(db, user_id):
         raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
     await db.execute(
