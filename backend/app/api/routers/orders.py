@@ -314,6 +314,34 @@ def _validate_discount(
         )
 
 
+def _calculate_order_line(
+    *,
+    unit_price: Decimal | float,
+    qty: int,
+    discount: Decimal | float,
+    max_discount: Decimal | float,
+    product_code: str,
+    tax_rate: Decimal | float,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
+    """Calcula a linha financeira usada igualmente na criação e na edição."""
+    rounded_unit_price = _money(unit_price)
+    decimal_discount = _decimal(discount)
+    _validate_discount(decimal_discount, max_discount, product_code)
+    effective_price = (
+        rounded_unit_price * (_HUNDRED - decimal_discount) / _HUNDRED
+    )
+    subtotal = _money(_decimal(qty) * effective_price)
+    decimal_tax_rate = _decimal(tax_rate)
+    tax_value = _money(subtotal * decimal_tax_rate / _HUNDRED)
+    return (
+        rounded_unit_price,
+        decimal_discount,
+        subtotal,
+        decimal_tax_rate,
+        tax_value,
+    )
+
+
 async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
     try:
         oid = uuid.UUID(id_or_code)
@@ -462,20 +490,23 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
         if product.id not in price_map:
             raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
-        unit_price = _money(price_map[product.id])
-        discount = _decimal(item_in.discount or _ZERO)
-        _validate_discount(discount, max_discount, product.product_code)
-        effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
-        subtotal = _money(_decimal(item_in.qty) * effective_price)
-        total += subtotal
-
         product_type = type_map.get(product.type)
         if market_code == "EU":
             vat_rate, vat_status = product_vat.get(product.id, (None, None))
             ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
         else:
             ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
-        ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
+        unit_price, discount, subtotal, ipi_rate, ipi_value = (
+            _calculate_order_line(
+                unit_price=price_map[product.id],
+                qty=item_in.qty,
+                discount=item_in.discount or _ZERO,
+                max_discount=max_discount,
+                product_code=product.product_code,
+                tax_rate=ipi_rate,
+            )
+        )
+        total += subtotal
         total_ipi += ipi_value
 
         localized_description = product.description
@@ -893,20 +924,23 @@ async def update_order(
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
             if product.id not in price_map:
                 raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
-            unit_price = _money(price_map[product.id])
-            discount = _decimal(item_in.discount or _ZERO)
-            _validate_discount(discount, max_discount, product.product_code)
-            effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
-            subtotal = _money(_decimal(item_in.qty) * effective_price)
-            total += subtotal
-
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
                 vat_rate, vat_status = product_vat.get(product.id, (None, None))
                 ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
             else:
                 ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
-            ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
+            unit_price, discount, subtotal, ipi_rate, ipi_value = (
+                _calculate_order_line(
+                    unit_price=price_map[product.id],
+                    qty=item_in.qty,
+                    discount=item_in.discount or _ZERO,
+                    max_discount=max_discount,
+                    product_code=product.product_code,
+                    tax_rate=ipi_rate,
+                )
+            )
+            total += subtotal
             total_ipi += ipi_value
 
             localized_description = product.description
