@@ -99,6 +99,20 @@ def market_is_enabled(code: str) -> bool:
     return code == BR_MARKET or (code == EU_MARKET and settings.EUROPE_MARKET_ENABLED)
 
 
+def require_launch_country(market_code: str, country: str | None) -> str:
+    """Restringe EU ao país aprovado para a primeira liberação."""
+    normalized = (country or "").strip().upper()
+    if market_code == BR_MARKET:
+        return BR_MARKET
+    launch_country = settings.EU_LAUNCH_COUNTRY.strip().upper()
+    if market_code == EU_MARKET and normalized != launch_country:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"A primeira liberação do mercado EU aceita somente o país {launch_country}.",
+        )
+    return normalized
+
+
 async def allowed_market_accesses(db: AsyncSession, user: User) -> list[UserMarket]:
     """Somente vínculos ativos em mercados habilitados concedem acesso."""
     rows = list((await db.execute(

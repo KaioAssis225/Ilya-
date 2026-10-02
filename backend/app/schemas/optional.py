@@ -19,6 +19,7 @@ class OptionalColorUpdate(BaseModel):
 
 class OptionalColorRead(OptionalColorBase):
     id: uuid.UUID
+    market_code: str
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
 

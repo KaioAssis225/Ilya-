@@ -79,7 +79,11 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
         lists_result = MagicMock()
         lists_result.scalars.return_value.all.return_value = price_lists
         db = AsyncMock()
-        db.execute.side_effect = [_ScalarResult(None), lists_result]
+        db.execute.side_effect = [
+            _ScalarResult(uuid.uuid4()),  # tipo EU existe
+            _ScalarResult(None),          # SKU ainda não existe
+            lists_result,
+        ]
         added = []
         db.add = MagicMock(side_effect=added.append)
         returned = SimpleNamespace(product_code="EU-ONLY-001")

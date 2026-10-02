@@ -21,6 +21,7 @@ class ProductTypeUpdate(BaseModel):
 
 class ProductTypeRead(ProductTypeBase):
     id: uuid.UUID
+    market_code: str
     group: Optional[ProductGroupRead] = None
 
     model_config = {"from_attributes": True}

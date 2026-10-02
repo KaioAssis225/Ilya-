@@ -29,6 +29,7 @@ from app.models.product_type import ProductType
 from app.models.product_group import ProductGroup
 from app.models.catalog import Catalog
 from app.models.optional_color import OptionalColor, product_optionals
+from app.models.optional_category import OptionalCategory
 from app.models.client import Client
 from app.models.representative import Representative
 from app.core.config import settings
@@ -366,7 +367,7 @@ def _address_fields(row: dict) -> dict:
 # ── Cadastros de apoio ─────────────────────────────────────────────────────────
 
 @router.post("/catalogs")
-async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: name. Upsert por name."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -391,7 +392,7 @@ async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depen
             )
             # Só o nome identifica o catálogo: repetido no CSV é no-op, não erro.
             if name not in existing:
-                catalog = Catalog(name=name)
+                catalog = Catalog(market_code=principal.code, name=name)
                 db.add(catalog)
                 existing[name] = catalog
                 created += 1
@@ -451,7 +452,7 @@ async def import_product_groups(file: UploadFile = File(...), db: AsyncSession =
 
 
 @router.post("/product-types")
-async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: name, group (nome do grupo → FK). Upsert por name."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -498,6 +499,8 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
             )
             group_id = None
             if group_name:
+                if principal.code == "EU":
+                    raise ValueError("Tipos EU não podem herdar grupo fiscal brasileiro.")
                 grp = groups.get(group_name)
                 if not grp:
                     raise ValueError(f"Grupo '{group_name}' não encontrado. Importe os grupos primeiro.")
@@ -507,7 +510,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
                 t.group_id = group_id
                 is_update = True
             else:
-                t = ProductType(name=name, group_id=group_id)
+                t = ProductType(market_code=principal.code, name=name, group_id=group_id)
                 db.add(t)
                 is_update = False
             existing[name] = t
@@ -520,7 +523,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
 
 
 @router.post("/optionals")
-async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: category (código), color_name. Upsert por (category, color_name)."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -529,6 +532,10 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
         for row in rows
     }
     categories.discard(None)
+    valid_categories = set((await db.execute(select(OptionalCategory.code).where(
+        OptionalCategory.market_code == principal.code,
+        OptionalCategory.code.in_(categories),
+    ))).scalars().all()) if categories else set()
     existing = {
         (o.category, o.color_name): o
         for o in await _load_chunked(
@@ -566,11 +573,15 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
                 "color_name",
                 100,
             )
+            if category not in valid_categories:
+                raise ValueError(
+                    f"Categoria '{category}' não existe no mercado {principal.code}."
+                )
             key = (category, color_name)
             if key in existing:
                 updated += 1  # idempotente
                 continue
-            o = OptionalColor(category=category, color_name=color_name)
+            o = OptionalColor(market_code=principal.code, category=category, color_name=color_name)
             db.add(o)
             existing[key] = o
             created += 1

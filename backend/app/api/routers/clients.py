@@ -25,7 +25,11 @@ from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
 from app.models.market import PriceList, UserMarket
-from app.core.markets import MarketPrincipal, suspend_commercial_accesses
+from app.core.markets import (
+    MarketPrincipal,
+    require_launch_country,
+    suspend_commercial_accesses,
+)
 
 router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 
@@ -339,9 +343,7 @@ async def create_client(
         raise HTTPException(status_code=422, detail="UF é obrigatória no mercado Brasil.")
     if market == "EU" and "country" not in payload.model_fields_set:
         raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
-    data["country"] = "BR" if market == "BR" else data.get("country", "").upper()
-    if market == "EU" and not data["country"]:
-        raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
+    data["country"] = require_launch_country(market, data.get("country"))
     price_list = (await db.execute(select(PriceList).where(
         PriceList.market_code == market,
         PriceList.code == data["price_profile"],
@@ -414,6 +416,10 @@ async def update_client(
     update_data = sanitize_client_update_fields(
         payload.model_dump(exclude_unset=True), current_user
     )
+    if "country" in update_data or market == "EU":
+        update_data["country"] = require_launch_country(
+            market, update_data.get("country", client.country)
+        )
     if "rep_id" in update_data:
         update_data["rep_id"] = await _validated_rep_id(update_data["rep_id"], db)
     if "price_profile" in update_data:

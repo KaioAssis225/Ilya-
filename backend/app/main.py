@@ -11,7 +11,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -228,16 +227,6 @@ async def add_request_id(request: Request, call_next):
             duration_ms,
         )
 
-
-class ImmutableStaticFiles(StaticFiles):
-    async def get_response(self, path: str, scope):
-        response = await super().get_response(path, scope)
-        if response.status_code == 200:
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        return response
-
-
-app.mount("/static", ImmutableStaticFiles(directory="app/static"), name="static")
 
 app.include_router(auth_router)
 app.include_router(platform_auth_router)

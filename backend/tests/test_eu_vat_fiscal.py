@@ -198,6 +198,9 @@ def test_activate_recusa_eu_sem_iva_aprovado():
         # Três listas OK, mas há 1 SKU disponível sem IVA aprovado → 409.
         db = AsyncMock()
         db.execute.side_effect = [
+            _CountResult(0),                         # clientes fora de PT
+            _CountResult(0),                         # representantes fora de PT
+            _CountResult(0),                         # dimensões EU válidas
             _CountResult(1),                         # disponíveis
             _AllResult([(uuid.uuid4(), 3)]),         # com as 3 listas
             _CountResult(1),                         # sem IVA aprovado
@@ -216,6 +219,9 @@ def test_activate_recusa_catalogo_eu_vazio():
         db = AsyncMock()
         db.execute.side_effect = [
             _CountResult(0),
+            _CountResult(0),
+            _CountResult(0),
+            _CountResult(0),
             _AllResult([]),
             _CountResult(0),
         ]
@@ -233,6 +239,9 @@ def test_activate_passa_quando_tudo_aprovado():
         market = SimpleNamespace(is_enabled=False)
         db = AsyncMock()
         db.execute.side_effect = [
+            _CountResult(0),
+            _CountResult(0),
+            _CountResult(0),
             _CountResult(1),                         # disponíveis
             _AllResult([(uuid.uuid4(), 3)]),         # com as 3 listas
             _CountResult(0),                         # nenhum sem IVA aprovado
@@ -244,6 +253,43 @@ def test_activate_passa_quando_tudo_aprovado():
         assert market.is_enabled is True
         assert result["enabled"] is True
         db.commit.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_activate_recusa_cadastro_eu_fora_de_portugal():
+    async def run():
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _CountResult(1),  # cliente de outro país
+            _CountResult(0),
+        ]
+
+        with pytest.raises(HTTPException) as exc:
+            await activate_europe(db=db, _=ADMIN)
+
+        assert exc.value.status_code == 409
+        assert "PT" in exc.value.detail
+        db.commit.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_activate_recusa_dimensao_de_produto_fora_do_mercado_eu():
+    async def run():
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _CountResult(0),
+            _CountResult(0),
+            _CountResult(1),  # referência cruzada detectada
+        ]
+
+        with pytest.raises(HTTPException) as exc:
+            await activate_europe(db=db, _=ADMIN)
+
+        assert exc.value.status_code == 409
+        assert "isolados" in exc.value.detail
+        db.commit.assert_not_called()
 
     asyncio.run(run())
 

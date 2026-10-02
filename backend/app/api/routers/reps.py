@@ -22,7 +22,7 @@ from app.models.market import UserMarket
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.user import User, UserRole
 from app.schemas.representative import RepresentativeCreate, RepresentativeUpdate, RepresentativeRead
-from app.core.markets import MarketPrincipal, suspend_commercial_accesses
+from app.core.markets import MarketPrincipal, require_launch_country, suspend_commercial_accesses
 
 router = APIRouter(prefix="/api/v1/representatives", tags=["representatives"])
 
@@ -240,8 +240,10 @@ async def create_representative(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Já existe um representante com este CPF/CNPJ.",
             )
+    rep_data = payload.model_dump()
+    rep_data["country"] = require_launch_country(market, rep_data.get("country"))
     rep = Representative(
-        **payload.model_dump(),
+        **rep_data,
         market_code=market,
         created_by_user_id=current_user.id,
     )
@@ -327,6 +329,10 @@ async def update_representative(
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
     update_data = payload.model_dump(exclude_unset=True)
+    if "country" in update_data or market == "EU":
+        update_data["country"] = require_launch_country(
+            market, update_data.get("country", rep.country)
+        )
     if current_user.role == UserRole.representante:
         update_data.pop("email", None)
         # Mesmo motivo do e-mail: identidade do cadastro não se reescreve por

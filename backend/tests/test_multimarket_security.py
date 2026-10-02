@@ -15,6 +15,7 @@ from app.core.markets import (
     allowed_markets,
     require_allowed_market,
     require_market_access,
+    require_launch_country,
 )
 from app.core.security import create_access_token, decode_access_token
 from app.models.client import Client
@@ -85,6 +86,14 @@ def test_feature_flag_blocks_europe_even_for_admin():
                 await require_allowed_market(db, _user(UserRole.admin), "EU")
         assert exc.value.status_code == 403
     asyncio.run(run())
+
+
+def test_primeira_liberacao_eu_aceita_somente_portugal():
+    assert require_launch_country("EU", " pt ") == "PT"
+    assert require_launch_country("BR", "PT") == "BR"
+    with pytest.raises(HTTPException) as exc:
+        require_launch_country("EU", "ES")
+    assert exc.value.status_code == 422
 
 
 def test_client_lookup_always_contains_active_market_scope():

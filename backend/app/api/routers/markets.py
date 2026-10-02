@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from app.api.deps import (
     get_platform_principal,
     require_platform_capability,
 )
+from app.core.config import settings
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.core.uploads import read_upload_limited
 from app.models.market import (
@@ -31,6 +32,8 @@ from app.models.market import (
     VAT_SOURCE_IMPORT,
 )
 from app.models.product import Product
+from app.models.client import Client
+from app.models.representative import Representative
 
 router = APIRouter(prefix="/api/v1/markets", tags=["markets"])
 _EU_LISTS = ("lojista", "corporativo", "pvp")
@@ -118,6 +121,73 @@ async def activate_europe(
     db: AsyncSession = Depends(get_db_session),
     _: PlatformPrincipal = Depends(require_platform_capability("activate_market")),
 ):
+    launch_country = settings.EU_LAUNCH_COUNTRY.strip().upper()
+    out_of_scope_people = (await db.execute(
+        select(func.count()).select_from(Client).where(
+            Client.market_code == "EU",
+            or_(Client.country.is_(None), func.upper(Client.country) != launch_country),
+        )
+    )).scalar_one() + (await db.execute(
+        select(func.count()).select_from(Representative).where(
+            Representative.market_code == "EU",
+            or_(Representative.country.is_(None), func.upper(Representative.country) != launch_country),
+            Representative.relationship_ended_at.is_(None),
+        )
+    )).scalar_one()
+    if out_of_scope_people:
+        raise HTTPException(
+            409,
+            f"Europa não pode ser ativada: a primeira liberação aceita somente o país {launch_country}.",
+        )
+    invalid_dimensions = (await db.execute(text(r"""
+        SELECT EXISTS (
+            SELECT 1
+            FROM products p
+            JOIN product_markets pm
+              ON pm.product_id = p.id
+             AND pm.market_code = 'EU'
+             AND pm.is_available = true
+            LEFT JOIN product_types pt
+              ON pt.market_code = 'EU' AND pt.name = p.type
+            LEFT JOIN catalogs c
+              ON c.id = p.catalog_id AND c.market_code = 'EU'
+            WHERE p.market_code = 'EU'
+              AND (
+                pt.id IS NULL
+                OR (p.catalog_id IS NOT NULL AND c.id IS NULL)
+                OR EXISTS (
+                    SELECT 1
+                    FROM product_optionals po
+                    JOIN optionals o ON o.id = po.optional_id
+                    WHERE po.product_id = p.id AND o.market_code <> 'EU'
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM product_set_components component
+                    JOIN product_set_component_optionals link
+                      ON link.component_id = component.id
+                    JOIN optionals o ON o.id = link.optional_id
+                    WHERE component.set_id = p.id AND o.market_code <> 'EU'
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM regexp_split_to_table(
+                        coalesce(p.all_optionals_categories, ''), '\\s*,\\s*'
+                    ) AS category_code
+                    WHERE category_code <> ''
+                      AND NOT EXISTS (
+                          SELECT 1 FROM optional_categories oc
+                          WHERE oc.market_code = 'EU' AND oc.code = category_code
+                      )
+                )
+              )
+        )
+    """))).scalar_one()
+    if invalid_dimensions:
+        raise HTTPException(
+            409,
+            "Europa não pode ser ativada: catálogo, tipo ou opcionais de produto não estão isolados no mercado EU.",
+        )
     available = (await db.execute(
         select(func.count()).select_from(ProductMarket)
         .join(Product, Product.id == ProductMarket.product_id)

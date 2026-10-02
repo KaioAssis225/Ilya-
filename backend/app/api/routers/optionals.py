@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.api.deps import get_db_session, require_roles
+from app.api.deps import get_current_principal, get_db_session, require_platform_capability, require_roles
+from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.models.optional_color import OptionalColor
+from app.models.optional_category import OptionalCategory
 from app.models.user import User, UserRole
 from app.schemas.optional import OptionalColorCreate, OptionalColorUpdate, OptionalColorRead
 from app.core.config import settings
@@ -46,8 +48,9 @@ async def list_optionals(
     limit: int = Query(default=1000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    stmt = select(OptionalColor)
+    stmt = select(OptionalColor).where(OptionalColor.market_code == principal.code)
     if category:
         stmt = stmt.where(OptionalColor.category == category)
     elif categories:
@@ -76,12 +79,53 @@ async def create_optional(
     payload: OptionalColorCreate,
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    opt = OptionalColor(**payload.model_dump())
+    category_exists = (await db.execute(select(OptionalCategory.id).where(
+        OptionalCategory.market_code == principal.code,
+        OptionalCategory.code == payload.category,
+    ))).scalar_one_or_none()
+    if category_exists is None:
+        raise HTTPException(status_code=422, detail="Categoria de opcional não pertence ao mercado ativo.")
+    opt = OptionalColor(market_code=principal.code, **payload.model_dump())
     db.add(opt)
     await db.commit()
     await db.refresh(opt)
     return _to_read(opt)
+
+
+@router.get("/platform/EU", response_model=List[OptionalColorRead])
+async def list_europe_optionals_before_activation(
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    rows = (await db.execute(select(OptionalColor).where(
+        OptionalColor.market_code == "EU"
+    ).order_by(
+        OptionalColor.category,
+        OptionalColor.color_name,
+        OptionalColor.id,
+    ).execution_options(skip_market_scope=True))).scalars().all()
+    return [_to_read(optional) for optional in rows]
+
+
+@router.post("/platform/EU", response_model=OptionalColorRead, status_code=status.HTTP_201_CREATED)
+async def create_europe_optional_before_activation(
+    payload: OptionalColorCreate,
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    category_exists = (await db.execute(select(OptionalCategory.id).where(
+        OptionalCategory.market_code == "EU",
+        OptionalCategory.code == payload.category,
+    ).execution_options(skip_market_scope=True))).scalar_one_or_none()
+    if category_exists is None:
+        raise HTTPException(status_code=422, detail="Categoria de opcional não pertence ao mercado EU.")
+    optional = OptionalColor(market_code="EU", **payload.model_dump())
+    db.add(optional)
+    await db.commit()
+    await db.refresh(optional)
+    return _to_read(optional)
 
 
 @router.patch("/{optional_id}", response_model=OptionalColorRead)
@@ -90,11 +134,22 @@ async def update_optional(
     payload: OptionalColorUpdate,
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    result = await db.execute(select(OptionalColor).where(OptionalColor.id == optional_id))
+    result = await db.execute(select(OptionalColor).where(
+        OptionalColor.id == optional_id,
+        OptionalColor.market_code == principal.code,
+    ))
     opt = result.scalar_one_or_none()
     if not opt:
         raise HTTPException(status_code=404, detail="Opcional não encontrado.")
+    if payload.category is not None:
+        category_exists = (await db.execute(select(OptionalCategory.id).where(
+            OptionalCategory.market_code == principal.code,
+            OptionalCategory.code == payload.category,
+        ))).scalar_one_or_none()
+        if category_exists is None:
+            raise HTTPException(status_code=422, detail="Categoria de opcional não pertence ao mercado ativo.")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(opt, field, value)
     await db.commit()
@@ -107,8 +162,12 @@ async def delete_optional(
     optional_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    result = await db.execute(select(OptionalColor).where(OptionalColor.id == optional_id))
+    result = await db.execute(select(OptionalColor).where(
+        OptionalColor.id == optional_id,
+        OptionalColor.market_code == principal.code,
+    ))
     opt = result.scalar_one_or_none()
     if not opt:
         raise HTTPException(status_code=404, detail="Opcional não encontrado.")
@@ -124,8 +183,12 @@ async def upload_photo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
     _: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    result = await db.execute(select(OptionalColor).where(OptionalColor.id == optional_id))
+    result = await db.execute(select(OptionalColor).where(
+        OptionalColor.id == optional_id,
+        OptionalColor.market_code == principal.code,
+    ))
     opt = result.scalar_one_or_none()
     if not opt:
         raise HTTPException(status_code=404, detail="Opcional não encontrado.")

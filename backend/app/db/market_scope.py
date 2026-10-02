@@ -11,9 +11,23 @@ from app.models.notification import Notification
 from app.models.order import Order
 from app.models.representative import Representative
 from app.models.product import Product
+from app.models.catalog import Catalog
+from app.models.optional_category import OptionalCategory
+from app.models.optional_color import OptionalColor
+from app.models.product_type import ProductType
 
 
-MARKET_SCOPED_MODELS = (Client, Representative, Order, Notification, Product)
+MARKET_SCOPED_MODELS = (
+    Client,
+    Representative,
+    Order,
+    Notification,
+    Product,
+    Catalog,
+    OptionalCategory,
+    OptionalColor,
+    ProductType,
+)
 
 
 @event.listens_for(Session, "do_orm_execute")

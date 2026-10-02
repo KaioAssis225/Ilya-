@@ -8,7 +8,7 @@
 Executar no mesmo dia:
 
 1. confirmar a identidade e o vínculo afetado;
-2. desativar o usuário em **Admin**;
+2. desativar a identidade em **Plataforma → Identidades**;
 3. para representante, registrar **Encerrar vínculo** na governança LGPD;
 4. confirmar revogação das sessões;
 5. remover acessos a Railway, Vercel, storage, e-mail, backup e GitHub;
@@ -30,7 +30,8 @@ Exportar/listar os usuários e registrar:
 
 Revisar obrigatoriamente:
 
-- administradores;
+- administradores de plataforma e suas capacidades globais;
+- administradores comerciais de cada mercado;
 - role `produtos`;
 - contas inativas;
 - contas sem responsável identificável;

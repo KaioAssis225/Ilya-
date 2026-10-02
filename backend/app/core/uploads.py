@@ -1,11 +1,16 @@
 import asyncio
+import hashlib
+import hmac
 import io
+import mimetypes
 import os
 import tempfile
+import time
 import uuid
 import warnings
 from functools import lru_cache
-from urllib.parse import quote
+from pathlib import Path
+from urllib.parse import quote, urlencode
 
 import boto3
 from botocore.config import Config
@@ -39,6 +44,48 @@ _CONTENT_TYPES = {
     "png": "image/png",
     "webp": "image/webp",
 }
+
+
+def _media_signature(object_key: str, expires: int) -> str:
+    payload = f"{object_key}\n{expires}".encode("utf-8")
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_media_signature(
+    object_key: str,
+    expires: int,
+    signature: str,
+    *,
+    now: int | None = None,
+) -> bool:
+    current = int(time.time()) if now is None else now
+    if expires < current or not signature:
+        return False
+    return hmac.compare_digest(_media_signature(object_key, expires), signature)
+
+
+def _signed_media_url(object_key: str, *, now: int | None = None) -> str:
+    current = int(time.time()) if now is None else now
+    expires = current + settings.MEDIA_URL_TTL_SECONDS
+    query = urlencode({
+        "expires": expires,
+        "signature": _media_signature(object_key, expires),
+    })
+    return f"/api/v1/media/{quote(object_key, safe='/')}?{query}"
+
+
+def _local_key_from_path(photo_path: str) -> str | None:
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    candidate = Path(photo_path).resolve()
+    try:
+        relative = candidate.relative_to(upload_root)
+    except ValueError:
+        return None
+    return "local/" + relative.as_posix()
 
 
 def _normalized_addressing_style(style: str) -> str:
@@ -84,10 +131,9 @@ def build_photo_url(photo_path: str | None) -> str | None:
         return None
     object_key = _object_key_from_reference(photo_path)
     if object_key:
-        return "/api/v1/media/" + quote(object_key, safe="/")
-    if photo_path.startswith("app/"):
-        return "/" + photo_path[4:]
-    return "/static/uploads/" + os.path.basename(photo_path)
+        return _signed_media_url(object_key)
+    local_key = _local_key_from_path(photo_path)
+    return _signed_media_url(local_key) if local_key else None
 
 
 def _thumbnail_key_for_original(object_key: str) -> str | None:
@@ -127,7 +173,7 @@ def build_thumbnail_url(photo_path: str | None) -> str | None:
     if object_key:
         thumbnail_key = _thumbnail_key_for_original(object_key)
         if thumbnail_key:
-            return "/api/v1/media/" + quote(thumbnail_key, safe="/")
+            return _signed_media_url(thumbnail_key)
     thumbnail_path = _local_thumbnail_path(photo_path)
     if os.path.isfile(thumbnail_path):
         return build_photo_url(thumbnail_path)
@@ -458,3 +504,24 @@ async def read_object_upload(object_key: str) -> tuple[bytes, str]:
     if not settings.object_storage_configured():
         raise FileNotFoundError(object_key)
     return await run_in_threadpool(_read_object_upload, object_key)
+
+
+def _read_local_upload(local_key: str) -> tuple[bytes, str]:
+    relative = local_key.removeprefix("local/")
+    if not relative or "\\" in relative:
+        raise FileNotFoundError(local_key)
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    candidate = (upload_root / relative).resolve()
+    try:
+        candidate.relative_to(upload_root)
+    except ValueError as exc:
+        raise FileNotFoundError(local_key) from exc
+    if not candidate.is_file():
+        raise FileNotFoundError(local_key)
+    return candidate.read_bytes(), mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+
+
+async def read_media_upload(object_key: str) -> tuple[bytes, str]:
+    if object_key.startswith("local/"):
+        return await run_in_threadpool(_read_local_upload, object_key)
+    return await read_object_upload(object_key)

@@ -36,7 +36,7 @@ from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
 from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket, VAT_APPROVED
-from app.core.markets import MarketPrincipal
+from app.core.markets import MarketPrincipal, require_launch_country
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.core.security import (
@@ -249,7 +249,10 @@ async def _load_products_and_types(
     type_names = {p.type for p in products}
     types = (await db.execute(
         select(ProductType)
-        .where(ProductType.name.in_(type_names))
+        .where(
+            ProductType.name.in_(type_names),
+            ProductType.market_code == market_code,
+        )
         .options(selectinload(ProductType.group))
     )).scalars().all() if type_names else []
     type_map = {t.name: t for t in types}
@@ -366,9 +369,13 @@ async def create_order(
         # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para este cliente.")
 
-    client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
+    client = (await db.execute(select(Client).where(
+        Client.id == payload.client_id,
+        Client.market_code == principal.code,
+    ))).scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    require_launch_country(principal.code, client.country)
     if is_client_account(current_user):
         # O vínculo comercial é definido pelo cadastro do cliente; a API não
         # aceita que uma conta de cliente atribua o pedido a outro representante.
@@ -384,9 +391,14 @@ async def create_order(
 
     rep: Representative | None = None
     if payload.rep_id:
-        rep = (await db.execute(select(Representative).where(Representative.id == payload.rep_id))).scalar_one_or_none()
+        rep = (await db.execute(select(Representative).where(
+            Representative.id == payload.rep_id,
+            Representative.market_code == principal.code,
+            Representative.relationship_ended_at.is_(None),
+        ))).scalar_one_or_none()
         if not rep:
             raise HTTPException(status_code=404, detail="Representante não encontrado.")
+        require_launch_country(principal.code, rep.country)
 
     max_discount = _resolve_max_discount(current_user, client, rep)
 
@@ -796,6 +808,7 @@ async def update_order(
                 status_code=404,
                 detail="Representante não encontrado.",
             )
+        require_launch_country(principal.code, selected_rep.country)
         if payload.rep_id != order.rep_id:
             order.rep_id = payload.rep_id
             changes.append("representante alterado")
@@ -826,6 +839,7 @@ async def update_order(
         ))).scalar_one_or_none()
         if not client or not price_list:
             raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
+        require_launch_country(principal.code, client.country)
         product_ids = [product.id for product in product_map.values()]
         available_ids = set((await db.execute(select(ProductMarket.product_id).where(
             ProductMarket.market_code == order.market_code,
@@ -864,6 +878,8 @@ async def update_order(
                     )
                 )
             ).scalar_one_or_none()
+        if rep:
+            require_launch_country(principal.code, rep.country)
         max_discount = _resolve_max_discount(current_user, client, rep)
 
         total = _ZERO

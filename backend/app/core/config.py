@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Catálogo e preços europeus foram reconciliados antes do lançamento.
     # O status persistido em markets.is_enabled continua sendo a segunda trava.
     EUROPE_MARKET_ENABLED: bool = True
+    # EU continua sendo o mercado comercial; a primeira liberação aceita
+    # somente Portugal até que regras fiscais e documentais de outro país
+    # sejam aprovadas explicitamente.
+    EU_LAUNCH_COUNTRY: str = "PT"
 
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
     # Deployments de produção/preview do projeto Ilya na conta Vercel indicada.
@@ -53,6 +57,7 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: str = "jpg,jpeg,png,webp"
     MAX_IMAGE_PIXELS: int = 25_000_000
     MAX_IMAGE_DIMENSION: int = 2560
+    MEDIA_URL_TTL_SECONDS: int = 900
 
     # Armazenamento S3 compatível. Quando vazio, mantém o filesystem local.
     OBJECT_STORAGE_ENDPOINT: str = ""

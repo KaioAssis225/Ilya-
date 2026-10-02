@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi import HTTPException, UploadFile
@@ -307,11 +308,21 @@ def test_imagem_grande_e_reduzida_fora_do_event_loop():
 
 
 def test_url_de_foto_preserva_arquivo_legado_e_reconhece_objeto():
-    assert build_photo_url("app/static/uploads/foto.jpg") == "/static/uploads/foto.jpg"
-    assert (
-        build_photo_url("object://products/123e4567-e89b-12d3-a456-426614174000.jpg")
-        == "/api/v1/media/products/123e4567-e89b-12d3-a456-426614174000.jpg"
-    )
+    local_url = build_photo_url("app/static/uploads/foto.jpg")
+    object_url = build_photo_url("object://products/123e4567-e89b-12d3-a456-426614174000.jpg")
+    assert local_url is not None and object_url is not None
+    assert urlparse(local_url).path == "/api/v1/media/local/foto.jpg"
+    assert urlparse(object_url).path == "/api/v1/media/products/123e4567-e89b-12d3-a456-426614174000.jpg"
+    for url, key in (
+        (local_url, "local/foto.jpg"),
+        (object_url, "products/123e4567-e89b-12d3-a456-426614174000.jpg"),
+    ):
+        query = parse_qs(urlparse(url).query)
+        assert uploads_module.verify_media_signature(
+            key,
+            int(query["expires"][0]),
+            query["signature"][0],
+        )
 
 
 def test_estilo_de_url_da_railway_e_normalizado_para_boto():

@@ -11,6 +11,8 @@ from app.models.client import Client
 from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
+from app.models.optional_category import OptionalCategory
+from app.models.catalog import Catalog
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
@@ -219,7 +221,7 @@ async def _resolve_set_items(
 
 
 async def _resolve_components(
-    db: AsyncSession, items: list[ProductSetComponentCreate]
+    db: AsyncSession, items: list[ProductSetComponentCreate], market_code: str
 ) -> list[ProductSetComponent]:
     optional_ids = {
         optional_id
@@ -228,7 +230,10 @@ async def _resolve_components(
     }
     optionals = (
         await db.execute(
-            select(OptionalColor).where(OptionalColor.id.in_(optional_ids))
+            select(OptionalColor).where(
+                OptionalColor.id.in_(optional_ids),
+                OptionalColor.market_code == market_code,
+            )
         )
     ).scalars().all() if optional_ids else []
     optional_map = {optional.id: optional for optional in optionals}
@@ -251,11 +256,54 @@ async def _resolve_components(
     return result
 
 
-async def _resolve_optionals(db: AsyncSession, ids: list[uuid.UUID]) -> list[OptionalColor]:
+async def _resolve_optionals(
+    db: AsyncSession, ids: list[uuid.UUID], market_code: str
+) -> list[OptionalColor]:
     if not ids:
         return []
-    result = await db.execute(select(OptionalColor).where(OptionalColor.id.in_(ids)))
-    return list(result.scalars().all())
+    unique_ids = list(dict.fromkeys(ids))
+    result = await db.execute(select(OptionalColor).where(
+        OptionalColor.id.in_(unique_ids),
+        OptionalColor.market_code == market_code,
+    ))
+    optionals = list(result.scalars().all())
+    if len(optionals) != len(unique_ids):
+        raise HTTPException(400, "Um ou mais opcionais não pertencem ao mercado ativo.")
+    return optionals
+
+
+async def _validate_product_dimensions(
+    db: AsyncSession,
+    market_code: str,
+    *,
+    product_type: str | None = None,
+    catalog_id: uuid.UUID | None = None,
+    categories: str | None = None,
+) -> None:
+    if product_type is not None:
+        type_exists = (await db.execute(select(ProductType.id).where(
+            ProductType.market_code == market_code,
+            ProductType.name == product_type,
+        ))).scalar_one_or_none()
+        if type_exists is None:
+            raise HTTPException(422, "Tipo de produto não pertence ao mercado ativo.")
+    if catalog_id is not None:
+        catalog_exists = (await db.execute(select(Catalog.id).where(
+            Catalog.id == catalog_id,
+            Catalog.market_code == market_code,
+        ))).scalar_one_or_none()
+        if catalog_exists is None:
+            raise HTTPException(422, "Catálogo não pertence ao mercado ativo.")
+    category_codes = {
+        value.strip() for value in (categories or "").split(",") if value.strip()
+    }
+    if category_codes:
+        found = set((await db.execute(select(OptionalCategory.code).where(
+            OptionalCategory.market_code == market_code,
+            OptionalCategory.code.in_(category_codes),
+        ))).scalars().all())
+        if found != category_codes:
+            raise HTTPException(422, "Uma ou mais categorias de opcionais não pertencem ao mercado ativo.")
 
 
 @router.get("", response_model=List[ProductRead])
@@ -326,7 +374,8 @@ async def list_products(
         filters.append(
             _normalized_product_type_expression(Product.type).in_(
                 select(_normalized_product_type_expression(ProductType.name)).where(
-                    ProductType.group_id == group_id
+                    ProductType.group_id == group_id,
+                    ProductType.market_code == active_market,
                 )
             )
         )
@@ -410,6 +459,13 @@ async def _create_product_for_market(
     db: AsyncSession,
     market_code: str,
 ) -> Product:
+    await _validate_product_dimensions(
+        db,
+        market_code,
+        product_type=payload.type,
+        catalog_id=payload.catalog_id,
+        categories=payload.all_optionals_categories,
+    )
     holder_is_active = (
         await db.execute(
             select(Product.is_active)
@@ -440,13 +496,13 @@ async def _create_product_for_market(
         "description_en",
     })
     product = Product(market_code=market_code, **product_data)
-    product.optionals = await _resolve_optionals(db, payload.optional_ids)
+    product.optionals = await _resolve_optionals(db, payload.optional_ids, market_code)
     if payload.is_set:
         product.set_items = await _resolve_set_items(
             db, payload.set_items, payload.product_code, market_code
         )
     if _is_conjunto_type(payload.type) and payload.components:
-        product.components = await _resolve_components(db, payload.components)
+        product.components = await _resolve_components(db, payload.components, market_code)
     db.add(product)
     await db.flush()
 
@@ -603,6 +659,17 @@ async def update_product(
             name in payload.model_fields_set
             for name in ("optional_ids", "set_items", "components")
         )
+        await _validate_product_dimensions(
+            db,
+            principal.code,
+            product_type=payload.type if "type" in payload.model_fields_set else None,
+            catalog_id=payload.catalog_id if "catalog_id" in payload.model_fields_set else None,
+            categories=(
+                payload.all_optionals_categories
+                if "all_optionals_categories" in payload.model_fields_set
+                else None
+            ),
+        )
         if (
             not product_changes
             and not relationship_change
@@ -643,7 +710,7 @@ async def update_product(
             setattr(product, field, value)
         product.source_version += 1
         if payload.optional_ids is not None:
-            product.optionals = await _resolve_optionals(db, payload.optional_ids)
+            product.optionals = await _resolve_optionals(db, payload.optional_ids, principal.code)
         if payload.set_items is not None:
             product.set_items = (
                 await _resolve_set_items(
@@ -653,7 +720,7 @@ async def update_product(
             )
         if payload.components is not None:
             product.components = (
-                await _resolve_components(db, payload.components)
+                await _resolve_components(db, payload.components, principal.code)
                 if _is_conjunto_type(product.type) else []
             )
         if any(value is not None for value in translation_changes.values()):
@@ -680,11 +747,22 @@ async def update_product(
     optional_ids = payload.optional_ids
     set_items_in = payload.set_items
     components_in = payload.components
+    await _validate_product_dimensions(
+        db,
+        principal.code,
+        product_type=payload.type if "type" in payload.model_fields_set else None,
+        catalog_id=payload.catalog_id if "catalog_id" in payload.model_fields_set else None,
+        categories=(
+            payload.all_optionals_categories
+            if "all_optionals_categories" in payload.model_fields_set
+            else None
+        ),
+    )
     for field, value in data.items():
         setattr(product, field, value)
     product.source_version += 1
     if optional_ids is not None:
-        product.optionals = await _resolve_optionals(db, optional_ids)
+        product.optionals = await _resolve_optionals(db, optional_ids, principal.code)
     if set_items_in is not None:
         if product.is_set:
             product.set_items = await _resolve_set_items(
@@ -694,7 +772,7 @@ async def update_product(
             product.set_items = []
     if components_in is not None:
         if _is_conjunto_type(product.type):
-            product.components = await _resolve_components(db, components_in)
+            product.components = await _resolve_components(db, components_in, principal.code)
         else:
             product.components = []
     lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
