@@ -511,9 +511,12 @@ async def update_user(
         changes["linked_id"] = user.linked_id
     else:
         changes["linked_id"] = None
-    security_changed = market_access_changed or any(
+    identity_security_changed = any(
         field in changes and changes[field] != getattr(user, field)
-        for field in ("username", "role", "rep_id", "linked_id", "is_active", "home_market")
+        for field in ("username", "is_active")
+    )
+    commercial_security_changed = market_access_changed or (
+        "home_market" in changes and changes["home_market"] != user.home_market
     )
     if changes.get("is_active") is False:
         await lock_platform_admin_guard(db)
@@ -521,11 +524,24 @@ async def update_user(
             raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
     for field, value in changes.items():
         setattr(user, field, value)
-    if security_changed:
+    if identity_security_changed:
         user.auth_version += 1
         await db.execute(
             update(RefreshToken)
             .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+        )
+    elif commercial_security_changed:
+        # Papéis e vínculos são relidos de user_markets em toda requisição e
+        # refresh comercial. Revogar somente as famílias comerciais mantém uma
+        # sessão de plataforma independente ativa durante a administração.
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == user.id,
+                RefreshToken.scope == "market",
+                RefreshToken.revoked.is_(False),
+            )
             .values(revoked=True, revoked_at=datetime.now(timezone.utc))
         )
     try:

@@ -28,6 +28,7 @@ export default function PlatformPage() {
   const [editing, setEditing] = useState<UserRead | null>(null)
   const [capabilities, setCapabilities] = useState<PlatformCapability[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -62,10 +63,15 @@ export default function PlatformPage() {
   }
 
   async function openEditor(identity: UserRead) {
-    setEditing(structuredClone(identity))
     setError(null)
-    const response = await platformApi.get<{ capabilities: PlatformCapability[] }>(`/users/${identity.id}/platform-permissions`)
-    setCapabilities(response.data.capabilities)
+    setNotice(null)
+    try {
+      const response = await platformApi.get<{ capabilities: PlatformCapability[] }>(`/users/${identity.id}/platform-permissions`)
+      setCapabilities(response.data.capabilities)
+      setEditing(structuredClone(identity))
+    } catch {
+      setError('Não foi possível carregar as permissões da identidade.')
+    }
   }
 
   function updateAccess(code: 'BR' | 'EU', change: Partial<UserMarketAccess>) {
@@ -94,7 +100,7 @@ export default function PlatformPage() {
     })
   }
 
-  async function saveEditor() {
+  async function saveMarketAccesses() {
     if (!editing) return
     const home = editing.market_accesses.find(access => access.market_code === editing.home_market)
     if (!home) {
@@ -103,8 +109,9 @@ export default function PlatformPage() {
     }
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
-      await platformApi.patch(`/users/${editing.id}`, {
+      const response = await platformApi.patch<UserRead>(`/users/${editing.id}`, {
         email: editing.email,
         full_name: editing.full_name,
         is_active: editing.is_active,
@@ -114,12 +121,29 @@ export default function PlatformPage() {
         can_view_dashboard: home.can_view_dashboard,
         market_accesses: editing.market_accesses,
       })
-      await platformApi.put(`/users/${editing.id}/platform-permissions`, { capabilities })
-      setEditing(null)
+      setEditing(structuredClone(response.data))
+      setNotice('Identidade e acessos comerciais salvos.')
       await load()
     } catch (requestError: unknown) {
       const detail = (requestError as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(typeof detail === 'string' ? detail : 'Não foi possível salvar a identidade.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveCapabilities() {
+    if (!editing) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await platformApi.put(`/users/${editing.id}/platform-permissions`, { capabilities })
+      setNotice('Capacidades de plataforma salvas.')
+      await load()
+    } catch (requestError: unknown) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Não foi possível salvar as capacidades de plataforma.')
     } finally {
       setBusy(false)
     }
@@ -153,10 +177,11 @@ export default function PlatformPage() {
         </section>}
       </div>
 
-      {editing && <div className="fixed inset-0 z-50 overflow-y-auto bg-scrim/60 p-4"><div className="mx-auto my-6 max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Editar identidade</h2><button onClick={() => setEditing(null)}><X /></button></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="flex flex-col gap-1"><span className="text-xs text-muted">Nome</span><input className="input" value={editing.full_name} onChange={event => setEditing({ ...editing, full_name: event.target.value })} /></label><label className="flex flex-col gap-1"><span className="text-xs text-muted">E-mail</span><input className="input" value={editing.email} onChange={event => setEditing({ ...editing, email: event.target.value })} /></label><label className="flex flex-col gap-1"><span className="text-xs text-muted">Mercado principal</span><select className="input" value={editing.home_market} onChange={event => setEditing({ ...editing, home_market: event.target.value as 'BR' | 'EU' })}>{editing.market_accesses.map(access => <option key={access.market_code}>{access.market_code}</option>)}</select></label><label className="flex items-center gap-2 pt-5"><input type="checkbox" checked={editing.is_active} onChange={event => setEditing({ ...editing, is_active: event.target.checked })} /> Identidade ativa</label></div>
+      {editing && <div className="fixed inset-0 z-50 overflow-y-auto bg-scrim/60 p-4"><div className="mx-auto my-6 max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Editar identidade</h2><button onClick={() => setEditing(null)}><X /></button></div>{notice && <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="flex flex-col gap-1"><span className="text-xs text-muted">Nome</span><input className="input" value={editing.full_name} onChange={event => setEditing({ ...editing, full_name: event.target.value })} /></label><label className="flex flex-col gap-1"><span className="text-xs text-muted">E-mail</span><input className="input" value={editing.email} onChange={event => setEditing({ ...editing, email: event.target.value })} /></label><label className="flex flex-col gap-1"><span className="text-xs text-muted">Mercado principal</span><select className="input" value={editing.home_market} onChange={event => setEditing({ ...editing, home_market: event.target.value as 'BR' | 'EU' })}>{editing.market_accesses.map(access => <option key={access.market_code}>{access.market_code}</option>)}</select></label><label className="flex items-center gap-2 pt-5"><input type="checkbox" checked={editing.is_active} onChange={event => setEditing({ ...editing, is_active: event.target.checked })} /> Identidade ativa</label></div>
         <div className="mt-5 space-y-4">{editing.market_accesses.map(access => <fieldset key={access.market_code} className="rounded-xl border border-line p-4"><legend className="px-1 font-semibold">{access.market_code}</legend><div className="grid gap-3 sm:grid-cols-3"><label className="flex flex-col gap-1"><span className="text-xs text-muted">Papel</span><select className="input" value={access.role} onChange={event => updateAccess(access.market_code, { role: event.target.value as UserRole, linked_client_id: null, rep_id: null })}>{ROLES.map(role => <option key={role}>{role}</option>)}</select></label><label className="flex flex-col gap-1"><span className="text-xs text-muted">Estado</span><select className="input" value={access.status} onChange={event => updateAccess(access.market_code, { status: event.target.value as UserMarketAccess['status'] })}><option>pending</option><option>active</option><option>suspended</option></select></label>{access.role === 'cliente' && <label className="flex flex-col gap-1"><span className="text-xs text-muted">UUID do cliente</span><input className="input" value={access.linked_client_id ?? ''} onChange={event => updateAccess(access.market_code, { linked_client_id: event.target.value || null })} /></label>}{access.role === 'representante' && <label className="flex flex-col gap-1"><span className="text-xs text-muted">UUID do representante</span><input className="input" value={access.rep_id ?? ''} onChange={event => updateAccess(access.market_code, { rep_id: event.target.value || null })} /></label>}</div><div className="mt-3 flex flex-wrap gap-4"><label><input type="checkbox" checked={access.can_view_dashboard} onChange={event => updateAccess(access.market_code, { can_view_dashboard: event.target.checked })} /> Dashboard</label><label><input type="checkbox" checked={access.can_approve_tax} onChange={event => updateAccess(access.market_code, { can_approve_tax: event.target.checked })} /> Aprovar IVA</label></div>{access.market_code !== editing.home_market && <button className="mt-3 text-sm text-terracotta" onClick={() => setEditing({ ...editing, market_accesses: editing.market_accesses.filter(item => item.market_code !== access.market_code), allowed_markets: editing.allowed_markets.filter(item => item !== access.market_code) })}>Remover vínculo {access.market_code}</button>}</fieldset>)}{(['BR', 'EU'] as const).filter(code => !editing.market_accesses.some(access => access.market_code === code)).map(code => <button key={code} className="btn-secondary" onClick={() => addAccess(code)}>Adicionar {code}</button>)}</div>
-        <fieldset className="mt-5 rounded-xl border border-line p-4"><legend className="px-1 font-semibold">Capacidades de plataforma</legend><div className="flex flex-wrap gap-4">{ALL_CAPABILITIES.map(capability => <label key={capability}><input type="checkbox" checked={capabilities.includes(capability)} onChange={event => setCapabilities(event.target.checked ? [...capabilities, capability] : capabilities.filter(item => item !== capability))} /> {capability}</label>)}</div></fieldset>
-        <div className="mt-6 flex justify-end gap-2"><button className="btn-secondary" onClick={() => setEditing(null)}>Cancelar</button><button className="btn-primary" disabled={busy} onClick={saveEditor}>{busy ? 'Salvando…' : 'Salvar'}</button></div></div></div>}
+        <div className="mt-5 flex justify-end"><button className="btn-primary" disabled={busy} onClick={saveMarketAccesses}>{busy ? 'Salvando…' : 'Salvar identidade e mercados'}</button></div>
+        <fieldset className="mt-5 rounded-xl border border-line p-4"><legend className="px-1 font-semibold">Capacidades de plataforma</legend><div className="flex flex-wrap gap-4">{ALL_CAPABILITIES.map(capability => <label key={capability}><input type="checkbox" checked={capabilities.includes(capability)} onChange={event => setCapabilities(event.target.checked ? [...capabilities, capability] : capabilities.filter(item => item !== capability))} /> {capability}</label>)}</div><div className="mt-4 flex justify-end"><button className="btn-primary" disabled={busy} onClick={saveCapabilities}>{busy ? 'Salvando…' : 'Salvar capacidades'}</button></div></fieldset>
+        <div className="mt-6 flex justify-end"><button className="btn-secondary" onClick={() => setEditing(null)}>Fechar</button></div></div></div>}
     </main>
   )
 }
