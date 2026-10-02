@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_platform_capability
 from app.core.limiter import limiter
-from app.core.markets import PlatformPrincipal
+from app.core.markets import PlatformPrincipal, suspend_commercial_accesses
 from app.core.privacy_audit import record_privacy_event
 from app.core.security import verify_password
 from app.models.client import Client
@@ -24,11 +24,11 @@ from app.models.notification import Notification
 from app.models.order import Order
 from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
-from app.models.refresh_token import RefreshToken
 from app.models.representative import Representative
 from app.models.retention import LegalHold, RetentionReview
 from app.models.signature_invitation import SignatureInvitation
-from app.models.user import User, UserRole
+from app.models.market import UserMarket
+from app.models.user import User
 from app.schemas.retention import (
     LegalHoldCreate,
     LegalHoldRead,
@@ -94,11 +94,12 @@ def _order_hold_exists(now: datetime):
 
 def _notification_hold_exists(now: datetime):
     return exists(
-        select(User.id).where(
-            User.id == Notification.user_id,
+        select(UserMarket.user_id).where(
+            UserMarket.user_id == Notification.user_id,
+            UserMarket.market_code == Notification.market_code,
             or_(
-                _hold_exists("client", User.linked_id, now),
-                _hold_exists("representative", User.rep_id, now),
+                _hold_exists("client", UserMarket.linked_client_id, now),
+                _hold_exists("representative", UserMarket.rep_id, now),
             ),
         )
     )
@@ -512,32 +513,11 @@ async def end_representative_relationship(
 
     previous_end = representative.relationship_ended_at
     representative.relationship_ended_at = payload.ended_at
-    linked_users = (
-        await db.execute(
-            select(User).where(
-                User.role == UserRole.representante,
-                or_(
-                    User.rep_id == representative_id,
-                    User.linked_id == representative_id,
-                ),
-                User.is_active.is_(True),
-            )
-        )
-    ).scalars().all()
-    user_ids: list[uuid.UUID] = []
-    for user in linked_users:
-        user.is_active = False
-        user.auth_version += 1
-        user_ids.append(user.id)
-    if user_ids:
-        await db.execute(
-            update(RefreshToken)
-            .where(
-                RefreshToken.user_id.in_(user_ids),
-                RefreshToken.revoked.is_(False),
-            )
-            .values(revoked=True, revoked_at=now)
-        )
+    suspended_user_ids = await suspend_commercial_accesses(
+        db,
+        market_code=representative.market_code,
+        rep_id=representative_id,
+    )
 
     record_privacy_event(
         db,
@@ -553,14 +533,14 @@ async def end_representative_relationship(
                 previous_end.isoformat() if previous_end is not None else None
             ),
             "reason": payload.reason,
-            "deactivated_users": len(user_ids),
+            "suspended_market_accesses": len(suspended_user_ids),
         },
     )
     await db.commit()
     return RepresentativeRelationshipEndRead(
         representative_id=representative.id,
         relationship_ended_at=payload.ended_at,
-        deactivated_users=len(user_ids),
+        deactivated_users=len(suspended_user_ids),
     )
 
 
@@ -599,8 +579,13 @@ async def create_retention_dry_run(
             (Client.last_activity_at < cutoffs["clients"])
             & ~exists(select(Order.id).where(Order.client_id == Client.id))
             & ~exists(
-                select(User.id).where(
-                    User.linked_id == Client.id,
+                select(UserMarket.user_id)
+                .join(User, User.id == UserMarket.user_id)
+                .where(
+                    UserMarket.market_code == Client.market_code,
+                    UserMarket.role == "cliente",
+                    UserMarket.status == "active",
+                    UserMarket.linked_client_id == Client.id,
                     User.is_active.is_(True),
                 )
             )

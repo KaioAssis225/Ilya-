@@ -1,12 +1,15 @@
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.market import BR_MARKET, EU_MARKET, Market, UserMarket
+from app.models.refresh_token import RefreshToken
 from app.models.user import User, UserRole
 
 
@@ -128,6 +131,54 @@ async def require_market_access(db: AsyncSession, user: User, code: str) -> User
 
 async def require_allowed_market(db: AsyncSession, user: User, code: str) -> str:
     return (await require_market_access(db, user, code)).market_code
+
+
+async def suspend_commercial_accesses(
+    db: AsyncSession,
+    *,
+    market_code: str,
+    linked_client_id: uuid.UUID | None = None,
+    rep_id: uuid.UUID | None = None,
+) -> set[uuid.UUID]:
+    """Suspende um vínculo comercial sem desativar a identidade global.
+
+    O refresh comercial não identifica um mercado específico, portanto todas as
+    famílias comerciais da identidade são revogadas. Sessões de plataforma
+    continuam válidas e os demais vínculos comerciais podem autenticar de novo.
+    """
+    if (linked_client_id is None) == (rep_id is None):
+        raise ValueError("Informe exatamente um vínculo comercial.")
+    filters = [
+        UserMarket.market_code == market_code,
+        UserMarket.status != "suspended",
+    ]
+    if linked_client_id is not None:
+        filters.extend((
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.linked_client_id == linked_client_id,
+        ))
+    else:
+        filters.extend((
+            UserMarket.role == UserRole.representante.value,
+            UserMarket.rep_id == rep_id,
+        ))
+    accesses = list((await db.execute(
+        select(UserMarket).where(*filters).with_for_update()
+    )).scalars().all())
+    user_ids = {access.user_id for access in accesses}
+    for access in accesses:
+        access.status = "suspended"
+    if user_ids:
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id.in_(user_ids),
+                RefreshToken.scope == "market",
+                RefreshToken.revoked.is_(False),
+            )
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+        )
+    return user_ids
 
 
 async def build_market_principal(

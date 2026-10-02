@@ -18,10 +18,11 @@ from app.api.deps import (
 from app.core.search import literal_contains_pattern
 from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client
+from app.models.market import UserMarket
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.user import User, UserRole
 from app.schemas.representative import RepresentativeCreate, RepresentativeUpdate, RepresentativeRead
-from app.core.markets import MarketPrincipal
+from app.core.markets import MarketPrincipal, suspend_commercial_accesses
 
 router = APIRouter(prefix="/api/v1/representatives", tags=["representatives"])
 
@@ -36,11 +37,19 @@ def _conflict_detail(error: IntegrityError) -> str:
     return "Já existe um representante com este e-mail."
 
 
-async def _linked_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+async def _linked_ids(
+    db: AsyncSession,
+    ids: list[uuid.UUID],
+    market: str,
+) -> set[uuid.UUID]:
     if not ids:
         return set()
     result = await db.execute(
-        select(User.linked_id).where(User.linked_id.in_(ids))
+        select(UserMarket.rep_id).where(
+            UserMarket.market_code == market,
+            UserMarket.role == UserRole.representante.value,
+            UserMarket.rep_id.in_(ids),
+        )
     )
     return {row[0] for row in result.fetchall() if row[0] is not None}
 
@@ -177,7 +186,7 @@ async def list_representatives(
         response.headers["X-Total-Count"] = str(total)
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(reps))
-    linked = await _linked_ids(db, [r.id for r in reps])
+    linked = await _linked_ids(db, [r.id for r in reps], market)
     creator_names = (
         await _creator_names(db, [r.created_by_user_id for r in reps])
         if current_user.role not in (UserRole.representante, UserRole.cliente)
@@ -287,7 +296,7 @@ async def get_representative(
     rep = result.scalar_one_or_none()
     if not rep:
         raise HTTPException(status_code=404, detail="Representante não encontrado.")
-    linked = await _linked_ids(db, [rep.id])
+    linked = await _linked_ids(db, [rep.id], market)
     creator_names = (
         await _creator_names(db, [rep.created_by_user_id])
         if current_user.role not in (UserRole.representante, UserRole.cliente)
@@ -369,7 +378,7 @@ async def update_representative(
             detail=_conflict_detail(error),
         )
     await db.refresh(rep)
-    linked = await _linked_ids(db, [rep.id])
+    linked = await _linked_ids(db, [rep.id], market)
     creator_names = (
         await _creator_names(db, [rep.created_by_user_id])
         if current_user.role not in (UserRole.representante, UserRole.cliente)
@@ -399,16 +408,11 @@ async def delete_representative(
     # enquanto cadastros e contas ativas deixam de utilizá-lo. A exclusão
     # física falhava para representantes com usuário ou histórico vinculado.
     rep.relationship_ended_at = datetime.now(timezone.utc)
-    linked_users = (
-        await db.execute(
-            select(User).where(
-                or_(User.rep_id == rep_id, User.linked_id == rep_id)
-            )
-        )
-    ).scalars().all()
-    for linked_user in linked_users:
-        linked_user.is_active = False
-        linked_user.auth_version += 1
+    await suspend_commercial_accesses(
+        db,
+        market_code=market,
+        rep_id=rep_id,
+    )
 
     await db.execute(
         update(Client)
@@ -446,19 +450,11 @@ async def anonymize_representative(
         )
 
     anonymize_representative_fields(rep)
-    linked_users = (
-        await db.execute(
-            select(User).where(
-                or_(
-                    User.rep_id == rep_id,
-                    User.linked_id == rep_id,
-                ),
-                User.is_active.is_(True),
-            )
-        )
-    ).scalars().all()
-    for linked_user in linked_users:
-        linked_user.is_active = False
+    suspended_user_ids = await suspend_commercial_accesses(
+        db,
+        market_code=market,
+        rep_id=rep_id,
+    )
 
     record_privacy_event(
         db,
@@ -469,7 +465,7 @@ async def anonymize_representative(
         request=request,
         legal_basis="LGPD Art. 18, IV",
         context={
-            "disabled_accounts": len(linked_users),
+            "suspended_market_accesses": len(suspended_user_ids),
             "self_service": False,
         },
     )

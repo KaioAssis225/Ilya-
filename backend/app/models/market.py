@@ -93,6 +93,20 @@ class UserMarket(Base, TimestampMixin):
             "AND linked_client_id IS NULL AND rep_id IS NULL)",
             name="ck_user_markets_role_links",
         ),
+        Index(
+            "uq_user_markets_client_per_market",
+            "market_code",
+            "linked_client_id",
+            unique=True,
+            postgresql_where=linked_client_id.is_not(None),
+        ),
+        Index(
+            "uq_user_markets_rep_per_market",
+            "market_code",
+            "rep_id",
+            unique=True,
+            postgresql_where=rep_id.is_not(None),
+        ),
     )
 
 

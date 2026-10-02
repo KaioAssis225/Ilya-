@@ -640,7 +640,13 @@ async def create_user_from_client(
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Acesso negado a este cliente.")
 
-    linked_result = await db.execute(select(User).where(User.linked_id == client_id))
+    linked_result = await db.execute(
+        select(UserMarket.user_id).where(
+            UserMarket.market_code == client.market_code,
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.linked_client_id == client_id,
+        ).limit(1)
+    )
     if linked_result.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Este cliente já possui usuário cadastrado.")
 
@@ -698,12 +704,11 @@ async def create_user_from_rep(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Representante não encontrado.")
 
     linked_result = await db.execute(
-        select(User.id).where(
-            or_(
-                User.linked_id == rep_id,
-                User.rep_id == rep_id,
-            )
-        )
+        select(UserMarket.user_id).where(
+            UserMarket.market_code == rep.market_code,
+            UserMarket.role == UserRole.representante.value,
+            UserMarket.rep_id == rep_id,
+        ).limit(1)
     )
     if linked_result.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Este representante já possui usuário cadastrado.")

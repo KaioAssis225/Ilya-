@@ -35,7 +35,7 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
-from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
+from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket, VAT_APPROVED
 from app.core.markets import MarketPrincipal
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
@@ -286,8 +286,8 @@ def _resolve_eu_vat(
 
     Sem herança do IPI do grupo e sem fallback para zero — se o SKU não tem
     `vat_status == approved` com uma taxa definida, o pedido é recusado. Como o
-    fluxo de aprovação (RBAC P2) ainda não existe, nenhum item EU é faturável
-    hoje: aprovação manual permanece pendente, de propósito.
+    aprovação nominal é gravada por produto e continua sendo verificada em toda
+    criação ou recálculo de pedido, mesmo depois de o mercado EU ser ativado.
     """
     if vat_status != VAT_APPROVED or vat_rate is None:
         raise HTTPException(
@@ -1173,7 +1173,17 @@ async def generate_sign_token(
     url = f"/sign-contract#{token}"
 
     client_user = (await db.execute(
-        select(User).where(User.linked_id == order.client_id, User.is_active.is_(True))
+        select(User)
+        .join(UserMarket, UserMarket.user_id == User.id)
+        .where(
+            UserMarket.market_code == order.market_code,
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.status == "active",
+            UserMarket.linked_client_id == order.client_id,
+            User.is_active.is_(True),
+        )
+        .order_by(User.id)
+        .limit(1)
     )).scalar_one_or_none()
 
     if client_user:
@@ -1320,10 +1330,17 @@ async def notify_client(
     if _representative_cannot_access_order(current_user, order):
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     client_user = (await db.execute(
-        select(User).where(
-            User.linked_id == order.client_id,
+        select(User)
+        .join(UserMarket, UserMarket.user_id == User.id)
+        .where(
+            UserMarket.market_code == order.market_code,
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.status == "active",
+            UserMarket.linked_client_id == order.client_id,
             User.is_active.is_(True),
         )
+        .order_by(User.id)
+        .limit(1)
     )).scalar_one_or_none()
     if not client_user:
         raise HTTPException(status_code=404, detail="Cliente não possui conta ativa no sistema.")
