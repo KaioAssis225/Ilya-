@@ -36,7 +36,7 @@ class _SpySession:
         self.calls.append("add")
 
 
-def _client_with_spy_session(*, with_cookie: bool = True):
+def _client_with_spy_session(*, with_cookie: bool = True, platform: bool = False):
     spy = _SpySession()
 
     async def _override():
@@ -45,7 +45,10 @@ def _client_with_spy_session(*, with_cookie: bool = True):
     app.dependency_overrides[get_db_session] = _override
     client = TestClient(app)
     if with_cookie:
-        client.cookies.set("ilya_refresh", _FAKE_REFRESH_COOKIE)
+        client.cookies.set(
+            "ilya_platform_refresh" if platform else "ilya_refresh",
+            _FAKE_REFRESH_COOKIE,
+        )
     return client, spy
 
 
@@ -115,5 +118,46 @@ class TestLogoutOriginGuard:
             )
             assert response.status_code == 204
             assert "execute" in spy.calls
+        finally:
+            _reset_overrides()
+
+
+class TestPlatformCookieOriginGuard:
+    def test_platform_refresh_without_cookie_is_anonymous(self):
+        client, spy = _client_with_spy_session(with_cookie=False, platform=True)
+        try:
+            response = client.post(
+                "/api/v1/platform/auth/refresh",
+                headers={"Origin": _LEGITIMATE_ORIGIN},
+            )
+            assert response.status_code == 204
+            assert spy.calls == []
+        finally:
+            _reset_overrides()
+
+    def test_platform_refresh_rejects_malicious_origin_before_database(self):
+        client, spy = _client_with_spy_session(platform=True)
+        try:
+            response = client.post(
+                "/api/v1/platform/auth/refresh",
+                headers={"Origin": _MALICIOUS_ORIGIN},
+            )
+            assert response.status_code == 403
+            assert spy.calls == []
+        finally:
+            _reset_overrides()
+
+    def test_platform_logout_uses_its_own_cookie(self):
+        client, spy = _client_with_spy_session(platform=True)
+        try:
+            response = client.post(
+                "/api/v1/platform/auth/logout",
+                headers={"Origin": _LEGITIMATE_ORIGIN},
+            )
+            assert response.status_code == 204
+            assert "execute" in spy.calls
+            cookies = response.headers.get_list("set-cookie")
+            assert any("ilya_platform_refresh=" in value for value in cookies)
+            assert all("ilya_refresh=" not in value for value in cookies)
         finally:
             _reset_overrides()

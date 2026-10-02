@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.deps import get_market_principal, get_platform_principal, require_platform_capability
-from app.api.routers.auth import login, platform_login, switch_market
+from app.api.routers.auth import _rotate_refresh_token, login, platform_login, switch_market
 from app.api.routers.markets import VatDecisionRequest, decide_europe_vat
 from app.api.routers.users import _build_market_links, _replace_market_links
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
@@ -118,6 +118,21 @@ def test_platform_login_does_not_require_a_commercial_market():
         stored = db.add.call_args.args[0]
         assert stored.scope == "platform"
         assert stored.active_market is None
+        cookie = response.set_cookie.call_args.kwargs
+        assert cookie["key"] == "ilya_platform_refresh"
+        assert cookie["path"] == "/api/v1/platform/auth"
+    asyncio.run(run())
+
+
+def test_refresh_cookie_cannot_cross_from_market_to_platform_scope():
+    async def run():
+        stored = SimpleNamespace(scope="market")
+        db = AsyncMock()
+        db.execute.return_value = _result(scalar=stored)
+        with pytest.raises(HTTPException) as exc:
+            await _rotate_refresh_token(db, "market-cookie", expected_scope="platform")
+        assert exc.value.status_code == 401
+        db.commit.assert_not_awaited()
     asyncio.run(run())
 
 

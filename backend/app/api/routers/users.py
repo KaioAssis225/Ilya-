@@ -219,7 +219,7 @@ async def list_users(
     sort_dir: Literal["asc", "desc"] = Query(default="asc"),
     market: Literal["BR", "EU"] | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
-    _: User = Depends(_admin_only),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     filters = []
     if market:
@@ -280,7 +280,7 @@ async def list_users(
 async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db_session),
-    _: User = Depends(_admin_only),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     # BUG-03 (Bloco 88): mesma política de complexidade do change-password
     try:
@@ -376,12 +376,29 @@ async def replace_platform_permissions(
     return {"user_id": user_id, "capabilities": sorted(body.capabilities)}
 
 
+@router.get("/{user_id}/platform-permissions")
+async def get_platform_permissions(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    if await db.get(User, user_id) is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    capabilities = (await db.execute(select(
+        UserPlatformPermission.capability
+    ).where(
+        UserPlatformPermission.user_id == user_id,
+        UserPlatformPermission.is_active.is_(True),
+    ))).scalars().all()
+    return {"user_id": user_id, "capabilities": sorted(capabilities)}
+
+
 @router.patch("/{user_id}", response_model=UserRead)
 async def update_user(
     user_id: uuid.UUID,
     body: UserUpdate,
     db: AsyncSession = Depends(get_db_session),
-    current: User = Depends(_admin_only),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -528,7 +545,7 @@ async def reset_password(
     user_id: uuid.UUID,
     body: UserPasswordReset,
     db: AsyncSession = Depends(get_db_session),
-    _: User = Depends(_admin_only),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     # BUG-03 (Bloco 88): reset administrativo também exige senha forte
     try:
@@ -553,9 +570,9 @@ async def reset_password(
 async def delete_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current: User = Depends(_admin_only),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
-    if user_id == current.id:
+    if user_id == platform.user.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Não é possível excluir o próprio usuário.")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()

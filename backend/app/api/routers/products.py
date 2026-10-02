@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
-from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_roles
+from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_platform_capability, require_roles
 from app.models.client import Client
 from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
 from app.models.user import User, UserRole
-from app.models.market import ProductMarket, ProductPrice, PriceList
-from app.core.markets import MarketPrincipal
+from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket
+from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
@@ -47,6 +47,23 @@ router = APIRouter(prefix="/api/v1/products", tags=["products"])
 _ANY = Depends(get_current_user)
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.produtos))
 _ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
+
+
+def _bind_platform_eu_principal(
+    db: AsyncSession, platform: PlatformPrincipal
+) -> MarketPrincipal:
+    """Contexto interno explícito para preparar EU sem conceder sessão comercial."""
+    access = UserMarket(
+        user_id=platform.user.id,
+        market_code="EU",
+        role=UserRole.produtos.value,
+        status="active",
+        can_view_dashboard=False,
+        can_approve_tax=False,
+    )
+    principal = MarketPrincipal(platform.user, MARKETS["EU"], access)
+    principal.bind(db)
+    return principal
 
 
 def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
@@ -160,13 +177,16 @@ async def _to_market_reads(
 
 
 async def _resolve_set_items(
-    db: AsyncSession, items: list, parent_code: str
+    db: AsyncSession, items: list, parent_code: str, market_code: str
 ) -> list[ProductSetItem]:
     codes = list(dict.fromkeys(item.product_code for item in items))
     products = (
         await db.execute(
             select(Product)
-            .where(Product.product_code.in_(codes))
+            .where(
+                Product.market_code == market_code,
+                Product.product_code.in_(codes),
+            )
             .options(
                 load_only(
                     Product.id,
@@ -269,6 +289,7 @@ async def list_products(
     # Entra em `filters`, então vale também para a contagem do X-Total-Count.
     active_market = principal.code
     filters = [
+        Product.market_code == active_market,
         Product.is_active.is_(True),
         exists().where(
             ProductMarket.product_id == Product.id,
@@ -367,6 +388,7 @@ async def get_products_batch(
     products = (
         await db.execute(
             select(Product).where(
+                Product.market_code == principal.code,
                 Product.product_code.in_(codes),
                 Product.is_active.is_(True),
                 exists().where(
@@ -383,22 +405,22 @@ async def get_products_batch(
     return await _to_market_reads(db, ordered, principal, visible_profile, language)
 
 
-@router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
-async def create_product(
+async def _create_product_for_market(
     payload: ProductCreate,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = _ADMIN_VENDEDOR,
-    principal: MarketPrincipal = Depends(get_current_principal),
-):
+    db: AsyncSession,
+    market_code: str,
+) -> Product:
     holder_is_active = (
         await db.execute(
-            select(Product.is_active).where(Product.product_code == payload.product_code)
+            select(Product.is_active)
+            .where(
+                Product.market_code == market_code,
+                Product.product_code == payload.product_code,
+            )
+            .execution_options(skip_market_scope=True)
         )
     ).scalar_one_or_none()
     if holder_is_active is not None:
-        # Opção A (decisão do Alto Comando, 05/08/2026): o código segue
-        # reservado por um produto desativado. Sem dizer isso, o operador vê
-        # "já existe" para um código que não aparece em lugar nenhum.
         detail = (
             f"Código '{payload.product_code}' já existe."
             if holder_is_active
@@ -408,6 +430,7 @@ async def create_product(
             )
         )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
     product_data = payload.model_dump(exclude={
         "optional_ids",
         "set_items",
@@ -416,15 +439,17 @@ async def create_product(
         "description_pt_pt",
         "description_en",
     })
-    product = Product(market_code=principal.code, **product_data)
+    product = Product(market_code=market_code, **product_data)
     product.optionals = await _resolve_optionals(db, payload.optional_ids)
     if payload.is_set:
-        product.set_items = await _resolve_set_items(db, payload.set_items, payload.product_code)
+        product.set_items = await _resolve_set_items(
+            db, payload.set_items, payload.product_code, market_code
+        )
     if _is_conjunto_type(payload.type) and payload.components:
         product.components = await _resolve_components(db, payload.components)
     db.add(product)
     await db.flush()
-    market_code = principal.code
+
     localized_fields = (
         {
             "description_pt_pt": payload.description_pt_pt.strip(),
@@ -444,7 +469,10 @@ async def create_product(
         is_available=True,
         **localized_fields,
     ))
-    lists = (await db.execute(select(PriceList).where(PriceList.market_code == market_code))).scalars().all()
+    lists = (await db.execute(select(PriceList).where(
+        PriceList.market_code == market_code,
+        PriceList.is_active.is_(True),
+    ))).scalars().all()
     amounts = {
         "lojista": payload.price_lojista,
         "corporativo": payload.price_corporativo,
@@ -455,14 +483,32 @@ async def create_product(
     if not required_lists.issubset(available_lists):
         raise HTTPException(
             status_code=422,
-            detail=f"As listas de preços obrigatórias não estão configuradas no mercado {market_code}.",
+            detail=(
+                "As listas de preços obrigatórias não estão configuradas no "
+                f"mercado {market_code}."
+            ),
         )
     for price_list in lists:
         if price_list.code in amounts:
-            db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=amounts[price_list.code]))
+            db.add(ProductPrice(
+                product_id=product.id,
+                price_list_id=price_list.id,
+                amount=amounts[price_list.code],
+            ))
     await db.commit()
     await db.refresh(product)
-    if market_code == "BR":
+    return product
+
+
+@router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+async def create_product(
+    payload: ProductCreate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    product = await _create_product_for_market(payload, db, principal.code)
+    if principal.code == "BR":
         return _to_read(product)
     return (await _to_market_reads(
         db,
@@ -470,6 +516,22 @@ async def create_product(
         principal,
         await _visible_price_profile(db, current_user),
     ))[0]
+
+
+@router.post("/platform/EU", status_code=status.HTTP_201_CREATED)
+async def create_europe_product_before_activation(
+    payload: ProductCreate,
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Cadastra produto EU independente enquanto o mercado segue fechado."""
+    product = await _create_product_for_market(payload, db, "EU")
+    return {
+        "id": product.id,
+        "product_code": product.product_code,
+        "market_code": product.market_code,
+        "vat_status": "pending",
+    }
 
 
 @router.get("/{product_id}", response_model=ProductRead)
@@ -483,6 +545,7 @@ async def get_product(
     result = await db.execute(
         select(Product).where(
             Product.id == product_id,
+            Product.market_code == principal.code,
             Product.is_active.is_(True),
             exists().where(
                 ProductMarket.product_id == Product.id,
@@ -507,6 +570,7 @@ async def update_product(
 ):
     result = await db.execute(select(Product).where(
         Product.id == product_id,
+        Product.market_code == principal.code,
         Product.is_active.is_(True),
         exists().where(
             ProductMarket.product_id == Product.id,
@@ -582,7 +646,9 @@ async def update_product(
             product.optionals = await _resolve_optionals(db, payload.optional_ids)
         if payload.set_items is not None:
             product.set_items = (
-                await _resolve_set_items(db, payload.set_items, product.product_code)
+                await _resolve_set_items(
+                    db, payload.set_items, product.product_code, principal.code
+                )
                 if product.is_set else []
             )
         if payload.components is not None:
@@ -621,7 +687,9 @@ async def update_product(
         product.optionals = await _resolve_optionals(db, optional_ids)
     if set_items_in is not None:
         if product.is_set:
-            product.set_items = await _resolve_set_items(db, set_items_in, product.product_code)
+            product.set_items = await _resolve_set_items(
+                db, set_items_in, product.product_code, principal.code
+            )
         else:
             product.set_items = []
     if components_in is not None:
@@ -646,6 +714,24 @@ async def update_product(
     return _to_read(product)
 
 
+@router.patch("/platform/EU/{product_id}", response_model=ProductRead)
+async def update_europe_product_before_activation(
+    product_id: uuid.UUID,
+    payload: ProductUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Edita produto EU sem criar uma sessão comercial nem habilitar o mercado."""
+    principal = _bind_platform_eu_principal(db, platform)
+    return await update_product(
+        product_id,
+        payload,
+        db=db,
+        current_user=principal.actor,
+        principal=principal,
+    )
+
+
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: uuid.UUID,
@@ -655,6 +741,7 @@ async def delete_product(
 ):
     result = await db.execute(select(Product).where(
         Product.id == product_id,
+        Product.market_code == principal.code,
         Product.is_active.is_(True),
     ))
     product = result.scalar_one_or_none()
@@ -691,6 +778,7 @@ async def upload_photo(
 ):
     result = await db.execute(select(Product).where(
         Product.id == product_id,
+        Product.market_code == principal.code,
         Product.is_active.is_(True),
         exists().where(
             ProductMarket.product_id == Product.id,
@@ -736,3 +824,21 @@ async def upload_photo(
         principal,
         await _visible_price_profile(db, current_user),
     ))[0]
+
+
+@router.post("/platform/EU/{product_id}/upload-photo", response_model=ProductRead)
+async def upload_europe_photo_before_activation(
+    product_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Anexa foto ao produto EU durante a preparação com o mercado fechado."""
+    principal = _bind_platform_eu_principal(db, platform)
+    return await upload_photo(
+        product_id,
+        file,
+        db=db,
+        current_user=principal.actor,
+        principal=principal,
+    )

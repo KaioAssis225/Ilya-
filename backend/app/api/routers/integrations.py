@@ -1,6 +1,6 @@
-"""Endpoints administrativos da integração Ilya -> Ilya Estoque (Outbox).
+"""Endpoints administrativos da outbox global da plataforma.
 
-Duas operações, ambas restritas a admin:
+Duas operações, ambas restritas à capacidade de plataforma ``read_outbox``:
 
 * disparar um evento de teste (`test.ping`) para provar a estrada ponta a ponta;
 * consultar o estado da outbox (contagem por status e últimas linhas).
@@ -13,10 +13,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session, require_roles
+from app.api.deps import get_db_session, require_platform_capability
 from app.core.limiter import limiter
+from app.core.markets import PlatformPrincipal
 from app.models.integration_outbox import OUTBOX_STATUSES, IntegrationOutbox
-from app.models.user import User, UserRole
 from app.schemas.integration import (
     OutboxStatusResponse,
     TestEventRequest,
@@ -25,7 +25,7 @@ from app.services.integration_events import enqueue_event
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
-_ADMIN = Depends(require_roles(UserRole.admin))
+_OUTBOX_READER = Depends(require_platform_capability("read_outbox"))
 
 # Amostra de linhas recentes devolvida pela consulta de status.
 _RECENT_LIMIT = 20
@@ -38,7 +38,7 @@ async def enqueue_test_event(
     response: Response,
     payload: TestEventRequest | None = None,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = _ADMIN,
+    platform: PlatformPrincipal = _OUTBOX_READER,
 ) -> OutboxStatusResponse:
     """Enfileira um evento `test.ping` na outbox.
 
@@ -49,7 +49,7 @@ async def enqueue_test_event(
     await enqueue_event(
         db,
         "test.ping",
-        {"note": note, "triggered_by": str(current_user.id)},
+        {"note": note, "triggered_by": str(platform.user.id)},
     )
     await db.commit()
     return await _build_status(db)
@@ -61,7 +61,7 @@ async def get_outbox_status(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = _ADMIN,
+    _: PlatformPrincipal = _OUTBOX_READER,
 ) -> OutboxStatusResponse:
     """Contagem de eventos por status e as últimas linhas da outbox."""
     return await _build_status(db)

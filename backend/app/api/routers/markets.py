@@ -16,7 +16,6 @@ from app.api.deps import (
     get_db_session,
     get_platform_principal,
     require_platform_capability,
-    require_roles,
 )
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.core.uploads import read_upload_limited
@@ -32,11 +31,8 @@ from app.models.market import (
     VAT_SOURCE_IMPORT,
 )
 from app.models.product import Product
-from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/api/v1/markets", tags=["markets"])
-_ADMIN = Depends(require_roles(UserRole.admin))
-_IMPORT = Depends(require_roles(UserRole.admin, UserRole.cadastros))
 _EU_LISTS = ("lojista", "corporativo", "pvp")
 
 
@@ -112,7 +108,7 @@ def _parse_required_vat(raw: str | None) -> Decimal:
 @router.get("")
 async def list_markets(
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    _: PlatformPrincipal = Depends(get_platform_principal),
 ):
     return (await db.execute(select(Market).order_by(Market.code))).scalars().all()
 
@@ -145,9 +141,8 @@ async def activate_europe(
         .group_by(ProductPrice.product_id)
         .having(func.count(ProductPrice.price_list_id) == 3)
     )).all()
-    # IVA sem aprovação humana não fatura. Enquanto o fluxo de aprovação (RBAC
-    # P2) não existe, nenhum SKU chega a `approved` e a Europa fica — de
-    # propósito — não habilitável. Aprovação manual continua pendente.
+    # IVA sem aprovação humana não fatura. A ativação só aceita taxas que
+    # passaram pelo fluxo nominal de aprovação fiscal do mercado EU.
     unapproved_vat = (await db.execute(
         select(func.count()).select_from(ProductMarket)
         .join(Product, Product.id == ProductMarket.product_id)
@@ -158,6 +153,8 @@ async def activate_europe(
             or_(ProductMarket.vat_status != VAT_APPROVED, ProductMarket.vat_rate.is_(None)),
         )
     )).scalar_one()
+    if available == 0:
+        raise HTTPException(409, "Europa não pode ser ativada sem ao menos um SKU disponível.")
     if len(priced) != available:
         raise HTTPException(409, "Europa não pode ser ativada: há SKU disponível sem as três listas de preço.")
     if unapproved_vat:
@@ -213,7 +210,7 @@ async def decide_europe_vat_before_activation(
 @router.get("/price-comparison")
 async def price_comparison(
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ADMIN,
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     rows = (await db.execute(
         select(Product.product_code, PriceList.market_code, PriceList.code, PriceList.currency, ProductPrice.amount)
@@ -231,14 +228,15 @@ async def price_comparison(
 async def import_europe_catalog(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
-    _: User = _IMPORT,
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
-    """Importação atômica do subconjunto europeu.
+    """Importação atômica sobre produtos EU já cadastrados manualmente.
 
     Colunas: product_code, lojista, corporativo, pvp, vat_rate e opcionalmente
     is_available, description_pt_pt e description_en. O vat_rate é obrigatório e
     explícito por linha (inclusive 0) — não há herança do IPI do grupo do Ilya.
-    Toda taxa importada nasce `pending` e limpa qualquer aprovação anterior. A
+    A importação nunca cria ou copia um produto BR. Toda taxa importada nasce
+    `pending` e limpa qualquer aprovação anterior. A
     moeda não é aceita do arquivo: as listas EU são sempre EUR.
     """
     raw = await read_upload_limited(file, 10 * 1024 * 1024, max_size_label="10MB")
@@ -278,7 +276,11 @@ async def import_europe_catalog(
         })
     products = (await db.execute(
         select(Product.id, Product.product_code)
-        .where(Product.product_code.in_(seen))
+        .where(
+            Product.market_code == "EU",
+            Product.product_code.in_(seen),
+        )
+        .execution_options(skip_market_scope=True)
     )).all()
     product_ids = {sku: product_id for product_id, sku in products}
     missing = sorted(seen - set(product_ids))

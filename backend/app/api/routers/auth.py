@@ -60,8 +60,10 @@ from app.schemas.auth import (
 
 logger = logging.getLogger("ilya.auth")
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+platform_router = APIRouter(prefix="/api/v1/platform/auth", tags=["platform-auth"])
 
 _COOKIE_NAME = "ilya_refresh"
+_PLATFORM_COOKIE_NAME = "ilya_platform_refresh"
 _COOKIE_MAX_AGE = settings.REFRESH_TOKEN_TTL_DAYS * 86400
 _LOGIN_LOCK_THRESHOLD = 5
 _LOGIN_LOCK_MINUTES = 15
@@ -100,9 +102,12 @@ def _anonymize_user_fields(user: User) -> None:
     user.auth_version += 1
 
 
-def _set_refresh_cookie(response: Response, token: str) -> None:
+def _set_refresh_cookie(
+    response: Response, token: str, *, scope: str = "market"
+) -> None:
+    platform = scope == "platform"
     response.set_cookie(
-        key=_COOKIE_NAME,
+        key=_PLATFORM_COOKIE_NAME if platform else _COOKIE_NAME,
         value=token,
         httponly=True,
         # SameSite=None é obrigatório para o cookie ser enviado em requisições
@@ -113,17 +118,20 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         samesite="none" if not settings.DEBUG else "lax",
         secure=not settings.DEBUG,
         max_age=_COOKIE_MAX_AGE,
-        path="/api/v1/auth",
+        path="/api/v1/platform/auth" if platform else "/api/v1/auth",
     )
 
 
-def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(
-        key=_COOKIE_NAME,
-        path="/api/v1/auth",
-        samesite="none" if not settings.DEBUG else "lax",
-        secure=not settings.DEBUG,
-    )
+def _clear_refresh_cookie(response: Response, *, scope: str | None = None) -> None:
+    scopes = (scope,) if scope else ("market", "platform")
+    for cookie_scope in scopes:
+        platform = cookie_scope == "platform"
+        response.delete_cookie(
+            key=_PLATFORM_COOKIE_NAME if platform else _COOKIE_NAME,
+            path="/api/v1/platform/auth" if platform else "/api/v1/auth",
+            samesite="none" if not settings.DEBUG else "lax",
+            secure=not settings.DEBUG,
+        )
 
 
 @router.post("/login", response_model=AccessTokenResponse)
@@ -214,66 +222,55 @@ async def login(
     return AccessTokenResponse(access_token=access_token)
 
 
-@router.post("/refresh", response_model=AccessTokenResponse)
-@limiter.limit(settings.RATE_LIMIT_REFRESH, key_func=refresh_rate_limit_key)
-async def refresh(
-    request: Request,
-    response: Response,
-    db: AsyncSession = Depends(get_db_session),
-    refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
-    _origin_guard: None = Depends(require_trusted_cookie_origin),
-):
+async def _rotate_refresh_token(
+    db: AsyncSession,
+    raw_token: str,
+    *,
+    expected_scope: str,
+) -> tuple[str, str]:
+    """Rotaciona uma família sem permitir que um cookie atravesse contextos."""
     invalid_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Refresh token inválido ou expirado.",
     )
-    if not refresh_token:
-        # Ausência de cookie representa uma sessão anônima normal, não uma
-        # tentativa inválida. O 204 evita um erro de rede no console sem
-        # revelar qualquer informação de sessão.
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    token_hash = hash_refresh_token(refresh_token)
-    result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash,
-        ).with_for_update()
-    )
-    stored = result.scalar_one_or_none()
-    if not stored:
+    stored = (await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == hash_refresh_token(raw_token))
+        .with_for_update()
+    )).scalar_one_or_none()
+    if stored is None or stored.scope != expected_scope:
         raise invalid_exc
 
+    now = datetime.now(timezone.utc)
     if stored.revoked or stored.used_at is not None:
         await db.execute(
             update(RefreshToken)
             .where(RefreshToken.family_id == stored.family_id)
-            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+            .values(revoked=True, revoked_at=now)
         )
         await db.commit()
         logger.warning(
-            "Reutilização de refresh token detectada; família revogada: user_id=%s family_id=%s",
+            "Reutilização de refresh token detectada; família revogada: "
+            "user_id=%s family_id=%s",
             stored.user_id,
             stored.family_id,
         )
         raise invalid_exc
-
-    now = datetime.now(timezone.utc)
     if stored.expires_at.replace(tzinfo=timezone.utc) < now:
         stored.revoked = True
         stored.revoked_at = now
         await db.commit()
         raise invalid_exc
 
-    user_result = await db.execute(
+    user = (await db.execute(
         select(User).where(User.id == stored.user_id, User.is_active.is_(True))
-    )
-    user = user_result.scalar_one_or_none()
-    if not user:
+    )).scalar_one_or_none()
+    if user is None:
         raise invalid_exc
 
     role: str | None = None
     active_market: str | None = None
-    if stored.scope == "market":
+    if expected_scope == "market":
         if stored.active_market is None:
             raise invalid_exc
         try:
@@ -285,7 +282,7 @@ async def refresh(
             raise invalid_exc
         active_market = access.market_code
         role = access.role
-    elif stored.scope == "platform":
+    elif expected_scope == "platform":
         capabilities = set((await db.execute(
             select(UserPlatformPermission.capability).where(
                 UserPlatformPermission.user_id == user.id,
@@ -298,32 +295,51 @@ async def refresh(
             await db.commit()
             raise invalid_exc
     else:
-        raise invalid_exc
+        raise ValueError("Escopo de refresh desconhecido.")
 
     stored.revoked = True
     stored.used_at = now
     stored.revoked_at = now
-    new_refresh_raw = generate_refresh_token()
+    new_raw = generate_refresh_token()
     db.add(RefreshToken(
         user_id=user.id,
-        token_hash=hash_refresh_token(new_refresh_raw),
+        token_hash=hash_refresh_token(new_raw),
         expires_at=refresh_token_expiry(),
         family_id=stored.family_id,
         parent_id=stored.id,
         active_market=active_market,
-        scope=stored.scope,
+        scope=expected_scope,
     ))
     await db.commit()
-
-    _set_refresh_cookie(response, new_refresh_raw)
-    return AccessTokenResponse(
-        access_token=create_access_token(
-            user.id, role, user.auth_version, active_market, scope=stored.scope
-        )
+    access_token = create_access_token(
+        user.id,
+        role,
+        user.auth_version,
+        active_market,
+        scope=expected_scope,
     )
+    return access_token, new_raw
 
 
-@router.post("/platform/login", response_model=AccessTokenResponse)
+@router.post("/refresh", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_REFRESH, key_func=refresh_rate_limit_key)
+async def refresh(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
+):
+    if not refresh_token:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    access_token, new_raw = await _rotate_refresh_token(
+        db, refresh_token, expected_scope="market"
+    )
+    _set_refresh_cookie(response, new_raw, scope="market")
+    return AccessTokenResponse(access_token=access_token)
+
+
+@platform_router.post("/login", response_model=AccessTokenResponse)
 @limiter.limit(settings.RATE_LIMIT_LOGIN)
 async def platform_login(
     request: Request,
@@ -378,13 +394,13 @@ async def platform_login(
         scope="platform",
     ))
     await db.commit()
-    _set_refresh_cookie(response, raw_refresh)
+    _set_refresh_cookie(response, raw_refresh, scope="platform")
     return AccessTokenResponse(access_token=create_access_token(
         user.id, None, user.auth_version, None, scope="platform"
     ))
 
 
-@router.get("/platform/me")
+@platform_router.get("/me")
 async def platform_me(
     principal: PlatformPrincipal = Depends(get_platform_principal),
 ):
@@ -397,6 +413,43 @@ async def platform_me(
     }
 
 
+@platform_router.post("/refresh", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_REFRESH, key_func=refresh_rate_limit_key)
+async def platform_refresh(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    refresh_token: str | None = Cookie(default=None, alias=_PLATFORM_COOKIE_NAME),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
+):
+    if not refresh_token:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    access_token, new_raw = await _rotate_refresh_token(
+        db, refresh_token, expected_scope="platform"
+    )
+    _set_refresh_cookie(response, new_raw, scope="platform")
+    return AccessTokenResponse(access_token=access_token)
+
+
+@platform_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def platform_logout(
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    refresh_token: str | None = Cookie(default=None, alias=_PLATFORM_COOKIE_NAME),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
+):
+    if refresh_token:
+        stored = (await db.execute(select(RefreshToken).where(
+            RefreshToken.token_hash == hash_refresh_token(refresh_token),
+            RefreshToken.scope == "platform",
+        ))).scalar_one_or_none()
+        if stored:
+            stored.revoked = True
+            stored.revoked_at = datetime.now(timezone.utc)
+            await db.commit()
+    _clear_refresh_cookie(response, scope="platform")
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     response: Response,
@@ -406,7 +459,10 @@ async def logout(
 ):
     if refresh_token:
         result = await db.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == hash_refresh_token(refresh_token))
+            select(RefreshToken).where(
+                RefreshToken.token_hash == hash_refresh_token(refresh_token),
+                RefreshToken.scope == "market",
+            )
         )
         stored = result.scalar_one_or_none()
         if stored:
@@ -414,7 +470,7 @@ async def logout(
             stored.revoked_at = datetime.now(timezone.utc)
             await db.commit()
             logger.info("Logout: token revogado")
-    _clear_refresh_cookie(response)
+    _clear_refresh_cookie(response, scope="market")
 
 
 async def _resolve_max_discount(db: AsyncSession, user: User) -> Decimal:
@@ -507,8 +563,9 @@ async def change_password(
 @router.get("/sessions")
 async def list_sessions(
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
     refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
+    platform_refresh_token: str | None = Cookie(default=None, alias=_PLATFORM_COOKIE_NAME),
 ):
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     rows = (
@@ -522,7 +579,8 @@ async def list_sessions(
             .order_by(RefreshToken.created_at.desc())
         )
     ).scalars().all()
-    current_hash = hash_refresh_token(refresh_token) if refresh_token else None
+    current_raw_token = refresh_token or platform_refresh_token
+    current_hash = hash_refresh_token(current_raw_token) if current_raw_token else None
     return [
         {
             "id": str(session.id),
@@ -538,7 +596,7 @@ async def list_sessions(
 async def revoke_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
 ):
     session = (
         await db.execute(
@@ -559,7 +617,7 @@ async def revoke_session(
 async def logout_all(
     response: Response,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
 ):
     user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     user.auth_version += 1

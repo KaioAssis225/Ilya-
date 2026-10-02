@@ -174,6 +174,7 @@ def test_import_grava_pending_e_zera_aprovacao_sem_herdar_ipi():
         # A busca de produtos não junta product_groups: sem herança do IPI.
         products_sql = str(statements[0])
         assert "product_groups" not in products_sql
+        assert "products.market_code" in products_sql
 
         # Os upserts de product_markets gravam pending/import e limpam aprovação.
         inserts = [
@@ -205,6 +206,23 @@ def test_activate_recusa_eu_sem_iva_aprovado():
             await activate_europe(db=db, _=ADMIN)
         assert exc.value.status_code == 409
         assert "IVA" in exc.value.detail
+        db.commit.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_activate_recusa_catalogo_eu_vazio():
+    async def run():
+        db = AsyncMock()
+        db.execute.side_effect = [
+            _CountResult(0),
+            _AllResult([]),
+            _CountResult(0),
+        ]
+        with pytest.raises(HTTPException) as exc:
+            await activate_europe(db=db, _=ADMIN)
+        assert exc.value.status_code == 409
+        assert "SKU" in exc.value.detail
         db.commit.assert_not_called()
 
     asyncio.run(run())
@@ -273,7 +291,7 @@ def test_aprovador_com_taxa_ativa_nao_pode_ser_excluido():
             await delete_user(
                 target_id,
                 db=db,
-                current=SimpleNamespace(id=uuid.uuid4()),
+                platform=SimpleNamespace(user=SimpleNamespace(id=uuid.uuid4())),
             )
 
         assert exc.value.status_code == 409

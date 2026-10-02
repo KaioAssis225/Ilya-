@@ -39,7 +39,10 @@ def refresh_rate_limit_key(request: Request) -> str:
     simultâneas para derrubar a sessão dos demais. O hash do próprio cookie
     isola cada sessão, que é o alvo real do limite. Sem cookie, mantém o IP.
     """
-    cookie = request.cookies.get("ilya_refresh")
+    cookie = (
+        request.cookies.get("ilya_refresh")
+        or request.cookies.get("ilya_platform_refresh")
+    )
     if cookie:
         return f"session:{hashlib.sha256(cookie.encode()).hexdigest()[:32]}"
     return f"ip:{get_remote_address(request)}"
