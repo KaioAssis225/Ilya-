@@ -9,13 +9,24 @@ from fastapi import HTTPException
 from app.api.deps import get_market_principal, get_platform_principal, require_platform_capability
 from app.api.routers.auth import _rotate_refresh_token, login, platform_login, switch_market
 from app.api.routers.markets import VatDecisionRequest, decide_europe_vat
-from app.api.routers.users import _build_market_links, _replace_market_links, create_user
+from app.api.routers.users import (
+    _build_market_links,
+    _replace_market_links,
+    create_user,
+    update_user,
+)
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.core.platform import lock_platform_admin_guard
 from app.core.security import create_access_token, decode_access_token
 from app.models.market import UserMarket
 from app.models.user import User, UserRole
-from app.schemas.auth import LoginRequest, SwitchMarketRequest, UserCreate, UserMarketAccessInput
+from app.schemas.auth import (
+    LoginRequest,
+    SwitchMarketRequest,
+    UserCreate,
+    UserMarketAccessInput,
+    UserUpdate,
+)
 
 
 def _user(**overrides):
@@ -325,4 +336,94 @@ def test_platform_admin_guard_uses_transaction_advisory_lock():
         await lock_platform_admin_guard(db)
         statement = str(db.execute.await_args.args[0])
         assert "pg_advisory_xact_lock" in statement
+    asyncio.run(run())
+
+
+def test_changing_market_link_revokes_only_commercial_refresh_families():
+    """Checkpoint 04: alterar vínculo comercial revoga a sessão de mercado na
+    hora, sem derrubar a sessão de plataforma e sem girar `auth_version`."""
+    async def run():
+        user = _user()
+        br = UserMarket(
+            user_id=user.id,
+            market_code="BR",
+            role="admin",
+            status="active",
+            can_view_dashboard=True,
+        )
+        user.allowed_market_links = [br]
+        version_before = user.auth_version
+        db = AsyncMock()
+        db.execute.return_value = _result(scalar=user)
+        body = UserUpdate(
+            market_accesses=[
+                UserMarketAccessInput(
+                    market_code="BR",
+                    role=UserRole.produtos,
+                    status="active",
+                )
+            ]
+        )
+        with patch(
+            "app.api.routers.users._build_market_links",
+            new=AsyncMock(return_value=[
+                UserMarket(
+                    market_code="BR",
+                    role="produtos",
+                    status="active",
+                    can_view_dashboard=False,
+                )
+            ]),
+        ):
+            await update_user(user_id=user.id, body=body, db=db, _=MagicMock())
+
+        revocations = [
+            str(call.args[0])
+            for call in db.execute.await_args_list
+            if "UPDATE refresh_tokens" in str(call.args[0])
+        ]
+        assert len(revocations) == 1, "o vínculo comercial deve gerar uma revogação"
+        assert "refresh_tokens.scope" in revocations[0], (
+            "a revogação precisa ser restrita ao escopo comercial"
+        )
+        scope_params = [
+            value
+            for call in db.execute.await_args_list
+            if "UPDATE refresh_tokens" in str(call.args[0])
+            for value in call.args[0].compile().params.values()
+        ]
+        assert "market" in scope_params
+        assert "platform" not in scope_params
+        # O papel é relido de user_markets a cada requisição, então o access
+        # token curto não precisa ser invalidado por versão.
+        assert user.auth_version == version_before
+        assert br.role == "produtos"
+        assert br.can_view_dashboard is False
+        db.commit.assert_awaited_once()
+    asyncio.run(run())
+
+
+def test_stale_auth_version_token_is_rejected_after_identity_change():
+    """Checkpoint 04: suspender a identidade gira `auth_version`, e o access
+    token emitido antes disso deixa de autenticar na requisição seguinte."""
+    async def run():
+        user = _user()
+        token = create_access_token(user.id, "admin", user.auth_version, "BR")
+        assert decode_access_token(token)["ver"] == user.auth_version
+
+        user.auth_version += 1  # efeito de suspensão/rename em update_user
+        br = UserMarket(
+            user_id=user.id, market_code="BR", role="admin", status="active"
+        )
+        db = AsyncMock()
+        db.sync_session = SimpleNamespace(info={})
+        db.execute.return_value = _result(scalar=user, scalars=[br])
+        with pytest.raises(HTTPException) as exc:
+            await get_market_principal(token=token, db=db)
+        assert exc.value.status_code == 401
+
+        # Mesma identidade e mesmo vínculo: só a versão do token mudou.
+        fresh = create_access_token(user.id, "admin", user.auth_version, "BR")
+        principal = await get_market_principal(token=fresh, db=db)
+        assert principal.market.code == "BR"
     asyncio.run(run())
