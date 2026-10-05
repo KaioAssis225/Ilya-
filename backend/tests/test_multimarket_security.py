@@ -19,6 +19,7 @@ from app.core.markets import (
 )
 from app.core.security import create_access_token, decode_access_token
 from app.models.client import Client
+from app.models.order import Order
 from app.models.product import Product
 from app.models.user import UserRole
 from app.api.routers.clients import get_client
@@ -266,3 +267,43 @@ def test_orm_market_scope_does_not_reuse_previous_market():
         session.info["active_market"] = "EU"
         assert session.execute(count_query).scalar_one() == 1
         assert session.execute(product_count_query).scalar_one() == 1
+
+
+def test_order_lookup_by_id_is_scoped_even_without_explicit_filter():
+    """GET e DELETE de pedido consultam `select(Order).where(Order.id == ...)`
+    sem mercado explícito (`orders.py:1104,1148`); quem isola é o listener, pelo
+    `active_market` que o `MarketPrincipal` grava na sessão. Este teste prova
+    que um id conhecido de outro mercado não é materializado (IDOR)."""
+    engine = create_engine("sqlite:///:memory:")
+    # Order.id e tipado como UUID; o dialeto SQLite o armazena como hex de 32
+    # caracteres, entao a comparacao precisa do objeto uuid.UUID, nao da string.
+    br_id = uuid.UUID("00000000-0000-0000-0000-000000000011")
+    eu_id = uuid.UUID("00000000-0000-0000-0000-000000000012")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE orders (id CHAR(32) PRIMARY KEY, market_code VARCHAR(2) NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO orders (id, market_code) VALUES "
+            f"('{br_id.hex}', 'BR'), ('{eu_id.hex}', 'EU')"
+        ))
+
+    with Session(engine) as session:
+        # Sessão BR não alcança o pedido EU, mesmo com o id em mãos.
+        session.info["active_market"] = "BR"
+        assert session.execute(
+            select(func.count()).select_from(Order).where(Order.id == eu_id)
+        ).scalar_one() == 0
+        assert session.execute(
+            select(func.count()).select_from(Order).where(Order.id == br_id)
+        ).scalar_one() == 1
+
+        # E o inverso, provando que o critério não ficou preso ao primeiro
+        # mercado compilado.
+        session.info["active_market"] = "EU"
+        assert session.execute(
+            select(func.count()).select_from(Order).where(Order.id == br_id)
+        ).scalar_one() == 0
+        assert session.execute(
+            select(func.count()).select_from(Order).where(Order.id == eu_id)
+        ).scalar_one() == 1
