@@ -52,10 +52,11 @@ As tabelas abaixo não repetem `market_code`; o mercado é determinado pelo pai:
 
 `product_markets` preserva os vínculos históricos EU que existiam antes da
 separação de `products`. Não há FK composta ligando o mercado do vínculo ao
-mercado do produto. O código operacional sempre combina `Product.market_code`
-com `ProductMarket.market_code`; por isso os vínculos EU que apontam para os
-produtos legados BR ficam inertes. Eles não criam produtos EU e não substituem
-o cadastro manual aprovado para o catálogo europeu.
+mercado do produto. As rotas comerciais de catálogo e pedido combinam
+`Product.market_code` com `ProductMarket.market_code`; por isso os vínculos EU
+que apontam para os produtos legados BR não compõem o catálogo comercial EU.
+Eles permanecem visíveis a diagnósticos de plataforma, não criam produtos EU e
+não substituem o cadastro manual aprovado para o catálogo europeu.
 
 ## 3. Identidade, sessão e autoridade
 
@@ -105,6 +106,11 @@ plataforma antes de restaurar o contrato antigo e bloqueia a reversão se já
 existirem códigos ou nomes repetidos entre mercados. Depois do cadastro de
 dados EU independentes, o snapshot criptografado anterior à migration é o
 mecanismo autoritativo de recuperação.
+
+`ops/reconcile_multimarket.sql` é a rotina somente leitura do corte. Ela
+verifica coortes, totais de pedidos, vínculos comerciais, sessões, contadores e
+resíduos legados sem selecionar PII ou valores individuais. Deve rodar na cópia
+restaurada antes do corte e durante a janela de implantação.
 
 ## 6. Compatibilidade da versão anterior
 
