@@ -22,4 +22,6 @@ class Catalog(Base):
 
     __table_args__ = (
         UniqueConstraint("market_code", "name", name="uq_catalogs_market_name"),
+        # Alvo da FK composta de products (market_fk_r7_20261005).
+        UniqueConstraint("id", "market_code", name="uq_catalogs_id_market"),
     )

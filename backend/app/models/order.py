@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import CheckConstraint, DateTime, String, Text, Numeric, Integer, Boolean, ForeignKey, Index, JSON, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, DateTime, String, Text, Numeric, Integer, Boolean, ForeignKey, ForeignKeyConstraint, Index, JSON, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -22,8 +22,9 @@ class Order(Base, TimestampMixin):
     number_owner_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     order_number: Mapped[int] = mapped_column(Integer, nullable=False)
     orc_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), nullable=False)
-    rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id"), nullable=True)
+    # FK composta com market_code em __table_args__.
+    client_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    rep_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     total_value: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     total_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     total_with_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
@@ -44,6 +45,22 @@ class Order(Base, TimestampMixin):
     history: Mapped[list["OrderHistory"]] = relationship("OrderHistory", back_populates="order", cascade="all, delete-orphan", lazy="selectin", order_by="OrderHistory.created_at")
 
     __table_args__ = (
+        # Integridade de mercado no banco (market_fk_r7_20261005): um pedido não
+        # pode apontar para cliente ou representante de outro mercado. O SET NULL
+        # do representante nomeia apenas rep_id no DDL, porque market_code é
+        # NOT NULL; o SQLAlchemy não modela essa lista, então a forma efetiva
+        # está na migration.
+        ForeignKeyConstraint(
+            ["client_id", "market_code"],
+            ["clients.id", "clients.market_code"],
+            name="fk_orders_client_same_market",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["rep_id", "market_code"],
+            ["representatives.id", "representatives.market_code"],
+            name="fk_orders_rep_same_market",
+        ),
         CheckConstraint(
             "NOT (is_finalized AND is_cancelled)",
             name="ck_orders_single_terminal_status",
