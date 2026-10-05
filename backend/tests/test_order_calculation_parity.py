@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.api.routers.orders import (
     _calculate_order_line,
@@ -24,6 +25,8 @@ from app.api.routers.orders import (
     _price_for_profile,
     _resolve_eu_vat,
 )
+from app.core.markets import require_launch_country
+from app.schemas.client import ClientCreate
 
 
 # --- Critério 2: criação e edição produzem o mesmo total -------------------
@@ -181,3 +184,45 @@ def test_capacidade_dos_totais_e_verificada_antes_de_gravar():
     with pytest.raises(HTTPException):
         enorme = Decimal("10") ** 20
         _ensure_total_capacity(enorme, enorme, enorme)
+
+
+# --- Critério 5: endereço e documento conforme o mercado ------------------
+
+def test_uf_usa_sentinela_para_que_eu_nao_precise_de_estado_brasileiro():
+    """`clients.state` é `NOT NULL` no banco, mas UF não existe em Portugal. O
+    schema resolve com a sentinela `--`: o default passa pelo `NOT NULL` e o
+    handler (`clients.py:342`) recusa `--` quando o mercado é BR. Sem a
+    sentinela, cadastrar cliente EU bateria no `NOT NULL` da coluna — foi o que
+    aconteceu ao inserir direto no banco, sem passar pela API."""
+    assert ClientCreate.model_fields["state"].default == "--"
+    assert ClientCreate.model_fields["country"].default == "BR"
+
+    # A UF informada é normalizada para maiúsculas; a sentinela sobrevive.
+    br = ClientCreate(
+        name="Cliente BR", phone="1999", cep="13340600", address="Rua",
+        city="Indaiatuba", state="sp",
+    )
+    assert br.state == "SP"
+    eu = ClientCreate(
+        name="Cliente PT", phone="351", cep="1000-001", address="Rua",
+        city="Lisboa", country="PT",
+    )
+    assert eu.state == "--", "EU não informa UF; a sentinela atravessa o NOT NULL"
+
+    with pytest.raises(ValidationError):
+        ClientCreate(
+            name="UF inválida", phone="1999", cep="13340600", address="Rua",
+            city="Indaiatuba", state="SPX",
+        )
+
+
+def test_pais_do_mercado_eu_fica_restrito_ao_pais_de_lancamento():
+    """BR sempre normaliza para BR, qualquer que seja o país enviado. EU aceita
+    somente o país aprovado para a primeira liberação, então um cliente EU não
+    nasce com `country='BR'` por default — o handler exige o campo explícito
+    (`clients.py:344`)."""
+    assert require_launch_country("BR", "PT") == "BR"
+    assert require_launch_country("EU", " pt ") == "PT"
+    with pytest.raises(HTTPException) as exc:
+        require_launch_country("EU", "ES")
+    assert exc.value.status_code == 422
