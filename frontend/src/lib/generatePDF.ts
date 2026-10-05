@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
 import { formatDimensions } from './measurements'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
+import { resolveOrderPresentation } from './orderPresentation'
 import { isConjuntoType } from './productType'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
@@ -123,9 +124,10 @@ export async function generateOrderPDF(
   catLabel: (code: string) => string = (c) => c,
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
-  const locale = order.locale || (order.market_code === 'EU' ? 'pt-PT' : 'pt-BR')
-  const currency = order.currency || (order.market_code === 'EU' ? 'EUR' : 'BRL')
-  const taxLabel = order.market_code === 'EU' ? 'IVA' : 'IPI'
+  // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
+  // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
+  // do mercado em que o usuário está agora.
+  const { currency, locale, taxLabel } = resolveOrderPresentation(order)
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
