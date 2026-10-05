@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from app.core.addresses import UF_SENTINEL, is_valid_uf
 from app.core.documents import normalize_cpf_cnpj
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -33,8 +34,8 @@ from app.models.optional_category import OptionalCategory
 from app.models.client import Client
 from app.models.representative import Representative
 from app.core.config import settings
-from app.core.markets import MarketPrincipal
-from app.models.market import PriceList, ProductMarket, ProductPrice
+from app.core.markets import MarketPrincipal, require_launch_country
+from app.models.market import BR_MARKET, PriceList, ProductMarket, ProductPrice
 from app.core.uploads import read_upload_limited
 
 logger = logging.getLogger("ilya.import")
@@ -294,10 +295,27 @@ def _document_values(rows: list[dict]) -> list[str]:
     return values
 
 
-def _uf(row: dict) -> str:
+def _uf(row: dict, market_code: str = BR_MARKET) -> str:
+    """UF é obrigatória só no Brasil.
+
+    Fora de BR não existe unidade federativa, mas a coluna é `NOT NULL`: o
+    cadastro pela API resolve com a sentinela `--` (default de
+    `ClientCreate.state`, recusada em BR pelo handler). A importação precisa
+    usar a mesma sentinela — antes, `len(state) != 2` rejeitava a coluna vazia e
+    nenhuma linha do mercado europeu passava.
+    """
     state = (_first(row, "state", "uf", "estado") or "").upper()
-    if len(state) != 2 or not state.isalpha():
-        raise ValueError(f"UF inválida: '{state or '(vazio)'}'. Use 2 letras (ex.: SP).")
+    if market_code != BR_MARKET:
+        if not state or state == UF_SENTINEL:
+            return UF_SENTINEL
+        raise ValueError(
+            f"UF não se aplica ao mercado {market_code}: deixe a coluna vazia e "
+            f"use 'region' para a divisão administrativa."
+        )
+    if not state or state == UF_SENTINEL:
+        raise ValueError("UF é obrigatória no mercado Brasil.")
+    if not is_valid_uf(state):
+        raise ValueError(f"UF inválida: '{state}'. Use uma das 27 siglas oficiais (ex.: SP).")
     return state
 
 
@@ -334,9 +352,12 @@ def _summary(table: str, processed: int, created: int, updated: int, errors: lis
     }
 
 
-def _address_fields(row: dict) -> dict:
+def _address_fields(row: dict, market_code: str = BR_MARKET) -> dict:
     """Extrai e VALIDA os campos de contato (usado por clientes e representantes).
-    Lança ValueError se algo estiver fora do formato."""
+    Lança ValueError se algo estiver fora do formato.
+
+    `market_code` decide a regra de UF: BR exige sigla oficial, os demais
+    mercados usam a sentinela e informam a região em `region`."""
     fields = {
         "name": _bounded(_first(row, "name", "nome"), "name", 255),
         "phone": _bounded(
@@ -359,7 +380,7 @@ def _address_fields(row: dict) -> dict:
             255,
         ),
         "city": _bounded(_first(row, "city", "cidade"), "city", 255),
-        "state": _uf(row),
+        "state": _uf(row, market_code),
     }
     return fields
 
@@ -634,7 +655,7 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
     errors: list[dict] = []
     for i, row in enumerate(rows, start=2):
         try:
-            f = _address_fields(row)
+            f = _address_fields(row, market)
             if f["email"] and f["email"] in duplicate_input_emails:
                 raise ValueError(
                     f"E-mail '{f['email']}' aparece mais de uma vez no CSV."
@@ -662,7 +683,9 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
                 r = Representative(
                     **f,
                     market_code=market,
-                    country="BR" if market == "BR" else (_first(row, "country", "pais") or "").upper(),
+                    # Mesma guarda do cadastro pela API: EU aceita só o país
+                    # aprovado para a primeira liberação, e BR normaliza para BR.
+                    country=require_launch_country(market, _first(row, "country", "pais")),
                     region=_first(row, "region", "regiao") or None,
                     tax_id=_first(row, "tax_id", "vat") or None,
                     created_by_user_id=current_user.id,
@@ -773,7 +796,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
     errors: list[dict] = []
     for i, row in enumerate(rows, start=2):
         try:
-            f = _address_fields(row)
+            f = _address_fields(row, market)
             if f["email"] and f["email"] in duplicate_input_emails:
                 raise ValueError(
                     f"E-mail '{f['email']}' aparece mais de uma vez no CSV."
@@ -833,7 +856,9 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                     price_profile=profile,
                     price_list_id=price_list_ids[profile],
                     market_code=market,
-                    country="BR" if market == "BR" else (_first(row, "country", "pais") or "").upper(),
+                    # Mesma guarda do cadastro pela API: EU aceita só o país
+                    # aprovado para a primeira liberação, e BR normaliza para BR.
+                    country=require_launch_country(market, _first(row, "country", "pais")),
                     region=_first(row, "region", "regiao") or None,
                     tax_id=_first(row, "tax_id", "vat") or None,
                     rep_id=rep_id,
