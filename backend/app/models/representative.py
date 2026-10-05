@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
+from app.core.addresses import br_uf_check_condition
 from app.models.base import Base, TimestampMixin
 
 
@@ -37,7 +38,7 @@ class Representative(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("id", "market_code", name="uq_representatives_id_market"),
         CheckConstraint(
-            "market_code <> 'BR' OR state ~ '^[A-Z]{2}$'",
+            br_uf_check_condition(),  # lista oficial, não só o formato
             name="ck_representatives_state_uf",
         ),
         Index("ix_representatives_name_id", "name", "id"),

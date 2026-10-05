@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import CheckConstraint, DateTime, String, ForeignKey, Numeric, Index, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
+from app.core.addresses import br_uf_check_condition
 from app.models.base import Base, TimestampMixin
 
 
@@ -43,7 +44,9 @@ class Client(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("id", "market_code", name="uq_clients_id_market"),
         CheckConstraint(
-            "market_code <> 'BR' OR state ~ '^[A-Z]{2}$'",
+            # Lista oficial, não só o formato: `XX` passava pelo regex antigo
+            # (uf_whitelist_r8_20261005).
+            br_uf_check_condition(),
             name="ck_clients_state_uf",
         ),
         Index("ix_clients_rep_id", "rep_id"),

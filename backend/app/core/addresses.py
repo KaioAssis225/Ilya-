@@ -26,3 +26,15 @@ BR_STATES = frozenset({
 def is_valid_uf(state: str) -> bool:
     """True para uma das 27 siglas oficiais, já em maiúsculas."""
     return state in BR_STATES
+
+
+def br_uf_check_condition() -> str:
+    """Condição SQL da CheckConstraint de UF, derivada da mesma lista.
+
+    Fora de BR a UF não se aplica e a sentinela atravessa o `NOT NULL`. As
+    siglas são ordenadas para que a condição seja estável entre execuções —
+    um `frozenset` não garante ordem, e uma condição que muda de texto a cada
+    processo faria o Alembic enxergar diferença onde não há.
+    """
+    values = ", ".join(f"'{uf}'" for uf in sorted(BR_STATES))
+    return f"market_code <> 'BR' OR state IN ({values})"
