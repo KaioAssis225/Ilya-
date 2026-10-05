@@ -18,6 +18,19 @@ export function cartStorageKey(userId: string, market: 'BR' | 'EU' = 'BR'): stri
   return `${CART_KEY_PREFIX}:${userId}:${market}`
 }
 
+/**
+ * Chave da fronteira privada (ADR 0002): identidade + mercado ativo.
+ *
+ * `PrivateApp` a usa como `key` do `LocaleProvider` e do
+ * `PrivateSessionBoundary`, então trocar de mercado desmonta a árvore inteira e
+ * descarta cache, mutations e estado local das páginas. Vive aqui, ao lado da
+ * chave do carrinho, porque as duas precisam concordar: um cache novo com o
+ * carrinho antigo mostraria itens do mercado anterior.
+ */
+export function privateScopeKey(userId: string, market: 'BR' | 'EU'): string {
+  return `${userId}:${market}`
+}
+
 /** Remove o formato antigo, que era compartilhado entre todas as contas. */
 export function removeUnsafeLegacyCart(): void {
   localStorage.removeItem(CART_KEY_PREFIX)

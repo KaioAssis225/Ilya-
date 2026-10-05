@@ -7,7 +7,7 @@ import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
 import { useCartQuantities } from './hooks/useCart'
-import { countCartUnits } from './lib/cart'
+import { countCartUnits, privateScopeKey } from './lib/cart'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -279,7 +279,7 @@ export default function PrivateApp() {
   const location = useLocation()
   const { user } = useAuth()
   if (!user) return null
-  const sessionScope = `${user.id}:${user.active_market}`
+  const sessionScope = privateScopeKey(user.id, user.active_market)
 
   return (
     <LocaleProvider key={sessionScope}>
