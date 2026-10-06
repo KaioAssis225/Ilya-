@@ -31,7 +31,12 @@ class AccessTokenResponse(BaseModel):
 
 class UserMarketAccessInput(BaseModel):
     market_code: Literal["BR", "EU"]
-    role: UserRole
+    # Nulo é estado legítimo, não ausência de dado: a R2a deixa `role` nullable
+    # e põe os vínculos legados em `pending` com papel nulo, justamente para que
+    # não concedam acesso antes de revisão nominal. O modelo já permitia
+    # (`Mapped[str | None]`); o schema não, e `/auth/me` estourava 500 ao
+    # serializar a conta com vínculo pendente.
+    role: UserRole | None = None
     status: Literal["pending", "active", "suspended"]
     linked_client_id: uuid.UUID | None = None
     rep_id: uuid.UUID | None = None
