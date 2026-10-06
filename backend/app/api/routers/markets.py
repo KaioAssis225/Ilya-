@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, not_, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.markets import MarketPrincipal, PlatformPrincipal
-from app.core.uploads import read_upload_limited
+from app.core.uploads import copy_upload_to_market, read_upload_limited
 from app.models.market import (
     Market,
     PriceList,
@@ -32,6 +32,7 @@ from app.models.market import (
     VAT_SOURCE_IMPORT,
 )
 from app.models.product import Product
+from app.models.optional_color import OptionalColor
 from app.models.client import Client
 from app.models.representative import Representative
 
@@ -244,6 +245,80 @@ async def deactivate_europe(
     market.is_enabled = False
     await db.commit()
     return {"market": "EU", "enabled": False}
+
+
+# Referência que ainda não mora no bucket europeu. Produtos e opcionais EU
+# copiados do catálogo BR nascem apontando para a foto brasileira; esta rota
+# leva cada arquivo para o bucket do EU e troca a referência.
+_NOT_YET_EU_PHOTO = "object://eu-%"
+
+
+@router.post("/EU/media/sync")
+async def sync_europe_media(
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Copia para o bucket europeu as fotos que produtos e opcionais EU ainda
+    emprestam do catálogo brasileiro.
+
+    Lote pequeno por chamada, para caber no tempo de uma requisição; quem chama
+    repete até `remaining` chegar a zero. Cada item é gravado sozinho, então uma
+    falha no meio não desfaz o que já foi copiado, e repetir é seguro: o que já
+    está no bucket europeu não volta a ser selecionado. A origem nunca é
+    apagada -- ela segue sendo a foto do produto brasileiro.
+    """
+    if not settings.eu_object_storage_configured():
+        raise HTTPException(409, "Bucket de fotos do mercado europeu não configurado.")
+
+    copied = 0
+    failed: list[dict] = []
+    for kind, model, code_column in (
+        ("products", Product, Product.product_code),
+        ("optionals", OptionalColor, OptionalColor.color_name),
+    ):
+        budget = limit - copied - len(failed)
+        if budget <= 0:
+            break
+        rows = (await db.execute(
+            select(model)
+            .where(
+                model.market_code == "EU",
+                model.photo_path.is_not(None),
+                not_(model.photo_path.like(_NOT_YET_EU_PHOTO)),
+            )
+            .order_by(code_column)
+            .limit(budget)
+            .execution_options(skip_market_scope=True)
+        )).scalars().all()
+        for row in rows:
+            label = getattr(row, "product_code", None) or getattr(row, "color_name", "")
+            try:
+                new_path = await copy_upload_to_market(row.photo_path, kind=kind)
+            except Exception as exc:  # um arquivo ruim não interrompe o lote
+                failed.append({
+                    "kind": kind,
+                    "id": str(row.id),
+                    "code": label,
+                    "error": type(exc).__name__,
+                })
+                continue
+            row.photo_path = new_path
+            await db.commit()
+            copied += 1
+
+    remaining = 0
+    for model in (Product, OptionalColor):
+        remaining += (await db.execute(
+            select(func.count()).select_from(model)
+            .where(
+                model.market_code == "EU",
+                model.photo_path.is_not(None),
+                not_(model.photo_path.like(_NOT_YET_EU_PHOTO)),
+            )
+            .execution_options(skip_market_scope=True)
+        )).scalar_one()
+    return {"copied": copied, "failed": failed, "remaining": remaining}
 
 
 @router.put("/EU/products/{product_id}/vat")

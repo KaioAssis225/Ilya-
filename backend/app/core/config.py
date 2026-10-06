@@ -67,6 +67,19 @@ class Settings(BaseSettings):
     OBJECT_STORAGE_REGION: str = "auto"
     OBJECT_STORAGE_ADDRESSING_STYLE: str = "virtual"
 
+    # Bucket próprio do mercado europeu. Fotos de produto e opcional EU vivem
+    # nele, separadas do catálogo brasileiro: trocar ou apagar a foto de um
+    # mercado nunca alcança o arquivo do outro, e extrair um mercado (Bloco 09)
+    # leva os arquivos junto. Vazio = upload EU recusado quando o bucket
+    # principal é de objetos, para não misturar os dois silenciosamente.
+    OBJECT_STORAGE_EU_ENDPOINT: str = ""
+    OBJECT_STORAGE_EU_ACCESS_KEY_ID: str = ""
+    OBJECT_STORAGE_EU_SECRET_ACCESS_KEY: str = ""
+    OBJECT_STORAGE_EU_BUCKET: str = ""
+    OBJECT_STORAGE_EU_REGION: str = "auto"
+    # Vazio herda o estilo do bucket principal: na Railway os dois são iguais.
+    OBJECT_STORAGE_EU_ADDRESSING_STYLE: str = ""
+
     RATE_LIMIT_STORAGE_URI: str = "memory://"
     RATE_LIMIT_DEFAULT: str = "200/minute"
     # Login é anônimo, então o limite é por IP. Numa feira/showroom a equipe
@@ -126,6 +139,21 @@ class Settings(BaseSettings):
             self.OBJECT_STORAGE_SECRET_ACCESS_KEY,
             self.OBJECT_STORAGE_BUCKET,
         )
+        return any(values) and not all(values)
+
+    def _eu_object_storage_values(self) -> tuple[str, str, str, str]:
+        return (
+            self.OBJECT_STORAGE_EU_ENDPOINT,
+            self.OBJECT_STORAGE_EU_ACCESS_KEY_ID,
+            self.OBJECT_STORAGE_EU_SECRET_ACCESS_KEY,
+            self.OBJECT_STORAGE_EU_BUCKET,
+        )
+
+    def eu_object_storage_configured(self) -> bool:
+        return all(self._eu_object_storage_values())
+
+    def eu_object_storage_partially_configured(self) -> bool:
+        values = self._eu_object_storage_values()
         return any(values) and not all(values)
 
 

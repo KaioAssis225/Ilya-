@@ -174,7 +174,9 @@ async def delete_optional(
     old_photo_path = opt.photo_path
     await db.delete(opt)
     await db.commit()
-    await delete_upload(old_photo_path)
+    # Opcional EU ainda não sincronizado aponta para a foto do opcional BR de
+    # origem; `market` impede que a exclusão alcance o arquivo brasileiro.
+    await delete_upload(old_photo_path, market=opt.market_code)
 
 
 @router.post("/{optional_id}/upload-photo", response_model=OptionalColorRead)
@@ -202,7 +204,7 @@ async def upload_photo(
     )
     opt_dir = os.path.join(settings.UPLOAD_DIR, "optionals")
     old_photo_path = opt.photo_path
-    save_path = await persist_upload(content, opt_dir, ext)
+    save_path = await persist_upload(content, opt_dir, ext, market=opt.market_code)
     opt.photo_path = save_path
     try:
         await db.commit()
@@ -210,6 +212,6 @@ async def upload_photo(
         await db.rollback()
         await delete_upload(save_path)
         raise
-    await delete_upload(old_photo_path)
+    await delete_upload(old_photo_path, market=opt.market_code)
     await db.refresh(opt)
     return _to_read(opt)

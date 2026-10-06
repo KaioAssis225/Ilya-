@@ -884,7 +884,9 @@ async def upload_photo(
         max_dimension=settings.MAX_IMAGE_DIMENSION,
     )
     old_photo_path = product.photo_path
-    save_path = await persist_upload(content, settings.UPLOAD_DIR, ext)
+    save_path = await persist_upload(
+        content, settings.UPLOAD_DIR, ext, market=product.market_code
+    )
     product.photo_path = save_path
     try:
         await db.commit()
@@ -892,7 +894,9 @@ async def upload_photo(
         await db.rollback()
         await delete_upload(save_path)
         raise
-    await delete_upload(old_photo_path)
+    # A foto antiga pode ser a do produto BR de origem, ainda não copiada para
+    # o bucket europeu. `market` impede apagar arquivo de outro mercado.
+    await delete_upload(old_photo_path, market=product.market_code)
     await db.refresh(product)
     if principal.code == "BR":
         return _to_read(product)
