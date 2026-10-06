@@ -16,7 +16,7 @@ from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
 from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
 from app.models.retention import LegalHold, RetentionReview
-from app.models.market import Market, UserMarket, PriceList, ProductMarket, ProductPrice, MarketTaxRate, MarketOrderCounter, MarketQuoteCounter
+from app.models.market import Market, UserMarket, PriceList, ProductMarket, ProductPrice, MarketTaxRate, MarketOrderCounter, MarketQuoteCounter, UserPlatformPermission, PLATFORM_CAPABILITIES
 
 __all__ = [
     "Base",
@@ -45,4 +45,5 @@ __all__ = [
     "RetentionReview",
     "Market", "UserMarket", "PriceList", "ProductMarket", "ProductPrice", "MarketTaxRate",
     "MarketOrderCounter", "MarketQuoteCounter",
+    "UserPlatformPermission", "PLATFORM_CAPABILITIES",
 ]

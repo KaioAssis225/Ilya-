@@ -11,7 +11,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -24,7 +23,7 @@ from app.core.request_size import RequestSizeLimitMiddleware
 from app.db.session import AsyncSessionLocal, engine
 from app.models.refresh_token import cleanup_expired_tokens
 from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, catalogs_router, optional_categories_router, users_router, notifications_router, utils_router, import_router, dashboard_router, media_router, integrations_router, privacy_router, markets_router
-from app.api.routers.auth import router as auth_router
+from app.api.routers.auth import platform_router as platform_auth_router, router as auth_router
 
 # ── Logging estruturado ───────────────────────────────────────────────────────
 logging.basicConfig(
@@ -229,17 +228,8 @@ async def add_request_id(request: Request, call_next):
         )
 
 
-class ImmutableStaticFiles(StaticFiles):
-    async def get_response(self, path: str, scope):
-        response = await super().get_response(path, scope)
-        if response.status_code == 200:
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        return response
-
-
-app.mount("/static", ImmutableStaticFiles(directory="app/static"), name="static")
-
 app.include_router(auth_router)
+app.include_router(platform_auth_router)
 app.include_router(users_router)
 app.include_router(products_router)
 app.include_router(clients_router)

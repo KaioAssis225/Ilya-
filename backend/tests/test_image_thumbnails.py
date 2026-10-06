@@ -1,8 +1,15 @@
+import asyncio
 import io
+import time
+from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 
 from botocore.exceptions import ClientError
+from fastapi import HTTPException
 from PIL import Image
+import pytest
 
+from app.api.routers.media import get_media
 from app.core import uploads
 
 
@@ -26,10 +33,55 @@ def test_thumbnail_webp_tem_dimensao_e_volume_reduzidos():
 def test_url_de_thumbnail_e_derivada_sem_alterar_referencia_original():
     reference = "object://products/abc-123.jpg"
 
-    assert uploads.build_photo_url(reference) == "/api/v1/media/products/abc-123.jpg"
-    assert uploads.build_thumbnail_url(reference) == (
-        "/api/v1/media/product-thumbnails/abc-123.jpg.webp"
+    photo_url = uploads.build_photo_url(reference)
+    thumbnail_url = uploads.build_thumbnail_url(reference)
+    assert photo_url is not None and thumbnail_url is not None
+    assert urlparse(photo_url).path == "/api/v1/media/products/abc-123.jpg"
+    assert urlparse(thumbnail_url).path == "/api/v1/media/product-thumbnails/abc-123.jpg.webp"
+    for url, key in (
+        (photo_url, "products/abc-123.jpg"),
+        (thumbnail_url, "product-thumbnails/abc-123.jpg.webp"),
+    ):
+        query = parse_qs(urlparse(url).query)
+        expires = int(query["expires"][0])
+        assert uploads.verify_media_signature(key, expires, query["signature"][0])
+
+
+def test_assinatura_expirada_ou_adulterada_e_rejeitada():
+    expires = int(time.time()) - 1
+    signature = uploads._media_signature("products/foto.jpg", expires)
+
+    assert not uploads.verify_media_signature("products/foto.jpg", expires, signature)
+    assert not uploads.verify_media_signature(
+        "products/outra.jpg",
+        expires + 1000,
+        signature,
     )
+
+
+def test_rota_de_midia_exige_assinatura_valida():
+    async def run():
+        expires = int(time.time()) + 60
+        key = "products/foto.jpg"
+        with patch(
+            "app.api.routers.media.read_media_upload",
+            AsyncMock(return_value=(b"image", "image/jpeg")),
+        ) as reader:
+            with pytest.raises(HTTPException) as exc:
+                await get_media(key, expires, "invalida")
+            assert exc.value.status_code == 403
+            reader.assert_not_awaited()
+
+            response = await get_media(
+                key,
+                expires,
+                uploads._media_signature(key, expires),
+            )
+            assert response.body == b"image"
+            assert response.headers["cache-control"].startswith("private")
+            reader.assert_awaited_once_with(key)
+
+    asyncio.run(run())
 
 
 def test_imagem_legada_gera_thumbnail_sob_demanda(monkeypatch):

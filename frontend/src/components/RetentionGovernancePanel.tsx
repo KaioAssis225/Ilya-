@@ -9,7 +9,7 @@ import {
   UserRoundX,
   X,
 } from 'lucide-react'
-import api from '../lib/api'
+import api from '../lib/platformApi'
 
 type HoldSubjectType = 'client' | 'representative' | 'order'
 type CandidateSubjectType =

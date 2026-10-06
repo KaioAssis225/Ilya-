@@ -48,15 +48,15 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
 - a trilha não copia senha, token, arquivo exportado ou conteúdo pessoal;
 - anonimização administrativa está disponível para clientes e representantes,
   com desativação de todas as contas ativas vinculadas.
-- legal hold e relatórios `dry-run` estão disponíveis somente para
-  administradores; aprovar um relatório não executa descarte.
-- o painel **Admin → Governança de retenção** permite gerar, revisar, bloquear
+- legal hold e relatórios `dry-run` estão disponíveis somente para identidades
+  com a capacidade global `platform_admin`; aprovar um relatório não executa descarte.
+- o painel **Plataforma → Governança de retenção** permite gerar, revisar, bloquear
   e aprovar as fotografias sem disponibilizar ações destrutivas.
 - clientes, representantes e pedidos possuem marcos canônicos de ciclo de vida;
   a simulação não depende mais de timestamps técnicos para registros encerrados.
 - o encerramento administrativo do representante exige senha e justificativa,
   desativa os acessos vinculados e revoga seus refresh tokens.
-- o registro estruturado de incidentes fica restrito ao administrador, conserva
+- o registro estruturado de incidentes fica restrito ao administrador de plataforma, conserva
   os campos regulatórios mínimos por pelo menos cinco anos e não oferece
   exclusão pela API.
 - a simulação de retenção cobre dez categorias, incluindo notificações, convites

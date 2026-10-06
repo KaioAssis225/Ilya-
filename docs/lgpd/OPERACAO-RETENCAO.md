@@ -27,7 +27,7 @@ outros dados pessoais desnecessários para o campo livre.
 
 ## Simulação (`dry-run`)
 
-O endpoint administrativo `POST /api/v1/privacy/retention-reviews/dry-run`
+O endpoint de plataforma `POST /api/v1/privacy/retention-reviews/dry-run`
 gera uma fotografia auditável:
 
 | Categoria | Prazo | Referência canônica | Ação apenas proposta |
@@ -53,7 +53,8 @@ separadamente. Holds de cliente/representante são herdados pelos pedidos.
 
 ## Aprovação
 
-O administrador pode aprovar uma fotografia mediante confirmação da senha. A
+O administrador de plataforma pode aprovar uma fotografia mediante confirmação
+da senha. A
 aprovação:
 
 - registra autor, data, política, quantidade e identificador de correlação;
@@ -63,9 +64,9 @@ aprovação:
 
 Não existe endpoint de `execute` nem método `DELETE` no módulo de retenção.
 
-## Interface administrativa
+## Interface de plataforma
 
-A seção **Admin → Governança de retenção** permite:
+A seção **Plataforma → Governança de retenção** exige `platform_admin` e permite:
 
 - gerar a simulação completa;
 - comparar registros vencidos, bloqueados e candidatos por categoria;

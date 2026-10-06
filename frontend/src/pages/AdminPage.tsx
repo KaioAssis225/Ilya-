@@ -127,7 +127,8 @@ export default function AdminPage() {
   }
 
   function openEdit(u: UserRead) {
-    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: u.role, rep_id: u.rep_id, is_active: u.is_active, can_view_dashboard: u.can_view_dashboard, home_market: u.home_market, allowed_markets: u.allowed_markets })
+    const homeAccess = u.market_accesses.find(access => access.market_code === u.home_market)
+    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: homeAccess?.role ?? u.role, rep_id: homeAccess?.rep_id ?? u.rep_id, is_active: u.is_active, can_view_dashboard: homeAccess?.can_view_dashboard ?? u.can_view_dashboard, home_market: u.home_market, allowed_markets: u.allowed_markets, market_accesses: u.market_accesses })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })
@@ -348,7 +349,7 @@ export default function AdminPage() {
                   <div className="flex gap-4">
                     {(['BR', 'EU'] as const).map(code => (
                       <label key={code} className="flex min-h-11 items-center gap-2 text-sm text-ink">
-                        <input type="checkbox" className="h-4 w-4 accent-gold" checked={form.allowed_markets.includes(code)} onChange={event => {
+                        <input type="checkbox" className="h-4 w-4 accent-gold" checked={form.allowed_markets.includes(code)} disabled={code === form.home_market} onChange={event => {
                           const allowed = event.target.checked ? [...form.allowed_markets, code] : form.allowed_markets.filter(item => item !== code)
                           setForm({ ...form, allowed_markets: allowed.length ? allowed : [form.home_market] })
                         }} />
@@ -444,7 +445,7 @@ export default function AdminPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs text-muted">Perfil</span>
+                  <span className="text-xs text-muted">Perfil no mercado principal</span>
                   <select className="input" value={editForm.role ?? 'vendedor'} onChange={e => {
                     const role = e.target.value as UserUpdate['role']
                     setEditForm({ ...editForm, role, rep_id: role === 'representante' ? editForm.rep_id : null })
@@ -478,7 +479,7 @@ export default function AdminPage() {
                   <div className="flex gap-4">
                     {(['BR', 'EU'] as const).map(code => (
                       <label key={code} className="flex min-h-11 items-center gap-2 text-sm text-ink">
-                        <input type="checkbox" className="h-4 w-4 accent-gold" checked={(editForm.allowed_markets ?? []).includes(code)} onChange={event => {
+                        <input type="checkbox" className="h-4 w-4 accent-gold" checked={(editForm.allowed_markets ?? []).includes(code)} disabled={code === editForm.home_market} onChange={event => {
                           const current = editForm.allowed_markets ?? []
                           const allowed = event.target.checked ? [...current, code] : current.filter(item => item !== code)
                           setEditForm({ ...editForm, allowed_markets: allowed })
@@ -491,7 +492,15 @@ export default function AdminPage() {
                     <span className="text-xs text-muted">Mercado principal</span>
                     <select className="input" value={editForm.home_market ?? 'BR'} onChange={event => {
                       const home = event.target.value as 'BR' | 'EU'
-                      setEditForm({ ...editForm, home_market: home, allowed_markets: Array.from(new Set([...(editForm.allowed_markets ?? []), home])) })
+                      const access = editForm.market_accesses?.find(item => item.market_code === home)
+                      setEditForm({
+                        ...editForm,
+                        home_market: home,
+                        allowed_markets: Array.from(new Set([...(editForm.allowed_markets ?? []), home])),
+                        role: access?.role ?? 'vendedor',
+                        rep_id: access?.rep_id ?? null,
+                        can_view_dashboard: access?.can_view_dashboard ?? false,
+                      })
                     }}><option value="BR">Brasil</option><option value="EU">Europa</option></select>
                   </label>
                 </fieldset>

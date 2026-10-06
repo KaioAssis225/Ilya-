@@ -122,8 +122,9 @@ registro**, inclusive quando o incidente não for comunicado à ANPD ou aos
 titulares. O sistema calcula e bloqueia esse prazo mínimo no momento da
 abertura. Obrigações adicionais ou legal hold podem exigir conservação maior.
 
-O cadastro fica em **Admin → Registro de incidentes LGPD** e não possui endpoint
-de exclusão. Alterações de estado e abertura também geram evento de auditoria.
+O cadastro fica em **Plataforma → Registro de incidentes LGPD** e exige a
+capacidade global `platform_admin`. Não possui endpoint de exclusão. Alterações
+de estado e abertura também geram evento de auditoria.
 
 ## 7. Contatos a preencher antes de produção
 

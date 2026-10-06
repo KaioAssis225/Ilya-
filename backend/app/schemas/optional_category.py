@@ -18,5 +18,6 @@ class OptionalCategoryUpdate(BaseModel):
 
 class OptionalCategoryRead(OptionalCategoryBase):
     id: uuid.UUID
+    market_code: str
 
     model_config = {"from_attributes": True}

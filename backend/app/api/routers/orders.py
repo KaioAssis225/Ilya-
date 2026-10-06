@@ -35,8 +35,8 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
-from app.models.market import ProductMarket, ProductPrice, PriceList, MarketTaxRate
-from app.core.markets import MarketPrincipal
+from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket, VAT_APPROVED
+from app.core.markets import MarketPrincipal, require_launch_country
 from app.schemas.order import OrderCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.core.security import (
@@ -216,12 +216,15 @@ def _decode_order_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 
 async def _load_products_and_types(
-    db: AsyncSession, codes: list[str]
+    db: AsyncSession, codes: list[str], market_code: str
 ) -> tuple[dict[str, Product], dict[str, ProductType]]:
     """Carrega produtos e seus tipos em 2 queries (evita N+1 por item — V-B1)."""
     products = (await db.execute(
         select(Product)
-        .where(Product.product_code.in_(codes))
+        .where(
+            Product.market_code == market_code,
+            Product.product_code.in_(codes),
+        )
         .options(
             load_only(
                 Product.id,
@@ -246,7 +249,10 @@ async def _load_products_and_types(
     type_names = {p.type for p in products}
     types = (await db.execute(
         select(ProductType)
-        .where(ProductType.name.in_(type_names))
+        .where(
+            ProductType.name.in_(type_names),
+            ProductType.market_code == market_code,
+        )
         .options(selectinload(ProductType.group))
     )).scalars().all() if type_names else []
     type_map = {t.name: t for t in types}
@@ -274,6 +280,26 @@ def _resolve_max_discount(
     return _HUNDRED  # admin / produtos
 
 
+def _resolve_eu_vat(
+    product_code: str,
+    vat_rate: Decimal | None,
+    vat_status: str | None,
+) -> Decimal:
+    """IVA faturável de Portugal: só taxa aprovada por uma pessoa conta.
+
+    Sem herança do IPI do grupo e sem fallback para zero — se o SKU não tem
+    `vat_status == approved` com uma taxa definida, o pedido é recusado. Como o
+    aprovação nominal é gravada por produto e continua sendo verificada em toda
+    criação ou recálculo de pedido, mesmo depois de o mercado EU ser ativado.
+    """
+    if vat_status != VAT_APPROVED or vat_rate is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Produto '{product_code}' não possui IVA aprovado para o mercado europeu.",
+        )
+    return _decimal(vat_rate)
+
+
 def _validate_discount(
     discount: Decimal | float,
     max_discount: Decimal | float,
@@ -286,6 +312,34 @@ def _validate_discount(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Desconto de {discount_value}% no item '{product_code}' excede o limite permitido ({max_discount_value}%) para o seu nível de acesso.",
         )
+
+
+def _calculate_order_line(
+    *,
+    unit_price: Decimal | float,
+    qty: int,
+    discount: Decimal | float,
+    max_discount: Decimal | float,
+    product_code: str,
+    tax_rate: Decimal | float,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
+    """Calcula a linha financeira usada igualmente na criação e na edição."""
+    rounded_unit_price = _money(unit_price)
+    decimal_discount = _decimal(discount)
+    _validate_discount(decimal_discount, max_discount, product_code)
+    effective_price = (
+        rounded_unit_price * (_HUNDRED - decimal_discount) / _HUNDRED
+    )
+    subtotal = _money(_decimal(qty) * effective_price)
+    decimal_tax_rate = _decimal(tax_rate)
+    tax_value = _money(subtotal * decimal_tax_rate / _HUNDRED)
+    return (
+        rounded_unit_price,
+        decimal_discount,
+        subtotal,
+        decimal_tax_rate,
+        tax_value,
+    )
 
 
 async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
@@ -343,9 +397,13 @@ async def create_order(
         # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para este cliente.")
 
-    client = (await db.execute(select(Client).where(Client.id == payload.client_id))).scalar_one_or_none()
+    client = (await db.execute(select(Client).where(
+        Client.id == payload.client_id,
+        Client.market_code == principal.code,
+    ))).scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    require_launch_country(principal.code, client.country)
     if is_client_account(current_user):
         # O vínculo comercial é definido pelo cadastro do cliente; a API não
         # aceita que uma conta de cliente atribua o pedido a outro representante.
@@ -361,14 +419,21 @@ async def create_order(
 
     rep: Representative | None = None
     if payload.rep_id:
-        rep = (await db.execute(select(Representative).where(Representative.id == payload.rep_id))).scalar_one_or_none()
+        rep = (await db.execute(select(Representative).where(
+            Representative.id == payload.rep_id,
+            Representative.market_code == principal.code,
+            Representative.relationship_ended_at.is_(None),
+        ))).scalar_one_or_none()
         if not rep:
             raise HTTPException(status_code=404, detail="Representante não encontrado.")
+        require_launch_country(principal.code, rep.country)
 
     max_discount = _resolve_max_discount(current_user, client, rep)
 
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
-    product_map, type_map = await _load_products_and_types(db, [i.product_code for i in payload.items])
+    product_map, type_map = await _load_products_and_types(
+        db, [i.product_code for i in payload.items], principal.code
+    )
     market_code = principal.code
     context = principal.market
     price_list = (await db.execute(
@@ -398,6 +463,7 @@ async def create_order(
         select(
             ProductMarket.product_id,
             ProductMarket.vat_rate,
+            ProductMarket.vat_status,
             ProductMarket.description_pt_pt,
             ProductMarket.description_en,
         ).where(
@@ -405,16 +471,13 @@ async def create_order(
             ProductMarket.product_id.in_(product_ids),
         )
     )).all()
-    product_vat = {row.product_id: row.vat_rate for row in product_market_rows}
+    product_vat = {
+        row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
+    }
     localized_descriptions = {
         row.product_id: (row.description_pt_pt, row.description_en)
         for row in product_market_rows
     }
-    type_tax = dict((await db.execute(
-        select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
-            MarketTaxRate.market_code == market_code
-        )
-    )).all())
 
     total = _ZERO
     total_ipi = _ZERO
@@ -427,19 +490,23 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
         if product.id not in price_map:
             raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
-        unit_price = _money(price_map[product.id])
-        discount = _decimal(item_in.discount or _ZERO)
-        _validate_discount(discount, max_discount, product.product_code)
-        effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
-        subtotal = _money(_decimal(item_in.qty) * effective_price)
-        total += subtotal
-
         product_type = type_map.get(product.type)
         if market_code == "EU":
-            ipi_rate = _decimal(product_vat.get(product.id) if product_vat.get(product.id) is not None else type_tax.get(product.type, 0))
+            vat_rate, vat_status = product_vat.get(product.id, (None, None))
+            ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
         else:
             ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
-        ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
+        unit_price, discount, subtotal, ipi_rate, ipi_value = (
+            _calculate_order_line(
+                unit_price=price_map[product.id],
+                qty=item_in.qty,
+                discount=item_in.discount or _ZERO,
+                max_discount=max_discount,
+                product_code=product.product_code,
+                tax_rate=ipi_rate,
+            )
+        )
+        total += subtotal
         total_ipi += ipi_value
 
         localized_description = product.description
@@ -772,6 +839,7 @@ async def update_order(
                 status_code=404,
                 detail="Representante não encontrado.",
             )
+        require_launch_country(principal.code, selected_rep.country)
         if payload.rep_id != order.rep_id:
             order.rep_id = payload.rep_id
             changes.append("representante alterado")
@@ -789,7 +857,7 @@ async def update_order(
         # Valida e calcula TODOS os itens novos ANTES de deletar os antigos (V-B2).
         # Batch-fetch de produtos/tipos elimina N+1 (V-B1).
         product_map, type_map = await _load_products_and_types(
-            db, [i.product_code for i in payload.items]
+            db, [i.product_code for i in payload.items], principal.code
         )
         client = (await db.execute(select(Client).where(
             Client.id == order.client_id,
@@ -802,6 +870,7 @@ async def update_order(
         ))).scalar_one_or_none()
         if not client or not price_list:
             raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
+        require_launch_country(principal.code, client.country)
         product_ids = [product.id for product in product_map.values()]
         available_ids = set((await db.execute(select(ProductMarket.product_id).where(
             ProductMarket.market_code == order.market_code,
@@ -815,20 +884,20 @@ async def update_order(
         product_market_rows = (await db.execute(select(
             ProductMarket.product_id,
             ProductMarket.vat_rate,
+            ProductMarket.vat_status,
             ProductMarket.description_pt_pt,
             ProductMarket.description_en,
         ).where(
             ProductMarket.market_code == order.market_code,
             ProductMarket.product_id.in_(product_ids),
         ))).all()
-        product_vat = {row.product_id: row.vat_rate for row in product_market_rows}
+        product_vat = {
+            row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
+        }
         localized_descriptions = {
             row.product_id: (row.description_pt_pt, row.description_en)
             for row in product_market_rows
         }
-        type_tax = dict((await db.execute(select(MarketTaxRate.product_type, MarketTaxRate.rate).where(
-            MarketTaxRate.market_code == order.market_code
-        ))).all())
         rep = selected_rep
         if rep is None and order.rep_id:
             rep = (
@@ -840,6 +909,8 @@ async def update_order(
                     )
                 )
             ).scalar_one_or_none()
+        if rep:
+            require_launch_country(principal.code, rep.country)
         max_discount = _resolve_max_discount(current_user, client, rep)
 
         total = _ZERO
@@ -853,19 +924,23 @@ async def update_order(
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
             if product.id not in price_map:
                 raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
-            unit_price = _money(price_map[product.id])
-            discount = _decimal(item_in.discount or _ZERO)
-            _validate_discount(discount, max_discount, product.product_code)
-            effective_price = unit_price * (_HUNDRED - discount) / _HUNDRED
-            subtotal = _money(_decimal(item_in.qty) * effective_price)
-            total += subtotal
-
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
-                ipi_rate = _decimal(product_vat.get(product.id) if product_vat.get(product.id) is not None else type_tax.get(product.type, 0))
+                vat_rate, vat_status = product_vat.get(product.id, (None, None))
+                ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
             else:
                 ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
-            ipi_value = _money(subtotal * ipi_rate / _HUNDRED)
+            unit_price, discount, subtotal, ipi_rate, ipi_value = (
+                _calculate_order_line(
+                    unit_price=price_map[product.id],
+                    qty=item_in.qty,
+                    discount=item_in.discount or _ZERO,
+                    max_discount=max_discount,
+                    product_code=product.product_code,
+                    tax_rate=ipi_rate,
+                )
+            )
+            total += subtotal
             total_ipi += ipi_value
 
             localized_description = product.description
@@ -1148,7 +1223,17 @@ async def generate_sign_token(
     url = f"/sign-contract#{token}"
 
     client_user = (await db.execute(
-        select(User).where(User.linked_id == order.client_id, User.is_active.is_(True))
+        select(User)
+        .join(UserMarket, UserMarket.user_id == User.id)
+        .where(
+            UserMarket.market_code == order.market_code,
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.status == "active",
+            UserMarket.linked_client_id == order.client_id,
+            User.is_active.is_(True),
+        )
+        .order_by(User.id)
+        .limit(1)
     )).scalar_one_or_none()
 
     if client_user:
@@ -1295,10 +1380,17 @@ async def notify_client(
     if _representative_cannot_access_order(current_user, order):
         raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     client_user = (await db.execute(
-        select(User).where(
-            User.linked_id == order.client_id,
+        select(User)
+        .join(UserMarket, UserMarket.user_id == User.id)
+        .where(
+            UserMarket.market_code == order.market_code,
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.status == "active",
+            UserMarket.linked_client_id == order.client_id,
             User.is_active.is_(True),
         )
+        .order_by(User.id)
+        .limit(1)
     )).scalar_one_or_none()
     if not client_user:
         raise HTTPException(status_code=404, detail="Cliente não possui conta ativa no sistema.")

@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from app.core.addresses import UF_SENTINEL, is_valid_uf
 from app.core.documents import normalize_cpf_cnpj
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -29,11 +30,12 @@ from app.models.product_type import ProductType
 from app.models.product_group import ProductGroup
 from app.models.catalog import Catalog
 from app.models.optional_color import OptionalColor, product_optionals
+from app.models.optional_category import OptionalCategory
 from app.models.client import Client
 from app.models.representative import Representative
 from app.core.config import settings
-from app.core.markets import MarketPrincipal
-from app.models.market import PriceList, ProductMarket, ProductPrice
+from app.core.markets import MarketPrincipal, require_launch_country
+from app.models.market import BR_MARKET, PriceList, ProductMarket, ProductPrice
 from app.core.uploads import read_upload_limited
 
 logger = logging.getLogger("ilya.import")
@@ -293,10 +295,27 @@ def _document_values(rows: list[dict]) -> list[str]:
     return values
 
 
-def _uf(row: dict) -> str:
+def _uf(row: dict, market_code: str = BR_MARKET) -> str:
+    """UF é obrigatória só no Brasil.
+
+    Fora de BR não existe unidade federativa, mas a coluna é `NOT NULL`: o
+    cadastro pela API resolve com a sentinela `--` (default de
+    `ClientCreate.state`, recusada em BR pelo handler). A importação precisa
+    usar a mesma sentinela — antes, `len(state) != 2` rejeitava a coluna vazia e
+    nenhuma linha do mercado europeu passava.
+    """
     state = (_first(row, "state", "uf", "estado") or "").upper()
-    if len(state) != 2 or not state.isalpha():
-        raise ValueError(f"UF inválida: '{state or '(vazio)'}'. Use 2 letras (ex.: SP).")
+    if market_code != BR_MARKET:
+        if not state or state == UF_SENTINEL:
+            return UF_SENTINEL
+        raise ValueError(
+            f"UF não se aplica ao mercado {market_code}: deixe a coluna vazia e "
+            f"use 'region' para a divisão administrativa."
+        )
+    if not state or state == UF_SENTINEL:
+        raise ValueError("UF é obrigatória no mercado Brasil.")
+    if not is_valid_uf(state):
+        raise ValueError(f"UF inválida: '{state}'. Use uma das 27 siglas oficiais (ex.: SP).")
     return state
 
 
@@ -333,9 +352,12 @@ def _summary(table: str, processed: int, created: int, updated: int, errors: lis
     }
 
 
-def _address_fields(row: dict) -> dict:
+def _address_fields(row: dict, market_code: str = BR_MARKET) -> dict:
     """Extrai e VALIDA os campos de contato (usado por clientes e representantes).
-    Lança ValueError se algo estiver fora do formato."""
+    Lança ValueError se algo estiver fora do formato.
+
+    `market_code` decide a regra de UF: BR exige sigla oficial, os demais
+    mercados usam a sentinela e informam a região em `region`."""
     fields = {
         "name": _bounded(_first(row, "name", "nome"), "name", 255),
         "phone": _bounded(
@@ -358,7 +380,7 @@ def _address_fields(row: dict) -> dict:
             255,
         ),
         "city": _bounded(_first(row, "city", "cidade"), "city", 255),
-        "state": _uf(row),
+        "state": _uf(row, market_code),
     }
     return fields
 
@@ -366,7 +388,7 @@ def _address_fields(row: dict) -> dict:
 # ── Cadastros de apoio ─────────────────────────────────────────────────────────
 
 @router.post("/catalogs")
-async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: name. Upsert por name."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -391,7 +413,7 @@ async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depen
             )
             # Só o nome identifica o catálogo: repetido no CSV é no-op, não erro.
             if name not in existing:
-                catalog = Catalog(name=name)
+                catalog = Catalog(market_code=principal.code, name=name)
                 db.add(catalog)
                 existing[name] = catalog
                 created += 1
@@ -451,7 +473,7 @@ async def import_product_groups(file: UploadFile = File(...), db: AsyncSession =
 
 
 @router.post("/product-types")
-async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: name, group (nome do grupo → FK). Upsert por name."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -498,6 +520,8 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
             )
             group_id = None
             if group_name:
+                if principal.code == "EU":
+                    raise ValueError("Tipos EU não podem herdar grupo fiscal brasileiro.")
                 grp = groups.get(group_name)
                 if not grp:
                     raise ValueError(f"Grupo '{group_name}' não encontrado. Importe os grupos primeiro.")
@@ -507,7 +531,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
                 t.group_id = group_id
                 is_update = True
             else:
-                t = ProductType(name=name, group_id=group_id)
+                t = ProductType(market_code=principal.code, name=name, group_id=group_id)
                 db.add(t)
                 is_update = False
             existing[name] = t
@@ -520,7 +544,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
 
 
 @router.post("/optionals")
-async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: category (código), color_name. Upsert por (category, color_name)."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -529,6 +553,10 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
         for row in rows
     }
     categories.discard(None)
+    valid_categories = set((await db.execute(select(OptionalCategory.code).where(
+        OptionalCategory.market_code == principal.code,
+        OptionalCategory.code.in_(categories),
+    ))).scalars().all()) if categories else set()
     existing = {
         (o.category, o.color_name): o
         for o in await _load_chunked(
@@ -566,11 +594,15 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
                 "color_name",
                 100,
             )
+            if category not in valid_categories:
+                raise ValueError(
+                    f"Categoria '{category}' não existe no mercado {principal.code}."
+                )
             key = (category, color_name)
             if key in existing:
                 updated += 1  # idempotente
                 continue
-            o = OptionalColor(category=category, color_name=color_name)
+            o = OptionalColor(market_code=principal.code, category=category, color_name=color_name)
             db.add(o)
             existing[key] = o
             created += 1
@@ -623,7 +655,7 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
     errors: list[dict] = []
     for i, row in enumerate(rows, start=2):
         try:
-            f = _address_fields(row)
+            f = _address_fields(row, market)
             if f["email"] and f["email"] in duplicate_input_emails:
                 raise ValueError(
                     f"E-mail '{f['email']}' aparece mais de uma vez no CSV."
@@ -651,7 +683,9 @@ async def import_representatives(file: UploadFile = File(...), db: AsyncSession 
                 r = Representative(
                     **f,
                     market_code=market,
-                    country="BR" if market == "BR" else (_first(row, "country", "pais") or "").upper(),
+                    # Mesma guarda do cadastro pela API: EU aceita só o país
+                    # aprovado para a primeira liberação, e BR normaliza para BR.
+                    country=require_launch_country(market, _first(row, "country", "pais")),
                     region=_first(row, "region", "regiao") or None,
                     tax_id=_first(row, "tax_id", "vat") or None,
                     created_by_user_id=current_user.id,
@@ -762,7 +796,7 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
     errors: list[dict] = []
     for i, row in enumerate(rows, start=2):
         try:
-            f = _address_fields(row)
+            f = _address_fields(row, market)
             if f["email"] and f["email"] in duplicate_input_emails:
                 raise ValueError(
                     f"E-mail '{f['email']}' aparece mais de uma vez no CSV."
@@ -822,7 +856,9 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                     price_profile=profile,
                     price_list_id=price_list_ids[profile],
                     market_code=market,
-                    country="BR" if market == "BR" else (_first(row, "country", "pais") or "").upper(),
+                    # Mesma guarda do cadastro pela API: EU aceita só o país
+                    # aprovado para a primeira liberação, e BR normaliza para BR.
+                    country=require_launch_country(market, _first(row, "country", "pais")),
                     region=_first(row, "region", "regiao") or None,
                     tax_id=_first(row, "tax_id", "vat") or None,
                     rep_id=rep_id,
@@ -865,7 +901,10 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             codes,
             lambda chunk: (
                 select(Product)
-                .where(Product.product_code.in_(chunk))
+                .where(
+                    Product.market_code == principal.code,
+                    Product.product_code.in_(chunk),
+                )
                 .options(
                     noload(Product.optionals),
                     noload(Product.set_items),
@@ -958,7 +997,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
                     setattr(p, k, v)
                 is_update = True
             else:
-                p = Product(product_code=code, **fields)
+                p = Product(market_code=principal.code, product_code=code, **fields)
                 db.add(p)
                 is_update = False
             existing[code] = p
@@ -989,7 +1028,12 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
 
 
 @router.post("/product-optionals")
-async def import_product_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_product_optionals(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    _: object = _ADMIN_CADASTROS,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
     """Etapa 2 — Colunas: product_code, category, color_name. Cria os vínculos
     N:N produto↔opcional (idempotente via ON CONFLICT DO NOTHING)."""
     rows = await _load_rows(file)
@@ -1005,7 +1049,10 @@ async def import_product_optionals(file: UploadFile = File(...), db: AsyncSessio
             codes,
             lambda chunk: (
                 select(Product)
-                .where(Product.product_code.in_(chunk))
+                .where(
+                    Product.market_code == principal.code,
+                    Product.product_code.in_(chunk),
+                )
                 .options(
                     load_only(Product.id, Product.product_code),
                     noload(Product.optionals),

@@ -13,6 +13,19 @@ export interface UserRead {
   can_view_dashboard: boolean
   home_market: 'BR' | 'EU'
   allowed_markets: Array<'BR' | 'EU'>
+  market_accesses: UserMarketAccess[]
+}
+
+export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
+
+export interface UserMarketAccess {
+  market_code: 'BR' | 'EU'
+  role: UserRole
+  status: 'pending' | 'active' | 'suspended'
+  linked_client_id: string | null
+  rep_id: string | null
+  can_view_dashboard: boolean
+  can_approve_tax: boolean
 }
 
 export interface UserCreate {
@@ -35,6 +48,7 @@ export interface UserUpdate {
   can_view_dashboard?: boolean
   home_market?: 'BR' | 'EU'
   allowed_markets?: Array<'BR' | 'EU'>
+  market_accesses?: UserMarketAccess[]
 }
 
 export interface UserPageParams {
@@ -67,7 +81,21 @@ export function useUsersPage(params: UserPageParams, enabled = true) {
 export function useCreateUser() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: UserCreate) => api.post('/users', body),
+    mutationFn: (body: UserCreate) => {
+      const { allowed_markets, ...identity } = body
+      return api.post('/users', {
+        ...identity,
+        market_accesses: allowed_markets.map(market_code => ({
+          market_code,
+          role: body.role,
+          status: 'active',
+          linked_client_id: null,
+          rep_id: body.role === 'representante' ? (body.rep_id ?? null) : null,
+          can_view_dashboard: false,
+          can_approve_tax: false,
+        })),
+      })
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 }
@@ -75,8 +103,44 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...body }: UserUpdate & { id: string }) =>
-      api.patch(`/users/${id}`, body),
+    mutationFn: ({ id, ...body }: UserUpdate & { id: string }) => {
+      const { allowed_markets, market_accesses: existingAccesses, ...identity } = body
+      const existingByMarket = new Map(
+        (existingAccesses ?? []).map(access => [access.market_code, access]),
+      )
+      const homeMarket = body.home_market
+      const market_accesses = allowed_markets?.map(market_code => {
+        const existing = existingByMarket.get(market_code)
+        const isEditedHome = market_code === homeMarket
+        const role = isEditedHome
+          ? (body.role ?? existing?.role ?? 'vendedor')
+          : (existing?.role ?? 'vendedor')
+        return {
+          ...(existing ?? {
+            market_code,
+            status: 'active' as const,
+            linked_client_id: null,
+            rep_id: null,
+            can_view_dashboard: false,
+            can_approve_tax: false,
+          }),
+          role,
+          linked_client_id: role === 'cliente'
+            ? (existing?.linked_client_id ?? null)
+            : null,
+          rep_id: role === 'representante'
+            ? (isEditedHome ? (body.rep_id ?? existing?.rep_id ?? null) : (existing?.rep_id ?? null))
+            : null,
+          can_view_dashboard: isEditedHome
+            ? (body.can_view_dashboard ?? existing?.can_view_dashboard ?? false)
+            : (existing?.can_view_dashboard ?? false),
+        }
+      })
+      return api.patch(`/users/${id}`, {
+        ...identity,
+        ...(market_accesses ? { market_accesses } : {}),
+      })
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 }

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, Index, Table, Column, func
+from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
@@ -19,10 +19,14 @@ class Product(Base, TimestampMixin):
     __tablename__ = "products"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    product_code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    market_code: Mapped[str] = mapped_column(
+        ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR"
+    )
+    product_code: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
-    catalog_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalogs.id"), nullable=True, index=True)
+    # FK composta com market_code em __table_args__.
+    catalog_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
@@ -56,6 +60,15 @@ class Product(Base, TimestampMixin):
     )
 
     __table_args__ = (
+        # Produto e catálogo precisam ser do mesmo mercado
+        # (market_fk_r7_20261005). O SET NULL nomeia apenas catalog_id no DDL.
+        ForeignKeyConstraint(
+            ["catalog_id", "market_code"],
+            ["catalogs.id", "catalogs.market_code"],
+            name="fk_products_catalog_same_market",
+        ),
+        UniqueConstraint("market_code", "product_code", name="uq_products_market_code"),
+        Index("ix_products_market_id", "market_code", "id"),
         Index(
             "ix_products_description_prefix_id",
             func.left(description, 512),

@@ -9,6 +9,22 @@ def test_openapi_schema_can_be_generated_without_unresolved_annotations():
     assert "TestEventRequest" in schema["components"]["schemas"]
 
 
+def test_openapi_exposes_separate_platform_session_endpoints():
+    schema = app.openapi()
+    assert "/api/v1/platform/auth/login" in schema["paths"]
+    assert "/api/v1/platform/auth/refresh" in schema["paths"]
+    assert "/api/v1/platform/auth/logout" in schema["paths"]
+    assert "/api/v1/platform/auth/me" in schema["paths"]
+
+
+def test_openapi_exposes_platform_preparation_and_access_management():
+    schema = app.openapi()
+    assert "/api/v1/products/platform/EU" in schema["paths"]
+    assert "/api/v1/products/platform/EU/{product_id}" in schema["paths"]
+    assert "/api/v1/products/platform/EU/{product_id}/upload-photo" in schema["paths"]
+    assert "/api/v1/users/{user_id}/platform-permissions" in schema["paths"]
+
+
 def test_openapi_http_endpoint_is_disabled_outside_debug_mode():
     if not settings.DEBUG:
         assert app.openapi_url is None

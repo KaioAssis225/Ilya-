@@ -300,7 +300,7 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
         <label className="flex flex-col gap-1"><span className="text-xs text-muted">Estado *</span><select className="input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required><option value="">UF</option>{ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
       ) : (
         <>
-          <label className="flex flex-col gap-1"><span className="text-xs text-muted">País *</span><input className="input" value={form.country ?? ''} onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase().slice(0, 2), state: '--' })} placeholder="PT" minLength={2} maxLength={2} required /></label>
+          <label className="flex flex-col gap-1"><span className="text-xs text-muted">País da primeira liberação</span><input className="input" value="PT" readOnly aria-readonly="true" /></label>
           <label className="col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">Região</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} maxLength={120} /></label>
         </>
       )}
@@ -1754,7 +1754,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
 // ── CLIENTES / REPRESENTANTES ─────────────────────────────────────────────────
 
-const emptyAddress = (market: 'BR' | 'EU'): ClientCreate => ({ name: '', phone: '', email: '', cpf_cnpj: '', tax_id: '', country: market === 'BR' ? 'BR' : '', region: '', cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--', price_profile: 'lojista' })
+const emptyAddress = (market: 'BR' | 'EU'): ClientCreate => ({ name: '', phone: '', email: '', cpf_cnpj: '', tax_id: '', country: market === 'BR' ? 'BR' : 'PT', region: '', cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--', price_profile: 'lojista' })
 
 function PeopleTab<T extends Client | Representative>({
   label, entityType, onCreate, onUpdate, onDelete, isPending, color, page, onPage,

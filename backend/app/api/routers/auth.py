@@ -6,11 +6,19 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select, update
 
-from app.api.deps import get_db_session, get_authenticated_user, get_market_principal, get_current_user, is_client_account
+from app.api.deps import (
+    get_db_session,
+    get_authenticated_user,
+    get_market_principal,
+    get_platform_principal,
+    get_current_user,
+    is_client_account,
+)
 from app.core.limiter import limiter, refresh_rate_limit_key
 from app.core.lifecycle import touch_client_activity
 from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.privacy_audit import record_privacy_event
+from app.core.platform import lock_platform_admin_guard
 from app.core.security import (
     verify_password,
     dummy_verify,
@@ -28,8 +36,15 @@ from app.models.user import User, UserRole
 from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative, anonymize_representative_fields
 from app.models.refresh_token import RefreshToken
-from app.core.markets import MarketPrincipal, allowed_markets, require_allowed_market
+from app.core.markets import (
+    MarketPrincipal,
+    PlatformPrincipal,
+    allowed_market_accesses,
+    allowed_markets,
+    require_market_access,
+)
 from app.models.notification import Notification
+from app.models.market import ProductMarket, UserPlatformPermission, VAT_APPROVED
 from app.models.order import Order
 from app.models.order_history import OrderHistory
 from app.models.privacy_event import PrivacyEvent
@@ -45,8 +60,10 @@ from app.schemas.auth import (
 
 logger = logging.getLogger("ilya.auth")
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+platform_router = APIRouter(prefix="/api/v1/platform/auth", tags=["platform-auth"])
 
 _COOKIE_NAME = "ilya_refresh"
+_PLATFORM_COOKIE_NAME = "ilya_platform_refresh"
 _COOKIE_MAX_AGE = settings.REFRESH_TOKEN_TTL_DAYS * 86400
 _LOGIN_LOCK_THRESHOLD = 5
 _LOGIN_LOCK_MINUTES = 15
@@ -85,9 +102,12 @@ def _anonymize_user_fields(user: User) -> None:
     user.auth_version += 1
 
 
-def _set_refresh_cookie(response: Response, token: str) -> None:
+def _set_refresh_cookie(
+    response: Response, token: str, *, scope: str = "market"
+) -> None:
+    platform = scope == "platform"
     response.set_cookie(
-        key=_COOKIE_NAME,
+        key=_PLATFORM_COOKIE_NAME if platform else _COOKIE_NAME,
         value=token,
         httponly=True,
         # SameSite=None é obrigatório para o cookie ser enviado em requisições
@@ -98,39 +118,39 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         samesite="none" if not settings.DEBUG else "lax",
         secure=not settings.DEBUG,
         max_age=_COOKIE_MAX_AGE,
-        path="/api/v1/auth",
+        path="/api/v1/platform/auth" if platform else "/api/v1/auth",
     )
 
 
-def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(
-        key=_COOKIE_NAME,
-        path="/api/v1/auth",
-        samesite="none" if not settings.DEBUG else "lax",
-        secure=not settings.DEBUG,
-    )
+def _clear_refresh_cookie(response: Response, *, scope: str | None = None) -> None:
+    scopes = (scope,) if scope else ("market", "platform")
+    for cookie_scope in scopes:
+        platform = cookie_scope == "platform"
+        response.delete_cookie(
+            key=_PLATFORM_COOKIE_NAME if platform else _COOKIE_NAME,
+            path="/api/v1/platform/auth" if platform else "/api/v1/auth",
+            samesite="none" if not settings.DEBUG else "lax",
+            secure=not settings.DEBUG,
+        )
 
 
-@router.post("/login", response_model=AccessTokenResponse)
-@limiter.limit(settings.RATE_LIMIT_LOGIN)
-async def login(
+async def _authenticate_credentials(
     request: Request,
-    response: Response,
     payload: LoginRequest,
-    db: AsyncSession = Depends(get_db_session),
-):
+    db: AsyncSession,
+) -> User:
+    """Aplica uma única política de senha e bloqueio aos dois tipos de sessão."""
     normalized_identifier = payload.identifier.lower()
-    result = await db.execute(
+    user = (await db.execute(
         select(User).where(
             or_(
                 func.lower(User.email) == normalized_identifier,
                 User.username == normalized_identifier,
             )
         )
-    )
-    user = result.scalar_one_or_none()
+    )).scalar_one_or_none()
 
-    if not user or not user.is_active:
+    if user is None or not user.is_active:
         dummy_verify()
         logger.warning(
             "Falha de login: request_id=%s",
@@ -170,10 +190,29 @@ async def login(
 
     user.failed_login_attempts = 0
     user.locked_until = None
+    return user
+
+
+@router.post("/login", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_LOGIN)
+async def login(
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    user = await _authenticate_credentials(request, payload, db)
     logger.info("Login: user_id=%s role=%s", user.id, user.role.value)
 
-    market = await require_allowed_market(db, user, user.home_market)
-    access_token = create_access_token(user.id, user.role.value, user.auth_version, market)
+    accesses = await allowed_market_accesses(db, user)
+    if not accesses:
+        await db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Conta sem acesso comercial ativo.")
+    access = next(
+        (item for item in accesses if item.market_code == user.home_market), accesses[0]
+    )
+    market = access.market_code
+    access_token = create_access_token(user.id, access.role, user.auth_version, market)
     raw_refresh = generate_refresh_token()
     family_id = uuid.uuid4()
     db.add(RefreshToken(
@@ -182,13 +221,113 @@ async def login(
         expires_at=refresh_token_expiry(),
         family_id=family_id,
         active_market=market,
+        scope="market",
     ))
-    if user.role == UserRole.cliente and user.linked_id is not None:
-        await touch_client_activity(db, user.linked_id, now)
+    if access.role == UserRole.cliente.value and access.linked_client_id is not None:
+        await touch_client_activity(db, access.linked_client_id, now)
     await db.commit()
 
     _set_refresh_cookie(response, raw_refresh)
     return AccessTokenResponse(access_token=access_token)
+
+
+async def _rotate_refresh_token(
+    db: AsyncSession,
+    raw_token: str,
+    *,
+    expected_scope: str,
+) -> tuple[str, str]:
+    """Rotaciona uma família sem permitir que um cookie atravesse contextos."""
+    invalid_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Refresh token inválido ou expirado.",
+    )
+    stored = (await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == hash_refresh_token(raw_token))
+        .with_for_update()
+    )).scalar_one_or_none()
+    if stored is None or stored.scope != expected_scope:
+        raise invalid_exc
+
+    now = datetime.now(timezone.utc)
+    if stored.revoked or stored.used_at is not None:
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == stored.family_id)
+            .values(revoked=True, revoked_at=now)
+        )
+        await db.commit()
+        logger.warning(
+            "Reutilização de refresh token detectada; família revogada: "
+            "user_id=%s family_id=%s",
+            stored.user_id,
+            stored.family_id,
+        )
+        raise invalid_exc
+    if stored.expires_at.replace(tzinfo=timezone.utc) < now:
+        stored.revoked = True
+        stored.revoked_at = now
+        await db.commit()
+        raise invalid_exc
+
+    user = (await db.execute(
+        select(User).where(User.id == stored.user_id, User.is_active.is_(True))
+    )).scalar_one_or_none()
+    if user is None:
+        raise invalid_exc
+
+    role: str | None = None
+    active_market: str | None = None
+    if expected_scope == "market":
+        if stored.active_market is None:
+            raise invalid_exc
+        try:
+            access = await require_market_access(db, user, stored.active_market)
+        except HTTPException:
+            stored.revoked = True
+            stored.revoked_at = now
+            await db.commit()
+            raise invalid_exc
+        active_market = access.market_code
+        role = access.role
+    elif expected_scope == "platform":
+        capabilities = set((await db.execute(
+            select(UserPlatformPermission.capability).where(
+                UserPlatformPermission.user_id == user.id,
+                UserPlatformPermission.is_active.is_(True),
+            )
+        )).scalars().all())
+        if not capabilities:
+            stored.revoked = True
+            stored.revoked_at = now
+            await db.commit()
+            raise invalid_exc
+    else:
+        raise ValueError("Escopo de refresh desconhecido.")
+
+    stored.revoked = True
+    stored.used_at = now
+    stored.revoked_at = now
+    new_raw = generate_refresh_token()
+    db.add(RefreshToken(
+        user_id=user.id,
+        token_hash=hash_refresh_token(new_raw),
+        expires_at=refresh_token_expiry(),
+        family_id=stored.family_id,
+        parent_id=stored.id,
+        active_market=active_market,
+        scope=expected_scope,
+    ))
+    await db.commit()
+    access_token = create_access_token(
+        user.id,
+        role,
+        user.auth_version,
+        active_market,
+        scope=expected_scope,
+    )
+    return access_token, new_raw
 
 
 @router.post("/refresh", response_model=AccessTokenResponse)
@@ -200,80 +339,99 @@ async def refresh(
     refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
     _origin_guard: None = Depends(require_trusted_cookie_origin),
 ):
-    invalid_exc = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Refresh token inválido ou expirado.",
-    )
     if not refresh_token:
-        # Ausência de cookie representa uma sessão anônima normal, não uma
-        # tentativa inválida. O 204 evita um erro de rede no console sem
-        # revelar qualquer informação de sessão.
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    token_hash = hash_refresh_token(refresh_token)
-    result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == token_hash,
-        ).with_for_update()
+    access_token, new_raw = await _rotate_refresh_token(
+        db, refresh_token, expected_scope="market"
     )
-    stored = result.scalar_one_or_none()
-    if not stored:
-        raise invalid_exc
+    _set_refresh_cookie(response, new_raw, scope="market")
+    return AccessTokenResponse(access_token=access_token)
 
-    if stored.revoked or stored.used_at is not None:
-        await db.execute(
-            update(RefreshToken)
-            .where(RefreshToken.family_id == stored.family_id)
-            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
-        )
-        await db.commit()
-        logger.warning(
-            "Reutilização de refresh token detectada; família revogada: user_id=%s family_id=%s",
-            stored.user_id,
-            stored.family_id,
-        )
-        raise invalid_exc
 
-    now = datetime.now(timezone.utc)
-    if stored.expires_at.replace(tzinfo=timezone.utc) < now:
-        stored.revoked = True
-        stored.revoked_at = now
-        await db.commit()
-        raise invalid_exc
+@platform_router.post("/login", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_LOGIN)
+async def platform_login(
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Abre uma sessão administrativa sem mercado comercial ativo."""
+    user = await _authenticate_credentials(request, payload, db)
 
-    user_result = await db.execute(
-        select(User).where(User.id == stored.user_id, User.is_active.is_(True))
-    )
-    user = user_result.scalar_one_or_none()
-    if not user:
-        raise invalid_exc
+    has_platform_access = (await db.execute(select(
+        UserPlatformPermission.user_id
+    ).where(
+        UserPlatformPermission.user_id == user.id,
+        UserPlatformPermission.is_active.is_(True),
+    ).limit(1))).scalar_one_or_none()
+    if has_platform_access is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Acesso de plataforma não concedido.")
 
-    try:
-        active_market = await require_allowed_market(db, user, stored.active_market)
-    except HTTPException:
-        stored.revoked = True
-        stored.revoked_at = now
-        await db.commit()
-        raise invalid_exc
-
-    stored.revoked = True
-    stored.used_at = now
-    stored.revoked_at = now
-    new_refresh_raw = generate_refresh_token()
+    raw_refresh = generate_refresh_token()
     db.add(RefreshToken(
         user_id=user.id,
-        token_hash=hash_refresh_token(new_refresh_raw),
+        token_hash=hash_refresh_token(raw_refresh),
         expires_at=refresh_token_expiry(),
-        family_id=stored.family_id,
-        parent_id=stored.id,
-        active_market=active_market,
+        family_id=uuid.uuid4(),
+        active_market=None,
+        scope="platform",
     ))
     await db.commit()
+    _set_refresh_cookie(response, raw_refresh, scope="platform")
+    return AccessTokenResponse(access_token=create_access_token(
+        user.id, None, user.auth_version, None, scope="platform"
+    ))
 
-    _set_refresh_cookie(response, new_refresh_raw)
-    return AccessTokenResponse(
-        access_token=create_access_token(user.id, user.role.value, user.auth_version, active_market)
+
+@platform_router.get("/me")
+async def platform_me(
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+):
+    return {
+        "id": principal.user.id,
+        "email": principal.user.email,
+        "full_name": principal.user.full_name,
+        "scope": "platform",
+        "capabilities": sorted(principal.capabilities),
+    }
+
+
+@platform_router.post("/refresh", response_model=AccessTokenResponse)
+@limiter.limit(settings.RATE_LIMIT_REFRESH, key_func=refresh_rate_limit_key)
+async def platform_refresh(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    refresh_token: str | None = Cookie(default=None, alias=_PLATFORM_COOKIE_NAME),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
+):
+    if not refresh_token:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    access_token, new_raw = await _rotate_refresh_token(
+        db, refresh_token, expected_scope="platform"
     )
+    _set_refresh_cookie(response, new_raw, scope="platform")
+    return AccessTokenResponse(access_token=access_token)
+
+
+@platform_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def platform_logout(
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    refresh_token: str | None = Cookie(default=None, alias=_PLATFORM_COOKIE_NAME),
+    _origin_guard: None = Depends(require_trusted_cookie_origin),
+):
+    if refresh_token:
+        stored = (await db.execute(select(RefreshToken).where(
+            RefreshToken.token_hash == hash_refresh_token(refresh_token),
+            RefreshToken.scope == "platform",
+        ))).scalar_one_or_none()
+        if stored:
+            stored.revoked = True
+            stored.revoked_at = datetime.now(timezone.utc)
+            await db.commit()
+    _clear_refresh_cookie(response, scope="platform")
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -285,7 +443,10 @@ async def logout(
 ):
     if refresh_token:
         result = await db.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == hash_refresh_token(refresh_token))
+            select(RefreshToken).where(
+                RefreshToken.token_hash == hash_refresh_token(refresh_token),
+                RefreshToken.scope == "market",
+            )
         )
         stored = result.scalar_one_or_none()
         if stored:
@@ -293,7 +454,7 @@ async def logout(
             stored.revoked_at = datetime.now(timezone.utc)
             await db.commit()
             logger.info("Logout: token revogado")
-    _clear_refresh_cookie(response)
+    _clear_refresh_cookie(response, scope="market")
 
 
 async def _resolve_max_discount(db: AsyncSession, user: User) -> Decimal:
@@ -312,7 +473,7 @@ async def me(
     db: AsyncSession = Depends(get_db_session),
     principal: MarketPrincipal = Depends(get_market_principal),
 ):
-    current_user = principal.user
+    current_user = principal.actor
     max_discount = await _resolve_max_discount(db, current_user)
     data = UserRead.model_validate(current_user).model_dump()
     data["max_discount"] = max_discount
@@ -333,7 +494,8 @@ async def switch_market(
     """Troca explícita de escopo. O mercado vem da permissão persistida,
     nunca de IP, query string ou cabeçalho fornecido pelo cliente."""
     current_user = principal.user
-    market = await require_allowed_market(db, current_user, body.market)
+    access = await require_market_access(db, current_user, body.market)
+    market = access.market_code
     if not refresh_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão renovável não encontrada.")
     stored = (await db.execute(
@@ -341,6 +503,7 @@ async def switch_market(
             RefreshToken.token_hash == hash_refresh_token(refresh_token),
             RefreshToken.user_id == current_user.id,
             RefreshToken.revoked.is_(False),
+            RefreshToken.scope == "market",
         )
     )).scalar_one_or_none()
     if not stored:
@@ -349,7 +512,7 @@ async def switch_market(
     await db.commit()
     return AccessTokenResponse(
         access_token=create_access_token(
-            current_user.id, current_user.role.value, current_user.auth_version, market
+            current_user.id, access.role, current_user.auth_version, market
         )
     )
 
@@ -384,8 +547,9 @@ async def change_password(
 @router.get("/sessions")
 async def list_sessions(
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
     refresh_token: str | None = Cookie(default=None, alias=_COOKIE_NAME),
+    platform_refresh_token: str | None = Cookie(default=None, alias=_PLATFORM_COOKIE_NAME),
 ):
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     rows = (
@@ -399,7 +563,8 @@ async def list_sessions(
             .order_by(RefreshToken.created_at.desc())
         )
     ).scalars().all()
-    current_hash = hash_refresh_token(refresh_token) if refresh_token else None
+    current_raw_token = refresh_token or platform_refresh_token
+    current_hash = hash_refresh_token(current_raw_token) if current_raw_token else None
     return [
         {
             "id": str(session.id),
@@ -415,7 +580,7 @@ async def list_sessions(
 async def revoke_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
 ):
     session = (
         await db.execute(
@@ -436,7 +601,7 @@ async def revoke_session(
 async def logout_all(
     response: Response,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
 ):
     user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one()
     user.auth_version += 1
@@ -453,7 +618,7 @@ async def delete_my_account(
     response: Response,
     body: ReauthenticationRequest,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_authenticated_user),
 ):
     """Bloco 93: exclusão da própria conta pelo titular.
 
@@ -463,18 +628,41 @@ async def delete_my_account(
     vinculado NÃO é excluído; para dados pessoais há o fluxo de anonimização."""
     _require_reauthentication(body, current_user)
 
-    if current_user.role == UserRole.admin:
-        others = await db.execute(
-            select(User).where(
-                User.role == UserRole.admin,
-                User.is_active.is_(True),
-                User.id != current_user.id,
-            )
+    approved_vat = (await db.execute(
+        select(ProductMarket.product_id).where(
+            ProductMarket.approved_by_user_id == current_user.id,
+            ProductMarket.vat_status == VAT_APPROVED,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if approved_vat is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "A conta possui aprovações fiscais ativas e não pode ser excluída.",
         )
-        if not others.scalars().first():
+
+    await lock_platform_admin_guard(db)
+    has_platform_admin = (await db.execute(select(
+        UserPlatformPermission.user_id
+    ).where(
+        UserPlatformPermission.user_id == current_user.id,
+        UserPlatformPermission.capability == "platform_admin",
+        UserPlatformPermission.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if has_platform_admin is not None:
+        other = (await db.execute(
+            select(UserPlatformPermission.user_id)
+            .join(User, User.id == UserPlatformPermission.user_id)
+            .where(
+                UserPlatformPermission.capability == "platform_admin",
+                UserPlatformPermission.is_active.is_(True),
+                UserPlatformPermission.user_id != current_user.id,
+                User.is_active.is_(True),
+            ).limit(1)
+        )).scalar_one_or_none()
+        if other is None:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "Não é possível excluir o único administrador ativo do sistema.",
+                status.HTTP_409_CONFLICT,
+                "A plataforma precisa manter ao menos um administrador ativo.",
             )
 
     await db.execute(delete(Notification).where(Notification.user_id == current_user.id))

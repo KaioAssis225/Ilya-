@@ -68,6 +68,27 @@ O modo legado permanece como padrão para não modificar a produção por aciden
 - Criar um pedido de teste e abrir o PDF.
 - Conferir erros 5xx, tempo de resposta e uso de conexões do PostgreSQL.
 
+## Corte BR/EU
+
+Para a entrega multimercado, manter `EUROPE_MARKET_ENABLED=false` e
+`markets.EU.is_enabled=false` durante a publicação. Após backup e ensaio em uma
+cópia anonimizada, aplicar a cadeia até `catalog_dimensions_r6_20261002` e só
+então publicar o backend e o frontend compatíveis.
+
+Antes de habilitar EU, verificar pela sessão própria de plataforma:
+
+- a conta inicial possui `platform_admin` e `activate_market`;
+- clientes e representantes EU ativos pertencem a Portugal;
+- cada produto disponível pertence fisicamente a EU e referencia somente
+  catálogo, tipo, categorias e opcionais EU;
+- cada produto disponível possui Lojista, Corporativo e PVP em EUR;
+- o IVA de cada produto foi aprovado nominalmente;
+- foto sem assinatura recebe 403 e a URL assinada abre no catálogo e no PDF;
+- login, orçamento, pedido e PDF funcionam em pt-PT e EUR.
+
+O endpoint de ativação repete as validações persistidas. Valores, SKUs e taxas
+concretas são cadastrados e revisados manualmente; a migration não cria itens EU.
+
 ## Reversão
 
 - Frontend: restaurar o deployment anterior na Vercel.

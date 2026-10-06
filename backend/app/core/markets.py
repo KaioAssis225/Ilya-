@@ -1,11 +1,15 @@
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.market import BR_MARKET, EU_MARKET, Market, UserMarket
+from app.models.refresh_token import RefreshToken
 from app.models.user import User, UserRole
 
 
@@ -17,24 +21,72 @@ class MarketContext:
     tax_label: str
 
 
+class MarketActor:
+    """Visão comercial da identidade no mercado ativo, sem mutar o ORM."""
+
+    __slots__ = ("identity", "access")
+
+    def __init__(self, identity: User, access: UserMarket) -> None:
+        object.__setattr__(self, "identity", identity)
+        object.__setattr__(self, "access", access)
+
+    @property
+    def role(self) -> UserRole:
+        if self.access.role is None:
+            raise RuntimeError("Vínculo ativo sem papel comercial.")
+        return UserRole(self.access.role)
+
+    @property
+    def linked_id(self):
+        return self.access.linked_client_id
+
+    @property
+    def rep_id(self):
+        return self.access.rep_id
+
+    @property
+    def can_view_dashboard(self) -> bool:
+        return self.access.can_view_dashboard
+
+    @property
+    def can_approve_tax(self) -> bool:
+        return self.access.can_approve_tax
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.identity, name)
+
+
 @dataclass(frozen=True)
 class MarketPrincipal:
-    """Identidade autenticada e mercado autorizado de uma requisição.
-
-    O código de mercado não é inferido: ele já foi validado contra o token e os
-    vínculos do usuário antes da construção deste objeto.
-    """
+    """Identidade, vínculo comercial e mercado validados da requisição."""
 
     user: User
     market: MarketContext
+    access: UserMarket | None = None
 
     @property
     def code(self) -> str:
         return self.market.code
 
+    @property
+    def actor(self) -> MarketActor:
+        if self.access is None:
+            raise RuntimeError("Principal de mercado sem vínculo validado.")
+        return MarketActor(self.user, self.access)
+
     def bind(self, db: AsyncSession) -> None:
-        """Vincula à sessão ORM exatamente o mercado validado no principal."""
         db.sync_session.info["active_market"] = self.code
+
+
+@dataclass(frozen=True)
+class PlatformPrincipal:
+    """Sessão administrativa da plataforma, sem mercado comercial ativo."""
+
+    user: User
+    capabilities: frozenset[str]
+
+    def has(self, capability: str) -> bool:
+        return "platform_admin" in self.capabilities or capability in self.capabilities
 
 
 MARKETS = {
@@ -47,37 +99,106 @@ def market_is_enabled(code: str) -> bool:
     return code == BR_MARKET or (code == EU_MARKET and settings.EUROPE_MARKET_ENABLED)
 
 
-async def allowed_markets(db: AsyncSession, user: User) -> list[str]:
-    if user.role == UserRole.admin:
-        codes = [BR_MARKET, EU_MARKET]
-    else:
-        codes = list((await db.execute(
-            select(UserMarket.market_code)
-            .where(UserMarket.user_id == user.id)
-            .order_by(UserMarket.market_code)
-        )).scalars().all())
-        if user.home_market not in codes:
-            codes.append(user.home_market)
-    candidates = [code for code in codes if market_is_enabled(code)]
-    enabled = set((await db.execute(
-        select(Market.code).where(Market.code.in_(candidates), Market.is_enabled.is_(True))
-    )).scalars().all())
-    return [code for code in candidates if code in enabled]
-
-
-async def require_allowed_market(db: AsyncSession, user: User, code: str) -> str:
-    normalized = code.upper()
-    if normalized not in MARKETS or normalized not in await allowed_markets(db, user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Mercado não autorizado para esta conta.")
+def require_launch_country(market_code: str, country: str | None) -> str:
+    """Restringe EU ao país aprovado para a primeira liberação."""
+    normalized = (country or "").strip().upper()
+    if market_code == BR_MARKET:
+        return BR_MARKET
+    launch_country = settings.EU_LAUNCH_COUNTRY.strip().upper()
+    if market_code == EU_MARKET and normalized != launch_country:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"A primeira liberação do mercado EU aceita somente o país {launch_country}.",
+        )
     return normalized
 
 
-async def build_market_principal(
+async def allowed_market_accesses(db: AsyncSession, user: User) -> list[UserMarket]:
+    """Somente vínculos ativos em mercados habilitados concedem acesso."""
+    rows = list((await db.execute(
+        select(UserMarket)
+        .join(Market, Market.code == UserMarket.market_code)
+        .where(
+            UserMarket.user_id == user.id,
+            UserMarket.status == "active",
+            UserMarket.role.is_not(None),
+            Market.is_enabled.is_(True),
+        )
+        .order_by(UserMarket.market_code)
+    )).scalars().all())
+    return [row for row in rows if market_is_enabled(row.market_code)]
+
+
+async def allowed_markets(db: AsyncSession, user: User) -> list[str]:
+    return [link.market_code for link in await allowed_market_accesses(db, user)]
+
+
+async def require_market_access(db: AsyncSession, user: User, code: str) -> UserMarket:
+    normalized = code.upper()
+    if normalized not in MARKETS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Mercado não autorizado para esta conta.")
+    for access in await allowed_market_accesses(db, user):
+        if access.market_code == normalized:
+            return access
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Mercado não autorizado para esta conta.")
+
+
+async def require_allowed_market(db: AsyncSession, user: User, code: str) -> str:
+    return (await require_market_access(db, user, code)).market_code
+
+
+async def suspend_commercial_accesses(
     db: AsyncSession,
-    user: User,
-    token_market: str,
+    *,
+    market_code: str,
+    linked_client_id: uuid.UUID | None = None,
+    rep_id: uuid.UUID | None = None,
+) -> set[uuid.UUID]:
+    """Suspende um vínculo comercial sem desativar a identidade global.
+
+    O refresh comercial não identifica um mercado específico, portanto todas as
+    famílias comerciais da identidade são revogadas. Sessões de plataforma
+    continuam válidas e os demais vínculos comerciais podem autenticar de novo.
+    """
+    if (linked_client_id is None) == (rep_id is None):
+        raise ValueError("Informe exatamente um vínculo comercial.")
+    filters = [
+        UserMarket.market_code == market_code,
+        UserMarket.status != "suspended",
+    ]
+    if linked_client_id is not None:
+        filters.extend((
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.linked_client_id == linked_client_id,
+        ))
+    else:
+        filters.extend((
+            UserMarket.role == UserRole.representante.value,
+            UserMarket.rep_id == rep_id,
+        ))
+    accesses = list((await db.execute(
+        select(UserMarket).where(*filters).with_for_update()
+    )).scalars().all())
+    user_ids = {access.user_id for access in accesses}
+    for access in accesses:
+        access.status = "suspended"
+    if user_ids:
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id.in_(user_ids),
+                RefreshToken.scope == "market",
+                RefreshToken.revoked.is_(False),
+            )
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+        )
+    return user_ids
+
+
+async def build_market_principal(
+    db: AsyncSession, user: User, token_market: str
 ) -> MarketPrincipal:
-    code = await require_allowed_market(db, user, token_market)
-    principal = MarketPrincipal(user=user, market=MARKETS[code])
+    access = await require_market_access(db, user, token_market)
+    principal = MarketPrincipal(user=user, market=MARKETS[access.market_code], access=access)
     principal.bind(db)
     return principal

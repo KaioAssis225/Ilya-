@@ -67,16 +67,30 @@ def dummy_verify() -> None:
 
 # ── JWT Access Token ──────────────────────────────────────────────────────────
 
-def create_access_token(user_id: uuid.UUID, role: str, auth_version: int = 0, market: str = "BR") -> str:
+def create_access_token(
+    user_id: uuid.UUID,
+    role: str | None,
+    auth_version: int = 0,
+    market: str | None = "BR",
+    *,
+    scope: str = "market",
+) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES)
     payload = {
         "sub": str(user_id),
-        "role": role,
+        "scope": scope,
         "ver": auth_version,
-        "market": market,
         "exp": expire,
         "type": "access",
     }
+    if role is not None:
+        payload["role"] = role
+    if scope == "market":
+        if market is None:
+            raise ValueError("Token de mercado exige mercado ativo.")
+        payload["market"] = market
+    elif scope != "platform" or market is not None:
+        raise ValueError("Token de plataforma não pode conter mercado ativo.")
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 

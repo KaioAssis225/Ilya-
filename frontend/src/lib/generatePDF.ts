@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
 import { formatDimensions } from './measurements'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
+import { resolveOrderPresentation } from './orderPresentation'
 import { isConjuntoType } from './productType'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
@@ -101,6 +102,19 @@ function formatMoney(value: number, currency: string, locale: string): string {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
+type AddressParty = Pick<Client, 'address' | 'numero' | 'city' | 'state' | 'country' | 'region' | 'cep'>
+
+function formatAddress(person: AddressParty, market: 'BR' | 'EU'): string {
+  const street = `${person.address}${person.numero ? `, ${person.numero}` : ''}`
+  if (market === 'BR') {
+    const cityState = [person.city, person.state].filter(Boolean).join('/')
+    return [street, cityState, person.cep].filter(Boolean).join(' — ')
+  }
+  const locality = [person.cep, person.city].filter(Boolean).join(' ')
+  const regionCountry = [person.region, person.country].filter(Boolean).join(', ')
+  return [street, locality, regionCountry].filter(Boolean).join(' — ')
+}
+
 // ── Gerador principal ─────────────────────────────────────────────────────────
 export async function generateOrderPDF(
   order: Order,
@@ -110,9 +124,10 @@ export async function generateOrderPDF(
   catLabel: (code: string) => string = (c) => c,
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
-  const locale = order.locale || (order.market_code === 'EU' ? 'pt-PT' : 'pt-BR')
-  const currency = order.currency || (order.market_code === 'EU' ? 'EUR' : 'BRL')
-  const taxLabel = order.market_code === 'EU' ? 'IVA' : 'IPI'
+  // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
+  // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
+  // do mercado em que o usuário está agora.
+  const { currency, locale, taxLabel } = resolveOrderPresentation(order)
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -191,7 +206,7 @@ export async function generateOrderPDF(
     doc.setTextColor(...MUTED)
     doc.text(rep.phone, bx, y + 17)
     doc.text(rep.email || 'E-mail não informado', bx, y + 22)
-    const repAddr = `${rep.address}${rep.numero ? ', ' + rep.numero : ''} — ${rep.city}/${rep.state}`
+    const repAddr = formatAddress(rep, order.market_code)
     doc.text(doc.splitTextToSize(repAddr, boxW - 8).slice(0, 2), bx, y + 27)
   }
 
@@ -209,7 +224,7 @@ export async function generateOrderPDF(
   doc.setTextColor(...MUTED)
   doc.text(client.phone, rx, y + 17)
   doc.text(client.email || 'E-mail não informado', rx, y + 22)
-  const clientAddr = `${client.address}${client.numero ? ', ' + client.numero : ''} — ${client.city}/${client.state}`
+  const clientAddr = formatAddress(client, order.market_code)
   doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 27)
 
   y += 42

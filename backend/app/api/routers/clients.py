@@ -24,8 +24,12 @@ from app.models.client import Client, anonymize_client_fields
 from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
-from app.models.market import PriceList
-from app.core.markets import MarketPrincipal
+from app.models.market import PriceList, UserMarket
+from app.core.markets import (
+    MarketPrincipal,
+    require_launch_country,
+    suspend_commercial_accesses,
+)
 
 router = APIRouter(prefix="/api/v1/clients", tags=["clients"])
 
@@ -138,19 +142,30 @@ def _rep_guard(client: Client, current_user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado a este cliente.")
 
 
-async def _user_status(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, tuple[bool, bool]]:
+async def _user_status(
+    db: AsyncSession,
+    ids: list[uuid.UUID],
+    market: str,
+) -> dict[uuid.UUID, tuple[bool, bool]]:
     """Returns {linked_id: (has_user, user_validated)} for the given entity IDs."""
     if not ids:
         return {}
     result = await db.execute(
         select(
-            User.linked_id,
+            UserMarket.linked_client_id,
             User.must_change_password,
             User.is_active,
-        ).where(User.linked_id.in_(ids))
+            UserMarket.status,
+        )
+        .join(User, User.id == UserMarket.user_id)
+        .where(
+            UserMarket.market_code == market,
+            UserMarket.role == UserRole.cliente.value,
+            UserMarket.linked_client_id.in_(ids),
+        )
     )
     return {
-        row[0]: (True, bool(row[2]) and not row[1])
+        row[0]: (True, bool(row[2]) and not row[1] and row[3] == "active")
         for row in result.fetchall()
         if row[0] is not None
     }
@@ -272,7 +287,7 @@ async def list_clients(
         response.headers["X-Total-Count"] = str(total)
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(clients))
-    linked = await _user_status(db, [c.id for c in clients])
+    linked = await _user_status(db, [c.id for c in clients], market)
     creator_names = (
         await _creator_names(db, [c.created_by_user_id for c in clients])
         if current_user.role not in (UserRole.representante, UserRole.cliente)
@@ -328,9 +343,7 @@ async def create_client(
         raise HTTPException(status_code=422, detail="UF é obrigatória no mercado Brasil.")
     if market == "EU" and "country" not in payload.model_fields_set:
         raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
-    data["country"] = "BR" if market == "BR" else data.get("country", "").upper()
-    if market == "EU" and not data["country"]:
-        raise HTTPException(status_code=422, detail="País é obrigatório no mercado Europa.")
+    data["country"] = require_launch_country(market, data.get("country"))
     price_list = (await db.execute(select(PriceList).where(
         PriceList.market_code == market,
         PriceList.code == data["price_profile"],
@@ -373,7 +386,7 @@ async def get_client(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     _rep_guard(client, current_user)
-    linked = await _user_status(db, [client.id])
+    linked = await _user_status(db, [client.id], market)
     creator_names = (
         await _creator_names(db, [client.created_by_user_id])
         if current_user.role not in (UserRole.representante, UserRole.cliente)
@@ -403,6 +416,10 @@ async def update_client(
     update_data = sanitize_client_update_fields(
         payload.model_dump(exclude_unset=True), current_user
     )
+    if "country" in update_data or market == "EU":
+        update_data["country"] = require_launch_country(
+            market, update_data.get("country", client.country)
+        )
     if "rep_id" in update_data:
         update_data["rep_id"] = await _validated_rep_id(update_data["rep_id"], db)
     if "price_profile" in update_data:
@@ -458,7 +475,7 @@ async def update_client(
             detail=_conflict_detail(error),
         )
     await db.refresh(client)
-    linked = await _user_status(db, [client.id])
+    linked = await _user_status(db, [client.id], market)
     creator_names = (
         await _creator_names(db, [client.created_by_user_id])
         if current_user.role not in (UserRole.representante, UserRole.cliente)
@@ -524,11 +541,11 @@ async def anonymize_client(
 
     anonymize_client_fields(client)
 
-    linked_users = (await db.execute(
-        select(User).where(User.linked_id == client_id, User.is_active.is_(True))
-    )).scalars().all()
-    for linked_user in linked_users:
-        linked_user.is_active = False
+    suspended_user_ids = await suspend_commercial_accesses(
+        db,
+        market_code=market,
+        linked_client_id=client_id,
+    )
 
     record_privacy_event(
         db,
@@ -539,7 +556,7 @@ async def anonymize_client(
         request=request,
         legal_basis="LGPD Art. 18, IV",
         context={
-            "disabled_accounts": len(linked_users),
+            "suspended_market_accesses": len(suspended_user_ids),
             "self_service": False,
         },
     )

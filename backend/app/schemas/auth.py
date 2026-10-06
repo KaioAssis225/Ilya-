@@ -29,6 +29,18 @@ class AccessTokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class UserMarketAccessInput(BaseModel):
+    market_code: Literal["BR", "EU"]
+    role: UserRole
+    status: Literal["pending", "active", "suspended"]
+    linked_client_id: uuid.UUID | None = None
+    rep_id: uuid.UUID | None = None
+    can_view_dashboard: bool = False
+    can_approve_tax: bool = False
+
+    model_config = {"from_attributes": True}
+
+
 class UserRead(BaseModel):
     id: uuid.UUID
     email: str
@@ -44,6 +56,7 @@ class UserRead(BaseModel):
     home_market: Literal["BR", "EU"] = "BR"
     active_market: Literal["BR", "EU"] = "BR"
     allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])
+    market_accesses: list[UserMarketAccessInput] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -58,7 +71,7 @@ class UserCreate(BaseModel):
     role: UserRole = UserRole.vendedor
     rep_id: Optional[uuid.UUID] = None
     home_market: Literal["BR", "EU"] = "BR"
-    allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])
+    market_accesses: list[UserMarketAccessInput] = Field(default_factory=list)
 
     @field_validator("username")
     @classmethod
@@ -85,7 +98,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     can_view_dashboard: Optional[bool] = None
     home_market: Optional[Literal["BR", "EU"]] = None
-    allowed_markets: Optional[list[Literal["BR", "EU"]]] = None
+    market_accesses: Optional[list[UserMarketAccessInput]] = None
 
     @field_validator("username")
     @classmethod

@@ -7,12 +7,46 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User, UserRole
+from app.models.market import UserPlatformPermission
 from app.core.security import decode_access_token
-from app.core.markets import MarketPrincipal, build_market_principal
+from app.core.markets import (
+    MarketActor,
+    MarketPrincipal,
+    PlatformPrincipal,
+    build_market_principal,
+)
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login"
 )
+
+
+def _decode_token_payload(
+    token: str,
+    credentials_exception: HTTPException,
+) -> dict:
+    payload = decode_access_token(token)
+    if payload is None:
+        raise credentials_exception
+    return payload
+
+
+async def _load_token_identity(
+    payload: dict,
+    db: AsyncSession,
+    credentials_exception: HTTPException,
+) -> User:
+    """Valida identidade ativa e versão comum a todo access token."""
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise credentials_exception
+    user = (await db.execute(
+        select(User).where(User.id == user_id, User.is_active.is_(True))
+    )).scalar_one_or_none()
+    if user is None or payload.get("ver") != user.auth_version:
+        raise credentials_exception
+    return user
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -30,25 +64,16 @@ async def get_market_principal(
         detail="Credenciais inválidas ou token expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    payload = decode_access_token(token)
-    if payload is None:
+    payload = _decode_token_payload(token, credentials_exception)
+
+    # Tokens anteriores a P2 não tinham claim scope e pertenciam ao fluxo
+    # comercial. A tolerância é somente de leitura e termina com o TTL curto do
+    # access token; tokens de plataforma sempre exigem scope explícito.
+    if payload.get("scope", "market") != "market":
         raise credentials_exception
 
-    user_id: str = payload.get("sub")
-    if user_id is None:
-        raise credentials_exception
+    user = await _load_token_identity(payload, db, credentials_exception)
 
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise credentials_exception
-
-    result = await db.execute(select(User).where(User.id == user_uuid, User.is_active.is_(True)))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise credentials_exception
-    if payload.get("ver") != user.auth_version:
-        raise credentials_exception
     token_market = payload.get("market")
     if not isinstance(token_market, str):
         raise credentials_exception
@@ -60,10 +85,36 @@ async def get_market_principal(
 
 
 async def get_authenticated_user(
-    principal: MarketPrincipal = Depends(get_market_principal),
+    token: str = Depends(reusable_oauth2),
+    db: AsyncSession = Depends(get_db_session),
 ) -> User:
-    """Adaptador legado de identidade; novas rotas devem receber o principal."""
-    return principal.user
+    """Identidade para operações da própria conta em ambos os escopos."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciais inválidas ou token expirado.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = _decode_token_payload(token, credentials_exception)
+    user = await _load_token_identity(payload, db, credentials_exception)
+    scope = payload.get("scope", "market")
+    if scope == "market":
+        market = payload.get("market")
+        if not isinstance(market, str):
+            raise credentials_exception
+        try:
+            await build_market_principal(db, user, market)
+        except HTTPException:
+            raise credentials_exception
+    elif scope == "platform":
+        capability = (await db.execute(select(UserPlatformPermission.user_id).where(
+            UserPlatformPermission.user_id == user.id,
+            UserPlatformPermission.is_active.is_(True),
+        ).limit(1))).scalar_one_or_none()
+        if capability is None:
+            raise credentials_exception
+    else:
+        raise credentials_exception
+    return user
 
 
 async def get_current_principal(
@@ -79,9 +130,46 @@ async def get_current_principal(
 
 async def get_current_user(
     principal: MarketPrincipal = Depends(get_current_principal),
-) -> User:
-    """Adaptador legado; preserva dependências RBAC enquanto rotas são migradas."""
-    return principal.user
+) -> MarketActor:
+    """Ator comercial efetivo; papéis e vínculos vêm de user_markets."""
+    return principal.actor
+
+
+async def get_platform_principal(
+    token: str = Depends(reusable_oauth2),
+    db: AsyncSession = Depends(get_db_session),
+) -> PlatformPrincipal:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciais de plataforma inválidas ou expiradas.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = _decode_token_payload(token, credentials_exception)
+    if payload.get("scope") != "platform" or "market" in payload:
+        raise credentials_exception
+    user = await _load_token_identity(payload, db, credentials_exception)
+    capabilities = frozenset((await db.execute(
+        select(UserPlatformPermission.capability).where(
+            UserPlatformPermission.user_id == user.id,
+            UserPlatformPermission.is_active.is_(True),
+        )
+    )).scalars().all())
+    if not capabilities:
+        raise credentials_exception
+    return PlatformPrincipal(user=user, capabilities=capabilities)
+
+
+def require_platform_capability(capability: str):
+    def dependency(
+        principal: PlatformPrincipal = Depends(get_platform_principal),
+    ) -> PlatformPrincipal:
+        if not principal.has(capability):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Capacidade de plataforma não concedida.",
+            )
+        return principal
+    return dependency
 
 
 def is_client_account(user: User) -> bool:

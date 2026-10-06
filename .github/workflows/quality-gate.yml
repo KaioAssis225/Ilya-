@@ -44,6 +44,9 @@ jobs:
       - name: Validar código
         run: npm run lint
 
+      - name: Executar testes
+        run: npm test
+
       - name: Gerar build de produção
         run: npm run build
 

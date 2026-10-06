@@ -2,6 +2,10 @@
 
 Este repositório contém a transposição de nível de produção para o **Projeto Ilya**, um sistema para catálogo de móveis, banco de dados de clientes/representantes externos e fechamento/geração de orçamentos e pedidos com snapshots históricos de segurança e controle de acesso baseado em papéis (RBAC).
 
+O sistema é **multimercado**: Brasil (`BR`) e Europa (`EU`, com Portugal como
+único país da primeira liberação) convivem no mesmo backend, banco e frontend,
+com dados comercialmente isolados. Ver [Multimercado](#-multimercado-brasil-e-europa).
+
 ---
 
 ## 🛠️ Stack Tecnológica
@@ -10,18 +14,58 @@ Este repositório contém a transposição de nível de produção para o **Proj
 *   **Core:** Python 3.12, FastAPI (Assíncrono)
 *   **Banco de Dados:** SQLAlchemy 2.0 (Async Engine via `asyncpg`), PostgreSQL 16
 *   **Migrations:** Alembic
-*   **Segurança:** Argon2id (`argon2-cffi`) com Pepper dinâmico, JWT (`python-jose`)
+*   **Segurança:** Argon2id (`argon2-cffi`) com Pepper dinâmico, JWT (`PyJWT`, HS256)
 *   **Uploads:** Upload multipart direto em disco (`static/uploads/`) com armazenamento de UUID no banco
 
 ### Frontend (`/frontend`)
 *   **Core:** React 19 (TypeScript), Vite 8
-*   **CSS / Estilo:** Tailwind CSS v4, Fontes Google (Cormorant Garamond + Inter), Animações Customizadas
+*   **CSS / Estilo:** Tailwind CSS v4, fontes Cormorant Garamond + Inter **self-hosted** via `@fontsource` (nunca Google Fonts: o CDN expõe o IP do visitante a terceiro — `LGPD-FONT-01`), Animações Customizadas
 *   **Server State:** TanStack Query v5 (React Query)
 *   **Routing & Auth:** React Router Dom v7, Axios com Interceptores de Autenticação (Silent Refresh)
 *   **Utilitários:** jsPDF (geração client-side de orçamentos A4 com fotos, swatches coloridos e dimensões adaptativas Ø/L×P×A), Lucide React (ícones)
 
-> **Block 12 (Medidas Especiais, Opcionais Relacionais & Seed de Luxo)** — implementado em 2026-06-26:
-> catálogo de opcionais de cor/material (`optionals` + `product_optionals` N-to-N), flag `is_circular` em produtos e itens de pedido, remoção de `price` do produto (preço passa a ser negociado pelo vendedor em `unit_price` no orçamento), seed de luxo com 5 produtos ILY-001–005 e 29 opcionais em 8 categorias.
+---
+
+## 🌍 Multimercado (Brasil e Europa)
+
+Um só sistema atende os dois mercados. O produto é **independente por mercado**:
+o mesmo SKU pode existir em BR e EU com nome, preço, dimensões e opcionais
+diferentes, e alterar um lado não sincroniza o outro.
+
+**Identidade e sessão.** `users` é a identidade global; `user_markets` registra
+as associações comerciais, cada uma com seu papel. O access token assina o
+mercado e o refresh persiste `active_market`. Trocar de mercado é operação
+autenticada (`POST /api/v1/auth/switch-market`) que revalida a associação no
+banco — IP, query string e cabeçalho nunca selecionam mercado. Existe ainda uma
+**sessão de plataforma** separada (`/api/v1/platform/auth/*`), sem mercado
+comercial, para operações realmente globais.
+
+**Isolamento.** Clientes, representantes, pedidos, produtos, catálogos, tipos,
+opcionais e notificações têm `market_code` obrigatório. Três camadas o
+sustentam:
+
+1. as rotas resolvem tudo dentro do mercado da sessão;
+2. um listener ORM (`app/db/market_scope.py`) filtra toda consulta pelo
+   `active_market`, de modo que um ID conhecido de outro mercado não é
+   materializado;
+3. o banco recusa o cruzamento por FK composta `(id, market_code)` — um pedido
+   EU não aponta para cliente BR nem por SQL direto.
+
+**Fiscal.** BR usa IPI, vindo do grupo do tipo do produto. EU usa IVA, e apenas
+**taxa aprovada nominalmente** fatura: IVA ausente ou `pending` recusa o pedido,
+sem herdar o IPI brasileiro nem cair para zero. Cada item do pedido guarda
+moeda, alíquota e rótulo como snapshot, então um pedido antigo continua legível
+com os valores originais mesmo depois de a regra mudar.
+
+**Endereço.** BR exige UF entre as 27 siglas oficiais; EU usa país, código
+postal, localidade e região. `clients.state` é `NOT NULL` no banco, então os
+mercados sem UF gravam a sentinela `--` (ver `app/core/addresses.py`).
+
+**Abertura do mercado EU** depende de duas travas independentes: `markets.is_enabled`
+no banco e `EUROPE_MARKET_ENABLED` no ambiente. Isso permite publicar schema e
+código antes de publicar preços. Detalhes e rollout em
+[`docs/EUROPA-MULTIMERCADO.md`](docs/EUROPA-MULTIMERCADO.md); as decisões de
+arquitetura estão em [`docs/adr/`](docs/adr/).
 
 ---
 

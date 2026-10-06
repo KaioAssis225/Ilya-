@@ -2,12 +2,12 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, ShieldCheck, LogOut, Bell } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, LogOut, Bell } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
 import { useCartQuantities } from './hooks/useCart'
-import { countCartUnits } from './lib/cart'
+import { countCartUnits, privateScopeKey } from './lib/cart'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -23,7 +23,6 @@ const CadastroPage = lazy(() => import('./pages/CadastroPage'))
 const OrcamentoPage = lazy(() => import('./pages/OrcamentoPage'))
 const PedidosPage = lazy(() => import('./pages/PedidosPage'))
 const ProdutosPage = lazy(() => import('./pages/ProdutosPage'))
-const AdminPage = lazy(() => import('./pages/AdminPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
 
@@ -40,10 +39,6 @@ function canSeeOrcamentoPedidos(user: AuthUser) {
 
 function canSeeCadastros(user: AuthUser) {
   return !isCliente(user) && user.role !== 'executivo'
-}
-
-function canSeeAdmin(user: AuthUser) {
-  return user.role === 'admin'
 }
 
 // Bloco 95: role executivo (ou qualquer role com a flag habilitada pelo admin)
@@ -136,12 +131,6 @@ function BottomNav() {
           <span className="text-[11px] font-semibold uppercase tracking-wider">{t('registrations')}</span>
         </NavLink>
       )}
-      {canSeeAdmin(user) && (
-        <NavLink to="/admin" className={itemClass('/admin')} aria-label="Admin">
-          <ShieldCheck className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Admin</span>
-        </NavLink>
-      )}
       <button
         onClick={logout}
         aria-label="Sair"
@@ -201,7 +190,6 @@ function Nav() {
               </NavLink>
             )}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label={t('orders')}>{t('orders')}</NavLink>}
-              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
             </div>
           )}
         </div>
@@ -291,7 +279,7 @@ export default function PrivateApp() {
   const location = useLocation()
   const { user } = useAuth()
   if (!user) return null
-  const sessionScope = `${user.id}:${user.active_market}`
+  const sessionScope = privateScopeKey(user.id, user.active_market)
 
   return (
     <LocaleProvider key={sessionScope}>
@@ -331,14 +319,6 @@ export default function PrivateApp() {
                     element={
                       <RoleGuard allowed={canSeeOrcamentoPedidos}>
                         <PedidosPage />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/admin"
-                    element={
-                      <RoleGuard allowed={canSeeAdmin}>
-                        <AdminPage />
                       </RoleGuard>
                     }
                   />

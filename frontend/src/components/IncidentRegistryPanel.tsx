@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Plus, X } from 'lucide-react'
-import api from '../lib/api'
+import api from '../lib/platformApi'
 
 type IncidentStatus = 'investigating' | 'contained' | 'closed'
 

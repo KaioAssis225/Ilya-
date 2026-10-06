@@ -16,5 +16,6 @@ class CatalogUpdate(CatalogBase):
 
 class CatalogRead(CatalogBase):
     id: uuid.UUID
+    market_code: str
 
     model_config = {"from_attributes": True}

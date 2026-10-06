@@ -1,110 +1,117 @@
 # Ilya Brasil e Europa
 
-## Estado da entrega
+## Estado e limites da primeira liberação
 
-A estrutura multimercado está implementada no mesmo frontend, backend e banco.
-O mercado Brasil recebe todo o legado durante a migration. O mercado Europa é
-criado desativado e não fica acessível apenas porque o código foi publicado.
+`BR` e `EU` são mercados comerciais independentes. A chave `EU` permanece
+porque o produto poderá atender outros países europeus; a primeira liberação
+aceita somente cadastros de Portugal (`country = PT`). A inclusão de outro país
+exige regras fiscais, documentais e cadastrais próprias antes de alterar
+`EU_LAUNCH_COUNTRY`.
 
-Para a Europa ficar operacional, duas condições independentes precisam existir:
+O mercado EU permanece inacessível enquanto qualquer uma destas travas estiver
+fechada:
 
-1. `markets.is_enabled = true`, liberado pelo endpoint administrativo somente
-   depois de todos os SKUs disponíveis terem Lojista, Corporativo e PVP;
-2. `EUROPE_MARKET_ENABLED=true` no ambiente do backend (valor padrão após a
-   importação e reconciliação inicial; use `false` como bloqueio de emergência).
+1. `EUROPE_MARKET_ENABLED=false` no backend;
+2. `markets.is_enabled=false` no banco;
+3. nenhum produto EU disponível;
+4. produto disponível sem Lojista, Corporativo e PVP em EUR;
+5. produto disponível sem IVA explícito e aprovado nominalmente;
+6. cliente ou representante EU ativo fora de Portugal;
+7. produto EU referenciando catálogo, tipo, categoria ou opcional de BR.
 
-Essa dupla trava permite publicar schema e código antes de publicar preços.
+## Identidade, plataforma e mercados
 
-## Isolamento e autenticação
+- `users` é a identidade global de login.
+- `user_markets` é a fonte autoritativa de papel, estado, cliente,
+  representante, Dashboard e aprovação fiscal dentro de cada mercado.
+- Uma identidade pode ter BR, EU, ambos ou nenhum vínculo comercial.
+- Administrador comercial não recebe outro mercado automaticamente.
+- A sessão comercial assina `scope=market` e um único `market` no JWT.
+- A troca de mercado exige vínculo ativo persistido e emite um novo token.
+- A sessão `/platform` usa `scope=platform`, cookie e refresh próprios, sem
+  `active_market`.
+- Capacidades globais ficam em `user_platform_permissions`. Ativação de mercado,
+  gestão de identidades, outbox e governança LGPD não derivam de papel BR/EU.
+- A remoção de um vínculo revoga sessões comerciais e preserva a sessão de
+  plataforma quando a identidade e suas capacidades continuam válidas.
 
-- `users` continua sendo a identidade central.
-- `home_market` define onde a conta entra.
-- `user_markets` registra os mercados concedidos pelo administrador.
-- Admin possui vínculos BR e EU por padrão; a feature flag e o status do mercado
-  continuam valendo.
-- O access token assina `market`. O refresh token persiste `active_market`.
-- `POST /api/v1/auth/switch-market` só aceita um vínculo persistido e emite um
-  novo token. IP, query string e cabeçalho não selecionam mercado.
-- Clientes, representantes, pedidos e notificações recebem `market_code`.
-- A sessão ORM aplica o mercado ativo a leituras dessas entidades. Rotas de
-  criação gravam o mercado da sessão e IDs externos retornam como inexistentes.
-- Carrinho, cliente selecionado e representante selecionado usam chaves locais
-  separadas por `usuário + mercado`.
+## Produto, catálogo e preços
 
-## Catálogo e preços
+Produtos são independentes por mercado. `products` usa unicidade
+`(market_code, product_code)`, então BR e EU podem ter o mesmo SKU sem
+compartilhar descrição, foto, dimensões, observação, componentes ou vínculos.
 
-O produto continua único: SKU, descrição, foto, dimensões, componentes e
-opcionais são compartilhados. As tabelas novas são:
+Também pertencem a um mercado:
 
-- `product_markets`: disponibilidade e IVA opcional por SKU/mercado;
-- `price_lists`: listas pertencentes a um mercado e moeda;
-- `product_prices`: preço por produto/lista;
-- `market_tax_rates`: IVA padrão por tipo, usado quando o SKU não tem override.
+- `catalogs`;
+- `product_types`;
+- `optional_categories`;
+- `optionals`;
+- `product_markets`, `price_lists` e `product_prices`.
 
-As colunas brasileiras legadas permanecem por compatibilidade, mas criação,
-edição e importação BR sincronizam as novas listas. No mercado EU, o catálogo-
-base é somente leitura; disponibilidade, EUR e IVA entram pela importação EU.
-`custo_desativado` não foi exposto.
+As rotas validam que catálogo, tipo, categorias, opcionais e componentes
+pertencem ao mesmo mercado do produto. A barreira ORM aplica o mercado ativo às
+leituras dessas entidades. Tipos EU não podem apontar para `product_groups`,
+pois essa tabela contém a regra brasileira de IPI.
 
-## CSV Europa
+A migration R6 classifica as dimensões legadas como BR para preservar o
+catálogo-base confirmado. Ela não cria dimensões, produtos, vínculos nem preços
+EU. A preparação manual com EU fechado usa os endpoints `/platform/EU` de
+catálogos, tipos, categorias, opcionais e produtos.
 
-Endpoint: `POST /api/v1/markets/EU/import` (admin ou cadastros).
+## IVA e importação EU
 
-Arquivo UTF-8 separado por ponto e vírgula:
+`POST /api/v1/markets/EU/import` exige `vat_rate` em cada linha. Valor vazio,
+ausente ou fora de 0 a 100 rejeita o lote inteiro. A importação nunca lê IPI nem
+taxa de grupo e grava a decisão como `pending`.
 
-```csv
-product_code;lojista;corporativo;pvp;is_available
-IML0001;55,63;72,11;103,02;true
-```
+Uma taxa só pode entrar em pedido quando o vínculo `product_markets` contém:
 
-O arquivo inteiro é rejeitado se houver SKU ausente/duplicado, preço vazio,
-negativo ou inválido, IVA informado fora de 0–100 ou configuração incorreta das
-listas. A coluna `vat_rate` é opcional: quando ausente ou vazia, a importação
-copia para o SKU europeu a taxa já cadastrada no grupo do produto no Ilya. Ela
-pode ser informada para sobrescrever casos específicos. A moeda é sempre EUR e
-não pode ser escolhida no CSV.
+- `vat_status = approved`;
+- `vat_rate` explícito, inclusive quando a taxa aprovada é zero;
+- `approved_by_user_id`;
+- `approved_at`.
 
-Depois da conferência, `POST /api/v1/markets/EU/activate` valida cobertura das
-três listas. Ainda é necessário configurar `EUROPE_MARKET_ENABLED=true` e fazer
-novo deploy do backend. Para interrupção imediata, use `/EU/deactivate` ou volte
-a variável para `false`.
+A aprovação exige `can_approve_tax` no vínculo EU do aprovador. Percentuais e a
+seleção final de itens são decisões manuais do responsável e não são inferidos
+pelo sistema.
 
-## Pedidos e documentos
+## Pedidos, documentos e mídia
 
-- ORC e PED usam contadores separados por mercado; o texto continua
-  `ORC-0001` e `PED-0001`.
+- ORC e PED usam contadores separados por mercado.
 - O pedido preserva mercado, lista, moeda e locale.
-- Cada item preserva preço unitário, taxa, valor do imposto, rótulo IPI/IVA e
-  moeda. Mudanças futuras em tabela não reescrevem documentos anteriores.
-- PDFs usam `pt-BR`/BRL/IPI no Brasil e `pt-PT`/EUR/IVA na Europa.
-- Cadastro EU usa país, código postal, localidade, região opcional e VAT/Tax ID.
+- Cada item preserva preço, desconto, taxa, valor do imposto, rótulo e moeda.
+- BR usa BRL, pt-BR e IPI. A primeira liberação EU usa EUR, pt-PT ou en-GB e IVA.
+- Clientes e representantes EU só podem ser criados ou usados em pedidos com
+  `country = PT`.
+- O PDF usa código postal, localidade, região e país para endereços portugueses;
+  não concatena `cidade/UF`.
+- Fotos locais e em object storage são servidas pela mesma rota com URL HMAC de
+  curta duração. Chave conhecida sem assinatura válida recebe 403. O diretório
+  de uploads não possui mount público.
 
-## Rollout seguro
+## Sequência de implantação
 
-1. Confirmar backup restaurável do banco.
-2. Publicar com `EUROPE_MARKET_ENABLED=false`.
-3. Confirmar migration `europa_multimarket_20260820` e health checks.
-4. Importar uma amostra em staging e comparar preços com a fonte aprovada.
-5. Importar a lista final; conferir SKUs, três listas e IVA.
-6. Criar usuários EU e manter seus acessos sem uso até a abertura.
-7. Chamar `/EU/activate`.
-8. Configurar `EUROPE_MARKET_ENABLED=true` e redeploy.
-9. Testar login EU, troca do admin, orçamento, pedido e PDF.
+1. Manter EU desabilitado no banco e no ambiente.
+2. Fazer backup restaurável e testar a restauração em ambiente isolado.
+3. Aplicar, em ordem, as revisions após `catalogs_20260911`:
+   `vat_approval_20261001`, `rbac_r2a_20261001b`,
+   `rbac_r2b_20261001c`, `products_market_r4_20261001`,
+   `user_market_links_r5_20261002` e
+   `catalog_dimensions_r6_20261002`.
+4. Publicar o backend e o frontend compatíveis com o novo head.
+5. Provisionar a conta inicial de plataforma e confirmar login em `/platform`.
+6. Cadastrar manualmente dimensões, produtos, preços e IVA de Portugal.
+7. Aprovar individualmente o IVA e revisar o PDF de amostra.
+8. Executar a ativação EU; o endpoint revalida todas as travas persistidas.
+9. Habilitar `EUROPE_MARKET_ENABLED` e testar login, catálogo, orçamento, pedido,
+   PDF e fotos em homologação antes de produção.
 
-Rollback operacional: desativar a flag. Isso bloqueia imediatamente novos tokens
-EU sem apagar dados. Rollback de schema deve ser evitado depois da primeira venda.
+Rollback operacional: desabilitar EU no banco e no ambiente. Não executar
+downgrade automático após a criação de dados independentes em mais de um
+mercado.
 
-## Verificações automatizadas
+## Fora do escopo
 
-- suíte backend existente e testes de mercado/token/permissão;
-- lint e build de produção do frontend;
-- CI exige uma única head Alembic;
-- CI migra banco vazio e também executa `0050 -> head`;
-- migration foi validada localmente em PostgreSQL 16 real.
-
-## Decisões deliberadas
-
-- Não há seleção geográfica por IP.
-- Não há cópia do produto nem segundo sistema.
-- Telas operacionais nunca comparam mercados; comparação existe somente no admin.
-- A branch isolada de integração com outro sistema não faz parte desta entrega.
+Inventário físico e integração com Estoque não participam desta entrega. A
+seleção de SKUs, valores e taxas concretas de Portugal permanece manual.

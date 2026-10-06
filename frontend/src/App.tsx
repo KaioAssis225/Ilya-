@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
 
 import { AuthProvider, type AuthUser } from './contexts/AuthContext'
+import { PlatformAuthProvider } from './contexts/PlatformAuthContext'
 import { useAuth } from './hooks/useAuth'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './lib/features'
 import LoginPage from './pages/LoginPage'
@@ -12,6 +13,7 @@ import type { MarketCode } from './components/MarketFlag'
 const PrivateApp = lazy(() => import('./PrivateApp'))
 const SignContractPage = lazy(() => import('./pages/SignContractPage'))
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
+const PlatformApp = lazy(() => import('./PlatformApp'))
 
 function isClient(user: AuthUser) {
   return user.role === 'cliente' || (user.role === 'vendedor' && Boolean(user.linked_id))
@@ -65,6 +67,7 @@ export default function App() {
               element={ELECTRONIC_SIGNATURES_ENABLED ? <SignContractPage /> : <Navigate to="/login" replace />}
             />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/platform/*" element={<PlatformAuthProvider><PlatformApp /></PlatformAuthProvider>} />
             <Route element={<PrivateGate />}>
               <Route path="/*" element={<PrivateApp />} />
             </Route>

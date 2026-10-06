@@ -174,9 +174,72 @@ def test_evento_de_privacidade_registra_apenas_metadados_minimos():
     assert db.added is event
     assert event.actor_user_id == actor_id
     assert event.request_id == "req-123"
-    assert event.context == {"self_service": True}
+    # O mercado da sessão entra automaticamente (Bloco 08): é metadado, não dado
+    # pessoal, e a trilha precisa distinguir titular BR de titular EU. Aqui a
+    # sessão falsa não tem mercado, então o valor é None — o caso da sessão de
+    # plataforma, cuja operação é global.
+    assert event.context == {"market": None, "self_service": True}
     assert not hasattr(event, "password")
     assert not hasattr(event, "token")
+
+
+class _SessaoComMercado:
+    """Sessão mínima com o `active_market` que o MarketPrincipal grava."""
+
+    def __init__(self, market):
+        self.sync_session = SimpleNamespace(info={"active_market": market})
+        self.added = None
+
+    def add(self, value):
+        self.added = value
+
+
+def test_evento_de_privacidade_registra_o_mercado_da_sessao():
+    """Bloco 08: a trilha tem de distinguir titular BR de titular EU.
+
+    O mercado entra no helper, não em cada chamada — oito pontos gravam evento e
+    deixar isso a cargo de quem chama significaria esquecer em algum.
+    """
+    request = SimpleNamespace(state=SimpleNamespace(request_id="req-eu"))
+
+    event = record_privacy_event(
+        _SessaoComMercado("EU"),
+        actor_user_id=uuid.uuid4(),
+        subject_type="client",
+        subject_id=uuid.uuid4(),
+        action="personal_data_exported",
+        request=request,
+        legal_basis="LGPD Art. 18, V",
+        context={"format": "json"},
+    )
+    assert event.context == {"market": "EU", "format": "json"}
+
+    # Sessão BR grava BR; nenhum resíduo do mercado anterior.
+    event_br = record_privacy_event(
+        _SessaoComMercado("BR"),
+        actor_user_id=uuid.uuid4(),
+        subject_type="representative",
+        subject_id=uuid.uuid4(),
+        action="personal_data_anonymized",
+        request=request,
+        legal_basis="LGPD Art. 18, IV",
+    )
+    assert event_br.context == {"market": "BR"}
+
+
+def test_chamada_pode_sobrescrever_o_mercado_do_titular():
+    """Encerrar vínculo de um representante é operação sobre o mercado dele, que
+    pode não ser o da sessão de quem executa. A chamada vence o default."""
+    event = record_privacy_event(
+        _SessaoComMercado("BR"),
+        actor_user_id=uuid.uuid4(),
+        subject_type="representative",
+        subject_id=uuid.uuid4(),
+        action="relationship_ended",
+        request=SimpleNamespace(state=SimpleNamespace(request_id="req-x")),
+        context={"market": "EU"},
+    )
+    assert event.context["market"] == "EU"
 
 
 def test_identificador_de_requisicao_invalido_nao_e_auditado():
