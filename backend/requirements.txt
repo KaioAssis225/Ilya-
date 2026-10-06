@@ -1,7 +1,7 @@
-fastapi==0.141.1
-starlette==1.3.1
-uvicorn[standard]==0.52.1
-sqlalchemy==2.0.51
+fastapi==0.142.2
+starlette==1.7.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.3
 # Dependência real do `sqlalchemy.ext.asyncio`, que esta aplicação usa inteira
 # (create_async_engine + asyncpg). Vinha implícita pelo SQLAlchemy 2.0; a 2.1
 # deixou de instalá-la, e o bump do Dependabot (#77) quebrou testes e migrations
@@ -9,10 +9,10 @@ sqlalchemy==2.0.51
 # agora e no dia do bump.
 greenlet==3.5.6
 asyncpg==0.31.0
-alembic==1.18.5
-pydantic==2.13.4
-pydantic[email]==2.13.4
-pydantic-settings==2.14.2
+alembic==1.20.0
+pydantic==2.13.5
+pydantic[email]==2.13.5
+pydantic-settings==2.15.0
 PyJWT==2.15.1
 argon2-cffi==25.1.0
 python-multipart==0.0.32
@@ -21,4 +21,4 @@ slowapi==0.1.10
 redis==8.1.0
 limits==5.8.0
 Pillow>=12.3.0
-boto3==1.43.62
+boto3==1.43.108
