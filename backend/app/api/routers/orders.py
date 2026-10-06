@@ -300,6 +300,39 @@ def _resolve_eu_vat(
     return _decimal(vat_rate)
 
 
+def _resolve_br_ipi(product_code: str, product_type: ProductType | None) -> Decimal:
+    """IPI faturável do Brasil, com a mesma recusa que o EU já tinha.
+
+    O critério "sem IPI zero silencioso" do Checkpoint 06 valia só para o EU:
+    aqui, tipo não encontrado caía para `_ZERO` e o pedido era emitido com
+    imposto zerado, sem nada no log. `products.type` é texto livre (String(50),
+    sem FK), então basta uma diferença de caixa — 'Banqueta' contra 'BANQUETA' —
+    para o tipo não casar, e a conciliação de 06/10 achou 5 produtos assim.
+
+    Zero legítimo continua passando: grupo com `ipi = 0` é cadastro, não
+    ausência de dado. O que passa a ser recusado é a *falta* do vínculo — tipo
+    inexistente no mercado, ou tipo sem grupo fiscal — porque aí não existe
+    alíquota a aplicar, e zerar seria inventar uma.
+    """
+    if product_type is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Produto '{product_code}' tem tipo não cadastrado neste mercado; "
+                "corrija o tipo do produto antes de usá-lo em pedido."
+            ),
+        )
+    if product_type.group is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Produto '{product_code}' tem tipo '{product_type.name}' sem grupo "
+                "fiscal, então não há alíquota de IPI definida."
+            ),
+        )
+    return _decimal(product_type.group.ipi)
+
+
 def _validate_discount(
     discount: Decimal | float,
     max_discount: Decimal | float,
@@ -495,7 +528,7 @@ async def create_order(
             vat_rate, vat_status = product_vat.get(product.id, (None, None))
             ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
         else:
-            ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
+            ipi_rate = _resolve_br_ipi(product.product_code, product_type)
         unit_price, discount, subtotal, ipi_rate, ipi_value = (
             _calculate_order_line(
                 unit_price=price_map[product.id],
@@ -929,7 +962,7 @@ async def update_order(
                 vat_rate, vat_status = product_vat.get(product.id, (None, None))
                 ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
             else:
-                ipi_rate = (_decimal(product_type.group.ipi) if product_type and product_type.group else _ZERO)
+                ipi_rate = _resolve_br_ipi(product.product_code, product_type)
             unit_price, discount, subtotal, ipi_rate, ipi_value = (
                 _calculate_order_line(
                     unit_price=price_map[product.id],
