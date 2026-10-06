@@ -427,3 +427,56 @@ def test_stale_auth_version_token_is_rejected_after_identity_change():
         principal = await get_market_principal(token=fresh, db=db)
         assert principal.market.code == "BR"
     asyncio.run(run())
+
+
+def test_vinculo_pendente_com_papel_nulo_e_serializavel():
+    """Regressão de produção, 06/10: `/auth/me` devolvia 500 logo após o login.
+
+    A `rbac_r2a` deixa `user_markets.role` nullable e põe os vínculos legados em
+    `pending` com papel nulo — por desenho, para que não concedam acesso antes
+    da revisão nominal. O modelo permitia (`Mapped[str | None]`), mas
+    `UserMarketAccessInput.role` era `UserRole` obrigatório, então o Pydantic
+    estourava `ValidationError ... v/enum` ao serializar a conta.
+
+    Atingia justamente quem tem vínculo nos dois mercados: os dois
+    administradores globais ficaram sem conseguir usar o sistema, embora o
+    `POST /auth/login` respondesse 200 — o 500 vinha no `/auth/me` seguinte.
+    """
+    pendente = UserMarketAccessInput(
+        market_code="EU", role=None, status="pending"
+    )
+    assert pendente.role is None
+    assert pendente.status == "pending"
+
+    # Omitir o papel equivale a nulo: é o que `from_attributes` faz ao ler a
+    # linha de `user_markets` com role NULL.
+    omitido = UserMarketAccessInput(market_code="EU", status="pending")
+    assert omitido.role is None
+
+    # O caminho normal segue exigindo papel válido.
+    ativo = UserMarketAccessInput(
+        market_code="BR", role=UserRole.admin, status="active"
+    )
+    assert ativo.role is UserRole.admin
+
+
+def test_build_market_links_recusa_papel_nulo():
+    """A contraparte do fix acima: nulo é legítimo na leitura, não na escrita.
+
+    Tornar `role` nullable no schema reabriu `_build_market_links`, que faz
+    `item.role.value` — com nulo seria `AttributeError`, ou seja 500 no lugar do
+    422 que o schema obrigatório dava antes. Um vínculo criado por admin sem
+    papel não teria leitura possível, então o caminho de escrita recusa.
+    """
+    async def run():
+        db = MagicMock()
+        with pytest.raises(HTTPException) as erro:
+            await _build_market_links(
+                [UserMarketAccessInput(
+                    market_code="BR", role=None, status="active"
+                )],
+                db,
+            )
+        assert erro.value.status_code == 422
+        assert "papel" in erro.value.detail.lower()
+    asyncio.run(run())

@@ -142,6 +142,13 @@ async def _build_market_links(
         raise HTTPException(422, "Cada mercado pode aparecer apenas uma vez.")
     links: list[UserMarket] = []
     for item in items:
+        # `role` é nullable no schema porque a R2a deixa vínculos legados em
+        # `pending` com papel nulo, e `/auth/me` precisa conseguir serializá-los.
+        # Aqui o caminho é de escrita: um vínculo criado por admin sem papel não
+        # tem leitura possível, e `item.role.value` abaixo estouraria 500. Barrar
+        # com 422 preserva o que o schema obrigatório garantia antes.
+        if item.role is None:
+            raise HTTPException(422, "Informe o papel do usuário no mercado.")
         direct_role = item.role in {
             UserRole.admin,
             UserRole.vendedor,
