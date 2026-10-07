@@ -89,14 +89,29 @@ def _ensure_total_capacity(*values: Decimal) -> None:
 def _can_operate_order(current_user: User) -> bool:
     """Papéis que operam o ciclo de vida do pedido (editar/finalizar/cancelar).
 
-    Operador interno de vendas, representante, `produtos` e admin. Conta de
+    Operador interno de vendas, representante e admin. Conta de catálogo
+    (`produtos`) mantém leitura, mas não altera o ciclo comercial. Conta de
     portal do cliente-final nunca opera pedido (SEC-02) — `is_internal_operator`
     já exclui o legado `vendedor`+`linked_id`. Exclusão segue exclusiva do admin.
     """
     return (
         current_user.role
-        in {UserRole.admin, UserRole.representante, UserRole.produtos}
+        in {UserRole.admin, UserRole.representante}
         or is_internal_operator(current_user)
+    )
+
+
+def _can_create_order(current_user: User) -> bool:
+    """Papéis que podem iniciar um pedido.
+
+    Admin, operador interno, representante e cliente final podem criar. O papel
+    `produtos` é somente catálogo/leitura de pedidos e não participa de decisões
+    comerciais. `is_client_account` inclui o legado `vendedor` com `linked_id`.
+    """
+    return (
+        current_user.role in {UserRole.admin, UserRole.representante}
+        or is_internal_operator(current_user)
+        or is_client_account(current_user)
     )
 
 
@@ -277,7 +292,11 @@ def _resolve_max_discount(
     # cliente-final e operador interno de vendas respeitam o teto do cliente
     if is_client_account(current_user) or current_user.role == UserRole.vendedor:
         return _decimal(client.max_discount)
-    return _HUNDRED  # admin / produtos
+    if current_user.role == UserRole.admin:
+        return _HUNDRED
+    # Papéis sem autorização comercial recebem zero por padrão. Isso evita que
+    # uma nova role herde desconto integral ao cair neste fallback.
+    return _ZERO
 
 
 def _resolve_eu_vat(
@@ -411,8 +430,7 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    _allowed_create = {UserRole.admin, UserRole.vendedor, UserRole.representante, UserRole.produtos, UserRole.cliente}
-    if current_user.role not in _allowed_create:
+    if not _can_create_order(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Operação não permitida para o seu nível de acesso."
@@ -818,7 +836,8 @@ async def update_order(
     current_user: User = Depends(get_current_user),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    # Edição é operação de operador interno, representante ou produtos — cliente-final nunca edita pedido (SEC-02).
+    # Edição é operação de admin, operador interno ou representante — cliente
+    # final e conta de catálogo nunca editam pedido (SEC-02/Bloco de segurança 01).
     if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Operação não permitida.")
 

@@ -189,6 +189,20 @@ const EN: Record<string, string> = {
   'Criando…': 'Creating…',
   'Criar Usuário': 'Create user',
   'Cria acesso com usuário gerado pelo nome e senha temporária aleatória.': 'Creates access with a username based on the name and a random temporary password.',
+  'Conta pendente. Um administrador deve confirmar o e-mail do titular e enviar o convite.':
+    'Account pending. An administrator must confirm the holder’s email and send the invitation.',
+  'Aguardando ativação pelo titular.': 'Waiting for the holder to activate it.',
+  'Solicita a conta. A senha será definida pelo titular após confirmação do e-mail por um administrador.':
+    'Requests the account. The holder sets the password once an administrator confirms the email.',
+  'Confirme a identidade do titular fora do sistema antes de enviar. Digite o e-mail que foi verificado; ele deve coincidir com o cadastro.':
+    'Confirm the holder’s identity outside the system before sending. Type the email you verified; it must match the record.',
+  'E-mail confirmado do titular': 'Holder’s confirmed email',
+  'Método de verificação': 'Verification method',
+  'Retorno telefônico ao titular': 'Call back to the holder',
+  'Contrato existente': 'Existing contract',
+  'Verificação presencial': 'In-person check',
+  'Confirmar e enviar convite': 'Confirm and send invitation',
+  'Convite enviado ao endereço confirmado.': 'Invitation sent to the confirmed address.',
   'Editar {item}': 'Edit {item}',
   'Novo {item}': 'New {item}',
   'Perfil de faturamento *': 'Billing profile *',
@@ -237,7 +251,7 @@ const EN: Record<string, string> = {
   'Grupo': 'Group',
   'Sem grupo': 'No group',
   'Criar Subgrupo': 'Create subgroup',
-  'Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.': 'No groups yet. Create a group to organise the product types.',
+  'Nenhum grupo cadastrado.': 'No groups yet.',
 
   // catálogos
   'Informe o nome do catálogo.': 'Enter the catalogue name.',

@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     PASSWORD_PEPPER: str
 
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_SSL: bool = False
+    CLIENT_INVITE_BASE_URL: str = ""
+    CLIENT_INVITE_TTL_MINUTES: int = 30
+
     # Orçamento de conexões por processo. Em produção, o total máximo é:
     # replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW).
     DB_POOL_SIZE: int = 5

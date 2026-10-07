@@ -8,8 +8,10 @@ recebe permissão de operador interno, mesmo se ainda estiver com a role legada
 via Depends(get_current_user). Aqui chamamos a dependency diretamente passando
 `current_user=...`, o que exercita apenas a lógica de autorização.
 """
+import asyncio
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -21,8 +23,18 @@ from app.api.deps import (
     is_client_account,
     is_internal_operator,
 )
-from app.api.routers.orders import _can_operate_order
+from app.api.routers.orders import (
+    CancelPayload,
+    FinalizePayload,
+    _can_create_order,
+    _can_operate_order,
+    cancel_order,
+    create_order,
+    finalize_order,
+    update_order,
+)
 from app.models.user import UserRole
+from app.schemas.order import OrderUpdate
 
 
 def _user(role: UserRole, linked_id=None, rep_id=None) -> SimpleNamespace:
@@ -174,19 +186,19 @@ class TestOperacaoDoCicloDoPedido:
     """Editar / finalizar / cancelar — guard compartilhado dos três handlers.
 
     Ler e criar pedido são mais amplos que operar: a conta de cliente entra em
-    `require_order_access` e em `_allowed_create`, mas nunca opera (SEC-02).
+    `require_order_access` e em `_can_create_order`, mas nunca opera (SEC-02).
     """
 
     @pytest.mark.parametrize(
         "user",
-        [ADMIN, VENDEDOR_INTERNO, REPRESENTANTE, PRODUTOS],
+        [ADMIN, VENDEDOR_INTERNO, REPRESENTANTE],
     )
     def test_papeis_operadores_permitidos(self, user):
         assert _can_operate_order(user) is True
 
     @pytest.mark.parametrize(
         "user",
-        [CLIENTE_NOVO, CLIENTE_LEGADO, CADASTROS, EXECUTIVO],
+        [CLIENTE_NOVO, CLIENTE_LEGADO, CADASTROS, PRODUTOS, EXECUTIVO],
     )
     def test_papeis_nao_operadores_bloqueados(self, user):
         assert _can_operate_order(user) is False
@@ -195,3 +207,67 @@ class TestOperacaoDoCicloDoPedido:
         """O legado `vendedor`+linked_id lê pedidos, mas não edita/cancela."""
         assert require_order_access(current_user=CLIENTE_LEGADO) is CLIENTE_LEGADO
         assert _can_operate_order(CLIENTE_LEGADO) is False
+
+
+class TestCriacaoDePedido:
+    @pytest.mark.parametrize(
+        "user",
+        [ADMIN, VENDEDOR_INTERNO, REPRESENTANTE, CLIENTE_NOVO, CLIENTE_LEGADO],
+    )
+    def test_papeis_comerciais_permitidos(self, user):
+        assert _can_create_order(user) is True
+
+    @pytest.mark.parametrize("user", [CADASTROS, PRODUTOS, EXECUTIVO])
+    def test_papeis_sem_decisao_comercial_bloqueados(self, user):
+        assert _can_create_order(user) is False
+
+
+class TestProdutosNaoMutaPedidos:
+    """Prova o 403 nos quatro handlers, antes de qualquer acesso ao banco."""
+
+    @staticmethod
+    def _assert_forbidden(operation):
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(operation)
+        assert exc.value.status_code == 403
+
+    def test_produtos_nao_cria_pedido(self):
+        db = AsyncMock()
+        self._assert_forbidden(create_order(
+            payload=SimpleNamespace(),
+            db=db,
+            current_user=PRODUTOS,
+            principal=SimpleNamespace(),
+        ))
+        db.execute.assert_not_awaited()
+
+    def test_produtos_nao_edita_pedido(self):
+        db = AsyncMock()
+        self._assert_forbidden(update_order(
+            order_id=uuid.uuid4(),
+            payload=OrderUpdate(notes="não permitido"),
+            db=db,
+            current_user=PRODUTOS,
+            principal=SimpleNamespace(),
+        ))
+        db.execute.assert_not_awaited()
+
+    def test_produtos_nao_finaliza_pedido(self):
+        db = AsyncMock()
+        self._assert_forbidden(finalize_order(
+            order_id=uuid.uuid4(),
+            payload=FinalizePayload(),
+            db=db,
+            current_user=PRODUTOS,
+        ))
+        db.execute.assert_not_awaited()
+
+    def test_produtos_nao_cancela_pedido(self):
+        db = AsyncMock()
+        self._assert_forbidden(cancel_order(
+            order_id=uuid.uuid4(),
+            payload=CancelPayload(),
+            db=db,
+            current_user=PRODUTOS,
+        ))
+        db.execute.assert_not_awaited()

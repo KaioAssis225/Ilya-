@@ -31,9 +31,9 @@ class TestResolveMaxDiscount:
     def test_admin_sempre_cem_por_cento(self):
         assert _resolve_max_discount(_user(UserRole.admin), _client("0.00"), None) == 100.0
 
-    def test_cadastros_e_produtos_sempre_cem_por_cento(self):
-        assert _resolve_max_discount(_user(UserRole.cadastros), _client("5.00"), None) == 100.0
-        assert _resolve_max_discount(_user(UserRole.produtos), _client("5.00"), _rep("20.00")) == 100.0
+    def test_cadastros_e_produtos_nao_recebem_desconto_comercial(self):
+        assert _resolve_max_discount(_user(UserRole.cadastros), _client("5.00"), None) == 0.0
+        assert _resolve_max_discount(_user(UserRole.produtos), _client("5.00"), _rep("20.00")) == 0.0
 
     def test_representante_usa_limite_do_proprio_representante(self):
         rep = _rep("22.50")

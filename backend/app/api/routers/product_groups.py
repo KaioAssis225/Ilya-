@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import get_db_session, require_roles
+from app.api.deps import get_db_session, require_br_fiscal_admin, require_roles
+from app.core.fiscal_audit import record_product_group_event
+from app.core.markets import MarketPrincipal
 from app.models.product_group import ProductGroup
 from app.models.user import UserRole
 from app.schemas.product_group import ProductGroupCreate, ProductGroupUpdate, ProductGroupRead
@@ -21,10 +23,6 @@ _ANY = Depends(
         UserRole.produtos,
     )
 )
-_ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.produtos))
-_ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
-
-
 @router.get("", response_model=List[ProductGroupRead])
 async def list_product_groups(
     db: AsyncSession = Depends(get_db_session),
@@ -38,10 +36,21 @@ async def list_product_groups(
 async def create_product_group(
     payload: ProductGroupCreate,
     db: AsyncSession = Depends(get_db_session),
-    _=_ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(require_br_fiscal_admin),
 ):
     pg = ProductGroup(id=uuid.uuid4(), **payload.model_dump())
     db.add(pg)
+    record_product_group_event(
+        db,
+        product_group_id=pg.id,
+        actor_user_id=principal.user.id,
+        market_code=principal.code,
+        action="created",
+        source="api",
+        group_name=pg.name,
+        old_ipi=None,
+        new_ipi=pg.ipi,
+    )
     try:
         await db.commit()
         await db.refresh(pg)
@@ -56,15 +65,28 @@ async def update_product_group(
     group_id: uuid.UUID,
     payload: ProductGroupUpdate,
     db: AsyncSession = Depends(get_db_session),
-    _=_ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(require_br_fiscal_admin),
 ):
     pg = await db.get(ProductGroup, group_id)
     if not pg:
         raise HTTPException(status_code=404, detail="Grupo não encontrado.")
+    old_ipi = pg.ipi
     if payload.name is not None:
         pg.name = payload.name
     if payload.ipi is not None:
         pg.ipi = payload.ipi
+    if pg.ipi != old_ipi:
+        record_product_group_event(
+            db,
+            product_group_id=pg.id,
+            actor_user_id=principal.user.id,
+            market_code=principal.code,
+            action="updated",
+            source="api",
+            group_name=pg.name,
+            old_ipi=old_ipi,
+            new_ipi=pg.ipi,
+        )
     try:
         await db.commit()
         await db.refresh(pg)
@@ -78,10 +100,25 @@ async def update_product_group(
 async def delete_product_group(
     group_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _=_ADMIN,
+    principal: MarketPrincipal = Depends(require_br_fiscal_admin),
 ):
     pg = await db.get(ProductGroup, group_id)
     if not pg:
         raise HTTPException(status_code=404, detail="Grupo não encontrado.")
+    record_product_group_event(
+        db,
+        product_group_id=pg.id,
+        actor_user_id=principal.user.id,
+        market_code=principal.code,
+        action="deleted",
+        source="api",
+        group_name=pg.name,
+        old_ipi=pg.ipi,
+        new_ipi=None,
+    )
     await db.delete(pg)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Grupo em uso por tipo de produto.")

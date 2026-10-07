@@ -2,7 +2,10 @@ from app.models.base import Base, TimestampMixin
 from app.models.optional_color import OptionalColor, product_optionals
 from app.models.product import Product
 from app.models.product_group import ProductGroup
+from app.models.product_group_audit_event import ProductGroupAuditEvent
 from app.models.product_type import ProductType
+from app.models.product_type_fiscal_audit_event import ProductTypeFiscalAuditEvent
+from app.models.product_fiscal_assignment_event import ProductFiscalAssignmentEvent
 from app.models.optional_category import OptionalCategory
 from app.models.client import Client
 from app.models.representative import Representative
@@ -12,6 +15,7 @@ from app.models.user import User, UserRole
 from app.models.refresh_token import RefreshToken
 from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
+from app.models.client_access_invitation import ClientAccessInvitation
 from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
 from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
@@ -25,7 +29,9 @@ __all__ = [
     "product_optionals",
     "Product",
     "ProductGroup",
+    "ProductGroupAuditEvent",
     "ProductType",
+    "ProductTypeFiscalAuditEvent",
     "OptionalCategory",
     "Client",
     "Representative",
@@ -37,6 +43,7 @@ __all__ = [
     "RefreshToken",
     "Notification",
     "SignatureInvitation",
+    "ClientAccessInvitation",
     "IntegrationOutbox",
     "OUTBOX_STATUSES",
     "PrivacyEvent",

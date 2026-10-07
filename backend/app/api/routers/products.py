@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
-from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_platform_capability, require_roles
+from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
+from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
 from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
@@ -458,6 +459,7 @@ async def _create_product_for_market(
     payload: ProductCreate,
     db: AsyncSession,
     market_code: str,
+    fiscal_actor_user_id: uuid.UUID | None = None,
 ) -> Product:
     await _validate_product_dimensions(
         db,
@@ -505,6 +507,17 @@ async def _create_product_for_market(
         product.components = await _resolve_components(db, payload.components, market_code)
     db.add(product)
     await db.flush()
+    if market_code == "BR":
+        if fiscal_actor_user_id is None:
+            raise RuntimeError("Cadastro BR sem autorização fiscal.")
+        group_id, ipi = await product_type_fiscal_snapshot(db, payload.type)
+        record_product_fiscal_assignment(
+            db, product_id=product.id, actor_user_id=fiscal_actor_user_id,
+            market_code=market_code, action="created", source="api",
+            old_type=None, new_type=payload.type,
+            old_group_id=None, new_group_id=group_id,
+            old_ipi=None, new_ipi=ipi,
+        )
 
     localized_fields = (
         {
@@ -563,7 +576,13 @@ async def create_product(
     current_user: User = _ADMIN_VENDEDOR,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    product = await _create_product_for_market(payload, db, principal.code)
+    fiscal_actor_user_id = None
+    if principal.code == "BR":
+        require_br_fiscal_admin(principal)
+        fiscal_actor_user_id = principal.user.id
+    product = await _create_product_for_market(
+        payload, db, principal.code, fiscal_actor_user_id
+    )
     if principal.code == "BR":
         return _to_read(product)
     return (await _to_market_reads(
@@ -613,6 +632,7 @@ async def get_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
     return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user), language))[0]
 
 
@@ -637,6 +657,20 @@ async def update_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    if principal.code == "BR" and "type" in payload.model_fields_set and payload.type != product.type:
+        if payload.type is None:
+            raise HTTPException(status_code=422, detail="Tipo de produto não pode ficar vazio.")
+        require_br_fiscal_admin(principal)
+        old_group_id, old_ipi = await product_type_fiscal_snapshot(db, product.type)
+        new_group_id, new_ipi = await product_type_fiscal_snapshot(db, payload.type)
+        record_product_fiscal_assignment(
+            db, product_id=product.id, actor_user_id=principal.user.id,
+            market_code=principal.code, action="updated", source="api",
+            old_type=product.type, new_type=payload.type,
+            old_group_id=old_group_id, new_group_id=new_group_id,
+            old_ipi=old_ipi, new_ipi=new_ipi,
+        )
 
     if principal.code == "EU":
         product_changes = payload.model_dump(

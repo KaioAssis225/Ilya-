@@ -28,6 +28,7 @@ class User(Base, TimestampMixin):
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    client_access_requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     linked_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

@@ -162,11 +162,25 @@ export function useDeleteUser() {
 
 export interface UserCreateResponse {
   id: string
-  email: string
   username: string
-  full_name: string
-  role: string
-  temp_password: string
+  email?: string
+  full_name?: string
+  role?: string
+  temp_password?: string
+  status?: 'awaiting_invitation'
+}
+
+export type ClientVerificationMethod = 'phone_callback' | 'existing_contract' | 'in_person'
+
+export function useIssueClientInvitation() {
+  return useMutation({
+    mutationFn: ({ clientId, confirmedEmail, verificationMethod }: {
+      clientId: string; confirmedEmail: string; verificationMethod: ClientVerificationMethod
+    }) => api.post(`/users/from-client/${clientId}/invite`, {
+      confirmed_email: confirmedEmail,
+      verification_method: verificationMethod,
+    }),
+  })
 }
 
 export function useCreateUserFromClient() {

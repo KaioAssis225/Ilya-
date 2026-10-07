@@ -244,6 +244,29 @@ PASSWORD_PEPPER=seu_pepper_secreto_para_argon2
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_db
 ```
 
+Para enviar convites de ativação a clientes, configure no backend `SMTP_HOST`,
+`SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL` e
+`CLIENT_INVITE_BASE_URL` com a origem HTTPS do frontend. Use `SMTP_USE_SSL=true`
+somente quando o servidor exigir TLS implícito; o padrão usa STARTTLS. O prazo
+do convite é `CLIENT_INVITE_TTL_MINUTES` (30 minutos por padrão). Sem essa
+configuração, a emissão retorna 503 e nenhuma credencial é entregue ao criador.
+
+O representante pode solicitar a conta do cliente da própria carteira. A conta
+fica inativa até um administrador do mercado BR/EU confirmar pessoalmente o
+endereço do titular e registrar o método de verificação (retorno telefônico,
+contrato existente ou presencial) ao enviar o convite. Se o cadastro não tiver
+e-mail, o administrador deve verificar o titular por um desses métodos,
+registrar o endereço confirmado no cadastro e só então emitir o convite. Sem
+um endereço verificável, a conta permanece inativa. O link expira, funciona uma
+vez e a API nunca devolve a senha ou o token ao representante ou administrador.
+
+Ao implantar a migration `client_invites_r10_20261007`, contas de cliente que
+ainda exigem a primeira troca de senha ficam inativas e têm credenciais e
+sessões antigas revogadas. O administrador deve enviar um novo convite após
+confirmar o endereço. Implante backend e frontend atualizados junto com essa
+migration; código antigo de provisionamento não deve continuar atendendo após
+o corte.
+
 ### 3. Subindo o Banco e o Backend (via Docker Compose)
 Na raiz do monorepo, execute:
 ```bash

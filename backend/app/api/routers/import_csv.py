@@ -9,6 +9,7 @@ import io
 import logging
 import re
 import unicodedata
+import uuid
 from decimal import Decimal
 from typing import Optional
 
@@ -23,7 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, noload
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import get_current_principal, get_db_session, require_roles
+from app.api.deps import (
+    get_current_principal,
+    get_db_session,
+    require_br_fiscal_admin,
+    require_roles,
+)
+from app.core.fiscal_audit import group_ipi, product_type_fiscal_snapshot, record_product_fiscal_assignment, record_product_group_event, record_product_type_fiscal_event
 from app.models.user import User, UserRole
 from app.models.product import Product
 from app.models.product_type import ProductType
@@ -424,7 +431,11 @@ async def import_catalogs(file: UploadFile = File(...), db: AsyncSession = Depen
 
 
 @router.post("/product-groups")
-async def import_product_groups(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS):
+async def import_product_groups(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = Depends(require_br_fiscal_admin),
+):
     """Colunas: name, ipi. Upsert por name."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
@@ -457,12 +468,26 @@ async def import_product_groups(file: UploadFile = File(...), db: AsyncSession =
             )
             g = existing.get(name)
             if g:
+                old_ipi = g.ipi
                 g.ipi = ipi
                 is_update = True
             else:
-                g = ProductGroup(name=name, ipi=ipi)
+                old_ipi = None
+                g = ProductGroup(id=uuid.uuid4(), name=name, ipi=ipi)
                 db.add(g)
                 is_update = False
+            if not is_update or old_ipi != ipi:
+                record_product_group_event(
+                    db,
+                    product_group_id=g.id,
+                    actor_user_id=principal.user.id,
+                    market_code=principal.code,
+                    action="updated" if is_update else "created",
+                    source="csv",
+                    group_name=g.name,
+                    old_ipi=old_ipi,
+                    new_ipi=ipi,
+                )
             existing[name] = g
             updated += 1 if is_update else 0
             created += 0 if is_update else 1
@@ -475,6 +500,8 @@ async def import_product_groups(file: UploadFile = File(...), db: AsyncSession =
 @router.post("/product-types")
 async def import_product_types(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
     """Colunas: name, group (nome do grupo → FK). Upsert por name."""
+    if principal.code == BR_MARKET:
+        require_br_fiscal_admin(principal)
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
     names = {_first(row, "name", "nome") for row in rows}
@@ -527,13 +554,27 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
                     raise ValueError(f"Grupo '{group_name}' não encontrado. Importe os grupos primeiro.")
                 group_id = grp.id
             t = existing.get(name)
+            old_group_id = t.group_id if t else None
+            if principal.code == BR_MARKET:
+                old_ipi = await group_ipi(db, old_group_id)
+                new_ipi = await group_ipi(db, group_id)
             if t:
                 t.group_id = group_id
                 is_update = True
             else:
-                t = ProductType(market_code=principal.code, name=name, group_id=group_id)
+                t = ProductType(id=uuid.uuid4(), market_code=principal.code, name=name, group_id=group_id)
                 db.add(t)
                 is_update = False
+            if principal.code == BR_MARKET and (not is_update or old_group_id != group_id):
+                record_product_type_fiscal_event(
+                    db, product_type_id=t.id, actor_user_id=principal.user.id,
+                    market_code=principal.code,
+                    action="updated" if is_update else "created", source="csv",
+                    old_name=name if is_update else None, new_name=name,
+                    old_group_id=old_group_id, new_group_id=group_id,
+                    old_ipi=old_ipi,
+                    new_ipi=new_ipi,
+                )
             existing[name] = t
             updated += 1 if is_update else 0
             created += 0 if is_update else 1
@@ -887,6 +928,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
     Upsert por product_code (SKU)."""
     if principal.code != "BR":
         raise HTTPException(403, "O catálogo-base só pode ser importado no mercado Brasil.")
+    require_br_fiscal_admin(principal)
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
     codes = {
@@ -911,6 +953,20 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
                     noload(Product.components),
                 )
             ),
+        )
+    }
+    type_names = {
+        (_first(row, "type", "tipo") or "Outro").strip()
+        for row in rows
+    }
+    valid_types = {
+        product_type.name
+        for product_type in await _load_chunked(
+            db, type_names,
+            lambda chunk: select(ProductType).where(
+                ProductType.market_code == BR_MARKET,
+                ProductType.name.in_(chunk),
+            ).options(noload(ProductType.group)),
         )
     }
     created = updated = 0
@@ -991,15 +1047,34 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
                 price_corporativo=price_corporativo,
                 observacao=_first(row, "observacao", "observação", "obs"),
             )
+            if fields["type"] not in valid_types:
+                raise ValueError(f"Tipo de produto '{fields['type']}' não cadastrado no BR.")
             p = existing.get(code)
+            old_type = p.type if p else None
+            type_changed = p is None or old_type != fields["type"]
+            if type_changed:
+                old_group_id, old_ipi = (
+                    await product_type_fiscal_snapshot(db, old_type)
+                    if old_type else (None, None)
+                )
+                new_group_id, new_ipi = await product_type_fiscal_snapshot(db, fields["type"])
             if p:
                 for k, v in fields.items():
                     setattr(p, k, v)
                 is_update = True
             else:
-                p = Product(market_code=principal.code, product_code=code, **fields)
+                p = Product(id=uuid.uuid4(), market_code=principal.code, product_code=code, **fields)
                 db.add(p)
                 is_update = False
+            if type_changed:
+                record_product_fiscal_assignment(
+                    db, product_id=p.id, actor_user_id=principal.user.id,
+                    market_code=principal.code,
+                    action="updated" if is_update else "created", source="csv",
+                    old_type=old_type, new_type=fields["type"],
+                    old_group_id=old_group_id, new_group_id=new_group_id,
+                    old_ipi=old_ipi, new_ipi=new_ipi,
+                )
             existing[code] = p
             updated += 1 if is_update else 0
             created += 0 if is_update else 1

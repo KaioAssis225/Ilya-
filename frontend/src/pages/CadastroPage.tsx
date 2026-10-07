@@ -15,8 +15,8 @@ import type { ProductGroup } from '../hooks/useProductGroups'
 import type { ProductType } from '../hooks/useProductTypes'
 import { useOptionalCategories, useCreateOptionalCategory, useUpdateOptionalCategory, useDeleteOptionalCategory } from '../hooks/useOptionalCategories'
 import type { OptionalCategory } from '../hooks/useOptionalCategories'
-import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
-import type { UserCreateResponse } from '../hooks/useUsers'
+import { useCreateUserFromClient, useCreateUserFromRep, useIssueClientInvitation } from '../hooks/useUsers'
+import type { ClientVerificationMethod, UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import { useCadastroText } from '../hooks/useCadastroText'
 import { NumberField } from '../components/NumberField'
@@ -751,6 +751,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const { user } = useAuth()
   const tx = useCadastroText()
   const isEurope = user?.active_market === 'EU'
+  const canClassifyBr = !isEurope && user?.role === 'admin'
   const locale = isEurope ? 'pt-PT' : 'pt-BR'
   const currency = isEurope ? 'EUR' : 'BRL'
   const money = (value: number | null | undefined) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value ?? 0))
@@ -983,7 +984,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               description_pt_pt: form.description_pt_pt?.trim() || undefined,
               description_en: form.description_en?.trim() || undefined,
             }
-          : payload
+          : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (!isEurope && pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
       } else {
@@ -1018,9 +1019,11 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
-            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">{tx('Novo ')}</span>{tx('Produto')}
-          </button>
+          {(isEurope || canClassifyBr) && (
+            <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
+              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">{tx('Novo ')}</span>{tx('Produto')}
+            </button>
+          )}
         </div>
       </div>
       {isEurope && (
@@ -1303,14 +1306,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted">{tx('Tipo')}</span>
-                <select className="input" value={form.type ?? 'Outro'} onChange={(e) => {
+                <select className="input" value={form.type ?? 'Outro'} disabled={!isEurope && !canClassifyBr} onChange={(e) => {
                   if (e.target.value === '__new__') { setShowNewTypeModal(true) }
                   else setForm({ ...form, type: e.target.value })
                 }}>
                   {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro']).map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                  <option value="__new__">{tx('+ Adicionar Novo...')}</option>
+                  {(isEurope || canClassifyBr) && <option value="__new__">{tx('+ Adicionar Novo...')}</option>}
                 </select>
               </label>
               <label className="flex flex-col gap-1">
@@ -1823,12 +1826,17 @@ function PeopleTab<T extends Client | Representative>({
   const [viewing, setViewing] = useState<T | null>(null)
   const [createdUser, setCreatedUser] = useState<UserCreateResponse | null>(null)
   const [createUserError, setCreateUserError] = useState<string | null>(null)
+  const [confirmedEmail, setConfirmedEmail] = useState('')
+  const [verificationMethod, setVerificationMethod] = useState<ClientVerificationMethod>('phone_callback')
+  const [inviteSent, setInviteSent] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState<ClientCreate>(() => emptyAddress(activeMarket))
 
   const createFromClient = useCreateUserFromClient()
   const createFromRep = useCreateUserFromRep()
+  const issueInvitation = useIssueClientInvitation()
 
   function openCreate() { setForm(emptyAddress(activeMarket)); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
@@ -1837,6 +1845,7 @@ function PeopleTab<T extends Client | Representative>({
   }
   function openView(item: T) {
     setViewing(item); setCreatedUser(null); setCreateUserError(null)
+    setConfirmedEmail(''); setInviteSent(false); setInviteError(null)
   }
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -1872,6 +1881,22 @@ function PeopleTab<T extends Client | Representative>({
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setCreateUserError(detail ?? tx('Erro ao criar usuário.'))
+    }
+  }
+
+  async function handleIssueInvitation() {
+    if (!viewing || entityType !== 'client') return
+    setInviteError(null)
+    try {
+      await issueInvitation.mutateAsync({
+        clientId: viewing.id,
+        confirmedEmail: confirmedEmail.trim(),
+        verificationMethod,
+      })
+      setInviteSent(true)
+      setConfirmedEmail('')
+    } catch (err) {
+      setInviteError(parseApiError(err))
     }
   }
 
@@ -2020,10 +2045,10 @@ function PeopleTab<T extends Client | Representative>({
                   </div>
                   <div className="text-sm text-ink-2 space-y-1">
                     <p><span className="text-muted">{tx('Usuário:')}</span> <strong>{createdUser.username}</strong></p>
-                    <p><span className="text-muted">{tx('Senha inicial:')}</span> <strong>{createdUser.temp_password}</strong></p>
-                    <p><span className="text-muted">{tx('Perfil:')}</span> {tx(createdUser.role === 'representante' ? 'Representante' : 'Cliente')}</p>
+                    {createdUser.temp_password && <p><span className="text-muted">{tx('Senha inicial:')}</span> <strong>{createdUser.temp_password}</strong></p>}
+                    <p><span className="text-muted">{tx('Perfil:')}</span> {tx(entityType === 'rep' ? 'Representante' : 'Cliente')}</p>
                   </div>
-                  <p className="text-xs text-muted-2 mt-1">{tx('O usuário deverá trocar a senha no primeiro acesso.')}</p>
+                  <p className="text-xs text-muted-2 mt-1">{tx(entityType === 'client' ? 'Conta pendente. Um administrador deve confirmar o e-mail do titular e enviar o convite.' : 'O usuário deverá trocar a senha no primeiro acesso.')}</p>
                 </div>
               ) : viewing?.has_user ? (
                 <div className="flex items-center gap-3">
@@ -2035,7 +2060,7 @@ function PeopleTab<T extends Client | Representative>({
                     <CheckCircle className="w-4 h-4" />
                     {tx('Usuário já criado')}
                   </button>
-                  <span className="text-xs text-muted">{tx('Gerencie pela tela Admin.')}</span>
+                  <span className="text-xs text-muted">{tx(entityType === 'client' && !(viewing as Client).user_validated ? 'Aguardando ativação pelo titular.' : 'Gerencie pela tela Admin.')}</span>
                 </div>
               ) : (
                 <>
@@ -2052,9 +2077,25 @@ function PeopleTab<T extends Client | Representative>({
                     {tx(createUserPending ? 'Criando…' : 'Criar Usuário')}
                   </button>
                   <p className="text-xs text-muted mt-2">
-                    {tx('Cria acesso com usuário gerado pelo nome e senha temporária aleatória.')}
+                    {tx(entityType === 'client' ? 'Solicita a conta. A senha será definida pelo titular após confirmação do e-mail por um administrador.' : 'Cria acesso com usuário gerado pelo nome e senha temporária aleatória.')}
                   </p>
                 </>
+              )}
+              {entityType === 'client' && isAdmin && (createdUser || viewing.has_user) && !(viewing as Client).user_validated && (
+                <div className="mt-4 space-y-3 border-t border-line pt-4">
+                  <p className="text-xs text-ink-2">{tx('Confirme a identidade do titular fora do sistema antes de enviar. Digite o e-mail que foi verificado; ele deve coincidir com o cadastro.')}</p>
+                  <input className="input" type="email" aria-label={tx('E-mail confirmado do titular')} value={confirmedEmail} onChange={event => setConfirmedEmail(event.target.value)} placeholder={tx('E-mail confirmado do titular')} autoComplete="off" />
+                  <select className="input" aria-label={tx('Método de verificação')} value={verificationMethod} onChange={event => setVerificationMethod(event.target.value as ClientVerificationMethod)}>
+                    <option value="phone_callback">{tx('Retorno telefônico ao titular')}</option>
+                    <option value="existing_contract">{tx('Contrato existente')}</option>
+                    <option value="in_person">{tx('Verificação presencial')}</option>
+                  </select>
+                  <button className="btn-primary" onClick={() => void handleIssueInvitation()} disabled={!confirmedEmail.trim() || issueInvitation.isPending || inviteSent}>
+                    {tx(issueInvitation.isPending ? 'Enviando…' : 'Confirmar e enviar convite')}
+                  </button>
+                  {inviteSent && <p role="status" className="text-xs text-green-700">{tx('Convite enviado ao endereço confirmado.')}</p>}
+                  {inviteError && <p role="alert" className="text-xs text-red-700">{inviteError}</p>}
+                </div>
               )}
             </div>}
 
@@ -2438,7 +2479,10 @@ type GroupModal =
   | { kind: 'new-type'; groupId: string }
   | { kind: 'edit-type'; type: ProductType }
 
-function GroupsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
+function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
+  color: string; page: number; onPage: (p: number) => void
+  canEditGroups: boolean; canEditTypes: boolean
+}) {
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
@@ -2509,15 +2553,15 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-ink">{tx('Grupos & Subgrupos')}</h2>
-        <button onClick={openNewGroup}
+        {canEditGroups && <button onClick={openNewGroup}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
           style={{ backgroundColor: color }}>
           <Plus className="w-3.5 h-3.5" /> {tx('Novo Grupo')}
-        </button>
+        </button>}
       </div>
 
       {/* Group form modal */}
-      {(modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
+      {canEditGroups && (modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
         <Modal
           title={tx(modal.kind === 'edit-group' ? 'Editar Grupo' : 'Novo Grupo')}
           onClose={() => setModal(null)}
@@ -2552,7 +2596,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       )}
 
       {/* Type form modal */}
-      {(modal?.kind === 'new-type' || modal?.kind === 'edit-type') && (
+      {canEditTypes && (modal?.kind === 'new-type' || modal?.kind === 'edit-type') && (
         <Modal
           title={tx(modal.kind === 'edit-type' ? 'Editar Subgrupo' : 'Novo Subgrupo')}
           onClose={() => setModal(null)}
@@ -2582,12 +2626,12 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       )}
 
       {/* Delete confirmations */}
-      {deletingGroup && (
+      {canEditGroups && deletingGroup && (
         <ConfirmDelete name={deletingGroup.name}
           onConfirm={async () => { await deleteGroupM.mutateAsync(deletingGroup.id); setDeletingGroup(null) }}
           onCancel={() => setDeletingGroup(null)} />
       )}
-      {deletingType && (
+      {canEditTypes && deletingType && (
         <ConfirmDelete name={deletingType.name}
           onConfirm={async () => { await deleteTypeM.mutateAsync(deletingType.id); setDeletingType(null) }}
           onCancel={() => setDeletingType(null)} />
@@ -2610,14 +2654,14 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  {canEditGroups && <div className="flex items-center gap-1">
                     <button onClick={() => openEditGroup(group)} className="p-1 text-muted hover:text-gold transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => setDeletingGroup(group)} className="p-1 text-muted hover:text-red-500 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                  </div>
+                  </div>}
                 </div>
 
                 {groupTypes.length > 0 && (
@@ -2626,30 +2670,30 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                       <div key={t.id}
                         className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-bg text-xs text-ink">
                         <span>{t.name}</span>
-                        <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
+                        {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
                           <Pencil className="w-2.5 h-2.5" />
-                        </button>
-                        <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
+                        </button>}
+                        {canEditTypes && <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
                           <Trash2 className="w-2.5 h-2.5" />
-                        </button>
+                        </button>}
                       </div>
                     ))}
                   </div>
                 )}
 
-                <button
+                {canEditTypes && <button
                   onClick={() => openNewType(group.id)}
                   className="flex items-center gap-1 text-xs font-medium transition-colors"
                   style={{ color }}
                 >
                   <Plus className="w-3 h-3" /> {tx('Novo Subgrupo')}
-                </button>
+                </button>}
               </div>
             )
           })}
 
           {groups.length === 0 && orphanTypes.length === 0 && (
-            <p className="text-sm text-muted">{tx('Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.')}</p>
+            <p className="text-sm text-muted">{tx('Nenhum grupo cadastrado.')}</p>
           )}
 
           {orphanTypes.length > 0 && (
@@ -2660,12 +2704,12 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                   <div key={t.id}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-white text-xs text-ink">
                     <span>{t.name}</span>
-                    <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
+                    {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
                       <Pencil className="w-2.5 h-2.5" />
-                    </button>
-                    <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
+                    </button>}
+                    {canEditTypes && <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
                       <Trash2 className="w-2.5 h-2.5" />
-                    </button>
+                    </button>}
                   </div>
                 ))}
               </div>
@@ -2889,10 +2933,17 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
   )
 }
 
-function ImportTab({ color }: { color: string }) {
+function ImportTab({ color, canEditFiscal, market }: {
+  color: string; canEditFiscal: boolean; market: 'BR' | 'EU'
+}) {
   const tx = useCadastroText()
-  const [supportTable, setSupportTable] = useState('product-groups')
-  const current = SUPPORT_TABLES.find((t) => t.value === supportTable)!
+  const [supportTable, setSupportTable] = useState('catalogs')
+  const availableTables = SUPPORT_TABLES.filter(t =>
+    t.value === 'product-groups' ? canEditFiscal
+      : t.value === 'product-types' ? market === 'EU' || canEditFiscal
+        : true
+  )
+  const current = availableTables.find((t) => t.value === supportTable) ?? availableTables[0]
   return (
     <div className="space-y-6">
       <div>
@@ -2904,16 +2955,16 @@ function ImportTab({ color }: { color: string }) {
         <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> {tx('Cadastros de apoio')}</h3>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted">{tx('Tabela:')}</span>
-          <select value={supportTable} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
-            {SUPPORT_TABLES.map((t) => <option key={t.value} value={t.value}>{tx(t.label)}</option>)}
+          <select value={current.value} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
+            {availableTables.map((t) => <option key={t.value} value={t.value}>{tx(t.label)}</option>)}
           </select>
         </div>
-        <ImportUploader key={supportTable} endpoint={supportTable} label={tx(current.label)} columns={tx(current.columns)} color={color} />
+        <ImportUploader key={current.value} endpoint={current.value} label={tx(current.label)} columns={tx(current.columns)} color={color} />
       </section>
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> {tx('Catálogo de produtos — 2 etapas')}</h3>
-        <ImportUploader endpoint="products" label={tx('Etapa 1: Subir Tabela de Produtos')} hint={tx('Cria/atualiza produtos pelo SKU (product_code).')} columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
+        {canEditFiscal && <ImportUploader endpoint="products" label={tx('Etapa 1: Subir Tabela de Produtos')} hint={tx('Cria/atualiza produtos pelo SKU (product_code).')} columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />}
         <ImportUploader endpoint="product-optionals" label={tx('Etapa 2: Subir Tabela de Opcionais do Produto')} hint={tx('Vincula opcionais a cada SKU — rode após a Etapa 1.')} columns="product_code, category, color_name" color={color} />
       </section>
 
@@ -2967,6 +3018,11 @@ function savePersistedCadastroState(state: PersistedCadastroState) {
 export default function CadastroPage() {
   const { user } = useAuth()
   const tx = useCadastroText()
+  const activeMarket = user?.active_market ?? 'BR'
+  const canEditFiscal = activeMarket === 'BR' && user?.role === 'admin'
+  const canEditTypes = activeMarket === 'EU'
+    ? ['admin', 'vendedor', 'produtos'].includes(user?.role ?? '')
+    : canEditFiscal
   const isRep = user?.role === 'representante'
   const isCliente = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user.linked_id)
   const isLimited = isRep || isCliente
@@ -3129,11 +3185,11 @@ export default function CadastroPage() {
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={canEditFiscal} canEditTypes={canEditTypes} />}
 
             {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
 
-            {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} />}
+            {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} canEditFiscal={canEditFiscal} market={activeMarket} />}
           </main>
         </div>
       </div>

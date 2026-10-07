@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User, UserRole
-from app.models.market import UserPlatformPermission
+from app.models.market import BR_MARKET, UserPlatformPermission
 from app.core.security import decode_access_token
 from app.core.markets import (
     MarketActor,
@@ -135,6 +135,18 @@ async def get_current_user(
     return principal.actor
 
 
+def require_br_fiscal_admin(
+    principal: MarketPrincipal = Depends(get_current_principal),
+) -> MarketPrincipal:
+    """Autoriza mutações do IPI global somente a admin no mercado BR."""
+    if principal.code != BR_MARKET or principal.actor.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A manutenção fiscal de IPI exige administrador no mercado BR.",
+        )
+    return principal
+
+
 async def get_platform_principal(
     token: str = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db_session),
@@ -189,13 +201,15 @@ def is_internal_operator(user: User) -> bool:
     return user.role == UserRole.vendedor and user.linked_id is None
 
 
-# Papéis que decidem os termos comerciais do cliente: teto de desconto e
-# carteira (`rep_id`). Cadastro (clients.create_client) e edição
-# (sanitize_client_update_fields) leem esta mesma lista de propósito — já
-# divergiram uma vez, e o efeito foi cliente com a carteira errada que ninguém
-# conseguia corrigir pela API.
-COMMERCIAL_ROLES = frozenset(
+# Decisões comerciais distintas têm matrizes próprias. O papel `produtos` pode
+# manter a carteira cadastral do cliente, mas não define seu teto de desconto.
+# Cadastro e edição leem estas mesmas listas para não abrirem uma rota
+# alternativa com mais privilégio.
+CLIENT_ASSIGNMENT_ROLES = frozenset(
     {UserRole.admin, UserRole.cadastros, UserRole.produtos}
+)
+DISCOUNT_MANAGEMENT_ROLES = frozenset(
+    {UserRole.admin, UserRole.cadastros}
 )
 
 
@@ -213,8 +227,9 @@ def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict
     # `vendedor`+linked_id) nunca define o próprio perfil de faturamento.
     if is_client_account(current_user):
         update_data.pop("price_profile", None)
-    if current_user.role not in COMMERCIAL_ROLES:
+    if current_user.role not in DISCOUNT_MANAGEMENT_ROLES:
         update_data.pop("max_discount", None)
+    if current_user.role not in CLIENT_ASSIGNMENT_ROLES:
         # Reatribuir carteira é decisão comercial: sem isso um representante
         # poderia puxar para si o cliente de outro — ou se livrar do próprio.
         update_data.pop("rep_id", None)
