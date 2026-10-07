@@ -141,5 +141,16 @@ class UserCreateResponse(BaseModel):
     temp_password: str
 
 
+class ClientProvisionResponse(BaseModel):
+    id: uuid.UUID
+    username: str
+    status: Literal["awaiting_invitation"] = "awaiting_invitation"
+
+
+class ActivateClientRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    new_password: str
+
+
 class SwitchMarketRequest(BaseModel):
     market: Literal["BR", "EU"]

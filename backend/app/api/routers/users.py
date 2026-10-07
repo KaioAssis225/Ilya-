@@ -1,11 +1,12 @@
 import re
+import logging
 import secrets
 import uuid
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import exists, func, or_, select, update
@@ -13,10 +14,16 @@ from sqlalchemy import exists, func, or_, select, update
 from app.api.deps import (
     get_db_session,
     get_current_user,
+    get_current_principal,
     require_platform_capability,
     require_roles,
 )
-from app.core.markets import PlatformPrincipal
+from app.core.markets import MarketPrincipal, PlatformPrincipal
+from app.core.client_invites import (
+    generate_invite_token, hash_invite_token, invite_expiry,
+    invitation_delivery_ready, send_client_invitation,
+    client_identity_isolated,
+)
 from app.core.platform import lock_platform_admin_guard
 from app.core.security import hash_password, validate_password_strength
 from app.core.search import literal_contains_pattern
@@ -24,6 +31,7 @@ from app.models.user import User, UserRole
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
+from app.models.client_access_invitation import ClientAccessInvitation
 from app.models.market import (
     PLATFORM_CAPABILITIES,
     ProductMarket,
@@ -37,15 +45,22 @@ from app.schemas.auth import (
     UserUpdate,
     UserPasswordReset,
     UserCreateResponse,
+    ClientProvisionResponse,
     UserMarketAccessInput,
 )
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
+logger = logging.getLogger("ilya.client_access")
 _admin_only = require_roles(UserRole.admin)
 
 
 class PlatformPermissionsUpdate(BaseModel):
     capabilities: set[Literal["platform_admin", "activate_market", "read_outbox"]]
+
+
+class ClientInviteIssue(BaseModel):
+    confirmed_email: EmailStr
+    verification_method: Literal["phone_callback", "existing_contract", "in_person"]
 
 
 async def _would_remove_last_platform_admin(
@@ -597,6 +612,14 @@ async def reset_password(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado.")
+    client_link = (await db.execute(select(UserMarket.user_id).where(
+        UserMarket.user_id == user.id,
+        UserMarket.role == UserRole.cliente.value,
+        UserMarket.linked_client_id.is_not(None),
+    ).limit(1))).scalar_one_or_none()
+    if (user.role == UserRole.cliente or client_link is not None
+            or (user.role == UserRole.vendedor and user.linked_id is not None)):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Senha de cliente só pode ser definida pelo titular via convite.")
     user.hashed_password = hash_password(body.new_password)
     user.auth_version += 1
     await db.execute(
@@ -642,7 +665,7 @@ async def delete_user(
     await db.commit()
 
 
-@router.post("/from-client/{client_id}", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/from-client/{client_id}", response_model=ClientProvisionResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_from_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
@@ -679,15 +702,15 @@ async def create_user_from_client(
     username = await _resolve_unique_username(base_username, db)
 
     synthetic_email = f"{username}@clientes.ilya.internal"
-    temp_password = secrets.token_urlsafe(9)
-
     user = User(
         email=synthetic_email,
         username=username,
-        hashed_password=hash_password(temp_password),
+        hashed_password=hash_password(secrets.token_urlsafe(48)),
         full_name=client.name,
         role=UserRole.cliente,  # SEC-01: conta de cliente-final, sem acesso de operador
+        is_active=False,
         must_change_password=True,
+        client_access_requested_by_user_id=current.id,
         linked_id=client_id,
         home_market=client.market_code,
     )
@@ -707,14 +730,87 @@ async def create_user_from_client(
             "Este cliente já possui uma conta ou o usuário acabou de ser criado.",
         )
     await db.refresh(user)
-    return UserCreateResponse(
+    return ClientProvisionResponse(
         id=user.id,
         username=user.username or '',
-        email=user.email,
-        full_name=user.full_name,
-        role=user.role.value,
-        temp_password=temp_password,
     )
+
+
+@router.post("/from-client/{client_id}/invite", status_code=status.HTTP_202_ACCEPTED)
+async def issue_client_invitation(
+    client_id: uuid.UUID,
+    body: ClientInviteIssue,
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    if principal.actor.role != UserRole.admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "A confirmação do destinatário exige admin deste mercado.")
+    if not invitation_delivery_ready():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Envio de convites não configurado.")
+    client = (await db.execute(select(Client).where(
+        Client.id == client_id, Client.market_code == principal.code,
+    ))).scalar_one_or_none()
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cliente não encontrado neste mercado.")
+    recipient = str(body.confirmed_email).strip().lower()
+    if not client.email or recipient != client.email.strip().lower():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Confirme o e-mail atual do titular no cadastro.")
+    user_id = (await db.execute(select(UserMarket.user_id).where(
+        UserMarket.market_code == principal.code,
+        UserMarket.role == UserRole.cliente.value,
+        UserMarket.linked_client_id == client.id,
+        UserMarket.status == "active",
+    ))).scalar_one_or_none()
+    if user_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Solicite primeiro a criação da conta deste cliente.")
+    user = (await db.execute(select(User).where(User.id == user_id).with_for_update())).scalar_one()
+    if not await client_identity_isolated(db, user):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Esta identidade também possui acesso de operador ou plataforma.")
+    if user.is_active and not user.must_change_password:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A conta já foi ativada pelo titular.")
+    now = datetime.now(timezone.utc)
+    latest = (await db.execute(select(ClientAccessInvitation.created_at).where(
+        ClientAccessInvitation.user_id == user.id,
+    ).order_by(ClientAccessInvitation.created_at.desc()).limit(1))).scalar_one_or_none()
+    if latest is not None:
+        latest_utc = latest.replace(tzinfo=timezone.utc) if latest.tzinfo is None else latest
+        if now - latest_utc < timedelta(minutes=2):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Aguarde dois minutos para reenviar o convite.")
+    await db.execute(update(ClientAccessInvitation).where(
+        ClientAccessInvitation.user_id == user.id,
+        ClientAccessInvitation.consumed_at.is_(None),
+        ClientAccessInvitation.revoked_at.is_(None),
+    ).values(revoked_at=now))
+    # Revoga qualquer senha de configuração anterior antes de emitir novo link.
+    user.is_active = False
+    user.must_change_password = True
+    user.hashed_password = hash_password(secrets.token_urlsafe(48))
+    user.auth_version += 1
+    await db.execute(update(RefreshToken).where(
+        RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False),
+    ).values(revoked=True, revoked_at=now))
+    token = generate_invite_token()
+    invitation = ClientAccessInvitation(
+        id=uuid.uuid4(), user_id=user.id, client_id=client.id,
+        market_code=principal.code, token_hash=hash_invite_token(token),
+        recipient_email=recipient, issued_by_user_id=principal.user.id,
+        requested_by_user_id=user.client_access_requested_by_user_id,
+        verified_by_user_id=principal.user.id,
+        verification_method=body.verification_method, verified_at=now,
+        expires_at=invite_expiry(),
+    )
+    db.add(invitation)
+    await db.commit()
+    try:
+        await send_client_invitation(recipient, user.username or "", token)
+    except Exception:
+        logger.warning("Falha ao enviar convite de cliente: invitation_id=%s", invitation.id)
+        invitation.revoked_at = datetime.now(timezone.utc)
+        await db.commit()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Não foi possível enviar o convite. Tente novamente.")
+    invitation.sent_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"status": "sent", "recipient_email": recipient}
 
 
 @router.post("/from-rep/{rep_id}", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)

@@ -16,6 +16,7 @@ from app.api.deps import (
 )
 from app.core.limiter import limiter, refresh_rate_limit_key
 from app.core.lifecycle import touch_client_activity
+from app.core.client_invites import hash_invite_token, client_identity_isolated
 from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.privacy_audit import record_privacy_event
 from app.core.platform import lock_platform_admin_guard
@@ -44,11 +45,12 @@ from app.core.markets import (
     require_market_access,
 )
 from app.models.notification import Notification
-from app.models.market import ProductMarket, UserPlatformPermission, VAT_APPROVED
+from app.models.market import ProductMarket, UserMarket, UserPlatformPermission, VAT_APPROVED
 from app.models.order import Order
 from app.models.order_history import OrderHistory
 from app.models.privacy_event import PrivacyEvent
 from app.models.signature_invitation import SignatureInvitation
+from app.models.client_access_invitation import ClientAccessInvitation
 from app.schemas.auth import (
     LoginRequest,
     AccessTokenResponse,
@@ -56,6 +58,7 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     ReauthenticationRequest,
     SwitchMarketRequest,
+    ActivateClientRequest,
 )
 
 logger = logging.getLogger("ilya.auth")
@@ -224,7 +227,7 @@ async def login(
         scope="market",
     ))
     if access.role == UserRole.cliente.value and access.linked_client_id is not None:
-        await touch_client_activity(db, access.linked_client_id, now)
+        await touch_client_activity(db, access.linked_client_id)
     await db.commit()
 
     _set_refresh_cookie(response, raw_refresh)
@@ -515,6 +518,74 @@ async def switch_market(
             current_user.id, access.role, current_user.auth_version, market
         )
     )
+
+
+@router.post("/activate-client", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def activate_client(
+    request: Request,
+    body: ActivateClientRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    try:
+        validate_password_strength(body.new_password)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc))
+    invalid = HTTPException(status.HTTP_400_BAD_REQUEST, "Convite inválido ou expirado.")
+    token_hash = hash_invite_token(body.token)
+    candidate = (await db.execute(select(ClientAccessInvitation.id, ClientAccessInvitation.user_id).where(
+        ClientAccessInvitation.token_hash == token_hash,
+    ))).one_or_none()
+    if candidate is None:
+        raise invalid
+    # Mesma ordem de locks da emissão: usuário primeiro, convite depois.
+    user = (await db.execute(select(User).where(User.id == candidate.user_id).with_for_update())).scalar_one_or_none()
+    if user is None:
+        raise invalid
+    invitation = (await db.execute(select(ClientAccessInvitation).where(
+        ClientAccessInvitation.id == candidate.id,
+        ClientAccessInvitation.token_hash == token_hash,
+    ).with_for_update())).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if invitation is None:
+        raise invalid
+    expires_at = invitation.expires_at.replace(tzinfo=timezone.utc) if invitation.expires_at.tzinfo is None else invitation.expires_at
+    if (invitation.consumed_at is not None or invitation.revoked_at is not None
+            or invitation.sent_at is None or expires_at <= now
+            or not user.must_change_password):
+        raise invalid
+    if not await client_identity_isolated(db, user):
+        raise invalid
+    linked = (await db.execute(select(UserMarket.user_id).where(
+        UserMarket.user_id == user.id,
+        UserMarket.market_code == invitation.market_code,
+        UserMarket.role == UserRole.cliente.value,
+        UserMarket.linked_client_id == invitation.client_id,
+        UserMarket.status == "active",
+    ))).scalar_one_or_none()
+    client = (await db.execute(select(Client).where(
+        Client.id == invitation.client_id,
+        Client.market_code == invitation.market_code,
+    ))).scalar_one_or_none()
+    if (linked is None or client is None or not client.email
+            or client.email.strip().lower() != invitation.recipient_email):
+        raise invalid
+    user.hashed_password = hash_password(body.new_password)
+    user.is_active = True
+    user.must_change_password = False
+    user.auth_version += 1
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    invitation.consumed_at = now
+    await _revoke_user_sessions(db, user.id)
+    await db.execute(update(ClientAccessInvitation).where(
+        ClientAccessInvitation.user_id == user.id,
+        ClientAccessInvitation.id != invitation.id,
+        ClientAccessInvitation.consumed_at.is_(None),
+        ClientAccessInvitation.revoked_at.is_(None),
+    ).values(revoked_at=now))
+    await db.commit()
+    logger.info("Acesso de cliente ativado: user_id=%s invitation_id=%s", user.id, invitation.id)
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
