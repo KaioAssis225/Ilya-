@@ -9,7 +9,8 @@ from sqlalchemy import func, or_, select
 import logging
 
 from app.api.deps import (
-    COMMERCIAL_ROLES,
+    CLIENT_ASSIGNMENT_ROLES,
+    DISCOUNT_MANAGEMENT_ROLES,
     get_db_session,
     get_current_principal,
     get_current_user,
@@ -54,10 +55,9 @@ _DELETE_CLIENT_ROLES = (
     UserRole.representante,
 )
 
-# Quem cadastra cliente. `cadastros` e `produtos` entram porque decidem a
-# carteira (COMMERCIAL_ROLES) e o teto de desconto na edição — sem poder
-# cadastrar, decidiam sobre um registro que não conseguiam criar. Constante
-# nomeada para o teste conferir a coerência com COMMERCIAL_ROLES.
+# Quem cadastra cliente. `cadastros` e `produtos` entram porque mantêm dados e
+# carteira; a permissão para definir desconto é verificada separadamente.
+# Constante nomeada para os testes conferirem a coerência dessas matrizes.
 _CREATE_CLIENT_ROLES = (
     UserRole.admin,
     UserRole.vendedor,
@@ -91,10 +91,11 @@ def sanitize_client_create_fields(data: dict, current_user: User) -> dict:
     """Espelho de `sanitize_client_update_fields` para o cadastro.
 
     Cadastro e edição seguem a mesma regra: representantes e vendedores podem
-    escolher o perfil exibido no formulário, mas apenas `COMMERCIAL_ROLES`
-    definem teto de desconto. O cliente-final nunca escolhe o próprio perfil.
+    escolher o perfil exibido no formulário, mas apenas
+    `DISCOUNT_MANAGEMENT_ROLES` define teto de desconto. O cliente-final nunca
+    escolhe o próprio perfil.
     """
-    if current_user.role not in COMMERCIAL_ROLES:
+    if current_user.role not in DISCOUNT_MANAGEMENT_ROLES:
         data["max_discount"] = ClientCreate.model_fields["max_discount"].default
     if is_client_account(current_user):
         data["price_profile"] = ClientCreate.model_fields["price_profile"].default
@@ -108,9 +109,9 @@ async def _resolved_rep_id(
 ) -> uuid.UUID | None:
     """Carteira do cliente no cadastro — mesma regra do PATCH.
 
-    Representante nunca escolhe: fica com a própria. Papel comercial
-    (`COMMERCIAL_ROLES`) escolhe, e a carteira é validada contra a tabela. Os
-    demais cadastram sem carteira e um papel comercial corrige depois pelo
+    Representante nunca escolhe: fica com a própria. Papel de atribuição
+    (`CLIENT_ASSIGNMENT_ROLES`) escolhe, e a carteira é validada contra a
+    tabela. Os demais cadastram sem carteira e um papel comercial corrige pelo
     PATCH — antes as duas rotas discordavam e o vendedor interno gravava uma
     carteira que o sanitizador o impedia de mudar em seguida.
     """
@@ -124,7 +125,7 @@ async def _resolved_rep_id(
                 ),
             )
         return current_user.rep_id
-    if current_user.role in COMMERCIAL_ROLES:
+    if current_user.role in CLIENT_ASSIGNMENT_ROLES:
         return await _validated_rep_id(data.get("rep_id"), db)
     return None
 

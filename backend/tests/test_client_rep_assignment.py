@@ -12,7 +12,11 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from app.api.deps import COMMERCIAL_ROLES, _enforce_roles, sanitize_client_update_fields
+from app.api.deps import (
+    CLIENT_ASSIGNMENT_ROLES,
+    _enforce_roles,
+    sanitize_client_update_fields,
+)
 from app.api.routers.clients import (
     _CREATE_CLIENT_ROLES,
     _DELETE_CLIENT_ROLES,
@@ -116,10 +120,11 @@ class TestCarteiraNoCadastro:
 
     Discordavam: o POST aceitava `rep_id` de qualquer papel que não fosse
     representante (inclusive do vendedor interno), enquanto o PATCH só aceitava
-    de `COMMERCIAL_ROLES`. Quem gravasse errado no cadastro não tinha conserto.
+    de `CLIENT_ASSIGNMENT_ROLES`. Quem gravasse errado no cadastro não tinha
+    conserto.
     """
 
-    @pytest.mark.parametrize("role", sorted(COMMERCIAL_ROLES, key=str))
+    @pytest.mark.parametrize("role", sorted(CLIENT_ASSIGNMENT_ROLES, key=str))
     def test_papel_comercial_escolhe_a_carteira(self, role):
         rep = uuid.uuid4()
         resolvido = asyncio.run(
@@ -178,7 +183,7 @@ class TestQuemCadastraCliente:
     registro que não conseguiam criar.
     """
 
-    @pytest.mark.parametrize("role", sorted(COMMERCIAL_ROLES, key=str))
+    @pytest.mark.parametrize("role", sorted(CLIENT_ASSIGNMENT_ROLES, key=str))
     def test_quem_decide_a_carteira_consegue_cadastrar(self, role):
         assert role in _CREATE_CLIENT_ROLES
 
