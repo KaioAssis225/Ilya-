@@ -51,6 +51,10 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "Configuração incompleta do armazenamento de objetos."
         )
+    if settings.eu_object_storage_partially_configured():
+        raise RuntimeError(
+            "Configuração incompleta do armazenamento de objetos do mercado EU."
+        )
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     # Limpeza em background: não bloqueia a prontidão da API a cada boot
     # e um advisory lock evita trabalho duplicado entre workers/réplicas.

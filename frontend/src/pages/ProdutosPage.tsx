@@ -326,6 +326,7 @@ function localizeFurnitureTerm(value: string, locale: 'pt-PT' | 'en-GB') {
     cadeira: 'Chair', cadeiras: 'Chairs', sofá: 'Sofa', sofás: 'Sofas', mesa: 'Table', mesas: 'Tables',
     aparador: 'Console table', aparadores: 'Console tables', conjunto: 'Set', conjuntos: 'Sets',
     luminária: 'Lamp', luminárias: 'Lamps', espreguiçadeira: 'Sun lounger', espreguiçadeiras: 'Sun loungers',
+    'carrinho bar': 'Bar trolley', chaise: 'Chaise longue', puff: 'Pouf',
   }
   return (locale === 'en-GB' ? en : pt)[normalized] ?? value
 }
