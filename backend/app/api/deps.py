@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User, UserRole
-from app.models.market import UserPlatformPermission
+from app.models.market import BR_MARKET, UserPlatformPermission
 from app.core.security import decode_access_token
 from app.core.markets import (
     MarketActor,
@@ -133,6 +133,18 @@ async def get_current_user(
 ) -> MarketActor:
     """Ator comercial efetivo; papéis e vínculos vêm de user_markets."""
     return principal.actor
+
+
+def require_br_fiscal_admin(
+    principal: MarketPrincipal = Depends(get_current_principal),
+) -> MarketPrincipal:
+    """Autoriza mutações do IPI global somente a admin no mercado BR."""
+    if principal.code != BR_MARKET or principal.actor.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A manutenção fiscal de IPI exige administrador no mercado BR.",
+        )
+    return principal
 
 
 async def get_platform_principal(
