@@ -2,6 +2,8 @@ import { type CSSProperties } from 'react'
 import { MarketFlag, type MarketCode } from './MarketFlag'
 
 const LABELS: Record<MarketCode, string> = { BR: 'Brasil', EU: 'Portugal' }
+// Portugal opera com a marca IBTW; o Brasil segue como ILYA.
+const BRANDS: Record<MarketCode, string> = { BR: 'ILYA', EU: 'IBTW' }
 const TRACE_COLORS: Record<MarketCode, string[]> = {
   BR: ['#009c3b', '#ffdf00', '#002776'],
   EU: ['#046a38', '#ffcc29', '#c8102e'],
@@ -39,7 +41,7 @@ export function MarketTransition({ market }: { market: MarketCode }) {
       </svg>
       <div className="market-transition-content">
         <MarketFlag market={market} animated className="market-transition-flag" />
-        <span className="market-transition-name">ILYA — {LABELS[market].toUpperCase()}</span>
+        <span className="market-transition-name">{BRANDS[market]} — {LABELS[market].toUpperCase()}</span>
       </div>
     </div>
   )
