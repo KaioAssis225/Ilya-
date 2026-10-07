@@ -50,7 +50,7 @@ function dimLabel(p: Product, market: 'BR' | 'EU', locale: 'pt-BR' | 'pt-PT' | '
 // ── Autocomplete ──────────────────────────────────────────────────────────────
 
 function Autocomplete<T extends { id: string }>({
-  searchPlaceholder, items, value, query, getLabel, getSearch, onChange, onClear, displayPlaceholder = "Nenhum", showQuickAdd, onQuickAdd, onQueryChange, isLoading = false
+  searchPlaceholder, items, value, query, getLabel, getSearch, onChange, onClear, displayPlaceholder, showQuickAdd, onQuickAdd, onQueryChange, isLoading = false
 }: {
   searchPlaceholder: string; items: T[]; value: T | null; query: string
   getLabel: (item: T) => string; getSearch: (item: T) => string
@@ -58,6 +58,7 @@ function Autocomplete<T extends { id: string }>({
   showQuickAdd?: boolean; onQuickAdd?: () => void
   onQueryChange: (query: string) => void; isLoading?: boolean
 }) {
+  const isEnglish = useLocale().locale === 'en-GB'
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const ref = useRef<HTMLDivElement>(null)
@@ -86,7 +87,7 @@ function Autocomplete<T extends { id: string }>({
       <div className="flex gap-2">
         <div className="input flex items-center justify-between bg-surface-quiet border border-line px-3 py-1.5 rounded-lg text-sm flex-1 min-w-0 min-h-11">
           <span className={`${value ? 'text-ink font-medium' : 'text-muted-3'} truncate flex-1 min-w-0`}>
-            {value ? getLabel(value) : displayPlaceholder}
+            {value ? getLabel(value) : (displayPlaceholder ?? (isEnglish ? 'None' : 'Nenhum'))}
           </span>
           {value && (
             <button
@@ -97,14 +98,14 @@ function Autocomplete<T extends { id: string }>({
                 setOpen(false)
               }}
               className="text-muted hover:text-ink transition-colors w-11 h-11 flex items-center justify-center"
-              aria-label="Limpar seleção"
+              aria-label={isEnglish ? 'Clear selection' : 'Limpar seleção'}
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
         {showQuickAdd && onQuickAdd && (
-          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 min-h-11 border border-line hover:bg-bg rounded-lg transition-colors flex items-center justify-center min-w-11" aria-label="Cadastrar novo">
+          <button type="button" onClick={onQuickAdd} className="btn-secondary px-2.5 flex-shrink-0 min-h-11 border border-line hover:bg-bg rounded-lg transition-colors flex items-center justify-center min-w-11" aria-label={isEnglish ? 'Add new' : 'Cadastrar novo'}>
             <Plus className="w-4 h-4 text-muted" />
           </button>
         )}
@@ -144,7 +145,7 @@ function Autocomplete<T extends { id: string }>({
         {open && (isLoading || filtered.length > 0 || query.length > 0) && (
           <ul id={listboxId} role="listbox" className="absolute z-30 w-full mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-48 overflow-y-auto">
             {isLoading && (
-              <li className="px-3 py-2 text-xs text-muted">Buscando…</li>
+              <li className="px-3 py-2 text-xs text-muted">{isEnglish ? 'Searching…' : 'Buscando…'}</li>
             )}
             {visibleItems.map((item, index) => (
               <li key={item.id} id={`${listboxId}-option-${index}`} role="option" aria-selected={activeIndex === index}
@@ -155,7 +156,7 @@ function Autocomplete<T extends { id: string }>({
               </li>
             ))}
             {!isLoading && filtered.length === 0 && (
-              <li className="px-3 py-2 text-xs text-muted">Nenhum resultado.</li>
+              <li className="px-3 py-2 text-xs text-muted">{isEnglish ? 'No results.' : 'Nenhum resultado.'}</li>
             )}
           </ul>
         )}
@@ -191,6 +192,7 @@ function formatCpfCnpj(value: string): string {
 function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
   title: string; entityType: 'client' | 'rep'; market: 'BR' | 'EU'; onSave: (data: ClientCreate) => Promise<void>; onClose: () => void
 }) {
+  const isEnglish = useLocale().locale === 'en-GB'
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -264,19 +266,19 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
       <div ref={panelRef} className="modal-panel w-full max-w-lg p-4 sm:p-6 mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h3 id="quick-register-title" className="text-lg font-semibold text-ink">{title}</h3>
-          <button onClick={onClose} className="text-muted hover:text-ink w-11 h-11 flex items-center justify-center" aria-label="Fechar"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-muted hover:text-ink w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? 'Close' : 'Fechar'}><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="sm:col-span-2 flex flex-col gap-1">
-            <span className="text-xs text-muted">Nome *</span>
+            <span className="text-xs text-muted">{isEnglish ? 'Name *' : 'Nome *'}</span>
             <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">Telefone *</span>
+            <span className="text-xs text-muted">{isEnglish ? 'Phone *' : 'Telefone *'}</span>
             <input className="input" value={form.phone} maxLength={market === 'BR' ? PHONE_INPUT_MAX_LENGTH : 20} onChange={(e) => setForm({ ...form, phone: market === 'BR' ? formatBrazilianPhone(e.target.value) : e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">E-mail</span>
+            <span className="text-xs text-muted">{isEnglish ? 'Email' : 'E-mail'}</span>
             <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value || null })} />
           </label>
           <label className="flex flex-col gap-1">
@@ -284,27 +286,27 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             <input className="input" value={market === 'EU' ? (form.tax_id ?? '') : (form.cpf_cnpj ?? '')} onChange={(e) => market === 'EU' ? setForm({ ...form, tax_id: e.target.value }) : setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={market === 'EU' ? 40 : 18} />
           </label>
           <label className="flex flex-col gap-1 relative">
-            <span className="text-xs text-muted">{market === 'EU' ? 'Código postal *' : 'CEP *'}</span>
+            <span className="text-xs text-muted">{market === 'EU' ? (isEnglish ? 'Postcode *' : 'Código postal *') : 'CEP *'}</span>
             <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={20} required />
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
-            {cepError && <span className="text-xs leading-snug text-red-600">CEP não encontrado ou serviço indisponível.</span>}
+            {cepError && <span className="text-xs leading-snug text-red-600">{isEnglish ? 'Postcode not found or service unavailable.' : 'CEP não encontrado ou serviço indisponível.'}</span>}
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">Número</span>
+            <span className="text-xs text-muted">{isEnglish ? 'Number' : 'Número'}</span>
             <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
           </label>
           <label className="sm:col-span-2 flex flex-col gap-1">
-            <span className="text-xs text-muted">Endereço *</span>
+            <span className="text-xs text-muted">{isEnglish ? 'Address *' : 'Endereço *'}</span>
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">{market === 'EU' ? 'Localidade *' : 'Cidade *'}</span>
+            <span className="text-xs text-muted">{market === 'EU' ? (isEnglish ? 'Town/City *' : 'Localidade *') : 'Cidade *'}</span>
             <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
           </label>
-          {market === 'BR' ? <label className="flex flex-col gap-1"><span className="text-xs text-muted">UF *</span><input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required /></label> : <><label className="flex flex-col gap-1"><span className="text-xs text-muted">País da primeira liberação</span><input className="input" value="PT" readOnly aria-readonly="true" /></label><label className="sm:col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">Região</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} /></label></>}
+          {market === 'BR' ? <label className="flex flex-col gap-1"><span className="text-xs text-muted">UF *</span><input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required /></label> : <><label className="flex flex-col gap-1"><span className="text-xs text-muted">{isEnglish ? 'Launch country' : 'País da primeira liberação'}</span><input className="input" value="PT" readOnly aria-readonly="true" /></label><label className="sm:col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">{isEnglish ? 'Region' : 'Região'}</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} /></label></>}
           {entityType === 'client' && (
             <div className="sm:col-span-2 flex flex-col gap-1.5">
-              <span className="text-xs text-muted">Perfil de faturamento *</span>
+              <span className="text-xs text-muted">{isEnglish ? 'Billing profile *' : 'Perfil de faturamento *'}</span>
               <div className="flex gap-2">
                 {(market === 'EU' ? ['lojista', 'corporativo', 'pvp'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
                   <button
@@ -329,9 +331,9 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             </p>
           )}
           <div className="sm:col-span-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-1">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
+            <button type="button" className="btn-secondary" onClick={onClose}>{isEnglish ? 'Cancel' : 'Cancelar'}</button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Salvando...' : 'Salvar'}
+              {saving ? (isEnglish ? 'Saving...' : 'Salvando...') : (isEnglish ? 'Save' : 'Salvar')}
             </button>
           </div>
         </form>
@@ -439,6 +441,7 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
 // ── Lightbox de foto ──────────────────────────────────────────────────────────
 
 function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+  const isEnglish = useLocale().locale === 'en-GB'
   const closeRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -451,14 +454,14 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   }, [])
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/75 backdrop-blur-sm"
-      onClick={onClose} role="dialog" aria-modal="true" aria-label="Foto ampliada do produto">
+      onClick={onClose} role="dialog" aria-modal="true" aria-label={isEnglish ? 'Enlarged product photo' : 'Foto ampliada do produto'}>
       <div className="relative mx-4" onClick={(e) => e.stopPropagation()}>
-        <img src={url} alt="Produto ampliado" className="max-w-[min(480px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
+        <img src={url} alt={isEnglish ? 'Enlarged product' : 'Produto ampliado'} className="max-w-[min(480px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
         <button
           ref={closeRef}
           onClick={onClose}
           className="absolute -top-3 -right-3 bg-white border border-line rounded-full w-11 h-11 flex items-center justify-center shadow-md text-muted hover:text-ink transition-colors"
-          aria-label="Fechar foto ampliada"
+          aria-label={isEnglish ? 'Close enlarged photo' : 'Fechar foto ampliada'}
         >
           <X className="w-4 h-4" />
         </button>
@@ -494,6 +497,7 @@ function MobileCartCard({
   currency: string
   locale: string
 }) {
+  const isEnglish = useLocale().locale === 'en-GB'
   const measurementMarket = currency === 'EUR' ? 'EU' : 'BR'
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
@@ -504,7 +508,7 @@ function MobileCartCard({
       {/* Top: thumbnail + info + trash */}
       <div className="flex gap-3">
         {item._product.photo_url
-          ? <button type="button" onClick={() => onPhotoClick(item._product.photo_url!)} className="w-14 h-14 rounded-lg flex-shrink-0" aria-label={`Ampliar foto de ${item._product.description}`}>
+          ? <button type="button" onClick={() => onPhotoClick(item._product.photo_url!)} className="w-14 h-14 rounded-lg flex-shrink-0" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
               <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line active:opacity-70 transition-opacity" />
             </button>
           : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -536,7 +540,7 @@ function MobileCartCard({
               onClick={() => onRemove(item.product_code)}
               className="text-muted active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
               style={{ touchAction: 'manipulation' }}
-              aria-label={`Remover ${item._product.description} do orçamento`}
+              aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -553,7 +557,7 @@ function MobileCartCard({
             onClick={() => onQtyChange(item.product_code, Math.max(1, item.qty - 1))}
             className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
-            aria-label={`Diminuir quantidade de ${item._product.description}`}
+            aria-label={isEnglish ? `Decrease quantity of ${item._product.description}` : `Diminuir quantidade de ${item._product.description}`}
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
@@ -562,7 +566,7 @@ function MobileCartCard({
             onClick={() => onQtyChange(item.product_code, item.qty + 1)}
             className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
-            aria-label={`Aumentar quantidade de ${item._product.description}`}
+            aria-label={isEnglish ? `Increase quantity of ${item._product.description}` : `Aumentar quantidade de ${item._product.description}`}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -654,7 +658,7 @@ function OrderForm({
             onClear={() => onRepChange(null)}
             onQueryChange={onRepSearch}
             isLoading={repsLoading}
-            displayPlaceholder={isEnglish ? 'None' : 'Nenhum'}
+            displayPlaceholder={isEnglish ? 'No representative' : 'Nenhum'}
             showQuickAdd
             onQuickAdd={onQuickAddRep}
           />
@@ -716,6 +720,7 @@ function OrderForm({
 // ── Bottom Drawer (mobile) ────────────────────────────────────────────────────
 
 function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  const isEnglish = useLocale().locale === 'en-GB'
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -749,8 +754,8 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
       <div className="fixed inset-0 bg-scrim/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div ref={panelRef} className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <h2 id="budget-drawer-title" className="text-sm font-semibold text-ink">Configurar Orçamento</h2>
-          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-muted hover:text-ink" aria-label="Fechar configuração do orçamento">
+          <h2 id="budget-drawer-title" className="text-sm font-semibold text-ink">{isEnglish ? 'Quote Settings' : 'Configurar Orçamento'}</h2>
+          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-muted hover:text-ink" aria-label={isEnglish ? 'Close quote settings' : 'Fechar configuração do orçamento'}>
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -770,7 +775,7 @@ export default function OrcamentoPage() {
   const market = user?.active_market ?? 'BR'
   const currency = market === 'EU' ? 'EUR' : 'BRL'
   const locale = market === 'EU' ? europeanLocale : 'pt-BR'
-  const taxLabel = market === 'EU' ? 'IVA' : 'IPI'
+  const taxLabel = market === 'EU' ? (isEnglish ? 'VAT' : 'IVA') : 'IPI'
   const cartKey = cartStorageKey(userId, market)
   const clientStorageKey = `orcamento_client_id:${userId}:${market}`
   const repStorageKey = `orcamento_rep_id:${userId}:${market}`
@@ -1125,7 +1130,7 @@ export default function OrcamentoPage() {
 
   // O código definitivo é atribuído atomicamente pelo PostgreSQL ao salvar.
   // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
-  const budgetCode = 'Gerado ao salvar'
+  const budgetCode = isEnglish ? 'Assigned on save' : 'Gerado ao salvar'
 
   const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories }) => ({
     product_code,
@@ -1153,7 +1158,7 @@ export default function OrcamentoPage() {
           }),
           new Promise<void>((r) => setTimeout(r, 1500)),
         ])
-        setToast({ message: 'Pedido atualizado com sucesso!', variant: 'success' })
+        setToast({ message: isEnglish ? 'Order updated successfully!' : 'Pedido atualizado com sucesso!', variant: 'success' })
         setSearchParams({})
       } else {
         await Promise.all([
@@ -1166,7 +1171,7 @@ export default function OrcamentoPage() {
           }),
           new Promise<void>((r) => setTimeout(r, 3000)),
         ])
-        setToast({ message: 'Orçamento finalizado com sucesso!', variant: 'success' })
+        setToast({ message: isEnglish ? 'Quote finalised successfully!' : 'Orçamento finalizado com sucesso!', variant: 'success' })
       }
       setCart([])
       localStorage.removeItem(cartKey)
@@ -1177,7 +1182,7 @@ export default function OrcamentoPage() {
       setDrawerOpen(false)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setToast({ message: detail ?? 'Erro ao processar o pedido. Tente novamente.', variant: 'error' })
+      setToast({ message: detail ?? (isEnglish ? 'Error processing the order. Please try again.' : 'Erro ao processar o pedido. Tente novamente.'), variant: 'error' })
     } finally {
       setIsGenerating(false)
     }
@@ -1186,55 +1191,55 @@ export default function OrcamentoPage() {
   // Product search card (shared between desktop and a potential mobile add section)
   const productSearchCard = (
     <div className="bg-surface-warm border border-line-warm rounded-xl p-4 space-y-3.5">
-      <span className="type-label text-gold block">Adicionar Produto</span>
+      <span className="type-label text-gold block">{isEnglish ? 'Add Product' : 'Adicionar Produto'}</span>
       {!cartHydrated && (
         <div className="rounded-lg border border-line-warm bg-white px-3 py-2 text-xs text-muted">
           {editId && editOrderQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
-              <span>Não foi possível carregar o pedido para edição.</span>
+              <span>{isEnglish ? 'Could not load the order for editing.' : 'Não foi possível carregar o pedido para edição.'}</span>
               <button
                 type="button"
                 onClick={() => void editOrderQuery.refetch()}
                 className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
-                Tentar novamente
+                {isEnglish ? 'Try again' : 'Tentar novamente'}
               </button>
             </div>
           ) : editId && resolvedClientQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
-              <span>Não foi possível carregar o cliente deste pedido.</span>
+              <span>{isEnglish ? "Could not load this order's client." : 'Não foi possível carregar o cliente deste pedido.'}</span>
               <button
                 type="button"
                 onClick={() => void resolvedClientQuery.refetch()}
                 className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
-                Tentar novamente
+                {isEnglish ? 'Try again' : 'Tentar novamente'}
               </button>
             </div>
           ) : editId && resolvedRepQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
-              <span>Não foi possível carregar o representante deste pedido.</span>
+              <span>{isEnglish ? "Could not load this order's representative." : 'Não foi possível carregar o representante deste pedido.'}</span>
               <button
                 type="button"
                 onClick={() => void resolvedRepQuery.refetch()}
                 className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
-                Tentar novamente
+                {isEnglish ? 'Try again' : 'Tentar novamente'}
               </button>
             </div>
           ) : resolvedProductQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
-              <span>Não foi possível restaurar os produtos. O carrinho salvo foi preservado.</span>
+              <span>{isEnglish ? 'Could not restore the products. The saved cart was kept.' : 'Não foi possível restaurar os produtos. O carrinho salvo foi preservado.'}</span>
               <button
                 type="button"
                 onClick={() => void resolvedProductQuery.refetch()}
                 className="min-h-11 lg:min-h-0 shrink-0 font-semibold text-gold hover:underline"
               >
-                Tentar novamente
+                {isEnglish ? 'Try again' : 'Tentar novamente'}
               </button>
             </div>
           ) : (
-            <span>Restaurando produtos do orçamento…</span>
+            <span>{isEnglish ? 'Restoring quote products…' : 'Restaurando produtos do orçamento…'}</span>
           )}
         </div>
       )}
@@ -1242,9 +1247,9 @@ export default function OrcamentoPage() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
           <input
-            aria-label="Buscar produto para adicionar ao orçamento"
+            aria-label={isEnglish ? 'Search for a product to add to the quote' : 'Buscar produto para adicionar ao orçamento'}
             className="input pl-8 w-full text-xs bg-white border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gold"
-            placeholder="Buscar produto por codigo ou desc"
+            placeholder={isEnglish ? 'Search product by code or description' : 'Buscar produto por codigo ou desc'}
             value={productQuery}
             disabled={!cartHydrated}
             onChange={(e) => { setProductQuery(e.target.value); setProductOpen(true) }}
@@ -1254,7 +1259,7 @@ export default function OrcamentoPage() {
         {cartHydrated && productOpen && (
           <ul className="absolute left-0 right-0 z-30 mt-1 bg-white border border-line rounded-xl overflow-hidden shadow-xl max-h-52 overflow-y-auto">
             {productSearch.isFetching && (
-              <li className="px-3 py-2 text-xs text-muted">Buscando…</li>
+              <li className="px-3 py-2 text-xs text-muted">{isEnglish ? 'Searching…' : 'Buscando…'}</li>
             )}
             {filteredProducts.slice(0, 15).map((p) => (
               <li
@@ -1274,7 +1279,7 @@ export default function OrcamentoPage() {
             ))}
             {!productSearch.isFetching && filteredProducts.length === 0 && (
               <li className="px-3 py-2 text-xs text-muted">
-                Nenhum produto encontrado.
+                {isEnglish ? 'No products found.' : 'Nenhum produto encontrado.'}
               </li>
             )}
           </ul>
@@ -1287,7 +1292,7 @@ export default function OrcamentoPage() {
             <X className="w-3.5 h-3.5" />
           </button>
           {selectedProduct.photo_url
-            ? <button type="button" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)} className="w-12 h-12 rounded flex-shrink-0" aria-label={`Ampliar foto de ${selectedProduct.description}`}>
+            ? <button type="button" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)} className="w-12 h-12 rounded flex-shrink-0" aria-label={isEnglish ? `Enlarge photo of ${selectedProduct.description}` : `Ampliar foto de ${selectedProduct.description}`}>
                 <img src={selectedProduct.photo_url} alt="" className="w-full h-full object-cover rounded border border-line hover:opacity-80 transition-opacity" />
               </button>
             : <div className="w-12 h-12 bg-bg-2 rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
@@ -1306,19 +1311,19 @@ export default function OrcamentoPage() {
         style={{ touchAction: 'manipulation' }}
         className="w-full min-h-11 lg:min-h-0 py-2.5 rounded-lg text-xs font-semibold tracking-wider text-white transition-all bg-gold hover:bg-gold-600 active:bg-gold-700 disabled:bg-faint disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98]"
       >
-        ADICIONAR AO ORÇAMENTO
+        {isEnglish ? 'ADD TO QUOTE' : 'ADICIONAR AO ORÇAMENTO'}
       </button>
     </div>
   )
 
   return (
     <div className="min-h-screen bg-bg text-ink">
-      <h1 className="sr-only">Novo Orçamento</h1>
+      <h1 className="sr-only">{isEnglish ? 'New Quote' : 'Novo Orçamento'}</h1>
       {editId && editOrder && (
         <div className="bg-gold text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
           <PenLine className="w-4 h-4 flex-shrink-0" />
           <span className="text-xs font-semibold tracking-wide">
-            Editando Pedido: <span className="font-mono">{editOrder.code}</span>
+            {isEnglish ? 'Editing Order: ' : 'Editando Pedido: '}<span className="font-mono">{editOrder.code}</span>
           </span>
           <button
             onClick={() => {
@@ -1333,7 +1338,7 @@ export default function OrcamentoPage() {
             }}
             className="ml-auto min-h-11 lg:min-h-0 px-2 text-white/70 hover:text-white text-xs underline"
           >
-            Cancelar edição
+            {isEnglish ? 'Cancel editing' : 'Cancelar edição'}
           </button>
         </div>
       )}
@@ -1351,8 +1356,10 @@ export default function OrcamentoPage() {
               </h2>
               <output
                 aria-live="polite"
-                aria-label={`Preço consultado: ${priceProfileLabel}`}
-                title={selectedClient ? `Tabela de preço de ${selectedClient.name}` : 'Tabela padrão até selecionar um cliente'}
+                aria-label={isEnglish ? `Price checked: ${priceProfileLabel}` : `Preço consultado: ${priceProfileLabel}`}
+                title={selectedClient
+                  ? (isEnglish ? `Price list for ${selectedClient.name}` : `Tabela de preço de ${selectedClient.name}`)
+                  : (isEnglish ? 'Default price list until a client is selected' : 'Tabela padrão até selecionar um cliente')}
                 className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
               >
                 <span className="px-2.5 text-muted">{isEnglish ? 'Price checked' : 'Preço consultado'}</span>
@@ -1368,14 +1375,14 @@ export default function OrcamentoPage() {
                   className="min-h-11 lg:min-h-0 text-xs text-terracotta hover:text-terracotta-700 border border-terracotta-soft hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >
-                  Limpar
+                  {isEnglish ? 'Clear' : 'Limpar'}
                 </button>
               )}
               <div className="relative w-36 lg:w-52">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
                   <input
                     className="input pl-8 w-full text-xs border border-line rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold bg-white"
-                    aria-label="Buscar nos itens do orçamento"
+                    aria-label={isEnglish ? 'Search quote items' : 'Buscar nos itens do orçamento'}
                     placeholder={isEnglish ? 'Search items...' : 'Buscar itens...'}
                   value={cartFilter}
                   onChange={(e) => setCartFilter(e.target.value)}
@@ -1397,7 +1404,7 @@ export default function OrcamentoPage() {
                   </Link>
                 ) : (
                   <button type="button" onClick={() => setCartFilter('')} className="btn-secondary min-h-11 px-4 text-xs">
-                    Limpar busca
+                    {isEnglish ? 'Clear search' : 'Limpar busca'}
                   </button>
                 )}
               </div>
@@ -1426,10 +1433,10 @@ export default function OrcamentoPage() {
                 <table className="hidden lg:table w-full text-sm">
                   <thead className="bg-surface-2 text-xs text-muted uppercase font-semibold border-b border-line sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3 text-left">Produto</th>
-                      <th className="px-4 py-3 text-left w-16">Qtd</th>
-                      <th className="px-4 py-3 text-left w-28">Preço Base</th>
-                      <th className="px-4 py-3 text-left w-24">Desconto (%)</th>
+                      <th className="px-4 py-3 text-left">{isEnglish ? 'Product' : 'Produto'}</th>
+                      <th className="px-4 py-3 text-left w-16">{isEnglish ? 'Qty' : 'Qtd'}</th>
+                      <th className="px-4 py-3 text-left w-28">{isEnglish ? 'Base Price' : 'Preço Base'}</th>
+                      <th className="px-4 py-3 text-left w-24">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</th>
                       <th className="px-4 py-3 text-right w-28">{taxLabel}</th>
                       <th className="px-4 py-3 text-right w-28">Subtotal</th>
                       <th className="px-4 py-3 w-8"></th>
@@ -1446,7 +1453,7 @@ export default function OrcamentoPage() {
                           <td className="px-4 py-3.5">
                             <div className="flex gap-3">
                               {item._product.photo_url
-                                ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={`Ampliar foto de ${item._product.description}`}>
+                                ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
                                     <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
                                   </button>
                                 : <div className="bg-bg-2 rounded-lg flex items-center justify-center"
@@ -1517,7 +1524,7 @@ export default function OrcamentoPage() {
                             <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={`Remover ${item._product.description} do orçamento`}>
+                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>
@@ -1534,11 +1541,11 @@ export default function OrcamentoPage() {
           {cart.length > 0 && (
             <div className="hidden lg:flex bg-surface-2 border-t border-line px-6 py-4 justify-between items-center flex-shrink-0">
               <div className="flex gap-4 text-xs text-muted-2">
-                <div><span>Itens: </span><span className="font-semibold text-ink">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
-                <div><span>Produtos: </span><span className="font-semibold text-ink">{cart.length}</span></div>
+                <div><span>{isEnglish ? 'Items: ' : 'Itens: '}</span><span className="font-semibold text-ink">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
+                <div><span>{isEnglish ? 'Products: ' : 'Produtos: '}</span><span className="font-semibold text-ink">{cart.length}</span></div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-ink font-semibold text-xs uppercase tracking-wider">Total do Orçamento:</span>
+                <span className="text-ink font-semibold text-xs uppercase tracking-wider">{isEnglish ? 'Quote Total:' : 'Total do Orçamento:'}</span>
                 <span className="text-gold font-bold text-base"><SafePrice value={totalWithIpi} currency={currency} locale={locale} /></span>
               </div>
             </div>
@@ -1587,8 +1594,10 @@ export default function OrcamentoPage() {
             <ChevronUp className="w-4 h-4" />
             <span className="text-sm font-semibold">
               {cart.length > 0
-                ? `Ver Resumo (${cart.reduce((s, i) => s + i.qty, 0)} ${cart.reduce((s, i) => s + i.qty, 0) === 1 ? 'item' : 'itens'})`
-                : 'Configurar Orçamento'}
+                ? (isEnglish
+                  ? `View Summary (${cart.reduce((s, i) => s + i.qty, 0)} ${cart.reduce((s, i) => s + i.qty, 0) === 1 ? 'item' : 'items'})`
+                  : `Ver Resumo (${cart.reduce((s, i) => s + i.qty, 0)} ${cart.reduce((s, i) => s + i.qty, 0) === 1 ? 'item' : 'itens'})`)
+                : (isEnglish ? 'Quote Settings' : 'Configurar Orçamento')}
             </span>
           </div>
           {cart.length > 0 && (
@@ -1623,7 +1632,7 @@ export default function OrcamentoPage() {
       {quickModal === 'client' && (
         <QuickRegisterModal
           market={user?.active_market ?? 'BR'}
-          title="Novo Cliente"
+          title={isEnglish ? 'New Client' : 'Novo Cliente'}
           entityType="client"
           onSave={async (data) => { await createClientM.mutateAsync(data) }}
           onClose={() => setQuickModal(null)}
@@ -1632,7 +1641,7 @@ export default function OrcamentoPage() {
       {quickModal === 'rep' && !isRep && (
         <QuickRegisterModal
           market={user?.active_market ?? 'BR'}
-          title="Novo Representante"
+          title={isEnglish ? 'New Representative' : 'Novo Representante'}
           entityType="rep"
           onSave={async (data) => { await createRepM.mutateAsync(data) }}
           onClose={() => setQuickModal(null)}
@@ -1664,13 +1673,13 @@ export default function OrcamentoPage() {
               animation: 'lightSweep 2.4s linear infinite',
             }}
           >
-            ILYA
+            {market === 'EU' ? 'IBTW' : 'ILYA'}
           </p>
           <p
             className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-gold"
             style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}
           >
-            Gerando Orçamento
+            {isEnglish ? 'Generating Quote' : 'Gerando Orçamento'}
           </p>
           <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
             <div
