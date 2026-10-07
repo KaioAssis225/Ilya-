@@ -6,6 +6,7 @@ import { PlatformAuthProvider } from './contexts/PlatformAuthContext'
 import { useAuth } from './hooks/useAuth'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './lib/features'
 import LoginPage from './pages/LoginPage'
+import AtivarContaPage from './pages/AtivarContaPage'
 import { DEMO_MODE } from './lib/demo'
 import { MarketTransition } from './components/MarketTransition'
 import type { MarketCode } from './components/MarketFlag'
@@ -62,6 +63,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<RootPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/ativar-conta" element={<AtivarContaPage />} />
             <Route
               path="/sign-contract"
               element={ELECTRONIC_SIGNATURES_ENABLED ? <SignContractPage /> : <Navigate to="/login" replace />}

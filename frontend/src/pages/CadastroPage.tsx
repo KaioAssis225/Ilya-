@@ -15,8 +15,8 @@ import type { ProductGroup } from '../hooks/useProductGroups'
 import type { ProductType } from '../hooks/useProductTypes'
 import { useOptionalCategories, useCreateOptionalCategory, useUpdateOptionalCategory, useDeleteOptionalCategory } from '../hooks/useOptionalCategories'
 import type { OptionalCategory } from '../hooks/useOptionalCategories'
-import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
-import type { UserCreateResponse } from '../hooks/useUsers'
+import { useCreateUserFromClient, useCreateUserFromRep, useIssueClientInvitation } from '../hooks/useUsers'
+import type { ClientVerificationMethod, UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import { NumberField } from '../components/NumberField'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
@@ -1816,12 +1816,17 @@ function PeopleTab<T extends Client | Representative>({
   const [viewing, setViewing] = useState<T | null>(null)
   const [createdUser, setCreatedUser] = useState<UserCreateResponse | null>(null)
   const [createUserError, setCreateUserError] = useState<string | null>(null)
+  const [confirmedEmail, setConfirmedEmail] = useState('')
+  const [verificationMethod, setVerificationMethod] = useState<ClientVerificationMethod>('phone_callback')
+  const [inviteSent, setInviteSent] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState<ClientCreate>(() => emptyAddress(activeMarket))
 
   const createFromClient = useCreateUserFromClient()
   const createFromRep = useCreateUserFromRep()
+  const issueInvitation = useIssueClientInvitation()
 
   function openCreate() { setForm(emptyAddress(activeMarket)); setEditing(null); setFormError(null); setShowForm(true) }
   function openEdit(item: T) {
@@ -1830,6 +1835,7 @@ function PeopleTab<T extends Client | Representative>({
   }
   function openView(item: T) {
     setViewing(item); setCreatedUser(null); setCreateUserError(null)
+    setConfirmedEmail(''); setInviteSent(false); setInviteError(null)
   }
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -1865,6 +1871,22 @@ function PeopleTab<T extends Client | Representative>({
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setCreateUserError(detail ?? 'Erro ao criar usuário.')
+    }
+  }
+
+  async function handleIssueInvitation() {
+    if (!viewing || entityType !== 'client') return
+    setInviteError(null)
+    try {
+      await issueInvitation.mutateAsync({
+        clientId: viewing.id,
+        confirmedEmail: confirmedEmail.trim(),
+        verificationMethod,
+      })
+      setInviteSent(true)
+      setConfirmedEmail('')
+    } catch (err) {
+      setInviteError(parseApiError(err))
     }
   }
 
@@ -2013,10 +2035,10 @@ function PeopleTab<T extends Client | Representative>({
                   </div>
                   <div className="text-sm text-ink-2 space-y-1">
                     <p><span className="text-muted">Usuário:</span> <strong>{createdUser.username}</strong></p>
-                    <p><span className="text-muted">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>
-                    <p><span className="text-muted">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Cliente'}</p>
+                    {createdUser.temp_password && <p><span className="text-muted">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>}
+                    <p><span className="text-muted">Perfil:</span> {entityType === 'rep' ? 'Representante' : 'Cliente'}</p>
                   </div>
-                  <p className="text-xs text-muted-2 mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
+                  <p className="text-xs text-muted-2 mt-1">{entityType === 'client' ? 'Conta pendente. Um administrador deve confirmar o e-mail do titular e enviar o convite.' : 'O usuário deverá trocar a senha no primeiro acesso.'}</p>
                 </div>
               ) : viewing?.has_user ? (
                 <div className="flex items-center gap-3">
@@ -2028,7 +2050,7 @@ function PeopleTab<T extends Client | Representative>({
                     <CheckCircle className="w-4 h-4" />
                     Usuário já criado
                   </button>
-                  <span className="text-xs text-muted">Gerencie pela tela Admin.</span>
+                  <span className="text-xs text-muted">{entityType === 'client' && !(viewing as Client).user_validated ? 'Aguardando ativação pelo titular.' : 'Gerencie pela tela Admin.'}</span>
                 </div>
               ) : (
                 <>
@@ -2045,9 +2067,25 @@ function PeopleTab<T extends Client | Representative>({
                     {createUserPending ? 'Criando…' : 'Criar Usuário'}
                   </button>
                   <p className="text-xs text-muted mt-2">
-                    Cria acesso com usuário gerado pelo nome e senha temporária aleatória.
+                    {entityType === 'client' ? 'Solicita a conta. A senha será definida pelo titular após confirmação do e-mail por um administrador.' : 'Cria acesso com usuário gerado pelo nome e senha temporária aleatória.'}
                   </p>
                 </>
+              )}
+              {entityType === 'client' && isAdmin && (createdUser || viewing.has_user) && !(viewing as Client).user_validated && (
+                <div className="mt-4 space-y-3 border-t border-line pt-4">
+                  <p className="text-xs text-ink-2">Confirme a identidade do titular fora do sistema antes de enviar. Digite o e-mail que foi verificado; ele deve coincidir com o cadastro.</p>
+                  <input className="input" type="email" aria-label="E-mail confirmado do titular" value={confirmedEmail} onChange={event => setConfirmedEmail(event.target.value)} placeholder="E-mail confirmado do titular" autoComplete="off" />
+                  <select className="input" aria-label="Método de verificação" value={verificationMethod} onChange={event => setVerificationMethod(event.target.value as ClientVerificationMethod)}>
+                    <option value="phone_callback">Retorno telefônico ao titular</option>
+                    <option value="existing_contract">Contrato existente</option>
+                    <option value="in_person">Verificação presencial</option>
+                  </select>
+                  <button className="btn-primary" onClick={() => void handleIssueInvitation()} disabled={!confirmedEmail.trim() || issueInvitation.isPending || inviteSent}>
+                    {issueInvitation.isPending ? 'Enviando…' : 'Confirmar e enviar convite'}
+                  </button>
+                  {inviteSent && <p role="status" className="text-xs text-green-700">Convite enviado ao endereço confirmado.</p>}
+                  {inviteError && <p role="alert" className="text-xs text-red-700">{inviteError}</p>}
+                </div>
               )}
             </div>}
 
