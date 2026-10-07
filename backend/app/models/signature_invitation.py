@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func, Index
+from sqlalchemy import DateTime, ForeignKey, String, Integer, func, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -19,6 +19,11 @@ class SignatureInvitation(Base):
     )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     document_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    recipient_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_by_user_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    verification_method: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     issued_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

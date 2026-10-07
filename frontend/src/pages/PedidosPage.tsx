@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, Link, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
 import { useClient } from '../hooks/useClients'
 import { useProductsByCodes } from '../hooks/useProducts'
@@ -198,6 +198,7 @@ function OrderDetailModal({
   userId: string; userRole: string; canSignContract: boolean
   onClose: () => void; onEdit: () => void; onFinalize: () => void; onCancel: () => void
 }) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo.
   const {
@@ -243,7 +244,12 @@ function OrderDetailModal({
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   const [confirmSign, setConfirmSign] = useState(false)
   const [isSigning, setIsSigning] = useState(false)
-  const [signLink, setSignLink] = useState<string | null>(null)
+  const [signInviteEmail, setSignInviteEmail] = useState('')
+  const [signInviteMethod, setSignInviteMethod] = useState<'phone_callback' | 'existing_contract' | 'in_person'>('phone_callback')
+  const [signInviteSent, setSignInviteSent] = useState(false)
+  const [signInviteError, setSignInviteError] = useState(false)
+  const [revisionError, setRevisionError] = useState(false)
+  const [revisionLoading, setRevisionLoading] = useState(false)
   const [signLinkLoading, setSignLinkLoading] = useState(false)
   const [clientSigOpen, setClientSigOpen] = useState(false)
   const [clientSaving, setClientSaving] = useState(false)
@@ -264,13 +270,14 @@ function OrderDetailModal({
     || userRole === 'representante'
     || userRole === 'produtos'
     || (userRole === 'vendedor' && !canSignContract)
+  const canRevise = userRole === 'admin' || userRole === 'representante'
+    || (userRole === 'vendedor' && !canSignContract)
   const profileSig = getProfileSignature(userId)
   const isContractSigned = !!(order.rep_signed || order.rep_signature)
   const isClientSigned = !!(order.client_signed || order.client_signature)
-  const canGenerateSignLink = ELECTRONIC_SIGNATURES_ENABLED
-    && (userRole === 'admin' || userRole === 'representante' || (userRole === 'vendedor' && !canSignContract))
+  const canGenerateSignLink = ELECTRONIC_SIGNATURES_ENABLED && userRole === 'admin'
   const canSignAsClient = ELECTRONIC_SIGNATURES_ENABLED
-    && (userRole === 'representante' || userRole === 'admin')
+    && isClientUser
     && !isClientSigned
   const showNotifyBtn = ELECTRONIC_SIGNATURES_ENABLED
     && (userRole === 'representante' || userRole === 'admin')
@@ -420,7 +427,18 @@ function OrderDetailModal({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
-            {canManage && !order.is_finalized && !order.is_cancelled && (
+            {canRevise && (isContractSigned || isClientSigned) && (
+              <button disabled={revisionLoading} onClick={async () => {
+                setRevisionLoading(true); setRevisionError(false)
+                try {
+                  const response = await api.post<Order>(`/orders/${order.id}/revision`)
+                  await queryClient.invalidateQueries({ queryKey: ['orders'] })
+                  onClose()
+                  navigate(`/orcamentos?edit=${response.data.id}`)
+                } catch { setRevisionError(true) } finally { setRevisionLoading(false) }
+              }} className="btn-secondary text-xs disabled:opacity-50">{revisionLoading ? 'Criando revisão...' : 'Criar revisão'}</button>
+            )}
+            {canManage && !order.is_finalized && !order.is_cancelled && !isContractSigned && !isClientSigned && (
               <>
                 <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 border border-line text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
                   <PenLine className="w-3.5 h-3.5" /> Editar
@@ -435,6 +453,8 @@ function OrderDetailModal({
             )}
           </div>
         </div>
+        {revisionError && <p role="alert" className="text-xs text-red-700 mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}
+        {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um pedido anterior. Esta versão exige novas assinaturas.</p>}
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-line mb-4">
@@ -546,16 +566,26 @@ function OrderDetailModal({
                   <span className="flex items-center gap-1 text-xs">{isContractSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">REP {isContractSigned ? 'assinado' : 'pendente'}</span></span>
                   <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
                 </div>
-                {canGenerateSignLink && !isClientSigned && (
-                  <button disabled={signLinkLoading} onClick={async () => { setSignLinkLoading(true); try { const res = await api.post<{ token: string; url: string }>(`/orders/${order.id}/generate-sign-token`); setSignLink(window.location.origin + res.data.url) } catch { /* ignore */ } finally { setSignLinkLoading(false) } }} className="flex items-center gap-1.5 px-3 py-1.5 border border-gold-soft text-gold rounded-lg text-xs font-medium hover:bg-gold-wash transition-colors disabled:opacity-50">
-                    <Link className="w-3.5 h-3.5" />{signLinkLoading ? 'Gerando...' : 'Gerar Link'}
-                  </button>
-                )}
+                {canGenerateSignLink && !isClientSigned && !signInviteSent && <span className="text-xs text-muted">Envio por e-mail confirmado</span>}
               </div>
-              {signLink && (
-                <div className="flex items-center gap-2 mt-2">
-                  <input readOnly value={signLink} className="flex-1 text-xs px-2 py-1.5 border border-line rounded-lg bg-bg text-ink-2 font-mono truncate" />
-                  <button onClick={() => navigator.clipboard.writeText(signLink)} className="px-2 py-1.5 text-xs border border-line rounded-lg text-muted hover:text-gold transition-colors whitespace-nowrap">Copiar</button>
+              {canGenerateSignLink && !isClientSigned && (
+                <div className="space-y-2 mt-3">
+                  <p className="text-xs text-muted">Confirme o endereço do titular fora do sistema antes de enviar.</p>
+                  <input className="input" type="email" aria-label="E-mail confirmado do titular" value={signInviteEmail} onChange={event => setSignInviteEmail(event.target.value)} placeholder="E-mail confirmado do titular" autoComplete="off" />
+                  <select className="input" aria-label="Método de verificação" value={signInviteMethod} onChange={event => setSignInviteMethod(event.target.value as typeof signInviteMethod)}>
+                    <option value="phone_callback">Retorno telefônico ao titular</option>
+                    <option value="existing_contract">Contrato existente</option>
+                    <option value="in_person">Verificação presencial</option>
+                  </select>
+                  <button disabled={!signInviteEmail.trim() || signLinkLoading || signInviteSent} onClick={async () => {
+                    setSignLinkLoading(true); setSignInviteError(false)
+                    try {
+                      await api.post(`/orders/${order.id}/generate-sign-token`, { confirmed_email: signInviteEmail.trim(), verification_method: signInviteMethod })
+                      setSignInviteSent(true); setSignInviteEmail('')
+                    } catch { setSignInviteError(true) } finally { setSignLinkLoading(false) }
+                  }} className="btn-primary disabled:opacity-50">{signLinkLoading ? 'Enviando...' : 'Enviar convite de assinatura'}</button>
+                  {signInviteSent && <p role="status" className="text-xs text-green-700">Convite enviado ao e-mail confirmado.</p>}
+                  {signInviteError && <p role="alert" className="text-xs text-red-700">Não foi possível enviar o convite.</p>}
                 </div>
               )}
               {canSignAsClient && (
@@ -618,7 +648,7 @@ function OrderDetailModal({
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Assinatura do Cliente</h4><button onClick={() => setClientSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
-              <p className="text-xs text-muted mb-3">Peça ao cliente para assinar no campo abaixo.</p>
+              <p className="text-xs text-muted mb-3">Assine no campo abaixo após revisar os termos do pedido.</p>
               <canvas ref={clientCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-[#fafaf9] cursor-crosshair touch-none" />
               <div className="flex gap-2 mt-4">
                 <button onClick={() => clientCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Limpar</button>
@@ -1011,8 +1041,8 @@ export default function PedidosPage() {
                     repName={order.rep_name ?? '—'}
                     onView={() => setViewing(order)}
                     onPDF={() => handlePDF(order)}
-                    onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
-                    onDelete={canDelete ? () => setDeleting(order) : undefined}
+                    onFinalize={canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed ? () => setFinalizing(order) : undefined}
+                    onDelete={canDelete && !order.rep_signed && !order.client_signed ? () => setDeleting(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                   />
                 ))}
@@ -1065,16 +1095,16 @@ export default function PedidosPage() {
                           <div className="flex gap-1.5 items-center">
                             <button title="Ver detalhes" className="text-muted hover:text-gold transition-colors p-1" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
                             <button disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} className="text-muted hover:text-blue-500 transition-colors p-1 disabled:opacity-40" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
-                            {canManage && !order.is_finalized && !order.is_cancelled && (
+                            {canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed && (
                               <button title="Finalizar pedido" aria-label="Finalizar pedido" className="text-muted hover:text-green-600 transition-colors p-1" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
                             )}
-                            {canManage && !order.is_finalized && !order.is_cancelled && (
+                            {canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed && (
                               <>
                                 <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
                                 <button title="Cancelar" className="text-muted hover:text-terracotta transition-colors p-1" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
                               </>
                             )}
-                            {canDelete && (
+                            {canDelete && !order.rep_signed && !order.client_signed && (
                               <button title="Excluir" className="text-muted hover:text-red-500 transition-colors p-1" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                             )}
                           </div>
@@ -1128,6 +1158,7 @@ export default function PedidosPage() {
 
       {viewing && (
         <OrderDetailModal
+          key={viewing.id}
           order={orders.find(o => o.id === viewing.id) ?? viewing}
           clientName={viewing.client_name}
           repName={viewing.rep_name ?? ''}

@@ -32,6 +32,7 @@ class OrderCreate(BaseModel):
     notes: Optional[str] = Field(None, max_length=10_000)
     items: List[OrderItemCreate] = Field(..., min_length=1, max_length=500)
     locale: Optional[Literal["pt-PT", "en-GB"]] = None
+    supersedes_order_id: Optional[uuid.UUID] = None
 
 
 class OrderUpdate(BaseModel):
@@ -104,6 +105,9 @@ class OrderRead(BaseModel):
     is_cancelled: bool = False
     finalized_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
+    document_version: int = 1
+    supersedes_order_id: Optional[uuid.UUID] = None
+    revision_number: int = 1
     external_code: Optional[str] = None
     notes: Optional[str]
     rep_signed: bool = False
@@ -143,6 +147,8 @@ class OrderListRead(BaseModel):
     total_with_ipi: Decimal = Decimal("0")
     is_finalized: bool = False
     is_cancelled: bool = False
+    rep_signed: bool = False
+    client_signed: bool = False
     finalized_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
     items: List[OrderListItemRead] = Field(default_factory=list)

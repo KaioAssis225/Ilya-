@@ -40,11 +40,17 @@ class Order(Base, TimestampMixin):
     # Migration/01: frescor para consumidores externos (leitura cross-database
     # do Ilya Estoque).
     source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    document_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    supersedes_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orders.id", name="fk_orders_supersedes_order", ondelete="RESTRICT"), nullable=True
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan", lazy="selectin")
     history: Mapped[list["OrderHistory"]] = relationship("OrderHistory", back_populates="order", cascade="all, delete-orphan", lazy="selectin", order_by="OrderHistory.created_at")
 
     __table_args__ = (
+        UniqueConstraint("supersedes_order_id", name="uq_orders_supersedes_order_id"),
         # Integridade de mercado no banco (market_fk_r7_20261005): um pedido não
         # pode apontar para cliente ou representante de outro mercado. O SET NULL
         # do representante nomeia apenas rep_id no DDL, porque market_code é
