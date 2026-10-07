@@ -742,6 +742,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const { user } = useAuth()
   const isEurope = user?.active_market === 'EU'
+  const canClassifyBr = !isEurope && user?.role === 'admin'
   const locale = isEurope ? 'pt-PT' : 'pt-BR'
   const currency = isEurope ? 'EUR' : 'BRL'
   const money = (value: number | null | undefined) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value ?? 0))
@@ -974,7 +975,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               description_pt_pt: form.description_pt_pt?.trim() || undefined,
               description_en: form.description_en?.trim() || undefined,
             }
-          : payload
+          : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (!isEurope && pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
       } else {
@@ -1009,9 +1010,11 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
-            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
-          </button>
+          {(isEurope || canClassifyBr) && (
+            <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
+              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
+            </button>
+          )}
         </div>
       </div>
       {isEurope && (
@@ -1294,14 +1297,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted">Tipo</span>
-                <select className="input" value={form.type ?? 'Outro'} onChange={(e) => {
+                <select className="input" value={form.type ?? 'Outro'} disabled={!isEurope && !canClassifyBr} onChange={(e) => {
                   if (e.target.value === '__new__') { setShowNewTypeModal(true) }
                   else setForm({ ...form, type: e.target.value })
                 }}>
                   {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro']).map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                  <option value="__new__">+ Adicionar Novo...</option>
+                  {(isEurope || canClassifyBr) && <option value="__new__">+ Adicionar Novo...</option>}
                 </select>
               </label>
               <label className="flex flex-col gap-1">
@@ -2427,7 +2430,10 @@ type GroupModal =
   | { kind: 'new-type'; groupId: string }
   | { kind: 'edit-type'; type: ProductType }
 
-function GroupsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
+function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
+  color: string; page: number; onPage: (p: number) => void
+  canEditGroups: boolean; canEditTypes: boolean
+}) {
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
 
@@ -2497,15 +2503,15 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-ink">Grupos & Subgrupos</h2>
-        <button onClick={openNewGroup}
+        {canEditGroups && <button onClick={openNewGroup}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
           style={{ backgroundColor: color }}>
           <Plus className="w-3.5 h-3.5" /> Novo Grupo
-        </button>
+        </button>}
       </div>
 
       {/* Group form modal */}
-      {(modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
+      {canEditGroups && (modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
         <Modal
           title={modal.kind === 'edit-group' ? 'Editar Grupo' : 'Novo Grupo'}
           onClose={() => setModal(null)}
@@ -2540,7 +2546,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       )}
 
       {/* Type form modal */}
-      {(modal?.kind === 'new-type' || modal?.kind === 'edit-type') && (
+      {canEditTypes && (modal?.kind === 'new-type' || modal?.kind === 'edit-type') && (
         <Modal
           title={modal.kind === 'edit-type' ? 'Editar Subgrupo' : 'Novo Subgrupo'}
           onClose={() => setModal(null)}
@@ -2570,12 +2576,12 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       )}
 
       {/* Delete confirmations */}
-      {deletingGroup && (
+      {canEditGroups && deletingGroup && (
         <ConfirmDelete name={deletingGroup.name}
           onConfirm={async () => { await deleteGroupM.mutateAsync(deletingGroup.id); setDeletingGroup(null) }}
           onCancel={() => setDeletingGroup(null)} />
       )}
-      {deletingType && (
+      {canEditTypes && deletingType && (
         <ConfirmDelete name={deletingType.name}
           onConfirm={async () => { await deleteTypeM.mutateAsync(deletingType.id); setDeletingType(null) }}
           onCancel={() => setDeletingType(null)} />
@@ -2598,14 +2604,14 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  {canEditGroups && <div className="flex items-center gap-1">
                     <button onClick={() => openEditGroup(group)} className="p-1 text-muted hover:text-gold transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => setDeletingGroup(group)} className="p-1 text-muted hover:text-red-500 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                  </div>
+                  </div>}
                 </div>
 
                 {groupTypes.length > 0 && (
@@ -2614,30 +2620,30 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                       <div key={t.id}
                         className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-bg text-xs text-ink">
                         <span>{t.name}</span>
-                        <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
+                        {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
                           <Pencil className="w-2.5 h-2.5" />
-                        </button>
-                        <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
+                        </button>}
+                        {canEditTypes && <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
                           <Trash2 className="w-2.5 h-2.5" />
-                        </button>
+                        </button>}
                       </div>
                     ))}
                   </div>
                 )}
 
-                <button
+                {canEditTypes && <button
                   onClick={() => openNewType(group.id)}
                   className="flex items-center gap-1 text-xs font-medium transition-colors"
                   style={{ color }}
                 >
                   <Plus className="w-3 h-3" /> Novo Subgrupo
-                </button>
+                </button>}
               </div>
             )
           })}
 
           {groups.length === 0 && orphanTypes.length === 0 && (
-            <p className="text-sm text-muted">Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.</p>
+            <p className="text-sm text-muted">Nenhum grupo cadastrado.</p>
           )}
 
           {orphanTypes.length > 0 && (
@@ -2648,12 +2654,12 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                   <div key={t.id}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-white text-xs text-ink">
                     <span>{t.name}</span>
-                    <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
+                    {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
                       <Pencil className="w-2.5 h-2.5" />
-                    </button>
-                    <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
+                    </button>}
+                    {canEditTypes && <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
                       <Trash2 className="w-2.5 h-2.5" />
-                    </button>
+                    </button>}
                   </div>
                 ))}
               </div>
@@ -2875,9 +2881,16 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
   )
 }
 
-function ImportTab({ color }: { color: string }) {
-  const [supportTable, setSupportTable] = useState('product-groups')
-  const current = SUPPORT_TABLES.find((t) => t.value === supportTable)!
+function ImportTab({ color, canEditFiscal, market }: {
+  color: string; canEditFiscal: boolean; market: 'BR' | 'EU'
+}) {
+  const [supportTable, setSupportTable] = useState('catalogs')
+  const availableTables = SUPPORT_TABLES.filter(t =>
+    t.value === 'product-groups' ? canEditFiscal
+      : t.value === 'product-types' ? market === 'EU' || canEditFiscal
+        : true
+  )
+  const current = availableTables.find((t) => t.value === supportTable) ?? availableTables[0]
   return (
     <div className="space-y-6">
       <div>
@@ -2889,16 +2902,16 @@ function ImportTab({ color }: { color: string }) {
         <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> Cadastros de apoio</h3>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted">Tabela:</span>
-          <select value={supportTable} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
-            {SUPPORT_TABLES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          <select value={current.value} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
+            {availableTables.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
-        <ImportUploader key={supportTable} endpoint={supportTable} label={current.label} columns={current.columns} color={color} />
+        <ImportUploader key={current.value} endpoint={current.value} label={current.label} columns={current.columns} color={color} />
       </section>
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> Catálogo de produtos — 2 etapas</h3>
-        <ImportUploader endpoint="products" label="Etapa 1: Subir Tabela de Produtos" hint="Cria/atualiza produtos pelo SKU (product_code)." columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
+        {canEditFiscal && <ImportUploader endpoint="products" label="Etapa 1: Subir Tabela de Produtos" hint="Cria/atualiza produtos pelo SKU (product_code)." columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />}
         <ImportUploader endpoint="product-optionals" label="Etapa 2: Subir Tabela de Opcionais do Produto" hint="Vincula opcionais a cada SKU — rode após a Etapa 1." columns="product_code, category, color_name" color={color} />
       </section>
 
@@ -2951,6 +2964,11 @@ function savePersistedCadastroState(state: PersistedCadastroState) {
 
 export default function CadastroPage() {
   const { user } = useAuth()
+  const activeMarket = user?.active_market ?? 'BR'
+  const canEditFiscal = activeMarket === 'BR' && user?.role === 'admin'
+  const canEditTypes = activeMarket === 'EU'
+    ? ['admin', 'vendedor', 'produtos'].includes(user?.role ?? '')
+    : canEditFiscal
   const isRep = user?.role === 'representante'
   const isCliente = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user.linked_id)
   const isLimited = isRep || isCliente
@@ -3111,11 +3129,11 @@ export default function CadastroPage() {
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={canEditFiscal} canEditTypes={canEditTypes} />}
 
             {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
 
-            {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} />}
+            {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} canEditFiscal={canEditFiscal} market={activeMarket} />}
           </main>
         </div>
       </div>
