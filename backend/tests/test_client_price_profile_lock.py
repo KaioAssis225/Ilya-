@@ -73,14 +73,14 @@ class TestOperadoresPrivilegiados:
         assert out.get("price_profile") == "corporativo"
         assert out.get("max_discount") == "50.00"
 
-    def test_produtos_pode_definir_termos_comerciais(self):
+    def test_produtos_mantem_perfil_mas_nao_define_desconto(self):
         out = sanitize_client_update_fields(_full_payload(), PRODUTOS)
         assert out.get("price_profile") == "corporativo"
-        assert out.get("max_discount") == "50.00"
+        assert "max_discount" not in out
 
     def test_vendedor_interno_define_perfil_mas_nao_max_discount(self):
         # Operador interno mantém o fluxo de definir perfil no cadastro do cliente;
-        # max_discount continua restrito a admin/cadastros/produtos.
+        # max_discount continua restrito a admin/cadastros.
         out = sanitize_client_update_fields(_full_payload(), VENDEDOR_INTERNO)
         assert out.get("price_profile") == "corporativo"
         assert "max_discount" not in out
@@ -109,8 +109,13 @@ class TestCadastroSegueAMesmaRegraDaEdicao:
         assert out["price_profile"] == "corporativo"
         assert out["max_discount"] == Decimal("0.00")
 
-    def test_papel_comercial_define_os_dois(self):
-        for user in (ADMIN, CADASTROS, PRODUTOS):
+    def test_papel_de_desconto_define_os_dois(self):
+        for user in (ADMIN, CADASTROS):
             out = sanitize_client_create_fields(_full_payload(), user)
             assert out["price_profile"] == "corporativo"
             assert out["max_discount"] == "50.00"
+
+    def test_produtos_cadastra_perfil_sem_definir_desconto(self):
+        out = sanitize_client_create_fields(_full_payload(), PRODUTOS)
+        assert out["price_profile"] == "corporativo"
+        assert out["max_discount"] == Decimal("0.00")
