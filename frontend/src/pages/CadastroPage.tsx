@@ -18,6 +18,7 @@ import type { OptionalCategory } from '../hooks/useOptionalCategories'
 import { useCreateUserFromClient, useCreateUserFromRep } from '../hooks/useUsers'
 import type { UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
+import { useCadastroText } from '../hooks/useCadastroText'
 import { NumberField } from '../components/NumberField'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
@@ -124,6 +125,7 @@ function ResizableProductTh({
   color: string
   sort?: { active: boolean; dir: SortDir; onClick: () => void }
 }) {
+  const tx = useCadastroText()
   function startResize(e: React.MouseEvent<HTMLDivElement>) {
     e.preventDefault()
     e.stopPropagation()
@@ -163,8 +165,8 @@ function ResizableProductTh({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label={`Redimensionar coluna ${label || column}`}
-        title="Arraste para redimensionar · Duplo clique para autoajustar"
+        aria-label={tx('Redimensionar coluna {label}', { label: label || column })}
+        title={tx('Arraste para redimensionar · Duplo clique para autoajustar')}
         className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize group"
         onMouseDown={startResize}
         onDoubleClick={(e) => {
@@ -235,6 +237,7 @@ function formatCpfCnpj(value: string): string {
 }
 
 function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm: (v: ClientCreate) => void; market: 'BR' | 'EU' }) {
+  const tx = useCadastroText()
   const [cepLoading, setCepLoading] = useState(false)
   const cepAbortRef = useRef<AbortController | null>(null)
   useEffect(() => () => cepAbortRef.current?.abort(), [])
@@ -264,15 +267,15 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
   return (
     <div className="grid grid-cols-2 gap-3">
       <label className="col-span-2 flex flex-col gap-1">
-        <span className="text-xs text-muted">Nome *</span>
+        <span className="text-xs text-muted">{tx('Nome *')}</span>
         <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">Telefone *</span>
+        <span className="text-xs text-muted">{tx('Telefone *')}</span>
         <input className="input" value={form.phone} maxLength={market === 'BR' ? PHONE_INPUT_MAX_LENGTH : 20} onChange={(e) => setForm({ ...form, phone: market === 'BR' ? formatBrazilianPhone(e.target.value) : e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">E-mail</span>
+        <span className="text-xs text-muted">{tx('E-mail')}</span>
         <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
       </label>
       <label className="flex flex-col gap-1">
@@ -280,28 +283,28 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
         <input className="input" value={market === 'EU' ? (form.tax_id ?? '') : (form.cpf_cnpj ?? '')} onChange={(e) => market === 'EU' ? setForm({ ...form, tax_id: e.target.value }) : setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={market === 'EU' ? 40 : 18} />
       </label>
       <label className="flex flex-col gap-1 relative">
-        <span className="text-xs text-muted">{market === 'EU' ? 'Código postal *' : 'CEP *'}</span>
+        <span className="text-xs text-muted">{tx(market === 'EU' ? 'Código postal *' : 'CEP *')}</span>
         <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: market === 'BR' ? formatCep(e.target.value) : formatPortugalPostalCode(e.target.value) })} onBlur={handleCepBlur} maxLength={market === 'BR' ? 9 : 8} required />
         {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">Número</span>
+        <span className="text-xs text-muted">{tx('Número')}</span>
         <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: formatOnlyNumbers(e.target.value) })} />
       </label>
       <label className="col-span-2 flex flex-col gap-1">
-        <span className="text-xs text-muted">Endereço *</span>
+        <span className="text-xs text-muted">{tx('Endereço *')}</span>
         <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
       </label>
       <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{market === 'EU' ? 'Localidade *' : 'Cidade *'}</span>
+        <span className="text-xs text-muted">{tx(market === 'EU' ? 'Localidade *' : 'Cidade *')}</span>
         <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
       </label>
       {market === 'BR' ? (
         <label className="flex flex-col gap-1"><span className="text-xs text-muted">Estado *</span><select className="input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} required><option value="">UF</option>{ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
       ) : (
         <>
-          <label className="flex flex-col gap-1"><span className="text-xs text-muted">País da primeira liberação</span><input className="input" value="PT" readOnly aria-readonly="true" /></label>
-          <label className="col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">Região</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} maxLength={120} /></label>
+          <label className="flex flex-col gap-1"><span className="text-xs text-muted">{tx('País da primeira liberação')}</span><input className="input" value="PT" readOnly aria-readonly="true" /></label>
+          <label className="col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">{tx('Região')}</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} maxLength={120} /></label>
         </>
       )}
     </div>
@@ -313,13 +316,14 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
 function Modal({ title, onClose, children, accentColor }: {
   title: string; onClose: () => void; children: React.ReactNode; accentColor?: string
 }) {
+  const tx = useCadastroText()
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-panel w-full max-w-lg mx-4 md:mx-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-line"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
           <h3 className="text-base font-semibold text-ink">{title}</h3>
-          <button onClick={onClose} className="text-muted hover:text-ink transition-colors" aria-label="Fechar"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-muted hover:text-ink transition-colors" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
       </div>
@@ -328,12 +332,13 @@ function Modal({ title, onClose, children, accentColor }: {
 }
 
 function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
+  const tx = useCadastroText()
   return (
-    <Modal title="Confirmar exclusão" onClose={onCancel}>
-      <p className="text-ink-2 mb-6">Excluir <span className="text-ink font-medium">"{name}"</span>? Esta ação não pode ser desfeita.</p>
+    <Modal title={tx('Confirmar exclusão')} onClose={onCancel}>
+      <p className="text-ink-2 mb-6">{tx('Excluir')} <span className="text-ink font-medium">"{name}"</span>{tx('? Esta ação não pode ser desfeita.')}</p>
       <div className="flex justify-end gap-3">
-        <button className="btn-secondary" onClick={onCancel}>Cancelar</button>
-        <button className="btn-danger" onClick={onConfirm}>Excluir</button>
+        <button className="btn-secondary" onClick={onCancel}>{tx('Cancelar')}</button>
+        <button className="btn-danger" onClick={onConfirm}>{tx('Excluir')}</button>
       </div>
     </Modal>
   )
@@ -375,13 +380,14 @@ function groupOptionalsByCategory(optionals: OptionalColor[], catLabel: (code: s
 function getProductOptionalsLabel(
   p: Pick<Product, 'optionals' | 'all_optionals_categories'>,
   catLabel: (code: string) => string = (c) => c,
-  separator: string = ', '
+  separator: string = ', ',
+  allLabel: string = 'Todos',
 ): string {
   const specificGroups = groupOptionalsByCategory(p.optionals, catLabel)
   const specificCats = new Set(specificGroups.map(g => g.category))
   const globalCats = (p.all_optionals_categories ?? '').split(',').filter(Boolean)
   const labels = [
-    ...globalCats.filter(c => !specificCats.has(c)).map(c => `${catLabel(c)} (Todos)`),
+    ...globalCats.filter(c => !specificCats.has(c)).map(c => `${catLabel(c)} (${allLabel})`),
     ...specificGroups.map(g => g.label),
   ]
   return labels.join(separator)
@@ -401,6 +407,7 @@ function paginate<T>(items: T[], page: number): { pageItems: T[]; totalPages: nu
 function Pagination({ page, totalPages, onPage, color }: {
   page: number; totalPages: number; onPage: (p: number) => void; color: string
 }) {
+  const tx = useCadastroText()
   if (totalPages <= 1) return null
   const canPrev = page > 1
   const canNext = page < totalPages
@@ -411,13 +418,13 @@ function Pagination({ page, totalPages, onPage, color }: {
       <button type="button" disabled={!canPrev} onClick={() => onPage(page - 1)}
         className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canPrev ? '#4a3f38' : '#c8bdb5' }}
         onFocus={(e) => ring(e, canPrev)} onBlur={(e) => ring(e, false)}>
-        <ChevronLeft className="w-4 h-4" /> Anterior
+        <ChevronLeft className="w-4 h-4" /> {tx('Anterior')}
       </button>
-      <span className="text-sm text-ink-3 tabular-nums select-none">Página <span className="font-semibold text-ink">{page}</span> de {totalPages}</span>
+      <span className="text-sm text-ink-3 tabular-nums select-none">{tx('Página')} <span className="font-semibold text-ink">{page}</span> {tx('de')} {totalPages}</span>
       <button type="button" disabled={!canNext} onClick={() => onPage(page + 1)}
         className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canNext ? '#4a3f38' : '#c8bdb5' }}
         onFocus={(e) => ring(e, canNext)} onBlur={(e) => ring(e, false)}>
-        Próximo <ChevronRight className="w-4 h-4" />
+        {tx('Próximo')} <ChevronRight className="w-4 h-4" />
       </button>
     </div>
   )
@@ -465,6 +472,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
   color: string; title?: string; collapsible?: boolean
 }) {
   const queryClient = useQueryClient()
+  const tx = useCadastroText()
   const [open, setOpen] = useState(!collapsible)
   const [items, setItems] = useState<BatchItem[]>([])
   const [rejected, setRejected] = useState<BatchRejection[]>([])
@@ -526,7 +534,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
           rejectedItems.push({
             key: `duplicate:${sku}:${index}`,
             name: file.name,
-            reason: `SKU ${sku} repetido na seleção`,
+            reason: tx('SKU {sku} repetido na seleção', { sku }),
           })
           continue
         }
@@ -536,7 +544,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
           rejectedItems.push({
             key: `missing:${sku}:${index}`,
             name: file.name,
-            reason: 'SKU não encontrado',
+            reason: tx('SKU não encontrado'),
           })
         }
       }
@@ -548,7 +556,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
       setItems([])
       setRejected([])
       setLookupError(
-        'Não foi possível validar os códigos dos arquivos. Tente novamente.',
+        tx('Não foi possível validar os códigos dos arquivos. Tente novamente.'),
       )
     } finally {
       if (resolutionGenerationRef.current === generation) {
@@ -580,7 +588,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
       if (resolutionGenerationRef.current === generation) {
         setItems([])
         setRejected([])
-        setLookupError('Não foi possível ler os arquivos selecionados.')
+        setLookupError(tx('Não foi possível ler os arquivos selecionados.'))
         setResolving(false)
       }
     }
@@ -632,12 +640,12 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
           className="w-full flex items-center justify-between px-4 py-3 bg-[#fcfbfa] text-left"
         >
           <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <Upload className="w-4 h-4" style={{ color }} /> {title}
+            <Upload className="w-4 h-4" style={{ color }} /> {tx(title)}
           </span>
           {open ? <ChevronUp className="w-4 h-4 text-muted" /> : <ChevronDown className="w-4 h-4 text-muted" />}
         </button>
       ) : (
-        <h3 className="text-sm font-semibold text-ink flex items-center gap-2 mb-3"><ImageIcon className="w-4 h-4" style={{ color }} /> {title}</h3>
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2 mb-3"><ImageIcon className="w-4 h-4" style={{ color }} /> {tx(title)}</h3>
       )}
 
       {open && (
@@ -653,11 +661,11 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
             style={{ borderColor: dragOver ? color : '#e8e0d6', backgroundColor: dragOver ? `${color}0a` : '#faf8f4' }}
           >
             <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: dragOver ? color : '#c8bdb5' }} />
-            <p className="text-sm text-ink-3">Arraste uma pasta ou arquivos de fotos aqui</p>
-            <p className="text-xs text-muted mt-1">O nome do arquivo deve ser o código do produto (ex.: IML0001.png)</p>
+            <p className="text-sm text-ink-3">{tx('Arraste uma pasta ou arquivos de fotos aqui')}</p>
+            <p className="text-xs text-muted mt-1">{tx('O nome do arquivo deve ser o código do produto (ex.: IML0001.png)')}</p>
             <div className="flex items-center justify-center gap-2 mt-3">
-              <button type="button" disabled={uploading || resolving} className="btn-secondary text-xs disabled:opacity-50" onClick={() => dirInputRef.current?.click()}>Selecionar pasta</button>
-              <button type="button" disabled={uploading || resolving} className="btn-secondary text-xs disabled:opacity-50" onClick={() => filesInputRef.current?.click()}>Selecionar arquivos</button>
+              <button type="button" disabled={uploading || resolving} className="btn-secondary text-xs disabled:opacity-50" onClick={() => dirInputRef.current?.click()}>{tx('Selecionar pasta')}</button>
+              <button type="button" disabled={uploading || resolving} className="btn-secondary text-xs disabled:opacity-50" onClick={() => filesInputRef.current?.click()}>{tx('Selecionar arquivos')}</button>
             </div>
             <input
               ref={dirInputRef} type="file" multiple disabled={uploading || resolving} className="hidden"
@@ -679,7 +687,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
           </div>
 
           {resolving && (
-            <p className="text-xs text-muted">Validando códigos no catálogo…</p>
+            <p className="text-xs text-muted">{tx('Validando códigos no catálogo…')}</p>
           )}
           {lookupError && (
             <p className="text-xs text-red-600">{lookupError}</p>
@@ -687,8 +695,8 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
           {(items.length > 0 || rejected.length > 0) && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-4 text-xs">
-                <span className="flex items-center gap-1.5 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {items.length} validada(s)</span>
-                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-terracotta"><X className="w-3.5 h-3.5" /> {rejected.length} rejeitada(s)</span>}
+                <span className="flex items-center gap-1.5 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {tx('{count} validada(s)', { count: items.length })}</span>
+                {rejected.length > 0 && <span className="flex items-center gap-1.5 text-terracotta"><X className="w-3.5 h-3.5" /> {tx('{count} rejeitada(s)', { count: rejected.length })}</span>}
               </div>
 
               {rejected.length > 0 && (
@@ -713,10 +721,10 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
                       <div key={`${item.sku}:${item.file.webkitRelativePath || item.file.name}:${item.file.size}:${item.file.lastModified}:${index}`} className="flex items-center justify-between px-3 py-1.5 text-xs">
                         <span className="font-mono text-ink-2 truncate">{item.sku}</span>
                         <span className="text-muted truncate flex-1 px-2">{item.file.name}</span>
-                        {item.status === 'pending' && <span className="text-muted">Aguardando</span>}
-                        {item.status === 'uploading' && <span style={{ color }}>Enviando…</span>}
-                        {item.status === 'success' && <span className="flex items-center gap-1 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> Enviada</span>}
-                        {item.status === 'error' && <span className="text-terracotta" title={item.error}>Erro</span>}
+                        {item.status === 'pending' && <span className="text-muted">{tx('Aguardando')}</span>}
+                        {item.status === 'uploading' && <span style={{ color }}>{tx('Enviando…')}</span>}
+                        {item.status === 'success' && <span className="flex items-center gap-1 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {tx('Enviada')}</span>}
+                        {item.status === 'error' && <span className="text-terracotta" title={item.error}>{tx('Erro')}</span>}
                       </div>
                     ))}
                   </div>
@@ -727,7 +735,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
                     className="btn-primary w-full disabled:opacity-60"
                     style={{ backgroundColor: color }}
                   >
-                    {uploading ? `Enviando… ${progress}%` : `Iniciar Upload (${items.length})`}
+                    {uploading ? tx('Enviando… {progress}%', { progress }) : tx('Iniciar Upload ({count})', { count: items.length })}
                   </button>
                 </>
               )}
@@ -741,6 +749,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
 
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const { user } = useAuth()
+  const tx = useCadastroText()
   const isEurope = user?.active_market === 'EU'
   const locale = isEurope ? 'pt-PT' : 'pt-BR'
   const currency = isEurope ? 'EUR' : 'BRL'
@@ -993,35 +1002,35 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       {!isEurope && <BatchPhotoUpload color={color} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <span className="text-sm text-muted whitespace-nowrap">{totalProducts} {totalProducts === 1 ? 'produto' : 'produtos'}</span>
+        <span className="text-sm text-muted whitespace-nowrap">{totalProducts} {tx(totalProducts === 1 ? 'produto' : 'produtos')}</span>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-            <input aria-label="Buscar produtos por código ou descrição" className="input pl-9" placeholder="Buscar por código ou descrição..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
+            <input aria-label={tx('Buscar produtos por código ou descrição')} className="input pl-9" placeholder={tx('Buscar por código ou descrição...')} value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
           <select
             className="input w-full sm:w-44 flex-shrink-0"
             value={filterCatalogId}
             onChange={(e) => { setFilterCatalogId(e.target.value); onPage(1) }}
           >
-            <option value="">Todos os Catálogos</option>
+            <option value="">{tx('Todos os Catálogos')}</option>
             {allCatalogs.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
-            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>Produto
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">{tx('Novo ')}</span>{tx('Produto')}
           </button>
         </div>
       </div>
       {isEurope && (
         <p className="mb-4 rounded-lg bg-bg-2 px-3 py-2 text-xs text-ink-2">
-          Em Portugal, pode cadastrar produtos exclusivos deste mercado, editar os nomes em português e inglês e os preços em EUR; excluir remove o produto apenas deste catálogo.
+          {tx('Em Portugal, pode cadastrar produtos exclusivos deste mercado, editar os nomes em português e inglês e os preços em EUR; excluir remove o produto apenas deste catálogo.')}
         </p>
       )}
 
       {isLoading ? (
-        <p className="text-muted text-sm py-8 text-center">Carregando...</p>
+        <p className="text-muted text-sm py-8 text-center">{tx('Carregando...')}</p>
       ) : (
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
@@ -1039,10 +1048,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
                     </div>
                     <div className="flex gap-0 flex-shrink-0">
-                      <button onClick={() => openEdit(p)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setDeleting(p)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -1058,38 +1067,38 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     </span>
                   </div>
                   {(p.optionals.length > 0 || p.all_optionals_categories) && (
-                    <p className="text-[10px] text-muted mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ')}</p>
+                    <p className="text-[10px] text-muted mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ', tx('Todos'))}</p>
                   )}
                 </div>
               </div>
             ))}
-            {pageItems.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</p>}
+            {pageItems.length === 0 && <p className="text-center text-muted text-sm py-8">{tx(search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.')}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
           <div className="hidden lg:flex items-center justify-between gap-4 mb-2">
             <p className="text-[11px] text-muted">
-              Arraste os divisores para redimensionar ou dê duplo clique para autoajustar.
+              {tx('Arraste os divisores para redimensionar ou dê duplo clique para autoajustar.')}
             </p>
             <div className="flex items-center rounded-lg border border-line bg-[#fbfaf8] p-0.5 flex-shrink-0">
               <button
                 type="button"
                 onClick={fitColumnsToContainer}
                 className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-ink-2 hover:bg-white hover:text-ink transition-colors"
-                title="Distribuir as colunas dentro da largura disponível"
+                title={tx('Distribuir as colunas dentro da largura disponível')}
               >
                 <Columns3 className="w-3.5 h-3.5" />
-                Ajustar à tela
+                {tx('Ajustar à tela')}
               </button>
               <span className="h-4 w-px bg-line" aria-hidden="true" />
               <button
                 type="button"
                 onClick={restoreColumnWidths}
                 className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium text-muted hover:bg-white hover:text-ink transition-colors"
-                title="Voltar às larguras padrão"
+                title={tx('Voltar às larguras padrão')}
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Restaurar
+                {tx('Restaurar')}
               </button>
             </div>
           </div>
@@ -1105,17 +1114,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </colgroup>
               <thead style={{ backgroundColor: `${color}12` }}>
                 <tr>
-                  <ResizableProductTh label="Código" column="code" width={columnWidths.code} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                  <ResizableProductTh label={tx('Código')} column="code" width={columnWidths.code} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'product_code', dir: sortDir, onClick: () => toggle('product_code') }} />
-                  <ResizableProductTh label="Descrição" column="description" width={columnWidths.description} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                  <ResizableProductTh label={tx('Descrição')} column="description" width={columnWidths.description} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'description', dir: sortDir, onClick: () => toggle('description') }} />
-                  <ResizableProductTh label="Dimensões" column="dimensions" width={columnWidths.dimensions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label={tx('Dimensões')} column="dimensions" width={columnWidths.dimensions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label="Lojista" column="price_lojista" width={columnWidths.price_lojista} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'price_lojista', dir: sortDir, onClick: () => toggle('price_lojista') }} />
                   <ResizableProductTh label="Corporativo" column="price_corporativo" width={columnWidths.price_corporativo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   {isEurope && <ResizableProductTh label="PVP" column="price_pvp" width={columnWidths.price_pvp} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />}
-                  <ResizableProductTh label="Opcionais" column="optionals" width={columnWidths.optionals} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  <ResizableProductTh label="Foto" column="photo" width={columnWidths.photo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label={tx('Opcionais')} column="optionals" width={columnWidths.optionals} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label={tx('Foto')} column="photo" width={columnWidths.photo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label="" column="actions" width={columnWidths.actions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                 </tr>
               </thead>
@@ -1132,7 +1141,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'pvp'))}</td>}
                     <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {p.optionals.length > 0 || p.all_optionals_categories
-                        ? getProductOptionalsLabel(p, catLabel, ', ')
+                        ? getProductOptionalsLabel(p, catLabel, ', ', tx('Todos'))
                         : '—'}
                     </td>
                     <td data-product-col="photo" className="px-2 py-3 border-r border-line align-top">
@@ -1142,16 +1151,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     </td>
                     <td data-product-col="actions" className="px-2 py-3 align-top">
                       <div className="flex gap-2">
-                        <button onClick={() => openEdit(p)} aria-label="Editar" className="text-muted transition-colors"
+                        <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => setDeleting(p)} aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {pageItems.length === 0 && (
-                  <tr><td colSpan={visibleColumnKeys.length} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.'}</td></tr>
+                  <tr><td colSpan={visibleColumnKeys.length} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1162,7 +1171,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       )}
 
       {showNewTypeModal && (
-        <Modal title="Novo Tipo de Móvel" onClose={() => { setShowNewTypeModal(false); setNewTypeName(''); setNewTypeErr('') }} accentColor={color}>
+        <Modal title={tx('Novo Tipo de Móvel')} onClose={() => { setShowNewTypeModal(false); setNewTypeName(''); setNewTypeErr('') }} accentColor={color}>
           <form onSubmit={async (e) => {
             e.preventDefault(); setNewTypeErr('')
             try {
@@ -1170,26 +1179,26 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               setForm(prev => ({ ...prev, type: created.name }))
               setShowNewTypeModal(false); setNewTypeName('')
             } catch {
-              setNewTypeErr('Tipo já existe ou nome inválido.')
+              setNewTypeErr(tx('Tipo já existe ou nome inválido.'))
             }
           }} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Nome do Novo Tipo *</span>
+              <span className="text-xs text-muted">{tx('Nome do Novo Tipo *')}</span>
               <input className="input" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} required autoFocus />
             </label>
             {newTypeErr && <p className="text-xs text-red-500">{newTypeErr}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={createTypeM.isPending} className="btn-primary flex-1">
-                {createTypeM.isPending ? 'Salvando...' : 'Criar e Selecionar'}
+                {tx(createTypeM.isPending ? 'Salvando...' : 'Criar e Selecionar')}
               </button>
-              <button type="button" onClick={() => { setShowNewTypeModal(false); setNewTypeName('') }} className="btn-secondary px-4">Cancelar</button>
+              <button type="button" onClick={() => { setShowNewTypeModal(false); setNewTypeName('') }} className="btn-secondary px-4">{tx('Cancelar')}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {showForm && isEurope && editing && (
-        <Modal title="Editar Produto em Portugal" onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
+        <Modal title={tx('Editar Produto em Portugal')} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-5">
             {formError && (
               <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-snug text-red-700">
@@ -1199,16 +1208,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             <div className="rounded-xl bg-bg-2 px-4 py-3">
               <span className="block font-mono text-xs font-semibold" style={{ color }}>{editing.product_code}</span>
               <p className="mt-2 text-xs leading-relaxed text-ink-2">
-                O SKU, a fotografia e a estrutura são partilhados com o Brasil. Os nomes comerciais abaixo pertencem apenas a Portugal.
+                {tx('Os nomes e os preços abaixo pertencem apenas a Portugal; o catálogo do Brasil não é alterado.')}
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">Nome em português (Portugal)</span>
+                <span className="text-xs font-medium text-muted">{tx('Nome em português (Portugal)')}</span>
                 <input className="input" maxLength={20000} value={form.description_pt_pt ?? ''} onChange={(event) => setForm({ ...form, description_pt_pt: event.target.value })} required />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">Nome em inglês</span>
+                <span className="text-xs font-medium text-muted">{tx('Nome em inglês')}</span>
                 <input className="input" maxLength={20000} lang="en-GB" value={form.description_en ?? ''} onChange={(event) => setForm({ ...form, description_en: event.target.value })} required />
               </label>
             </div>
@@ -1227,9 +1236,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
             </div>
             <div className="flex justify-end gap-3 pt-1">
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
               <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={updateM.isPending}>
-                {updateM.isPending ? 'A guardar…' : 'Guardar nomes e preços'}
+                {tx(updateM.isPending ? 'A guardar…' : 'Guardar nomes e preços')}
               </button>
             </div>
           </form>
@@ -1237,7 +1246,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       )}
 
       {showForm && (!isEurope || !editing) && (
-        <Modal title={editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto')} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
+        <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
               <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
@@ -1246,25 +1255,25 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Código *</span>
+                <span className="text-xs text-muted">{tx('Código *')}</span>
                 <input className="input" value={form.product_code} onChange={(e) => setForm({ ...form, product_code: e.target.value })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Preço Lojista ({isEurope ? '€' : 'R$'}) *</span>
+                <span className="text-xs text-muted">{tx('Preço Lojista ({currency}) *', { currency: isEurope ? '€' : 'R$' })}</span>
                 <NumberField className="input" min="0" step="0.01" value={form.price_lojista} onValueChange={(v) => setForm({ ...form, price_lojista: v })} required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Preço Corporativo ({isEurope ? '€' : 'R$'}) *</span>
+                <span className="text-xs text-muted">{tx('Preço Corporativo ({currency}) *', { currency: isEurope ? '€' : 'R$' })}</span>
                 <NumberField className="input" min="0" step="0.01" value={form.price_corporativo} onValueChange={(v) => setForm({ ...form, price_corporativo: v })} required />
               </label>
               {isEurope && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs text-muted">Preço PVP (€) *</span>
+                  <span className="text-xs text-muted">{tx('Preço PVP (€) *')}</span>
                   <NumberField className="input" min="0" step="0.01" value={form.price_pvp} onValueChange={(v) => setForm({ ...form, price_pvp: v })} required />
                 </label>
               )}
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-muted">{isEurope ? 'Nome em português (Portugal)' : 'Descrição'} *</span>
+                <span className="text-xs text-muted">{tx(isEurope ? 'Nome em português (Portugal)' : 'Descrição')} *</span>
                 <input
                   className="input"
                   value={isEurope ? (form.description_pt_pt ?? '') : form.description}
@@ -1278,22 +1287,22 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
               {isEurope && (
                 <label className="flex flex-col gap-1 col-span-2">
-                  <span className="text-xs text-muted">Nome em inglês *</span>
+                  <span className="text-xs text-muted">{tx('Nome em inglês *')}</span>
                   <input className="input" lang="en-GB" value={form.description_en ?? ''} onChange={(e) => setForm({ ...form, description_en: e.target.value })} required />
                 </label>
               )}
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-muted">Observação</span>
+                <span className="text-xs text-muted">{tx('Observação')}</span>
                 <textarea
                   className="input resize-none"
                   rows={2}
-                  placeholder="Informações técnicas, restrições, montagem..."
+                  placeholder={tx('Informações técnicas, restrições, montagem...')}
                   value={form.observacao ?? ''}
                   onChange={(e) => setForm({ ...form, observacao: e.target.value || null })}
                 />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Tipo</span>
+                <span className="text-xs text-muted">{tx('Tipo')}</span>
                 <select className="input" value={form.type ?? 'Outro'} onChange={(e) => {
                   if (e.target.value === '__new__') { setShowNewTypeModal(true) }
                   else setForm({ ...form, type: e.target.value })
@@ -1301,17 +1310,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro']).map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                  <option value="__new__">+ Adicionar Novo...</option>
+                  <option value="__new__">{tx('+ Adicionar Novo...')}</option>
                 </select>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">Catálogo</span>
+                <span className="text-xs text-muted">{tx('Catálogo')}</span>
                 <select
                   className="input"
                   value={form.catalog_id ?? ''}
                   onChange={(e) => setForm({ ...form, catalog_id: e.target.value || null })}
                 >
-                  <option value="">Sem catálogo</option>
+                  <option value="">{tx('Sem catálogo')}</option>
                   {allCatalogs.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
@@ -1328,7 +1337,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   style={{ accentColor: color }}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-ink-2">Medida Redonda (Ø — circular)</span>
+                <span className="text-sm text-ink-2">{tx('Medida Redonda (Ø — circular)')}</span>
               </label>
             )}
 
@@ -1338,12 +1347,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {form.is_circular ? (
                   <>
                     <label className="flex flex-col gap-1 col-span-2">
-                      <span className="text-xs text-muted">Diâmetro Ø (m) *</span>
+                      <span className="text-xs text-muted">{tx('Diâmetro Ø (m) *')}</span>
                       <NumberField className="input" min="0" step="0.01" value={form.largura}
                         onValueChange={(v) => setForm({ ...form, largura: v })} required />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-muted">Altura A (m) *</span>
+                      <span className="text-xs text-muted">{tx('Altura A (m) *')}</span>
                       <NumberField className="input" min="0" step="0.01" value={form.altura}
                         onValueChange={(v) => setForm({ ...form, altura: v })} required />
                     </label>
@@ -1351,17 +1360,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 ) : (
                   <>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-muted">Largura L (m) *</span>
+                      <span className="text-xs text-muted">{tx('Largura L (m) *')}</span>
                       <NumberField className="input" min="0" step="0.01" value={form.largura}
                         onValueChange={(v) => setForm({ ...form, largura: v })} required />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-muted">Prof. P (m) *</span>
+                      <span className="text-xs text-muted">{tx('Prof. P (m) *')}</span>
                       <NumberField className="input" min="0" step="0.01" value={form.profundidade}
                         onValueChange={(v) => setForm({ ...form, profundidade: v })} required />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-muted">Altura A (m) *</span>
+                      <span className="text-xs text-muted">{tx('Altura A (m) *')}</span>
                       <NumberField className="input" min="0" step="0.01" value={form.altura}
                         onValueChange={(v) => setForm({ ...form, altura: v })} required />
                     </label>
@@ -1372,7 +1381,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
             {isConjuntoType(form.type) ? (
               <div>
-                <span className="text-xs text-muted block mb-2 font-medium">Componentes do Conjunto</span>
+                <span className="text-xs text-muted block mb-2 font-medium">{tx('Componentes do Conjunto')}</span>
                 {(form.components ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.components ?? []).map((comp, idx) => (
@@ -1417,27 +1426,27 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 )}
 
                 <div className="border border-[#e8dccb] rounded-xl p-4 bg-[#fdf8f2] space-y-3">
-                  <span className="text-xs font-semibold text-ink-2">{editingCompIndex !== null ? 'Editar Componente' : 'Novo Componente'}</span>
+                  <span className="text-xs font-semibold text-ink-2">{tx(editingCompIndex !== null ? 'Editar Componente' : 'Novo Componente')}</span>
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs text-muted">Descrição *</span>
-                    <input className="input" placeholder="ex: Sofá 3 lugares, Poltrona, Mesa..." value={compForm.description}
+                    <span className="text-xs text-muted">{tx('Descrição *')}</span>
+                    <input className="input" placeholder={tx('ex: Sofá 3 lugares, Poltrona, Mesa...')} value={compForm.description}
                       onChange={e => setCompForm(f => ({ ...f, description: e.target.value }))} />
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={compForm.is_circular}
                       onChange={e => setCompForm(f => ({ ...f, is_circular: e.target.checked, profundidade: e.target.checked ? 0 : f.profundidade }))}
                       style={{ accentColor: color }} className="w-4 h-4" />
-                    <span className="text-sm text-ink-2">Medida Redonda (Ø)</span>
+                    <span className="text-sm text-ink-2">{tx('Medida Redonda (Ø)')}</span>
                   </label>
                   {compForm.is_circular ? (
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1 col-span-2">
-                        <span className="text-xs text-muted">Diâmetro Ø (m)</span>
+                        <span className="text-xs text-muted">{tx('Diâmetro Ø (m)')}</span>
                         <NumberField className="input" min="0" step="0.01" value={compForm.largura}
                           onValueChange={v => setCompForm(f => ({ ...f, largura: v }))} />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-muted">Altura A (m)</span>
+                        <span className="text-xs text-muted">{tx('Altura A (m)')}</span>
                         <NumberField className="input" min="0" step="0.01" value={compForm.altura}
                           onValueChange={v => setCompForm(f => ({ ...f, altura: v }))} />
                       </label>
@@ -1445,30 +1454,30 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   ) : (
                     <div className="grid grid-cols-3 gap-3">
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-muted">L (m)</span>
+                        <span className="text-xs text-muted">{tx('L (m)')}</span>
                         <NumberField className="input" min="0" step="0.01" value={compForm.largura}
                           onValueChange={v => setCompForm(f => ({ ...f, largura: v }))} />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-muted">P (m)</span>
+                        <span className="text-xs text-muted">{tx('P (m)')}</span>
                         <NumberField className="input" min="0" step="0.01" value={compForm.profundidade}
                           onValueChange={v => setCompForm(f => ({ ...f, profundidade: v }))} />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs text-muted">A (m)</span>
+                        <span className="text-xs text-muted">{tx('A (m)')}</span>
                         <NumberField className="input" min="0" step="0.01" value={compForm.altura}
                           onValueChange={v => setCompForm(f => ({ ...f, altura: v }))} />
                       </label>
                     </div>
                   )}
                   <label className="flex flex-col gap-1 w-24">
-                    <span className="text-xs text-muted">Quantidade</span>
+                    <span className="text-xs text-muted">{tx('Quantidade')}</span>
                     <input className="input text-center" type="number" min="1" value={compForm.qty}
                       onChange={e => setCompForm(f => ({ ...f, qty: Math.max(1, Number(e.target.value)) }))} />
                   </label>
 
                   <div>
-                    <span className="text-xs text-muted block mb-2">Opcionais do Componente</span>
+                    <span className="text-xs text-muted block mb-2">{tx('Opcionais do Componente')}</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
                       {optCategories.map(({ code: value, name: label }) => {
                         const isActive = compActiveCategories.includes(value)
@@ -1490,7 +1499,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         )
                       })}
                       {optCategories.length === 0 && (
-                        <p className="col-span-full text-xs text-muted">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                        <p className="col-span-full text-xs text-muted">{tx('Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.')}</p>
                       )}
                     </div>
                     {compActiveCategories.length > 0 && (
@@ -1540,7 +1549,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       style={{ backgroundColor: color }}
                     >
                       <Plus className="w-4 h-4" />
-                      {editingCompIndex !== null ? 'Salvar Componente' : 'Adicionar Componente'}
+                      {tx(editingCompIndex !== null ? 'Salvar Componente' : 'Adicionar Componente')}
                     </button>
                     {editingCompIndex !== null && (
                       <button type="button"
@@ -1551,7 +1560,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         }}
                         className="px-4 py-2 rounded-lg text-sm font-medium border border-line text-ink-3 hover:bg-bg transition-colors"
                       >
-                        Cancelar
+                        {tx('Cancelar')}
                       </button>
                     )}
                   </div>
@@ -1559,7 +1568,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </div>
             ) : form.is_set ? (
               <div>
-                <span className="text-xs text-muted block mb-2 font-medium">Componentes do Conjunto</span>
+                <span className="text-xs text-muted block mb-2 font-medium">{tx('Componentes do Conjunto')}</span>
                 {(form.set_items ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.set_items ?? []).map((item, idx) => (
@@ -1583,7 +1592,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 <div className="flex gap-2">
                   <input
                     className="input flex-1 font-mono text-sm"
-                    placeholder="Código do produto"
+                    placeholder={tx('Código do produto')}
                     value={addItemCode}
                     onChange={(e) => setAddItemCode(e.target.value.toUpperCase())}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSetItem() } }}
@@ -1605,11 +1614,11 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <span className="hidden sm:inline">Add</span>
                   </button>
                 </div>
-                <p className="text-[10px] text-muted mt-1.5">Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.</p>
+                <p className="text-[10px] text-muted mt-1.5">{tx('Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.')}</p>
               </div>
             ) : (
               <div>
-                <span className="text-xs text-muted block mb-2 font-medium">Categorias de Opcionais Disponíveis</span>
+                <span className="text-xs text-muted block mb-2 font-medium">{tx('Categorias de Opcionais Disponíveis')}</span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {optCategories.map(({ code: value, name: label }) => {
                     const isActive = activeCategories.includes(value)
@@ -1638,13 +1647,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     )
                   })}
                   {optCategories.length === 0 && (
-                    <p className="col-span-full text-xs text-muted">Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.</p>
+                    <p className="col-span-full text-xs text-muted">{tx('Nenhum grupo de opcionais cadastrado. Crie grupos na aba Opcionais.')}</p>
                   )}
                 </div>
 
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
-                    <span className="text-xs text-muted block font-medium">Cores e Permissões por Categoria</span>
+                    <span className="text-xs text-muted block font-medium">{tx('Cores e Permissões por Categoria')}</span>
                     {activeCategories.map((catValue) => {
                       const catValueLabel = catLabel(catValue)
                       const catItems = allOptionals.filter(o => o.category === catValue)
@@ -1675,17 +1684,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                 }}
                                 className="w-3.5 h-3.5"
                               />
-                              <span className="text-[11px] text-[#6b5d55]">Permitir todos</span>
+                              <span className="text-[11px] text-[#6b5d55]">{tx('Permitir todos')}</span>
                             </label>
                           </div>
                           {isAllowed ? (
                             <p className="text-[11px] text-muted italic">
-                              Todos os opcionais desta categoria estarão disponíveis no carrinho.
+                              {tx('Todos os opcionais desta categoria estarão disponíveis no carrinho.')}
                             </p>
                           ) : (
                             <div>
                               {catItems.length === 0 ? (
-                                <span className="text-xs text-muted italic">Nenhuma cor cadastrada nesta categoria.</span>
+                                <span className="text-xs text-muted italic">{tx('Nenhuma cor cadastrada nesta categoria.')}</span>
                               ) : (
                                 <select
                                   multiple
@@ -1703,7 +1712,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                   ))}
                                 </select>
                               )}
-                              <p className="text-[10px] text-muted mt-1">Ctrl+clique para selecionar múltiplas cores.</p>
+                              <p className="text-[10px] text-muted mt-1">{tx('Ctrl+clique para selecionar múltiplas cores.')}</p>
                             </div>
                           )}
                         </div>
@@ -1715,7 +1724,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
 
             <div>
-              <span className="text-xs text-muted block mb-1">Foto</span>
+              <span className="text-xs text-muted block mb-1">{tx('Foto')}</span>
               <div
                 className="border-2 border-dashed border-line rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
                 onClick={() => fileRef.current?.click()}
@@ -1723,7 +1732,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
               >
                 {photoPreview ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" /> : <Upload className="w-8 h-8 text-faint" />}
-                <span className="text-xs text-muted">{photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB'}</span>
+                <span className="text-xs text-muted">{tx(photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB')}</span>
               </div>
               <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
                 onChange={(e) => {
@@ -1733,10 +1742,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             </div>
 
             <div className="flex justify-end gap-3 pt-1">
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
               <button type="submit" className="btn-primary" style={{ backgroundColor: color }}
                 disabled={createM.isPending || updateM.isPending || uploadM.isPending}>
-                {editing ? 'Salvar' : 'Criar'}
+                {tx(editing ? 'Salvar' : 'Criar')}
               </button>
             </div>
           </form>
@@ -1744,7 +1753,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       )}
 
       {deleting && (
-        <ConfirmDelete name={isEurope ? `${deleting.description} do catálogo Portugal` : deleting.description}
+        <ConfirmDelete name={isEurope ? tx('{name} do catálogo Portugal', { name: deleting.description }) : deleting.description}
           onConfirm={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}
           onCancel={() => setDeleting(null)} />
       )}
@@ -1765,6 +1774,7 @@ function PeopleTab<T extends Client | Representative>({
   page: number; onPage: (p: number) => void
 }) {
   const { user: authUser } = useAuth()
+  const tx = useCadastroText()
   const isAdmin = authUser?.role === 'admin'
   const activeMarket = authUser?.active_market ?? 'BR'
   const isRep = authUser?.role === 'representante'
@@ -1861,7 +1871,7 @@ function PeopleTab<T extends Client | Representative>({
       setCreatedUser(user)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setCreateUserError(detail ?? 'Erro ao criar usuário.')
+      setCreateUserError(detail ?? tx('Erro ao criar usuário.'))
     }
   }
 
@@ -1871,20 +1881,20 @@ function PeopleTab<T extends Client | Representative>({
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <span className="text-sm text-muted whitespace-nowrap">{totalItems} {label.toLowerCase()} cadastrados</span>
+        <span className="text-sm text-muted whitespace-nowrap">{tx('{count} {label} cadastrados', { count: totalItems, label: tx(label).toLowerCase() })}</span>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-            <input className="input pl-9" placeholder="Buscar por nome..." value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
+            <input className="input pl-9" placeholder={tx('Buscar por nome...')} value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
           </div>
           <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color }} onClick={openCreate}>
-            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo </span>{label.slice(0, -1)}
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">{tx('Novo ')}</span>{tx(label).slice(0, -1)}
           </button>
         </div>
       </div>
 
       {isLoading ? (
-        <p className="text-muted text-sm py-8 text-center">Carregando...</p>
+        <p className="text-muted text-sm py-8 text-center">{tx('Carregando...')}</p>
       ) : (
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
@@ -1897,29 +1907,29 @@ function PeopleTab<T extends Client | Representative>({
                     <p className="text-xs text-muted mt-0.5">{item.city} / {item.state}</p>
                   </div>
                   <div className="flex gap-0 flex-shrink-0">
-                    <button onClick={() => openView(item)} aria-label="Visualizar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => openView(item)} aria-label={tx('Visualizar')} className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button onClick={() => openEdit(item)} aria-label="Editar" className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => openEdit(item)} aria-label={tx('Editar')} className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setDeleting(item)} aria-label="Excluir" className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => setDeleting(item)} aria-label={tx('Excluir')} className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
                 <div className="mt-2 space-y-0.5 text-xs text-ink-2">
                   <p>{item.phone}</p>
-                  <p className="truncate text-muted-2">{item.email || 'Sem e-mail'}</p>
+                  <p className="truncate text-muted-2">{item.email || tx('Sem e-mail')}</p>
                   {canViewCreator && (
                     <p className="truncate text-muted-2">
-                      Criado por: {item.created_by_name || 'cadastro anterior'}
+                      {tx('Criado por:')} {item.created_by_name || tx('cadastro anterior')}
                     </p>
                   )}
                 </div>
               </div>
             ))}
-            {pageItems.length === 0 && <p className="text-center text-muted text-sm py-8">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</p>}
+            {pageItems.length === 0 && <p className="text-center text-muted text-sm py-8">{tx(search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.')}</p>}
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
@@ -1927,15 +1937,15 @@ function PeopleTab<T extends Client | Representative>({
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: `${color}12` }}>
                 <tr>
-                  <Th label="Nome" col="name" {...thProps} />
-                  <Th label="Telefone" col="phone" {...thProps} />
-                  <Th label="E-mail" col="email" {...thProps} />
-                  <Th label="Cidade" col="city" {...thProps} />
-                  <Th label="UF" col="state" {...thProps} />
-                  <Th label="Desc. Máx." col="max_discount" {...thProps} />
+                  <Th label={tx('Nome')} col="name" {...thProps} />
+                  <Th label={tx('Telefone')} col="phone" {...thProps} />
+                  <Th label={tx('E-mail')} col="email" {...thProps} />
+                  <Th label={tx('Cidade')} col="city" {...thProps} />
+                  <Th label={tx('UF')} col="state" {...thProps} />
+                  <Th label={tx('Desc. Máx.')} col="max_discount" {...thProps} />
                   {canViewCreator && (
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">
-                      Criado por
+                      {tx('Criado por')}
                     </th>
                   )}
                   <th className="px-4 py-3"></th>
@@ -1952,24 +1962,24 @@ function PeopleTab<T extends Client | Representative>({
                     <td className="px-4 py-3 text-muted-2">{item.max_discount}%</td>
                     {canViewCreator && (
                       <td className="px-4 py-3 text-muted-2">
-                        {item.created_by_name || 'Cadastro anterior'}
+                        {item.created_by_name || tx('Cadastro anterior')}
                       </td>
                     )}
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openView(item)} title="Visualizar" aria-label="Visualizar" className="text-muted transition-colors"
+                        <button onClick={() => openView(item)} title={tx('Visualizar')} aria-label={tx('Visualizar')} className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Eye className="w-4 h-4" /></button>
-                        <button onClick={() => openEdit(item)} title="Editar" aria-label="Editar" className="text-muted transition-colors"
+                        <button onClick={() => openEdit(item)} title={tx('Editar')} aria-label={tx('Editar')} className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                           onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => setDeleting(item)} title="Excluir" aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(item)} title={tx('Excluir')} aria-label={tx('Excluir')} className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
                 {pageItems.length === 0 && (
-                  <tr><td colSpan={canViewCreator ? 8 : 7} className="px-4 py-10 text-center text-muted">{search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.'}</td></tr>
+                  <tr><td colSpan={canViewCreator ? 8 : 7} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1981,39 +1991,39 @@ function PeopleTab<T extends Client | Representative>({
 
       {/* View / Create User modal */}
       {viewing && (
-        <Modal title={`Detalhes — ${viewing.name}`} onClose={() => setViewing(null)} accentColor={color}>
+        <Modal title={tx('Detalhes — {name}', { name: viewing.name })} onClose={() => setViewing(null)} accentColor={color}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              <div><span className="text-xs text-muted block">Nome</span><span className="text-ink font-medium">{viewing.name}</span></div>
-              <div><span className="text-xs text-muted block">Telefone</span><span className="text-ink-2">{viewing.phone}</span></div>
-              <div className="col-span-2"><span className="text-xs text-muted block">E-mail</span><span className="text-ink-2">{viewing.email || 'Não informado'}</span></div>
-              <div><span className="text-xs text-muted block">Cidade</span><span className="text-ink-2">{viewing.city}</span></div>
-              <div><span className="text-xs text-muted block">Estado</span><span className="text-ink-2">{viewing.state}</span></div>
+              <div><span className="text-xs text-muted block">{tx('Nome')}</span><span className="text-ink font-medium">{viewing.name}</span></div>
+              <div><span className="text-xs text-muted block">{tx('Telefone')}</span><span className="text-ink-2">{viewing.phone}</span></div>
+              <div className="col-span-2"><span className="text-xs text-muted block">{tx('E-mail')}</span><span className="text-ink-2">{viewing.email || tx('Não informado')}</span></div>
+              <div><span className="text-xs text-muted block">{tx('Cidade')}</span><span className="text-ink-2">{viewing.city}</span></div>
+              <div><span className="text-xs text-muted block">{tx('Estado')}</span><span className="text-ink-2">{viewing.state}</span></div>
               <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
-              <div className="col-span-2"><span className="text-xs text-muted block">Endereço</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — CEP {viewing.cep}</span></div>
+              <div className="col-span-2"><span className="text-xs text-muted block">{tx('Endereço')}</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — {tx('CEP')} {viewing.cep}</span></div>
               {canViewCreator && (
                 <div className="col-span-2">
-                  <span className="text-xs text-muted block">Criado por</span>
-                  <span className="text-ink-2">{viewing.created_by_name || 'Cadastro anterior ao rastreamento'}</span>
+                  <span className="text-xs text-muted block">{tx('Criado por')}</span>
+                  <span className="text-ink-2">{viewing.created_by_name || tx('Cadastro anterior ao rastreamento')}</span>
                 </div>
               )}
             </div>
 
             {(isAdmin || (isRep && entityType === 'client')) && <div className="border-t border-line pt-4">
-              <p className="text-xs font-semibold text-muted-2 uppercase tracking-wider mb-3">Acesso ao Sistema</p>
+              <p className="text-xs font-semibold text-muted-2 uppercase tracking-wider mb-3">{tx('Acesso ao Sistema')}</p>
 
               {createdUser ? (
                 <div className="bg-[#f0f7f0] border border-[#c5dfc4] rounded-xl p-4 space-y-2">
                   <div className="flex items-center gap-2 text-[#4a7a47]">
                     <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                    <span className="text-sm font-semibold">Usuário criado com sucesso!</span>
+                    <span className="text-sm font-semibold">{tx('Usuário criado com sucesso!')}</span>
                   </div>
                   <div className="text-sm text-ink-2 space-y-1">
-                    <p><span className="text-muted">Usuário:</span> <strong>{createdUser.username}</strong></p>
-                    <p><span className="text-muted">Senha inicial:</span> <strong>{createdUser.temp_password}</strong></p>
-                    <p><span className="text-muted">Perfil:</span> {createdUser.role === 'representante' ? 'Representante' : 'Cliente'}</p>
+                    <p><span className="text-muted">{tx('Usuário:')}</span> <strong>{createdUser.username}</strong></p>
+                    <p><span className="text-muted">{tx('Senha inicial:')}</span> <strong>{createdUser.temp_password}</strong></p>
+                    <p><span className="text-muted">{tx('Perfil:')}</span> {tx(createdUser.role === 'representante' ? 'Representante' : 'Cliente')}</p>
                   </div>
-                  <p className="text-xs text-muted-2 mt-1">O usuário deverá trocar a senha no primeiro acesso.</p>
+                  <p className="text-xs text-muted-2 mt-1">{tx('O usuário deverá trocar a senha no primeiro acesso.')}</p>
                 </div>
               ) : viewing?.has_user ? (
                 <div className="flex items-center gap-3">
@@ -2023,9 +2033,9 @@ function PeopleTab<T extends Client | Representative>({
                     style={{ backgroundColor: color }}
                   >
                     <CheckCircle className="w-4 h-4" />
-                    Usuário já criado
+                    {tx('Usuário já criado')}
                   </button>
-                  <span className="text-xs text-muted">Gerencie pela tela Admin.</span>
+                  <span className="text-xs text-muted">{tx('Gerencie pela tela Admin.')}</span>
                 </div>
               ) : (
                 <>
@@ -2039,29 +2049,29 @@ function PeopleTab<T extends Client | Representative>({
                     style={{ backgroundColor: color }}
                   >
                     <UserPlus className="w-4 h-4" />
-                    {createUserPending ? 'Criando…' : 'Criar Usuário'}
+                    {tx(createUserPending ? 'Criando…' : 'Criar Usuário')}
                   </button>
                   <p className="text-xs text-muted mt-2">
-                    Cria acesso com usuário gerado pelo nome e senha temporária aleatória.
+                    {tx('Cria acesso com usuário gerado pelo nome e senha temporária aleatória.')}
                   </p>
                 </>
               )}
             </div>}
 
             <div className="flex justify-end pt-1">
-              <button className="btn-secondary" onClick={() => setViewing(null)}>Fechar</button>
+              <button className="btn-secondary" onClick={() => setViewing(null)}>{tx('Fechar')}</button>
             </div>
           </div>
         </Modal>
       )}
 
       {showForm && (
-        <Modal title={editing ? `Editar ${label.slice(0, -1)}` : `Novo ${label.slice(0, -1)}`} onClose={() => setShowForm(false)} accentColor={color}>
+        <Modal title={tx(editing ? 'Editar {item}' : 'Novo {item}', { item: tx(label).slice(0, -1) })} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <AddressFields form={form} setForm={setForm} market={activeMarket} />
             {entityType === 'client' && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">Perfil de faturamento *</span>
+                <span className="text-xs text-muted">{tx('Perfil de faturamento *')}</span>
                 <div className="flex gap-2">
                   {(activeMarket === 'EU' ? ['lojista', 'corporativo', 'pvp'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
                     <button
@@ -2079,7 +2089,7 @@ function PeopleTab<T extends Client | Representative>({
             )}
             {canEditDiscount && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">Desconto Máximo (%)</span>
+                <span className="text-xs text-muted">{tx('Desconto Máximo (%)')}</span>
                 <NumberField
                   min={0} max={100} step={0.5} className="input"
                   value={form.max_discount ?? defaultMaxDiscount}
@@ -2094,12 +2104,12 @@ function PeopleTab<T extends Client | Representative>({
               </div>
             )}
             <p className="text-xs text-muted leading-relaxed pt-1">
-              Os dados coletados neste formulário são processados estritamente para a elaboração de orçamentos e gestão do pedido, conforme a nossa Política de Privacidade.
+              {tx('Os dados coletados neste formulário são processados estritamente para a elaboração de orçamentos e gestão do pedido, conforme a nossa Política de Privacidade.')}
             </p>
             <div className="flex justify-end gap-3 pt-1">
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
               <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={isPending || submitting}>
-                {submitting ? 'Salvando...' : editing ? 'Salvar' : 'Criar'}
+                {tx(submitting ? 'Salvando...' : editing ? 'Salvar' : 'Criar')}
               </button>
             </div>
           </form>
@@ -2121,6 +2131,7 @@ const EMPTY_OPT: OptionalColorCreate = { category: '', color_name: '' }
 
 function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: boolean }) {
   const { data: optionals, isLoading } = useOptionals()
+  const tx = useCadastroText()
   const { data: categories = [] } = useOptionalCategories()
   const createM = useCreateOptional()
   const updateM = useUpdateOptional()
@@ -2184,7 +2195,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       else await createCatM.mutateAsync(groupForm)
       setShowGroupForm(false)
     } catch {
-      setGroupErr('Código já existe ou dados inválidos.')
+      setGroupErr(tx('Código já existe ou dados inválidos.'))
     }
   }
 
@@ -2213,23 +2224,23 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   return (
     <div>
       <div className="flex items-center justify-between mb-4 gap-2">
-        <span className="text-sm text-muted">{optionals?.length ?? 0} opcionais cadastrados</span>
+        <span className="text-sm text-muted">{tx('{count} opcionais cadastrados', { count: optionals?.length ?? 0 })}</span>
         {!readOnly && (
           <div className="flex items-center gap-2">
             <button className="btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={openNewGroup}>
-              <Plus className="w-3.5 h-3.5" /> Adicionar Grupos
+              <Plus className="w-3.5 h-3.5" /> {tx('Adicionar Grupos')}
             </button>
             <button className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: color }} onClick={openCreate} disabled={categories.length === 0}
-              title={categories.length === 0 ? 'Crie um grupo primeiro' : undefined}>
-              <Plus className="w-4 h-4" /> Novo Opcional
+              title={categories.length === 0 ? tx('Crie um grupo primeiro') : undefined}>
+              <Plus className="w-4 h-4" /> {tx('Novo Opcional')}
             </button>
           </div>
         )}
       </div>
 
       {isLoading ? (
-        <p className="text-muted text-sm py-8 text-center">Carregando...</p>
+        <p className="text-muted text-sm py-8 text-center">{tx('Carregando...')}</p>
       ) : (
         <div className="space-y-4">
           {grouped.map(({ category, label, items, cat }) => (
@@ -2244,7 +2255,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                     style={{ backgroundColor: cat ? `${color}20` : '#f3ddb8', color: cat ? color : '#a3690f' }}>
                     {items.length}
                   </span>
-                  {!cat && <span className="text-[10px] text-[#a3690f] italic truncate">grupo não cadastrado</span>}
+                  {!cat && <span className="text-[10px] text-[#a3690f] italic truncate">{tx('grupo não cadastrado')}</span>}
                 </div>
                 {!readOnly && (
                   <div className="flex gap-2 flex-shrink-0">
@@ -2252,11 +2263,11 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                       <>
                         <button onClick={() => openEditGroup(cat)} className="text-muted transition-colors"
                           onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '')} title="Editar grupo">
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '')} title={tx('Editar grupo')}>
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setDeletingGroup({ id: cat.id, name: cat.name, count: items.length })}
-                          className="text-muted hover:text-red-500 transition-colors" title="Excluir grupo">
+                          className="text-muted hover:text-red-500 transition-colors" title={tx('Excluir grupo')}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>
@@ -2265,14 +2276,14 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                         onClick={() => { setEditingGroup(null); setGroupForm({ name: label, code: category }); setGroupErr(''); setShowGroupForm(true) }}
                         className="text-[10px] font-semibold px-2 py-1 rounded-lg border border-[#e0b88a] text-[#a3690f] hover:bg-[#fdf6ec] transition-colors"
                       >
-                        Cadastrar grupo
+                        {tx('Cadastrar grupo')}
                       </button>
                     )}
                   </div>
                 )}
               </div>
               {items.length === 0 ? (
-                <p className="px-4 py-3 text-xs text-muted">Nenhuma cor cadastrada.</p>
+                <p className="px-4 py-3 text-xs text-muted">{tx('Nenhuma cor cadastrada.')}</p>
               ) : (
               <table className="w-full text-sm">
                 <tbody>
@@ -2290,12 +2301,12 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                       {!readOnly && (
                         <td className="px-4 py-2.5 w-16">
                           <div className="flex gap-2">
-                            <button onClick={() => openEdit(opt)} aria-label="Editar" className="text-muted transition-colors"
+                            <button onClick={() => openEdit(opt)} aria-label={tx('Editar')} className="text-muted transition-colors"
                               onMouseEnter={(e) => (e.currentTarget.style.color = color)}
                               onMouseLeave={(e) => (e.currentTarget.style.color = '')}>
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleting(opt)} aria-label="Excluir" className="text-muted hover:text-red-500 transition-colors">
+                            <button onClick={() => setDeleting(opt)} aria-label={tx('Excluir')} className="text-muted hover:text-red-500 transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -2309,7 +2320,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
             </div>
           ))}
           {grouped.length === 0 && (
-            <p className="text-muted text-sm py-8 text-center">Nenhum grupo cadastrado. Clique em "Adicionar Grupos" para começar.</p>
+            <p className="text-muted text-sm py-8 text-center">{tx('Nenhum grupo cadastrado. Clique em "Adicionar Grupos" para começar.')}</p>
           )}
         </div>
       )}
@@ -2319,7 +2330,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
           onClick={() => setLightboxUrl(null)}>
           <div className="relative" onClick={(e) => e.stopPropagation()}>
-            <img src={lightboxUrl} alt="Swatch ampliado"
+            <img src={lightboxUrl} alt={tx('Swatch ampliado')}
               className="max-w-[90vw] max-h-[80vh] w-64 h-64 object-cover rounded-2xl shadow-2xl border border-white/20" />
             <button onClick={() => setLightboxUrl(null)}
               className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-lg text-ink hover:bg-bg transition-colors">
@@ -2331,10 +2342,10 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 
       {/* Optional form modal */}
       {showForm && (
-        <Modal title={editing ? 'Editar Opcional' : 'Novo Opcional'} onClose={() => setShowForm(false)} accentColor={color}>
+        <Modal title={tx(editing ? 'Editar Opcional' : 'Novo Opcional')} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Categoria *</span>
+              <span className="text-xs text-muted">{tx('Categoria *')}</span>
               <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
                 {catOptions.map(({ value, label }) => (
                   <option key={value} value={value}>{label}</option>
@@ -2342,13 +2353,13 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Nome da Cor *</span>
+              <span className="text-xs text-muted">{tx('Nome da Cor *')}</span>
               <input className="input" value={form.color_name}
                 onChange={(e) => setForm({ ...form, color_name: e.target.value })} required />
             </label>
 
             <div>
-              <span className="text-xs text-muted block mb-1">Imagem de Textura (swatch)</span>
+              <span className="text-xs text-muted block mb-1">{tx('Imagem de Textura (swatch)')}</span>
               <div
                 className="border-2 border-dashed border-line rounded-xl p-3 flex flex-col items-center gap-1.5 cursor-pointer transition-colors"
                 onClick={() => optFileRef.current?.click()}
@@ -2359,7 +2370,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                   ? <img src={optPhotoPreview} alt="" className="w-16 h-16 object-cover rounded-lg" />
                   : <Upload className="w-6 h-6 text-faint" />}
                 <span className="text-xs text-muted">
-                  {optPhotoPreview ? 'Clique para trocar' : 'PNG, JPG — textura do material'}
+                  {tx(optPhotoPreview ? 'Clique para trocar' : 'PNG, JPG — textura do material')}
                 </span>
               </div>
               <input ref={optFileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
@@ -2370,10 +2381,10 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
             </div>
 
             <div className="flex justify-end gap-3 pt-1">
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
               <button type="submit" className="btn-primary" style={{ backgroundColor: color }}
                 disabled={createM.isPending || updateM.isPending || uploadOptM.isPending}>
-                {editing ? 'Salvar' : 'Criar'}
+                {tx(editing ? 'Salvar' : 'Criar')}
               </button>
             </div>
           </form>
@@ -2382,23 +2393,23 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 
       {/* Group form modal */}
       {showGroupForm && (
-        <Modal title={editingGroup ? 'Editar Grupo' : 'Novo Grupo de Opcionais'} onClose={() => setShowGroupForm(false)} accentColor={color}>
+        <Modal title={tx(editingGroup ? 'Editar Grupo' : 'Novo Grupo de Opcionais')} onClose={() => setShowGroupForm(false)} accentColor={color}>
           <form onSubmit={handleGroupSubmit} className="space-y-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Nome do Grupo *</span>
-              <input className="input" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} required autoFocus placeholder="ex: Alumínio" />
+              <span className="text-xs text-muted">{tx('Nome do Grupo *')}</span>
+              <input className="input" value={groupForm.name} onChange={(e) => setGroupForm(f => ({ ...f, name: e.target.value }))} required autoFocus placeholder={tx('ex: Alumínio')} />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Código (identificador único) *</span>
-              <input className="input font-mono text-sm" value={groupForm.code} onChange={(e) => setGroupForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} required placeholder="ex: aluminio" />
-              <span className="text-[10px] text-muted">Apenas letras minúsculas, números e underscores.</span>
+              <span className="text-xs text-muted">{tx('Código (identificador único) *')}</span>
+              <input className="input font-mono text-sm" value={groupForm.code} onChange={(e) => setGroupForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} required placeholder={tx('ex: aluminio')} />
+              <span className="text-[10px] text-muted">{tx('Apenas letras minúsculas, números e underscores.')}</span>
             </label>
             {groupErr && <p className="text-xs text-red-500">{groupErr}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={createCatM.isPending || updateCatM.isPending} className="btn-primary flex-1" style={{ backgroundColor: color }}>
-                {createCatM.isPending || updateCatM.isPending ? 'Salvando...' : editingGroup ? 'Salvar' : 'Criar Grupo'}
+                {tx(createCatM.isPending || updateCatM.isPending ? 'Salvando...' : editingGroup ? 'Salvar' : 'Criar Grupo')}
               </button>
-              <button type="button" className="btn-secondary px-4" onClick={() => setShowGroupForm(false)}>Cancelar</button>
+              <button type="button" className="btn-secondary px-4" onClick={() => setShowGroupForm(false)}>{tx('Cancelar')}</button>
             </div>
           </form>
         </Modal>
@@ -2411,7 +2422,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       )}
 
       {deletingGroup && (
-        <ConfirmDelete name={deletingGroup.count > 0 ? `${deletingGroup.name} (${deletingGroup.count} ${deletingGroup.count === 1 ? 'cor' : 'cores'})` : deletingGroup.name}
+        <ConfirmDelete name={deletingGroup.count > 0 ? `${deletingGroup.name} (${deletingGroup.count} ${tx(deletingGroup.count === 1 ? 'cor' : 'cores')})` : deletingGroup.name}
           onConfirm={async () => { await deleteCatM.mutateAsync(deletingGroup.id); setDeletingGroup(null) }}
           onCancel={() => setDeletingGroup(null)} />
       )}
@@ -2429,6 +2440,7 @@ type GroupModal =
 
 function GroupsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
+  const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
 
   const createGroupM = useCreateProductGroup()
@@ -2468,7 +2480,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       }
       setModal(null)
     } catch (ex: unknown) {
-      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao salvar grupo.')
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao salvar grupo.'))
     }
   }
 
@@ -2482,7 +2494,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       }
       setModal(null)
     } catch (ex: unknown) {
-      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao salvar subgrupo.')
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao salvar subgrupo.'))
     }
   }
 
@@ -2496,28 +2508,28 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-ink">Grupos & Subgrupos</h2>
+        <h2 className="text-base font-semibold text-ink">{tx('Grupos & Subgrupos')}</h2>
         <button onClick={openNewGroup}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
           style={{ backgroundColor: color }}>
-          <Plus className="w-3.5 h-3.5" /> Novo Grupo
+          <Plus className="w-3.5 h-3.5" /> {tx('Novo Grupo')}
         </button>
       </div>
 
       {/* Group form modal */}
       {(modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
         <Modal
-          title={modal.kind === 'edit-group' ? 'Editar Grupo' : 'Novo Grupo'}
+          title={tx(modal.kind === 'edit-group' ? 'Editar Grupo' : 'Novo Grupo')}
           onClose={() => setModal(null)}
           accentColor={color}
         >
           <form onSubmit={handleGroupSubmit} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Nome do Grupo *</span>
+              <span className="text-xs text-muted">{tx('Nome do Grupo *')}</span>
               <input className="input" value={gName} onChange={(e) => setGName(e.target.value)} required autoFocus />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Alíquota IPI (%)</span>
+              <span className="text-xs text-muted">{tx('Alíquota IPI (%)')}</span>
               <input
                 className="input"
                 type="number"
@@ -2531,9 +2543,9 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
             {err && <p className="text-xs text-red-500">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isGroupPending} className="btn-primary flex-1">
-                {isGroupPending ? 'Salvando...' : modal.kind === 'edit-group' ? 'Salvar Alterações' : 'Criar Grupo'}
+                {tx(isGroupPending ? 'Salvando...' : modal.kind === 'edit-group' ? 'Salvar Alterações' : 'Criar Grupo')}
               </button>
-              <button type="button" onClick={() => setModal(null)} className="btn-secondary px-4">Cancelar</button>
+              <button type="button" onClick={() => setModal(null)} className="btn-secondary px-4">{tx('Cancelar')}</button>
             </div>
           </form>
         </Modal>
@@ -2542,28 +2554,28 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       {/* Type form modal */}
       {(modal?.kind === 'new-type' || modal?.kind === 'edit-type') && (
         <Modal
-          title={modal.kind === 'edit-type' ? 'Editar Subgrupo' : 'Novo Subgrupo'}
+          title={tx(modal.kind === 'edit-type' ? 'Editar Subgrupo' : 'Novo Subgrupo')}
           onClose={() => setModal(null)}
           accentColor={color}
         >
           <form onSubmit={handleTypeSubmit} className="space-y-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Nome do Subgrupo *</span>
+              <span className="text-xs text-muted">{tx('Nome do Subgrupo *')}</span>
               <input className="input" value={tName} onChange={(e) => setTName(e.target.value)} required autoFocus />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Grupo</span>
+              <span className="text-xs text-muted">{tx('Grupo')}</span>
               <select className="input" value={tGroupId ?? ''} onChange={(e) => setTGroupId(e.target.value || null)}>
-                <option value="">Sem grupo</option>
+                <option value="">{tx('Sem grupo')}</option>
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
             {err && <p className="text-xs text-red-500">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isTypePending} className="btn-primary flex-1">
-                {isTypePending ? 'Salvando...' : modal.kind === 'edit-type' ? 'Salvar Alterações' : 'Criar Subgrupo'}
+                {tx(isTypePending ? 'Salvando...' : modal.kind === 'edit-type' ? 'Salvar Alterações' : 'Criar Subgrupo')}
               </button>
-              <button type="button" onClick={() => setModal(null)} className="btn-secondary px-4">Cancelar</button>
+              <button type="button" onClick={() => setModal(null)} className="btn-secondary px-4">{tx('Cancelar')}</button>
             </div>
           </form>
         </Modal>
@@ -2582,7 +2594,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
       )}
 
       {isLoading ? (
-        <p className="text-sm text-muted">Carregando...</p>
+        <p className="text-sm text-muted">{tx('Carregando...')}</p>
       ) : (
         <div className="space-y-3">
           {pagedGroups.map(group => {
@@ -2630,19 +2642,19 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
                   className="flex items-center gap-1 text-xs font-medium transition-colors"
                   style={{ color }}
                 >
-                  <Plus className="w-3 h-3" /> Novo Subgrupo
+                  <Plus className="w-3 h-3" /> {tx('Novo Subgrupo')}
                 </button>
               </div>
             )
           })}
 
           {groups.length === 0 && orphanTypes.length === 0 && (
-            <p className="text-sm text-muted">Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.</p>
+            <p className="text-sm text-muted">{tx('Nenhum grupo cadastrado. Crie um grupo para organizar os tipos de produto.')}</p>
           )}
 
           {orphanTypes.length > 0 && (
             <div className="border border-dashed border-line rounded-xl p-4 space-y-3">
-              <span className="text-xs font-semibold text-muted uppercase tracking-wider">Sem grupo</span>
+              <span className="text-xs font-semibold text-muted uppercase tracking-wider">{tx('Sem grupo')}</span>
               <div className="flex flex-wrap gap-1.5">
                 {orphanTypes.map(t => (
                   <div key={t.id}
@@ -2673,6 +2685,7 @@ function GroupsTab({ color, page, onPage }: { color: string; page: number; onPag
 
 function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) {
   const { data: catalogs = [], isLoading } = useCatalogs()
+  const tx = useCadastroText()
   const createM = useCreateCatalog()
   const updateM = useUpdateCatalog()
   const deleteM = useDeleteCatalog()
@@ -2688,13 +2701,13 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setErr('')
     const trimmed = name.trim()
-    if (!trimmed) { setErr('Informe o nome do catálogo.'); return }
+    if (!trimmed) { setErr(tx('Informe o nome do catálogo.')); return }
     try {
       if (modal?.kind === 'edit') await updateM.mutateAsync({ id: modal.catalog.id, name: trimmed })
       else await createM.mutateAsync({ name: trimmed })
       setModal(null)
     } catch (ex: unknown) {
-      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao salvar catálogo.')
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao salvar catálogo.'))
     }
   }
 
@@ -2705,7 +2718,7 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
       await deleteM.mutateAsync(deleting.id)
       setDeleting(null)
     } catch (ex: unknown) {
-      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Erro ao excluir catálogo.')
+      setErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao excluir catálogo.'))
     }
   }
 
@@ -2713,8 +2726,8 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-medium text-ink">Catálogos</h2>
-          <p className="text-sm text-muted mt-0.5">Linhas comerciais usadas como filtro na tela de Produtos.</p>
+          <h2 className="text-lg font-medium text-ink">{tx('Catálogos')}</h2>
+          <p className="text-sm text-muted mt-0.5">{tx('Linhas comerciais usadas como filtro na tela de Produtos.')}</p>
         </div>
         {!readOnly && (
           <button
@@ -2722,15 +2735,15 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white rounded-lg transition-opacity hover:opacity-90"
             style={{ backgroundColor: color }}
           >
-            <Plus className="w-4 h-4" /> Novo Catálogo
+            <Plus className="w-4 h-4" /> {tx('Novo Catálogo')}
           </button>
         )}
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-muted py-8 text-center">Carregando…</p>
+        <p className="text-sm text-muted py-8 text-center">{tx('Carregando…')}</p>
       ) : catalogs.length === 0 ? (
-        <p className="text-sm text-muted py-8 text-center">Nenhum catálogo cadastrado.</p>
+        <p className="text-sm text-muted py-8 text-center">{tx('Nenhum catálogo cadastrado.')}</p>
       ) : (
         <div className="bg-white border border-line rounded-xl overflow-hidden">
           {catalogs.map((c, i) => (
@@ -2738,10 +2751,10 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
               <span className="text-sm text-ink font-medium">{c.name}</span>
               {!readOnly && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(c)} className="p-1.5 text-muted hover:text-ink transition-colors" title="Editar">
+                  <button onClick={() => openEdit(c)} className="p-1.5 text-muted hover:text-ink transition-colors" title={tx('Editar')}>
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => { setErr(''); setDeleting(c) }} className="p-1.5 text-muted hover:text-terracotta transition-colors" title="Excluir">
+                  <button onClick={() => { setErr(''); setDeleting(c) }} className="p-1.5 text-muted hover:text-terracotta transition-colors" title={tx('Excluir')}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -2752,35 +2765,35 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
       )}
 
       {modal && (
-        <Modal onClose={() => setModal(null)} title={modal.kind === 'edit' ? 'Editar Catálogo' : 'Novo Catálogo'}>
+        <Modal onClose={() => setModal(null)} title={tx(modal.kind === 'edit' ? 'Editar Catálogo' : 'Novo Catálogo')}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <label className="block">
-              <span className="text-xs text-muted">Nome</span>
+              <span className="text-xs text-muted">{tx('Nome')}</span>
               <input
                 value={name}
                 onChange={e => setName(e.target.value)}
                 maxLength={50}
                 autoFocus
                 className="mt-1 w-full py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink focus:outline-none focus:ring-1 focus:ring-gold"
-                placeholder="Ex.: Cerâmica"
+                placeholder={tx('Ex.: Cerâmica')}
               />
             </label>
             {err && <p className="text-xs text-terracotta">{err}</p>}
             <div className="flex gap-2 pt-1">
-              <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
-              <button type="submit" disabled={createM.isPending || updateM.isPending} className="flex-1 py-2 text-white rounded-lg text-sm disabled:opacity-60" style={{ backgroundColor: color }}>Salvar</button>
+              <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">{tx('Cancelar')}</button>
+              <button type="submit" disabled={createM.isPending || updateM.isPending} className="flex-1 py-2 text-white rounded-lg text-sm disabled:opacity-60" style={{ backgroundColor: color }}>{tx('Salvar')}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {deleting && (
-        <Modal onClose={() => setDeleting(null)} title="Excluir Catálogo">
-          <p className="text-sm text-ink-2">Excluir o catálogo <strong>{deleting.name}</strong>?</p>
+        <Modal onClose={() => setDeleting(null)} title={tx('Excluir Catálogo')}>
+          <p className="text-sm text-ink-2">{tx('Excluir o catálogo')} <strong>{deleting.name}</strong>?</p>
           {err && <p className="text-xs text-terracotta mt-2">{err}</p>}
           <div className="flex gap-2 pt-3">
-            <button type="button" onClick={() => setDeleting(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
-            <button type="button" onClick={handleDelete} disabled={deleteM.isPending} className="flex-1 py-2 bg-terracotta text-white rounded-lg text-sm disabled:opacity-60">Excluir</button>
+            <button type="button" onClick={() => setDeleting(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">{tx('Cancelar')}</button>
+            <button type="button" onClick={handleDelete} disabled={deleteM.isPending} className="flex-1 py-2 bg-terracotta text-white rounded-lg text-sm disabled:opacity-60">{tx('Excluir')}</button>
           </div>
         </Modal>
       )}
@@ -2807,6 +2820,7 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
   endpoint: string; label: string; hint?: string; columns: string; color: string
 }) {
   const queryClient = useQueryClient()
+  const tx = useCadastroText()
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -2822,7 +2836,7 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
       setResult(data)
       queryClient.invalidateQueries() // atualiza contadores e tabelas dos cadastros
     } catch (e) {
-      setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Falha ao processar o arquivo. Verifique o formato do CSV.')
+      setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Falha ao processar o arquivo. Verifique o formato do CSV.'))
     } finally {
       setLoading(false)
     }
@@ -2832,11 +2846,11 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
     <div className="rounded-xl border border-line bg-surface-quiet p-4">
       <p className="text-sm font-semibold text-ink">{label}</p>
       {hint && <p className="text-xs text-ink-3 mt-0.5">{hint}</p>}
-      <p className="text-xs text-muted mt-1">Colunas: <span className="font-mono text-ink-3">{columns}</span></p>
+      <p className="text-xs text-muted mt-1">{tx('Colunas:')} <span className="font-mono text-ink-3">{columns}</span></p>
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         <input
           type="file" accept=".csv,text/csv"
-          aria-label={`Selecionar arquivo CSV de ${label}`}
+          aria-label={tx('Selecionar arquivo CSV de {label}', { label })}
           onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); setError(null) }}
           className="text-xs text-ink-2 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-bg-2 file:text-ink-2 file:cursor-pointer"
         />
@@ -2845,7 +2859,7 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50"
           style={{ backgroundColor: color }}
         >
-          <Upload className="w-3.5 h-3.5" /> {loading ? 'Enviando...' : 'Importar'}
+          <Upload className="w-3.5 h-3.5" /> {tx(loading ? 'Enviando...' : 'Importar')}
         </button>
       </div>
       {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
@@ -2853,19 +2867,19 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
         <div className={`mt-3 rounded-lg border p-3 ${result.committed ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40'}`}>
           {result.committed ? (
             <p className="text-xs text-ink">
-              ✓ <span className="font-semibold">{result.processed}</span> linhas processadas ·{' '}
-              <span className="text-green-700 font-semibold">{result.created}</span> criadas ·{' '}
-              <span className="text-gold font-semibold">{result.updated}</span> atualizadas
+              ✓ <span className="font-semibold">{result.processed}</span> {tx('linhas processadas')} ·{' '}
+              <span className="text-green-700 font-semibold">{result.created}</span> {tx('criadas')} ·{' '}
+              <span className="text-gold font-semibold">{result.updated}</span> {tx('atualizadas')}
             </p>
           ) : (
             <p className="text-xs text-red-700 font-semibold">
-              Arquivo rejeitado — nada foi importado. Corrija {result.errors.length} {result.errors.length === 1 ? 'erro' : 'erros'} em {result.processed} linhas e reenvie.
+              {tx('Arquivo rejeitado — nada foi importado. Corrija {count} {errors} em {rows} linhas e reenvie.', { count: result.errors.length, errors: tx(result.errors.length === 1 ? 'erro' : 'erros'), rows: result.processed })}
             </p>
           )}
           {result.errors.length > 0 && (
             <ul className="mt-2 max-h-40 overflow-y-auto space-y-1">
               {result.errors.map((err, i) => (
-                <li key={i} className="text-xs text-danger">Linha {err.row}: {err.message}</li>
+                <li key={i} className="text-xs text-danger">{tx('Linha {row}: {message}', { row: err.row, message: err.message })}</li>
               ))}
             </ul>
           )}
@@ -2876,34 +2890,35 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
 }
 
 function ImportTab({ color }: { color: string }) {
+  const tx = useCadastroText()
   const [supportTable, setSupportTable] = useState('product-groups')
   const current = SUPPORT_TABLES.find((t) => t.value === supportTable)!
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-ink">Importação CSV</h2>
-        <p className="text-sm text-ink-3 mt-0.5">Importe cadastros em massa via arquivos .csv (UTF-8; separador vírgula ou ponto-e-vírgula). Reimportações atualizam registros existentes pela chave (nome, SKU ou e-mail).</p>
+        <h2 className="text-lg font-semibold text-ink">{tx('Importação CSV')}</h2>
+        <p className="text-sm text-ink-3 mt-0.5">{tx('Importe cadastros em massa via arquivos .csv (UTF-8; separador vírgula ou ponto-e-vírgula). Reimportações atualizam registros existentes pela chave (nome, SKU ou e-mail).')}</p>
       </div>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> Cadastros de apoio</h3>
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><LayoutGrid className="w-4 h-4" style={{ color }} /> {tx('Cadastros de apoio')}</h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">Tabela:</span>
+          <span className="text-xs text-muted">{tx('Tabela:')}</span>
           <select value={supportTable} onChange={(e) => setSupportTable(e.target.value)} className="input text-sm max-w-[240px]">
-            {SUPPORT_TABLES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {SUPPORT_TABLES.map((t) => <option key={t.value} value={t.value}>{tx(t.label)}</option>)}
           </select>
         </div>
-        <ImportUploader key={supportTable} endpoint={supportTable} label={current.label} columns={current.columns} color={color} />
+        <ImportUploader key={supportTable} endpoint={supportTable} label={tx(current.label)} columns={tx(current.columns)} color={color} />
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> Catálogo de produtos — 2 etapas</h3>
-        <ImportUploader endpoint="products" label="Etapa 1: Subir Tabela de Produtos" hint="Cria/atualiza produtos pelo SKU (product_code)." columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
-        <ImportUploader endpoint="product-optionals" label="Etapa 2: Subir Tabela de Opcionais do Produto" hint="Vincula opcionais a cada SKU — rode após a Etapa 1." columns="product_code, category, color_name" color={color} />
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> {tx('Catálogo de produtos — 2 etapas')}</h3>
+        <ImportUploader endpoint="products" label={tx('Etapa 1: Subir Tabela de Produtos')} hint={tx('Cria/atualiza produtos pelo SKU (product_code).')} columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />
+        <ImportUploader endpoint="product-optionals" label={tx('Etapa 2: Subir Tabela de Opcionais do Produto')} hint={tx('Vincula opcionais a cada SKU — rode após a Etapa 1.')} columns="product_code, category, color_name" color={color} />
       </section>
 
       <section className="space-y-3">
-        <p className="text-xs text-ink-3 -mt-1">Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.</p>
+        <p className="text-xs text-ink-3 -mt-1">{tx('Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.')}</p>
         <BatchPhotoUpload color={color} title="Importar Foto" collapsible={false} />
       </section>
     </div>
@@ -2951,6 +2966,7 @@ function savePersistedCadastroState(state: PersistedCadastroState) {
 
 export default function CadastroPage() {
   const { user } = useAuth()
+  const tx = useCadastroText()
   const isRep = user?.role === 'representante'
   const isCliente = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user.linked_id)
   const isLimited = isRep || isCliente
@@ -3006,12 +3022,13 @@ export default function CadastroPage() {
 
   return (
     <div className="min-h-screen bg-bg text-ink pb-24 md:pb-0">
-      <h1 className="sr-only">Cadastros</h1>
+      <h1 className="sr-only">{tx('Cadastros')}</h1>
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6">
 
         {/* ── Mobile horizontal tab bar ──────────────────────── */}
         <div className="md:hidden mb-3 flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
-          {visibleTabs.map(({ key, label, Icon }) => {
+          {visibleTabs.map(({ key, label: rawLabel, Icon }) => {
+            const label = tx(rawLabel)
             const { color } = TAB_PALETTE[key]
             const isActive = tab === key
             return (
@@ -3045,8 +3062,9 @@ export default function CadastroPage() {
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
             <div className="bg-white border border-line rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
-              <p className="text-xs font-semibold text-muted uppercase tracking-widest px-3 pb-2">Cadastros</p>
-              {visibleTabs.map(({ key, label, Icon }) => {
+              <p className="text-xs font-semibold text-muted uppercase tracking-widest px-3 pb-2">{tx('Cadastros')}</p>
+              {visibleTabs.map(({ key, label: rawLabel, Icon }) => {
+            const label = tx(rawLabel)
                 const { color } = TAB_PALETTE[key]
                 const isActive = tab === key
                 const count = counts[key]
