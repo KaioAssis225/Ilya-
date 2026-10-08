@@ -2582,13 +2582,16 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   const [pendingMove, setPendingMove] = useState<{ type: ProductType; group: ProductGroup | null } | null>(null)
   const [moveErr, setMoveErr] = useState('')
   const NO_GROUP_TARGET = '__none__'
+  const TYPE_DRAG_MIME = 'application/x-ilya-product-type'
 
   function dropZoneProps(targetGroup: ProductGroup | null) {
     if (!canAssignGroup) return {}
     const key = targetGroup?.id ?? NO_GROUP_TARGET
     return {
       onDragOver: (e: React.DragEvent) => {
-        if (!draggingTypeId) return
+        // Aceita pelo tipo do dado arrastado, não pelo estado React (que só
+        // é atualizado no frame seguinte ao dragstart).
+        if (!e.dataTransfer.types.includes(TYPE_DRAG_MIME)) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
         if (dropTarget !== key) setDropTarget(key)
@@ -2598,7 +2601,7 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
       },
       onDrop: (e: React.DragEvent) => {
         e.preventDefault()
-        const typeId = e.dataTransfer.getData('text/plain') || draggingTypeId
+        const typeId = e.dataTransfer.getData(TYPE_DRAG_MIME) || draggingTypeId
         setDropTarget(null)
         setDraggingTypeId(null)
         const type = types.find(t => t.id === typeId)
@@ -2640,9 +2643,14 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
         key={t.id}
         draggable={canAssignGroup}
         onDragStart={(e) => {
+          e.dataTransfer.setData(TYPE_DRAG_MIME, t.id)
           e.dataTransfer.setData('text/plain', t.id)
           e.dataTransfer.effectAllowed = 'move'
-          setDraggingTypeId(t.id)
+          // Atualiza a tela só no próximo frame: mexer no DOM durante o
+          // dragstart (esmaecer o chip, inserir "Solte aqui") faz o Chrome
+          // abortar o arraste — dragstart seguido de dragend, sem drop.
+          const id = t.id
+          requestAnimationFrame(() => setDraggingTypeId(id))
         }}
         onDragEnd={() => { setDraggingTypeId(null); setDropTarget(null) }}
         title={canAssignGroup ? tx('Arraste para um grupo') : undefined}
