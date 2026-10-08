@@ -6,12 +6,15 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+import httpx
 from fastapi import HTTPException, Response
 from sqlalchemy.sql import Select
 
 from app.api.routers import auth, users
 from app.api.routers.auth import activate_client
+from app.core import client_invites
 from app.core.client_invites import client_identity_isolated, generate_invite_token, hash_invite_token
+from app.core.config import settings
 from app.core.security import verify_password
 from app.schemas.auth import ActivateClientRequest
 from app.models.user import UserRole
@@ -81,6 +84,78 @@ def test_token_is_random_and_only_hash_is_stored():
     assert len(first) >= 32
     assert len(hash_invite_token(first)) == 64
     assert first not in hash_invite_token(first)
+
+
+def test_graph_delivery_requires_complete_oauth_configuration(monkeypatch):
+    values = {
+        "MAIL_DELIVERY_PROVIDER": "microsoft_graph",
+        "MICROSOFT_GRAPH_CLIENT_ID": "client-id",
+        "MICROSOFT_GRAPH_REFRESH_TOKEN": "refresh-token",
+        "MICROSOFT_GRAPH_TENANT": "consumers",
+        "MICROSOFT_GRAPH_SENDER_EMAIL": "procgh@outlook.com",
+        "CLIENT_INVITE_BASE_URL": "https://app.example.com",
+    }
+    for name, value in values.items():
+        monkeypatch.setattr(settings, name, value)
+    assert client_invites.invitation_delivery_ready()
+
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_REFRESH_TOKEN", "")
+    assert not client_invites.invitation_delivery_ready()
+
+
+def test_graph_sends_invitation_as_delegated_outlook_account(monkeypatch):
+    for name, value in {
+        "MAIL_DELIVERY_PROVIDER": "microsoft_graph",
+        "MICROSOFT_GRAPH_CLIENT_ID": "client-id",
+        "MICROSOFT_GRAPH_REFRESH_TOKEN": "refresh-token",
+        "MICROSOFT_GRAPH_TENANT": "consumers",
+        "MICROSOFT_GRAPH_SENDER_EMAIL": "procgh@outlook.com",
+        "CLIENT_INVITE_BASE_URL": "https://app.example.com",
+    }.items():
+        monkeypatch.setattr(settings, name, value)
+
+    calls = []
+
+    class Client:
+        async def post(self, url, **kwargs):
+            calls.append((url, kwargs))
+            request = httpx.Request("POST", url)
+            if url.endswith("/token"):
+                return httpx.Response(200, json={"access_token": "access-token"}, request=request)
+            return httpx.Response(202, request=request)
+
+    monkeypatch.setattr(client_invites, "external_http_client", Client())
+    asyncio.run(client_invites.send_client_invitation(
+        "cliente@example.com", "cliente", "secret-token",
+    ))
+
+    token_url, token_request = calls[0]
+    assert "/consumers/oauth2/v2.0/token" in token_url
+    assert token_request["data"]["refresh_token"] == "refresh-token"
+    send_url, send_request = calls[1]
+    assert send_url == "https://graph.microsoft.com/v1.0/me/sendMail"
+    assert send_request["headers"]["Authorization"] == "Bearer access-token"
+    message = send_request["json"]["message"]
+    assert message["from"]["emailAddress"]["address"] == "procgh@outlook.com"
+    assert message["toRecipients"][0]["emailAddress"]["address"] == "cliente@example.com"
+    assert "secret-token" in message["body"]["content"]
+
+
+def test_graph_does_not_fall_back_to_smtp_when_token_exchange_fails(monkeypatch):
+    monkeypatch.setattr(settings, "MAIL_DELIVERY_PROVIDER", "microsoft_graph")
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_CLIENT_ID", "client-id")
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_REFRESH_TOKEN", "invalid")
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "consumers")
+
+    class Client:
+        async def post(self, url, **_kwargs):
+            return httpx.Response(401, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(client_invites, "external_http_client", Client())
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(client_invites.send_client_invitation(
+            "cliente@example.com", "cliente", "secret-token",
+        ))
 
 
 def test_invite_cannot_reset_operator_or_platform_identity():
