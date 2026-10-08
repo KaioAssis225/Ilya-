@@ -297,6 +297,7 @@ const EN: Record<string, string> = {
   'Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.':
     'Select the folder with the photos — each file name must be the product code (e.g. IML0001.png); the photo is linked to the matching product automatically.',
   'Importar Foto': 'Import photo',
+  'Painel de dados': 'Data panel',
 }
 
 export type CadastroTextVars = Record<string, string | number>
