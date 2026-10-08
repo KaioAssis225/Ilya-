@@ -7,9 +7,9 @@ import {
   ShieldAlert,
   UnlockKeyhole,
   UserRoundX,
-  X,
 } from 'lucide-react'
 import api from '../lib/platformApi'
+import { Dialog } from './Dialog'
 
 type HoldSubjectType = 'client' | 'representative' | 'order'
 type CandidateSubjectType =
@@ -337,7 +337,7 @@ export default function RetentionGovernancePanel() {
         pedidos e orçamentos permanecem intactos.
       </div>
 
-      {error && <p role="alert" className="rounded-lg bg-terracotta/10 px-4 py-3 text-sm text-terracotta">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-danger-soft px-4 py-3 text-sm font-medium text-danger">{error}</p>}
       {notice && <p role="status" className="rounded-lg bg-olive/10 px-4 py-3 text-sm text-olive">{notice}</p>}
 
       {loading ? (
@@ -510,12 +510,8 @@ export default function RetentionGovernancePanel() {
       )}
 
       {holdModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 px-4 backdrop-blur-sm">
-          <form onSubmit={createHold} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">Criar legal hold</h3>
-              <button type="button" onClick={() => setHoldModal(null)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
-            </div>
+        <Dialog title="Criar legal hold" onClose={() => setHoldModal(null)} className="max-w-md" dismissible={!saving}>
+          <form onSubmit={createHold} className="space-y-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Tipo de registro</span>
               <select
@@ -549,22 +545,18 @@ export default function RetentionGovernancePanel() {
               <input className="input" type="datetime-local" value={holdExpiresAt} onChange={(event) => setHoldExpiresAt(event.target.value)} />
             </label>
             <p className="text-xs text-muted">Não inclua documentos ou dados pessoais desnecessários no motivo.</p>
-            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            {error && <p role="alert" className="text-xs font-medium text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setHoldModal(null)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Salvando…' : 'Criar hold'}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {endRelationship && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 px-4 backdrop-blur-sm">
-          <form onSubmit={closeRepresentativeRelationship} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">Encerrar vínculo do representante</h3>
-              <button type="button" onClick={() => setEndRelationship(false)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
-            </div>
+        <Dialog title="Encerrar vínculo do representante" onClose={() => setEndRelationship(false)} className="max-w-md" dismissible={!saving}>
+          <form onSubmit={closeRepresentativeRelationship} className="space-y-4">
             <p className="text-sm text-ink-2">
               A ação registra o marco de retenção e desativa imediatamente os acessos vinculados.
             </p>
@@ -584,22 +576,18 @@ export default function RetentionGovernancePanel() {
               <span className="text-xs text-muted">Sua senha atual</span>
               <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={128} required autoComplete="current-password" />
             </label>
-            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            {error && <p role="alert" className="text-xs font-medium text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setEndRelationship(false)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Encerrando…' : 'Encerrar vínculo'}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {approveReview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 px-4 backdrop-blur-sm">
-          <form onSubmit={approve} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">Aprovar relatório</h3>
-              <button type="button" onClick={() => setApproveReview(null)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
-            </div>
+        <Dialog title="Aprovar relatório" onClose={() => setApproveReview(null)} className="max-w-md" dismissible={!saving}>
+          <form onSubmit={approve} className="space-y-4">
             <p className="text-sm text-ink-2">
               Confirme a revisão de {approveReview.candidate_count} candidato(s).
               Nenhum dado será descartado.
@@ -608,22 +596,18 @@ export default function RetentionGovernancePanel() {
               <span className="text-xs text-muted">Sua senha atual</span>
               <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={128} required autoComplete="current-password" />
             </label>
-            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            {error && <p role="alert" className="text-xs font-medium text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setApproveReview(null)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Aprovando…' : 'Aprovar'}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {releaseHold && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 px-4 backdrop-blur-sm">
-          <form onSubmit={release} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">Liberar legal hold</h3>
-              <button type="button" onClick={() => setReleaseHold(null)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
-            </div>
+        <Dialog title="Liberar legal hold" onClose={() => setReleaseHold(null)} className="max-w-md" dismissible={!saving}>
+          <form onSubmit={release} className="space-y-4">
             <p className="text-sm text-ink-2">
               O registro voltará a ser considerado nas próximas simulações.
             </p>
@@ -635,13 +619,13 @@ export default function RetentionGovernancePanel() {
               <span className="text-xs text-muted">Sua senha atual</span>
               <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={128} required autoComplete="current-password" />
             </label>
-            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            {error && <p role="alert" className="text-xs font-medium text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setReleaseHold(null)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Liberando…' : 'Liberar hold'}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </section>
   )

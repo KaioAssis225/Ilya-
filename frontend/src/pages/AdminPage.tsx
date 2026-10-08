@@ -5,6 +5,7 @@ import type { UserRead, UserCreate, UserUpdate } from '../hooks/useUsers'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import RetentionGovernancePanel from '../components/RetentionGovernancePanel'
 import IncidentRegistryPanel from '../components/IncidentRegistryPanel'
+import { useDialog } from '../hooks/useDialog'
 import { useAuth } from '../hooks/useAuth'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -19,14 +20,15 @@ const ROLE_LABEL: Record<string, string> = {
   executivo: 'Executivo',
 }
 
-const ROLE_COLOR: Record<string, string> = {
-  admin: 'var(--color-gold)',
-  vendedor: '#507a9b',
-  representante: '#648261',
-  cadastros: '#7a5a9b',
-  produtos: '#9b5a50',
-  cliente: '#a08558',
-  executivo: '#5a7a8b',
+// Só tokens do design system — todos ≥ 4.5:1 sobre o próprio fundo do badge.
+const ROLE_BADGE: Record<string, string> = {
+  admin: 'bg-gold/10 text-gold',
+  vendedor: 'bg-mineral/10 text-mineral',
+  representante: 'bg-olive/10 text-olive',
+  cadastros: 'bg-bg-2 text-ink-2',
+  produtos: 'bg-terracotta/10 text-terracotta',
+  cliente: 'bg-bg-2 text-muted',
+  executivo: 'bg-surface-warm text-ink-3',
 }
 
 type ModalMode = 'create' | 'edit' | 'password' | 'delete'
@@ -79,6 +81,8 @@ export default function AdminPage() {
   const deleteM = useDeleteUser()
 
   const [modal, setModal] = useState<{ mode: ModalMode; user?: UserRead } | null>(null)
+  // Escape fecha, foco preso no painel e devolvido ao botão que abriu.
+  const dialogRef = useDialog(() => setModal(null), modal !== null)
   const [form, setForm] = useState<UserCreate>(EMPTY_CREATE)
   const [editForm, setEditForm] = useState<UserUpdate>({})
   const [newPassword, setNewPassword] = useState('')
@@ -198,17 +202,18 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-bg">
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-7">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pb-28 md:pb-8">
+        <div className="flex items-center justify-between gap-3 mb-7">
           <div>
-            <h1 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
+            <h1 className="font-display text-2xl font-semibold text-ink flex items-center gap-2">
               <ShieldCheck className="w-6 h-6 text-gold" /> Gerenciar Usuários
             </h1>
             <p className="text-sm text-muted mt-1">Área exclusiva do Administrador</p>
           </div>
           <button
+            type="button"
             onClick={openCreate}
-            className="flex items-center gap-2 px-4 py-2 bg-gold text-white rounded-xl text-sm font-medium hover:bg-gold-600 transition-colors shadow-sm"
+            className="btn-primary shrink-0"
           >
             <Plus className="w-4 h-4" /> Novo Usuário
           </button>
@@ -219,12 +224,12 @@ export default function AdminPage() {
             <button type="button" className="btn-secondary shrink-0" onClick={() => setShowPriceComparison(value => !value)}>{showPriceComparison ? 'Ocultar' : 'Comparar'}</button>
           </div>
           {showPriceComparison && <div className="max-h-96 overflow-auto border-t border-line">
-            {priceComparison.isLoading ? <p className="p-5 text-sm text-muted">Carregando preços…</p> : priceComparison.isError ? <p className="p-5 text-sm text-red-700">Não foi possível carregar a comparação. Tente novamente.</p> : <table className="w-full min-w-[680px] text-sm"><thead className="sticky top-0 bg-surface-alt"><tr><th className="px-5 py-3 text-left">SKU</th><th className="px-5 py-3 text-left">Brasil</th><th className="px-5 py-3 text-left">Europa</th></tr></thead><tbody>{Object.entries(priceComparison.data ?? {}).map(([sku, markets]) => <tr key={sku} className="border-t border-line"><td className="px-5 py-3 font-mono font-medium text-gold">{sku}</td><td className="px-5 py-3 text-ink-2">{Object.entries(markets.BR ?? {}).map(([list, value]) => `${list}: ${value}`).join(' · ') || '—'}</td><td className="px-5 py-3 text-ink-2">{Object.entries(markets.EU ?? {}).map(([list, value]) => `${list}: ${value}`).join(' · ') || '—'}</td></tr>)}</tbody></table>}
+            {priceComparison.isLoading ? <p className="p-5 text-sm text-muted">Carregando preços…</p> : priceComparison.isError ? <p role="alert" className="p-5 text-sm font-medium text-danger">Não foi possível carregar a comparação. Tente novamente.</p> : <table className="w-full min-w-[680px] text-sm"><thead className="sticky top-0 bg-surface-2"><tr><th className="px-5 py-3 text-left">SKU</th><th className="px-5 py-3 text-left">Brasil</th><th className="px-5 py-3 text-left">Europa</th></tr></thead><tbody>{Object.entries(priceComparison.data ?? {}).map(([sku, markets]) => <tr key={sku} className="border-t border-line"><td className="px-5 py-3 font-mono font-medium text-gold">{sku}</td><td className="px-5 py-3 text-ink-2">{Object.entries(markets.BR ?? {}).map(([list, value]) => `${list}: ${value}`).join(' · ') || '—'}</td><td className="px-5 py-3 text-ink-2">{Object.entries(markets.EU ?? {}).map(([list, value]) => `${list}: ${value}`).join(' · ') || '—'}</td></tr>)}</tbody></table>}
           </div>}
         </section>
 
         <div className="bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex gap-1 border-b border-line bg-surface-alt px-5 pt-3" role="tablist" aria-label="Usuários por mercado">
+          <div className="flex gap-1 border-b border-line bg-surface-2 px-5 pt-3" role="tablist" aria-label="Usuários por mercado">
             {(['BR', 'EU'] as const).map(code => (
               <button
                 key={code}
@@ -257,8 +262,11 @@ export default function AdminPage() {
               {isFetching && !isLoading ? 'Atualizando…' : `${totalUsers} usuário(s)`}
             </span>
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-bg-2">
+          {/* O card pai tem overflow-hidden: sem este wrapper Perfil/Status/Ações
+              ficavam cortados fora da tela no celular. */}
+          <div className="w-full overflow-x-auto overscroll-x-contain">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="bg-surface-2">
               <tr>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Nome</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">E-mail</th>
@@ -273,11 +281,11 @@ export default function AdminPage() {
               ) : users.length === 0 ? (
                 <tr><td colSpan={5} className="text-center py-10 text-muted">Nenhum usuário encontrado.</td></tr>
               ) : users.map(u => (
-                <tr key={u.id} className="border-t border-line hover:bg-[#fdfcfa] transition-colors">
+                <tr key={u.id} className="border-t border-line hover:bg-surface-quiet transition-colors">
                   <td className="px-5 py-3 font-medium text-ink">{u.full_name}</td>
                   <td className="px-5 py-3 text-ink-2">{u.email}</td>
                   <td className="px-5 py-3">
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: `${ROLE_COLOR[u.role]}18`, color: ROLE_COLOR[u.role] }}>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${ROLE_BADGE[u.role] ?? 'bg-bg-2 text-muted'}`}>
                       {ROLE_LABEL[u.role]}
                     </span>
                   </td>
@@ -288,16 +296,17 @@ export default function AdminPage() {
                     }
                   </td>
                   <td className="px-5 py-3">
-                    <div className="flex items-center gap-2 justify-end">
-                      <button onClick={() => openEdit(u)} title="Editar" aria-label="Editar" className="text-muted hover:text-gold transition-colors"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => openPassword(u)} title="Redefinir Senha" className="text-muted hover:text-mineral transition-colors"><KeyRound className="w-4 h-4" /></button>
-                      <button onClick={() => openDelete(u)} title="Excluir" className="text-muted hover:text-terracotta transition-colors"><Trash2 className="w-4 h-4" /></button>
+                    <div className="flex items-center gap-1 justify-end">
+                      <button type="button" onClick={() => openEdit(u)} title="Editar" aria-label={`Editar ${u.full_name}`} className="btn-icon"><Pencil className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => openPassword(u)} title="Redefinir Senha" aria-label={`Redefinir senha de ${u.full_name}`} className="btn-icon hover:text-mineral"><KeyRound className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => openDelete(u)} title="Excluir" aria-label={`Excluir ${u.full_name}`} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
           <div className="flex items-center justify-between border-t border-line px-5 py-3">
             <span className="text-xs text-muted">
               Página {userPage} de {totalUserPages}
@@ -308,7 +317,7 @@ export default function AdminPage() {
                 aria-label="Página anterior"
                 disabled={userPage <= 1 || isFetching}
                 onClick={() => setUserPage((page) => Math.max(1, page - 1))}
-                className="btn-secondary flex h-9 w-9 items-center justify-center p-0 disabled:opacity-40"
+                className="btn-secondary flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center p-0 disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -317,7 +326,7 @@ export default function AdminPage() {
                 aria-label="Próxima página"
                 disabled={userPage >= totalUserPages || isFetching}
                 onClick={() => setUserPage((page) => Math.min(totalUserPages, page + 1))}
-                className="btn-secondary flex h-9 w-9 items-center justify-center p-0 disabled:opacity-40"
+                className="btn-secondary flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center p-0 disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -330,15 +339,15 @@ export default function AdminPage() {
 
       {/* Modais */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay z-modal items-center" onClick={e => { if (e.target === e.currentTarget) setModal(null) }}>
+          <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="admin-modal-title" tabIndex={-1} className="modal-panel w-full max-w-md p-6 my-auto">
 
             {/* CRIAR */}
             {modal.mode === 'create' && (
               <form onSubmit={handleCreate} className="space-y-4">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-semibold text-ink">Novo Usuário</h3>
-                  <button type="button" onClick={() => setModal(null)} className="text-muted hover:text-ink"><X className="w-5 h-5" /></button>
+                  <h3 id="admin-modal-title" className="text-base font-semibold text-ink">Novo Usuário</h3>
+                  <button type="button" onClick={() => setModal(null)} aria-label="Fechar" className="btn-icon -mr-2"><X className="w-5 h-5" /></button>
                 </div>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">Nome Completo *</span>
@@ -419,8 +428,8 @@ export default function AdminPage() {
             {modal.mode === 'edit' && modal.user && (
               <form onSubmit={handleEdit} className="space-y-4">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-semibold text-ink">Editar Usuário</h3>
-                  <button type="button" onClick={() => setModal(null)} className="text-muted hover:text-ink"><X className="w-5 h-5" /></button>
+                  <h3 id="admin-modal-title" className="text-base font-semibold text-ink">Editar Usuário</h3>
+                  <button type="button" onClick={() => setModal(null)} aria-label="Fechar" className="btn-icon -mr-2"><X className="w-5 h-5" /></button>
                 </div>
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">Nome Completo</span>
@@ -528,8 +537,8 @@ export default function AdminPage() {
             {modal.mode === 'password' && modal.user && (
               <form onSubmit={handlePassword} className="space-y-4">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-semibold text-ink">Redefinir Senha</h3>
-                  <button type="button" onClick={() => setModal(null)} className="text-muted hover:text-ink"><X className="w-5 h-5" /></button>
+                  <h3 id="admin-modal-title" className="text-base font-semibold text-ink">Redefinir Senha</h3>
+                  <button type="button" onClick={() => setModal(null)} aria-label="Fechar" className="btn-icon -mr-2"><X className="w-5 h-5" /></button>
                 </div>
                 <p className="text-sm text-ink-2">Usuário: <strong>{modal.user.full_name}</strong></p>
                 <label className="flex flex-col gap-1">
@@ -539,7 +548,7 @@ export default function AdminPage() {
                 {error && <p className="text-xs text-terracotta">{error}</p>}
                 <div className="flex gap-2 pt-1">
                   <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
-                  <button type="submit" disabled={resetPwM.isPending} className="flex-1 py-2 bg-mineral text-white rounded-lg text-sm font-medium hover:bg-[#3d6180] transition-colors disabled:opacity-60">
+                  <button type="submit" disabled={resetPwM.isPending} className="flex-1 py-2 bg-mineral text-white rounded-lg text-sm font-medium hover:bg-mineral-700 transition-colors disabled:opacity-60">
                     {resetPwM.isPending ? 'Redefinindo…' : 'Redefinir Senha'}
                   </button>
                 </div>
@@ -550,14 +559,14 @@ export default function AdminPage() {
             {modal.mode === 'delete' && modal.user && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-semibold text-ink">Excluir Usuário</h3>
-                  <button onClick={() => setModal(null)} className="text-muted hover:text-ink"><X className="w-5 h-5" /></button>
+                  <h3 id="admin-modal-title" className="text-base font-semibold text-ink">Excluir Usuário</h3>
+                  <button type="button" onClick={() => setModal(null)} aria-label="Fechar" className="btn-icon -mr-2"><X className="w-5 h-5" /></button>
                 </div>
                 <p className="text-sm text-ink-2">Tem certeza que deseja excluir <strong>{modal.user.full_name}</strong>? Esta ação não pode ser desfeita.</p>
                 {error && <p className="text-xs text-terracotta">{error}</p>}
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
-                  <button onClick={handleDelete} disabled={deleteM.isPending} className="flex-1 py-2 bg-terracotta text-white rounded-lg text-sm font-medium hover:bg-[#8a3a2e] transition-colors disabled:opacity-60">
+                  <button onClick={handleDelete} disabled={deleteM.isPending} className="flex-1 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-terracotta-700 transition-colors disabled:opacity-60">
                     {deleteM.isPending ? 'Excluindo…' : 'Excluir'}
                   </button>
                 </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Plus, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Plus } from 'lucide-react'
 import api from '../lib/platformApi'
+import { Dialog } from './Dialog'
 
 type IncidentStatus = 'investigating' | 'contained' | 'closed'
 
@@ -179,7 +180,7 @@ export default function IncidentRegistryPanel() {
         </button>
       </div>
 
-      {error && <p role="alert" className="rounded-lg bg-terracotta/10 px-4 py-3 text-sm text-terracotta">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-danger-soft px-4 py-3 text-sm font-medium text-danger">{error}</p>}
       {notice && <p role="status" className="rounded-lg bg-olive/10 px-4 py-3 text-sm text-olive">{notice}</p>}
 
       <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
@@ -240,12 +241,8 @@ export default function IncidentRegistryPanel() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-scrim/60 px-4 py-8 backdrop-blur-sm">
-          <form onSubmit={createIncident} className="w-full max-w-2xl space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">Registrar incidente com dados pessoais</h3>
-              <button type="button" onClick={() => setShowForm(false)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
-            </div>
+        <Dialog title="Registrar incidente com dados pessoais" onClose={() => setShowForm(false)} className="max-w-2xl" dismissible={!saving}>
+          <form onSubmit={createIncident} className="space-y-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Data e hora da ciência *</span>
               <input className="input" type="datetime-local" max={new Date().toISOString().slice(0, 16)} value={form.known_at} onChange={(event) => setForm({ ...form, known_at: event.target.value })} required />
@@ -296,22 +293,18 @@ export default function IncidentRegistryPanel() {
             <p className="text-xs text-muted">
               Registre referências de evidências, não senhas, tokens, documentos completos ou dados pessoais desnecessários.
             </p>
-            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            {error && <p role="alert" className="text-xs font-medium text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setShowForm(false)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Registrando…' : 'Registrar incidente'}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {closingIncident && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 px-4 backdrop-blur-sm">
-          <form onSubmit={closeIncident} className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-ink">Encerrar incidente</h3>
-              <button type="button" onClick={() => setClosingIncident(null)} className="text-muted hover:text-ink"><X className="h-5 w-5" /></button>
-            </div>
+        <Dialog title="Encerrar incidente" onClose={() => setClosingIncident(null)} className="max-w-lg" dismissible={!saving}>
+          <form onSubmit={closeIncident} className="space-y-4">
             <p className="text-sm text-ink-2">{closingIncident.description}</p>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Causa raiz *</span>
@@ -321,13 +314,13 @@ export default function IncidentRegistryPanel() {
               <span className="text-xs text-muted">Ações corretivas, responsáveis e prazos *</span>
               <textarea className="input min-h-24" minLength={5} maxLength={5000} value={correctiveActions} onChange={(event) => setCorrectiveActions(event.target.value)} required />
             </label>
-            {error && <p role="alert" className="text-xs text-terracotta">{error}</p>}
+            {error && <p role="alert" className="text-xs font-medium text-danger">{error}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setClosingIncident(null)} className="btn-secondary flex-1">Cancelar</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-60">{saving ? 'Encerrando…' : 'Encerrar incidente'}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </section>
   )
