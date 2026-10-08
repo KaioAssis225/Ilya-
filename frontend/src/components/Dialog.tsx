@@ -1,6 +1,48 @@
-import { useId, type ReactNode } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { useDialog } from '../hooks/useDialog'
+
+// Painel de modal que mantém o markup existente da tela e só acrescenta a
+// semântica: role="dialog", aria-modal, rótulo pelo primeiro título interno,
+// Escape e foco preso. Para modais com cabeçalho próprio (fotos, detalhes).
+export function DialogPanel({
+  onClose,
+  className,
+  children,
+  label,
+}: {
+  onClose: () => void
+  className?: string
+  children: ReactNode
+  /** Rótulo explícito quando o painel não tem título visível. */
+  label?: string
+}) {
+  const ref = useDialog(onClose)
+  const fallbackId = useId()
+
+  useEffect(() => {
+    const panel = ref.current
+    if (!panel || label) return
+    const heading = panel.querySelector<HTMLElement>('h1, h2, h3, h4')
+    if (!heading) return
+    if (!heading.id) heading.id = fallbackId
+    panel.setAttribute('aria-labelledby', heading.id)
+  })
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      className={className}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>
+  )
+}
 
 // Casca canônica de modal: .modal-overlay + .modal-panel, role="dialog",
 // título ligado por aria-labelledby, fechar por Escape/clique fora e foco

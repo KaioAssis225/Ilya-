@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { DialogPanel } from '../components/Dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
@@ -319,14 +320,14 @@ function Modal({ title, onClose, children, accentColor }: {
   const tx = useCadastroText()
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-lg mx-4 md:mx-auto" onClick={(e) => e.stopPropagation()}>
+      <DialogPanel onClose={onClose} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-line"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
           <h3 className="text-base font-semibold text-ink">{title}</h3>
           <button onClick={onClose} className="text-muted hover:text-ink transition-colors" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
-      </div>
+      </DialogPanel>
     </div>
   )
 }
