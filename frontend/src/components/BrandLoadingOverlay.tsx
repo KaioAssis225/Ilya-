@@ -8,6 +8,8 @@ import type { CSSProperties } from 'react'
 
 interface BrandLoadingOverlayProps {
   label: string
+  /** Portugal opera com a marca IBTW; o Brasil segue como ILYA. */
+  wordmark?: string
   /** Duração da linha de progresso, em segundos. */
   progressDuration?: number
   className?: string
@@ -24,7 +26,7 @@ const WORDMARK_STYLE: CSSProperties = {
   animation: 'lightSweep 2.4s linear infinite',
 }
 
-export function BrandLoadingOverlay({ label, progressDuration = 3, className = '', style }: BrandLoadingOverlayProps) {
+export function BrandLoadingOverlay({ label, wordmark = 'ILYA', progressDuration = 3, className = '', style }: BrandLoadingOverlayProps) {
   return (
     <div
       role="status"
@@ -45,7 +47,7 @@ export function BrandLoadingOverlay({ label, progressDuration = 3, className = '
         className="relative font-display text-[50px] sm:text-[80px] leading-none tracking-[0.35em] font-light select-none"
         style={WORDMARK_STYLE}
       >
-        ILYA
+        {wordmark}
       </p>
       <p
         className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-gold"

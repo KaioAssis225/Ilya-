@@ -11,6 +11,7 @@ import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
+import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
@@ -289,7 +290,7 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             <span className="text-xs text-muted">{market === 'EU' ? (isEnglish ? 'Postcode *' : 'Código postal *') : 'CEP *'}</span>
             <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={20} required />
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
-            {cepError && <span className="text-xs leading-snug text-red-600">{isEnglish ? 'Postcode not found or service unavailable.' : 'CEP não encontrado ou serviço indisponível.'}</span>}
+            {cepError && <span className="text-xs leading-snug font-medium text-danger">{isEnglish ? 'Postcode not found or service unavailable.' : 'CEP não encontrado ou serviço indisponível.'}</span>}
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">{isEnglish ? 'Number' : 'Número'}</span>
@@ -326,7 +327,7 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             </div>
           )}
           {saveError && (
-            <p role="alert" className="sm:col-span-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <p role="alert" className="sm:col-span-2 text-sm font-medium text-danger bg-danger-soft border border-danger/25 rounded-lg px-3 py-2">
               {saveError}
             </p>
           )}
@@ -381,12 +382,14 @@ function Toast({ message, onDone, variant = 'success' }: { message: string; onDo
     return () => clearTimeout(t)
   }, [onDone])
   return variant === 'error' ? (
-    <div role="alert" aria-live="assertive" className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-red-200 text-red-700 px-5 py-3 rounded-xl shadow-xl toast max-w-sm">
+    // Canto superior direito: embaixo o toast cobria a barra de fechamento
+    // móvel e disputava o canto com o FAB do Dashboard.
+    <div role="alert" aria-live="assertive" className="fixed top-20 right-4 lg:right-8 z-toast flex items-center gap-3 bg-white border border-danger/30 text-danger px-5 py-3 rounded-xl shadow-xl toast max-w-sm">
       <X className="w-5 h-5 flex-shrink-0" />
       <span className="text-sm font-medium">{message}</span>
     </div>
   ) : (
-    <div role="status" aria-live="polite" className="fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-3 bg-white border border-green-200 text-green-700 px-5 py-3 rounded-xl shadow-xl toast">
+    <div role="status" aria-live="polite" className="fixed top-20 right-4 lg:right-8 z-toast flex items-center gap-3 bg-white border border-success/30 text-success px-5 py-3 rounded-xl shadow-xl toast">
       <CheckCircle className="w-5 h-5" />
       <span className="text-sm font-medium">{message}</span>
     </div>
@@ -415,7 +418,9 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
         const currentValue = item.opt_categories[cat] ?? ''
         const currentOpt = available.find(o => o.color_name === currentValue)
         return (
-          <div key={cat} className="flex min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5">
+          // O anel de foco fica no chip inteiro (focus-within): o select some
+          // na borda do chip e não tinha nenhum indicador ao navegar por Tab.
+          <div key={cat} className="flex min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt?.photo_url && (
               <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
@@ -423,8 +428,8 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
             <select
               value={currentValue}
               onChange={(e) => onChange(cat, e.target.value || null)}
-              className="min-h-11 lg:min-h-0 text-xs leading-snug text-ink bg-transparent border-none outline-none cursor-pointer"
-              style={{ maxWidth: '100px' }}
+              aria-label={catLabel(cat)}
+              className="min-h-11 lg:min-h-0 max-w-[100px] text-xs leading-snug text-ink bg-transparent border-none cursor-pointer focus-visible:outline-none"
             >
               <option value="">—</option>
               {available.map(opt => (
@@ -453,7 +458,7 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
     return () => { document.removeEventListener('keydown', handleKeyDown); returnFocus?.focus() }
   }, [])
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/75 backdrop-blur-sm"
+    <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/75 backdrop-blur-sm"
       onClick={onClose} role="dialog" aria-modal="true" aria-label={isEnglish ? 'Enlarged product photo' : 'Foto ampliada do produto'}>
       <div className="relative mx-4" onClick={(e) => e.stopPropagation()}>
         <img src={url} alt={isEnglish ? 'Enlarged product' : 'Produto ampliado'} className="max-w-[min(480px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
@@ -484,10 +489,12 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onDiscountChange, maxDiscount, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
+  onDiscountChange: (code: string, discount: number) => void
+  maxDiscount: number
   onRemove: (code: string) => void
   onPhotoClick: (url: string) => void
   allOptionals: OptionalColor[]
@@ -538,7 +545,7 @@ function MobileCartCard({
             </div>
             <button
               onClick={() => onRemove(item.product_code)}
-              className="text-muted active:text-red-500 transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
+              className="text-muted active:text-danger transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
               style={{ touchAction: 'manipulation' }}
               aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}
             >
@@ -549,8 +556,10 @@ function MobileCartCard({
         </div>
       </div>
 
-      {/* Bottom: qty +/- | price / discount / subtotal */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-bg-2">
+      {/* Bottom: qty +/- | desconto | subtotal — paridade com a tabela desktop:
+          o representante no showroom concede desconto pelo tablet/celular. O
+          teto é o do usuário; o servidor revalida contra cliente/representante. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mt-3 pt-3 border-t border-bg-2">
         {/* Qty stepper */}
         <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
           <button
@@ -572,8 +581,27 @@ function MobileCartCard({
           </button>
         </div>
 
+        {/* Desconto percentual */}
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={`mobile-disc-${item.product_code}`} className="type-label">
+            {isEnglish ? 'Disc. %' : 'Desc. %'}
+          </label>
+          <NumberField
+            id={`mobile-disc-${item.product_code}`}
+            min={0}
+            max={maxDiscount}
+            step="any"
+            value={item.discount}
+            placeholder="0"
+            disabled={maxDiscount <= 0}
+            aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
+            className="input w-16 text-center text-sm px-1.5 py-1.5 disabled:opacity-50"
+            onValueChange={(v) => onDiscountChange(item.product_code, Math.min(maxDiscount, Math.max(0, v)))}
+          />
+        </div>
+
         {/* Pricing */}
-        <div className="text-right">
+        <div className="text-right ml-auto">
           {hasDiscount && (
             <p className="text-[10px] text-muted line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} currency={currency} locale={locale} /></p>
           )}
@@ -750,7 +778,7 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[60] flex items-end lg:hidden" role="dialog" aria-modal="true" aria-labelledby="budget-drawer-title">
+    <div className="fixed inset-0 z-drawer flex items-end lg:hidden" role="dialog" aria-modal="true" aria-labelledby="budget-drawer-title">
       <div className="fixed inset-0 bg-scrim/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div ref={panelRef} className="relative w-full bg-white rounded-t-2xl shadow-2xl max-h-[90vh] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
@@ -1105,6 +1133,12 @@ export default function OrcamentoPage() {
     setCart((prev) => prev.map((i) => i.product_code === code ? { ...i, qty } : i))
   }
 
+  // Desconto por item — mesmo caminho para tabela desktop e cartão mobile. O
+  // chamador já limita ao teto do usuário; o servidor revalida no envio.
+  function updateDiscount(code: string, discount: number) {
+    setCart((prev) => prev.map((i) => i.product_code === code ? { ...i, discount } : i))
+  }
+
   function removeItem(code: string) {
     setCart((prev) => prev.filter((i) => i.product_code !== code))
   }
@@ -1288,7 +1322,7 @@ export default function OrcamentoPage() {
       {selectedProduct && (
         <div className="bg-white border border-line-warm rounded-lg p-2.5 flex gap-2.5 shadow-sm relative">
           <button type="button" onClick={() => setSelectedProduct(null)}
-            className="absolute top-0 right-0 text-muted hover:text-red-500 transition-colors w-11 h-11 lg:top-1.5 lg:right-1.5 lg:w-7 lg:h-7 flex items-center justify-center">
+            className="absolute top-0 right-0 text-muted hover:text-danger transition-colors w-11 h-11 lg:top-1.5 lg:right-1.5 lg:w-7 lg:h-7 flex items-center justify-center">
             <X className="w-3.5 h-3.5" />
           </button>
           {selectedProduct.photo_url
@@ -1391,7 +1425,9 @@ export default function OrcamentoPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          {/* overflow-auto (e não um wrapper novo): a tabela rola na horizontal
+              em 1024–1180px sem quebrar o thead sticky deste mesmo container. */}
+          <div className="flex-1 overflow-auto">
             {filteredCart.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted space-y-3">
                 <Clipboard className="w-10 h-10 text-faint stroke-[1.2]" />
@@ -1417,6 +1453,8 @@ export default function OrcamentoPage() {
                       key={item.product_code}
                       item={item}
                       onQtyChange={updateQty}
+                      onDiscountChange={updateDiscount}
+                      maxDiscount={user?.max_discount ?? 0}
                       onRemove={removeItem}
                       onPhotoClick={setActivePhotoModal}
                       allOptionals={allOptionals}
@@ -1430,7 +1468,7 @@ export default function OrcamentoPage() {
                 </div>
 
                 {/* ── Desktop table ────────────────────────────── */}
-                <table className="hidden lg:table w-full text-sm">
+                <table className="hidden lg:table w-full min-w-[680px] text-sm">
                   <thead className="bg-surface-2 text-xs text-muted uppercase font-semibold border-b border-line sticky top-0 z-10">
                     <tr>
                       <th className="px-4 py-3 text-left">{isEnglish ? 'Product' : 'Produto'}</th>
@@ -1503,10 +1541,7 @@ export default function OrcamentoPage() {
                               className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
                               value={item.discount}
                               placeholder="0"
-                              onValueChange={(v) => {
-                                const val = Math.min(user?.max_discount ?? 0, Math.max(0, v))
-                                setCart((prev) => prev.map((i) => i.product_code === item.product_code ? { ...i, discount: val } : i))
-                              }}
+                              onValueChange={(v) => updateDiscount(item.product_code, Math.min(user?.max_discount ?? 0, Math.max(0, v)))}
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
@@ -1524,7 +1559,7 @@ export default function OrcamentoPage() {
                             <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-red-500 transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
+                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>
@@ -1584,7 +1619,7 @@ export default function OrcamentoPage() {
           existe só para desviar do nav inferior, que é `md:hidden` — a partir de
           768px não há nav embaixo, e sem o `md:bottom-4` a barra ficaria
           flutuando sobre um vão vazio de 64px no tablet. */}
-      <div className="lg:hidden fixed bottom-16 md:bottom-4 inset-x-0 z-30 px-4 pb-2">
+      <div className="lg:hidden fixed bottom-16 md:bottom-4 inset-x-0 z-sticky-nav px-4 pb-2">
         <button
           onClick={() => setDrawerOpen(true)}
           style={{ touchAction: 'manipulation' }}
@@ -1653,44 +1688,10 @@ export default function OrcamentoPage() {
 
       {/* ── Overlay de Geração Premium ─────────────────────────────── */}
       {isGenerating && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-bg/90 backdrop-blur-sm">
-          <div
-            className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
-            style={{
-              background: 'radial-gradient(circle, color-mix(in srgb, var(--color-gold) 18%, transparent) 0%, transparent 68%)',
-              animation: 'pulseRadial 2.2s ease-in-out infinite',
-            }}
-          />
-          <p
-            className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none"
-            style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif",
-              backgroundImage: 'linear-gradient(90deg, var(--color-gold-800) 0%, var(--color-gold) 25%, var(--color-gold-highlight) 50%, var(--color-gold) 75%, var(--color-gold-800) 100%)',
-              backgroundSize: '200% auto',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              animation: 'lightSweep 2.4s linear infinite',
-            }}
-          >
-            {market === 'EU' ? 'IBTW' : 'ILYA'}
-          </p>
-          <p
-            className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-gold"
-            style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}
-          >
-            {isEnglish ? 'Generating Quote' : 'Gerando Orçamento'}
-          </p>
-          <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
-            <div
-              className="h-full rounded-full"
-              style={{
-                background: 'linear-gradient(90deg, var(--color-gold-800), var(--color-gold-highlight), var(--color-gold-800))',
-                animation: 'progressLine 3s linear forwards',
-              }}
-            />
-          </div>
-        </div>
+        <BrandLoadingOverlay
+          wordmark={market === 'EU' ? 'IBTW' : 'ILYA'}
+          label={isEnglish ? 'Generating Quote' : 'Gerando Orçamento'}
+        />
       )}
     </div>
   )

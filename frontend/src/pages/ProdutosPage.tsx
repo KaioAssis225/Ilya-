@@ -686,7 +686,7 @@ export default function ProdutosPage() {
 
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
-  const { data: productsPage, isLoading } = useProductsPage({
+  const { data: productsPage, isLoading, isError, refetch, isFetching } = useProductsPage({
     skip: (page - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
     q: debouncedSearch || undefined,
@@ -844,7 +844,7 @@ export default function ProdutosPage() {
                 setSearchTerm(e.target.value)
                 setPage(1)
               }}
-              className="w-full min-h-11 lg:min-h-0 pl-9 pr-12 lg:pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder-faint focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+              className="w-full min-h-11 lg:min-h-0 pl-9 pr-12 lg:pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder:text-muted-3 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
             />
             {searchTerm && (
               <button aria-label={t('clearSearch')} onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-0 top-1/2 h-11 w-11 lg:right-1 lg:h-8 lg:w-8 -translate-y-1/2 flex items-center justify-center text-muted hover:text-ink">
@@ -923,9 +923,34 @@ export default function ProdutosPage() {
         )}
 
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 text-center text-muted py-20" role="status" aria-live="polite">
-            <span className="w-4 h-4 rounded-full border-2 border-gold/25 border-t-gold animate-spin" aria-hidden="true" />
-            {t('loadingCatalog')}
+          // Esqueleto no formato da grade final: sem salto de layout ao carregar.
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8" role="status" aria-live="polite">
+            <span className="sr-only">{t('loadingCatalog')}</span>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} aria-hidden="true" className="rounded-2xl border border-line bg-white overflow-hidden">
+                <div className="aspect-square animate-pulse bg-gradient-to-br from-bg via-white to-bg-2" />
+                <div className="p-4 space-y-2">
+                  <div className="h-3 w-20 rounded bg-line-soft animate-pulse" />
+                  <div className="h-4 w-3/4 rounded bg-line-soft animate-pulse" />
+                  <div className="h-3 w-1/2 rounded bg-line-soft animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : isError && products.length === 0 ? (
+          // Falha de rede não pode virar um falso "nenhum produto cadastrado".
+          <div role="alert" className="flex flex-col items-center gap-3 rounded-2xl border border-danger/25 bg-danger-soft px-6 py-12 text-center">
+            <p className="text-sm font-medium text-danger">
+              {locale === 'en-GB' ? 'The catalogue could not be loaded.' : 'Não foi possível carregar o catálogo.'}
+            </p>
+            <p className="text-xs text-muted">
+              {locale === 'en-GB' ? 'Check your connection and try again.' : 'Verifique a conexão e tente novamente.'}
+            </p>
+            <button type="button" onClick={() => void refetch()} disabled={isFetching} className="btn-secondary">
+              {isFetching
+                ? (locale === 'en-GB' ? 'Retrying…' : 'Tentando…')
+                : (locale === 'en-GB' ? 'Try again' : 'Tentar novamente')}
+            </button>
           </div>
         ) : products.length === 0 ? (
           <div className="flex flex-col items-center py-20 gap-3">
@@ -935,7 +960,9 @@ export default function ProdutosPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
+            {/* Coluna única abaixo de 640px: em 2 colunas o card ficava com ~163px,
+                o stepper cobria metade da foto e a gaveta truncava os acabamentos. */}
             {/* Galeria: fotos são todas 1600×1600, então a imagem sangra até a
                 borda do card (sem moldura dupla, sem corte) com zoom sutil no
                 hover. O título usa Inter para manter letras, códigos e medidas
