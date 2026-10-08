@@ -3,7 +3,7 @@ import { DialogPanel } from '../components/Dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
 import { useProductsPage, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
@@ -2496,13 +2496,17 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 type GroupModal =
   | { kind: 'new-group' }
   | { kind: 'edit-group'; group: ProductGroup }
-  | { kind: 'new-type'; groupId: string }
+  | { kind: 'new-type'; groupId: string | null }
   | { kind: 'edit-type'; type: ProductType }
 
-function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
+function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }: {
   color: string; page: number; onPage: (p: number) => void
-  canEditGroups: boolean; canEditTypes: boolean
+  canEditGroups: boolean; canEditTypes: boolean; market: 'BR' | 'EU'
 }) {
+  // Vincular subgrupo a grupo define o IPI (regra fiscal brasileira). Em
+  // Portugal o backend recusa o vínculo (tipo EU não herda grupo BR), então
+  // arrastar só é oferecido no Brasil, para quem pode reclassificar.
+  const canAssignGroup = canEditTypes && market === 'BR'
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
@@ -2530,7 +2534,7 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
   // `handleGroupSubmit` já trata string vazia como 0.
   function openNewGroup() { setGName(''); setGIpi(''); setErr(''); setModal({ kind: 'new-group' }) }
   function openEditGroup(g: ProductGroup) { setGName(g.name); setGIpi(Number(g.ipi).toFixed(2)); setErr(''); setModal({ kind: 'edit-group', group: g }) }
-  function openNewType(groupId: string) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
+  function openNewType(groupId: string | null) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
   function openEditType(t: ProductType) { setTName(t.name); setTGroupId(t.group_id); setErr(''); setModal({ kind: 'edit-type', type: t }) }
 
   async function handleGroupSubmit(e: React.FormEvent) {
@@ -2568,6 +2572,92 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
 
   const orphanTypes = types.filter(t => !t.group_id)
   const { pageItems: pagedGroups, totalPages, safePage } = paginate(groups, page)
+
+  // ── Arrastar subgrupo para um grupo ───────────────────────────────────────
+  // Soltar não grava direto: mover muda o IPI dos produtos do subgrupo, então
+  // pede confirmação. Sem mouse (tablet/teclado) o lápis abre o mesmo ajuste.
+  const [draggingTypeId, setDraggingTypeId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [pendingMove, setPendingMove] = useState<{ type: ProductType; group: ProductGroup | null } | null>(null)
+  const [moveErr, setMoveErr] = useState('')
+  const NO_GROUP_TARGET = '__none__'
+
+  function dropZoneProps(targetGroup: ProductGroup | null) {
+    if (!canAssignGroup) return {}
+    const key = targetGroup?.id ?? NO_GROUP_TARGET
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        if (!draggingTypeId) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (dropTarget !== key) setDropTarget(key)
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null)
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault()
+        const typeId = e.dataTransfer.getData('text/plain') || draggingTypeId
+        setDropTarget(null)
+        setDraggingTypeId(null)
+        const type = types.find(t => t.id === typeId)
+        if (!type || (type.group_id ?? null) === (targetGroup?.id ?? null)) return
+        setMoveErr('')
+        setPendingMove({ type, group: targetGroup })
+      },
+    }
+  }
+
+  function dropHighlight(targetGroup: ProductGroup | null) {
+    const key = targetGroup?.id ?? NO_GROUP_TARGET
+    if (!draggingTypeId) return ''
+    return dropTarget === key ? 'ring-2 ring-gold/50 border-gold/60 bg-gold-wash' : 'border-dashed'
+  }
+
+  async function confirmMove() {
+    if (!pendingMove) return
+    setMoveErr('')
+    try {
+      await updateTypeM.mutateAsync({
+        id: pendingMove.type.id,
+        name: pendingMove.type.name,
+        group_id: pendingMove.group?.id ?? null,
+      })
+      setPendingMove(null)
+    } catch (ex: unknown) {
+      setMoveErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao salvar subgrupo.'))
+    }
+  }
+
+  // Função de render (não componente): um componente declarado aqui dentro
+  // remontaria a cada setState e o navegador cancelaria o arraste em curso.
+  function renderTypeChip(t: ProductType, surface: 'bg-bg' | 'bg-white') {
+    return (
+      <div
+        key={t.id}
+        draggable={canAssignGroup}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', t.id)
+          e.dataTransfer.effectAllowed = 'move'
+          setDraggingTypeId(t.id)
+        }}
+        onDragEnd={() => { setDraggingTypeId(null); setDropTarget(null) }}
+        title={canAssignGroup ? tx('Arraste para um grupo') : undefined}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line ${surface} text-xs text-ink ${
+          canAssignGroup ? 'cursor-grab active:cursor-grabbing' : ''
+        } ${draggingTypeId === t.id ? 'opacity-40' : ''}`}
+      >
+        {canAssignGroup && <GripVertical className="w-3 h-3 text-muted -ml-1" aria-hidden="true" />}
+        <span>{t.name}</span>
+        {canEditTypes && <button type="button" onClick={() => openEditType(t)} aria-label={`${tx('Editar')} ${t.name}`} className="text-muted hover:text-gold transition-colors">
+          <Pencil className="w-2.5 h-2.5" />
+        </button>}
+        {canEditTypes && <button type="button" onClick={() => setDeletingType(t)} aria-label={`${tx('Excluir')} ${t.name}`} className="btn-icon hover:text-danger">
+          <Trash2 className="w-2.5 h-2.5" />
+        </button>}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -2627,6 +2717,8 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
               <span className="text-xs text-muted">{tx('Nome do Subgrupo *')}</span>
               <input className="input" value={tName} onChange={(e) => setTName(e.target.value)} required autoFocus />
             </label>
+            {/* Portugal: grupo fiscal é brasileiro; o backend recusa o vínculo. */}
+            {market === 'BR' && (
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">{tx('Grupo')}</span>
               <select className="input" value={tGroupId ?? ''} onChange={(e) => setTGroupId(e.target.value || null)}>
@@ -2634,6 +2726,7 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
+            )}
             {err && <p className="text-xs text-danger">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isTypePending} className="btn-primary flex-1">
@@ -2664,7 +2757,8 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
           {pagedGroups.map(group => {
             const groupTypes = types.filter(t => t.group_id === group.id)
             return (
-              <div key={group.id} className="border border-line rounded-xl p-4 bg-white space-y-3">
+              <div key={group.id} {...dropZoneProps(group)}
+                className={`border border-line rounded-xl p-4 bg-white space-y-3 transition-[background-color,border-color,box-shadow] ${dropHighlight(group)}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <span className="font-semibold text-sm text-ink">{group.name}</span>
@@ -2675,10 +2769,10 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
                     )}
                   </div>
                   {canEditGroups && <div className="flex items-center gap-1">
-                    <button onClick={() => openEditGroup(group)} className="btn-icon">
+                    <button type="button" onClick={() => openEditGroup(group)} aria-label={`${tx('Editar')} ${group.name}`} className="btn-icon">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setDeletingGroup(group)} className="btn-icon hover:text-danger">
+                    <button type="button" onClick={() => setDeletingGroup(group)} aria-label={`${tx('Excluir')} ${group.name}`} className="btn-icon hover:text-danger">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>}
@@ -2686,22 +2780,14 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
 
                 {groupTypes.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {groupTypes.map(t => (
-                      <div key={t.id}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-bg text-xs text-ink">
-                        <span>{t.name}</span>
-                        {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
-                          <Pencil className="w-2.5 h-2.5" />
-                        </button>}
-                        {canEditTypes && <button onClick={() => setDeletingType(t)} className="btn-icon hover:text-danger">
-                          <Trash2 className="w-2.5 h-2.5" />
-                        </button>}
-                      </div>
-                    ))}
+                    {groupTypes.map(t => renderTypeChip(t, 'bg-bg'))}
                   </div>
                 )}
+                {groupTypes.length === 0 && draggingTypeId && (
+                  <p className="text-xs text-muted">{tx('Solte aqui para mover para este grupo')}</p>
+                )}
 
-                {canEditTypes && <button
+                {canAssignGroup && <button
                   onClick={() => openNewType(group.id)}
                   className="flex items-center gap-1 text-xs font-medium transition-colors"
                   style={{ color }}
@@ -2716,24 +2802,47 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
             <p className="text-sm text-muted">{tx('Nenhum grupo cadastrado.')}</p>
           )}
 
-          {orphanTypes.length > 0 && (
-            <div className="border border-dashed border-line rounded-xl p-4 space-y-3">
-              <span className="text-xs font-semibold text-muted uppercase tracking-wider">{tx('Sem grupo')}</span>
+          {(orphanTypes.length > 0 || (draggingTypeId && canAssignGroup) || (market === 'EU' && canEditTypes)) && (
+            <div {...dropZoneProps(null)}
+              className={`border border-dashed border-line rounded-xl p-4 space-y-3 transition-[background-color,border-color,box-shadow] ${dropHighlight(null)}`}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-xs font-semibold text-muted uppercase tracking-wider">{tx('Sem grupo')}</span>
+                {canAssignGroup && orphanTypes.length > 0 && (
+                  <span className="text-xs text-muted">{tx('Arraste um subgrupo até o grupo desejado.')}</span>
+                )}
+                {market === 'EU' && canEditTypes && (
+                  <button type="button" onClick={() => openNewType(null)}
+                    className="flex min-h-11 lg:min-h-0 items-center gap-1 text-xs font-medium transition-colors" style={{ color }}>
+                    <Plus className="w-3 h-3" /> {tx('Novo Subgrupo')}
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5">
-                {orphanTypes.map(t => (
-                  <div key={t.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-white text-xs text-ink">
-                    <span>{t.name}</span>
-                    {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
-                      <Pencil className="w-2.5 h-2.5" />
-                    </button>}
-                    {canEditTypes && <button onClick={() => setDeletingType(t)} className="btn-icon hover:text-danger">
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>}
-                  </div>
-                ))}
+                {orphanTypes.map(t => renderTypeChip(t, 'bg-white'))}
               </div>
             </div>
+          )}
+
+          {pendingMove && (
+            <Modal title={tx('Mover subgrupo')} onClose={() => setPendingMove(null)} accentColor={color}>
+              <p className="text-sm text-ink-2 mb-2">
+                {pendingMove.group
+                  ? tx('Mover "{type}" para o grupo "{group}"?', { type: pendingMove.type.name, group: pendingMove.group.name })
+                  : tx('Tirar "{type}" do grupo?', { type: pendingMove.type.name })}
+              </p>
+              <p className="text-xs text-muted mb-5">
+                {pendingMove.group
+                  ? tx('Os produtos deste subgrupo passam a usar IPI de {ipi}%.', { ipi: Number(pendingMove.group.ipi).toFixed(2).replace('.', ',') })
+                  : tx('Sem grupo, pedidos com produtos deste subgrupo são recusados até reclassificar.')}
+              </p>
+              {moveErr && <p role="alert" className="text-xs font-medium text-danger mb-3">{moveErr}</p>}
+              <div className="flex justify-end gap-3">
+                <button type="button" className="btn-secondary" onClick={() => setPendingMove(null)}>{tx('Cancelar')}</button>
+                <button type="button" className="btn-primary" disabled={updateTypeM.isPending} onClick={() => void confirmMove()}>
+                  {tx(updateTypeM.isPending ? 'Salvando...' : 'Mover')}
+                </button>
+              </div>
+            </Modal>
           )}
 
           <Pagination page={safePage} totalPages={totalPages} onPage={onPage} color={color} />
@@ -3205,7 +3314,7 @@ export default function CadastroPage() {
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={canEditFiscal} canEditTypes={canEditTypes} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={canEditFiscal} canEditTypes={canEditTypes} market={activeMarket} />}
 
             {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
 
