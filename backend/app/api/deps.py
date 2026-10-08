@@ -211,6 +211,9 @@ CLIENT_ASSIGNMENT_ROLES = frozenset(
 DISCOUNT_MANAGEMENT_ROLES = frozenset(
     {UserRole.admin, UserRole.cadastros}
 )
+CLIENT_IDENTITY_MANAGEMENT_ROLES = frozenset(
+    {UserRole.admin, UserRole.cadastros}
+)
 
 
 def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict:
@@ -219,10 +222,14 @@ def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict
     O cliente-final nunca altera os próprios termos comerciais (SEC-PRICE-02).
     O representante pode escolher a tabela de preço do cliente da própria
     carteira, como permite o formulário, mas continua sem poder alterar o teto
-    de desconto, o e-mail ou a atribuição da carteira.
+    de desconto, a identidade cadastral ou a atribuição da carteira. E-mail de
+    referência e identificadores fiscais são corrigidos por atendimento
+    (`admin`/`cadastros`); o titular precisa passar por reverificação fora deste
+    PATCH comum.
     """
-    if current_user.role == UserRole.representante:
-        update_data.pop("email", None)
+    if current_user.role not in CLIENT_IDENTITY_MANAGEMENT_ROLES:
+        for field in ("email", "cpf_cnpj", "tax_id"):
+            update_data.pop(field, None)
     # SEC-PRICE-02: conta de cliente-final (inclui legado
     # `vendedor`+linked_id) nunca define o próprio perfil de faturamento.
     if is_client_account(current_user):

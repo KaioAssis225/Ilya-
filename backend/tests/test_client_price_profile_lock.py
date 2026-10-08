@@ -36,6 +36,8 @@ def _full_payload() -> dict:
     return {
         "name": "Novo Nome",
         "email": "novo@exemplo.com",
+        "cpf_cnpj": "52998224725",
+        "tax_id": "PT999999990",
         "price_profile": "corporativo",
         "max_discount": "50.00",
     }
@@ -46,12 +48,18 @@ class TestClientePortalNaoAlteraTermosComerciais:
         out = sanitize_client_update_fields(_full_payload(), CLIENTE_NOVO)
         assert "price_profile" not in out  # núcleo do SEC-PRICE-02
         assert "max_discount" not in out
+        assert "email" not in out
+        assert "cpf_cnpj" not in out
+        assert "tax_id" not in out
         assert out.get("name") == "Novo Nome"  # dados de contato permanecem
 
     def test_cliente_legado_vendedor_com_linked_id_tambem_bloqueado(self):
         out = sanitize_client_update_fields(_full_payload(), CLIENTE_LEGADO)
         assert "price_profile" not in out
         assert "max_discount" not in out
+        assert "email" not in out
+        assert "cpf_cnpj" not in out
+        assert "tax_id" not in out
 
 
 class TestRepresentante:
@@ -59,6 +67,8 @@ class TestRepresentante:
         out = sanitize_client_update_fields(_full_payload(), REPRESENTANTE)
         assert out["price_profile"] == "corporativo"
         assert "email" not in out
+        assert "cpf_cnpj" not in out
+        assert "tax_id" not in out
         assert "max_discount" not in out
 
 
@@ -67,16 +77,25 @@ class TestOperadoresPrivilegiados:
         out = sanitize_client_update_fields(_full_payload(), ADMIN)
         assert out.get("price_profile") == "corporativo"
         assert out.get("max_discount") == "50.00"
+        assert out.get("email") == "novo@exemplo.com"
+        assert out.get("cpf_cnpj") == "52998224725"
+        assert out.get("tax_id") == "PT999999990"
 
     def test_cadastros_pode_definir_termos_comerciais(self):
         out = sanitize_client_update_fields(_full_payload(), CADASTROS)
         assert out.get("price_profile") == "corporativo"
         assert out.get("max_discount") == "50.00"
+        assert out.get("email") == "novo@exemplo.com"
+        assert out.get("cpf_cnpj") == "52998224725"
+        assert out.get("tax_id") == "PT999999990"
 
     def test_produtos_mantem_perfil_mas_nao_define_desconto(self):
         out = sanitize_client_update_fields(_full_payload(), PRODUTOS)
         assert out.get("price_profile") == "corporativo"
         assert "max_discount" not in out
+        assert "email" not in out
+        assert "cpf_cnpj" not in out
+        assert "tax_id" not in out
 
     def test_vendedor_interno_define_perfil_mas_nao_max_discount(self):
         # Operador interno mantém o fluxo de definir perfil no cadastro do cliente;
@@ -84,6 +103,9 @@ class TestOperadoresPrivilegiados:
         out = sanitize_client_update_fields(_full_payload(), VENDEDOR_INTERNO)
         assert out.get("price_profile") == "corporativo"
         assert "max_discount" not in out
+        assert "email" not in out
+        assert "cpf_cnpj" not in out
+        assert "tax_id" not in out
 
 
 class TestCadastroSegueAMesmaRegraDaEdicao:

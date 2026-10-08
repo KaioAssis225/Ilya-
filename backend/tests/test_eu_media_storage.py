@@ -101,6 +101,26 @@ def test_sem_bucket_europeu_o_upload_eu_e_recusado(buckets, monkeypatch):
     assert br.objects == {}
 
 
+def test_railway_sem_bucket_br_recusa_disco_efemero(monkeypatch):
+    monkeypatch.setenv("RAILWAY_PROJECT_ID", "project-test")
+    monkeypatch.setattr(settings, "DEBUG", False)
+    for name in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY_ID",
+        "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+        "OBJECT_STORAGE_BUCKET",
+    ):
+        monkeypatch.setattr(settings, name, "")
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(uploads_module.persist_upload(
+            b"foto", settings.UPLOAD_DIR, "png", market="BR"
+        ))
+
+    assert exc.value.status_code == 503
+    assert "persistente" in exc.value.detail
+
+
 def test_foto_emprestada_do_br_nao_e_apagada_pelo_mercado_eu(buckets):
     br, _ = buckets
     br.objects["products/origem.png"] = b"foto-br"

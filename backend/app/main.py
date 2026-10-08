@@ -70,6 +70,15 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "Configuração incompleta do armazenamento de objetos do mercado EU."
         )
+    if settings.persistent_media_storage_required():
+        if not settings.object_storage_configured():
+            raise RuntimeError(
+                "Produção exige armazenamento persistente para mídia do mercado BR."
+            )
+        if settings.EUROPE_MARKET_ENABLED and not settings.eu_object_storage_configured():
+            raise RuntimeError(
+                "Produção exige armazenamento persistente para mídia do mercado EU."
+            )
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     # Limpeza em background: não bloqueia a prontidão da API a cada boot
     # e um advisory lock evita trabalho duplicado entre workers/réplicas.

@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AnyHttpUrl
 from typing import List
 import json
+import os
 
 
 class Settings(BaseSettings):
@@ -67,6 +68,12 @@ class Settings(BaseSettings):
     MAX_IMAGE_PIXELS: int = 25_000_000
     MAX_IMAGE_DIMENSION: int = 2560
     MEDIA_URL_TTL_SECONDS: int = 900
+    # Chave independente da JWT. Quando vazia em desenvolvimento/testes, o
+    # código deriva material separado de SECRET_KEY. Uma chave explícita permite
+    # rotação independente da JWT; a anterior evita quebrar URLs emitidas no TTL.
+    MEDIA_SIGNING_KEY: str = ""
+    MEDIA_SIGNING_KEY_PREVIOUS: str = ""
+    REQUIRE_PERSISTENT_MEDIA_STORAGE: bool = False
 
     # Armazenamento S3 compatível. Quando vazio, mantém o filesystem local.
     OBJECT_STORAGE_ENDPOINT: str = ""
@@ -165,6 +172,15 @@ class Settings(BaseSettings):
     def eu_object_storage_partially_configured(self) -> bool:
         values = self._eu_object_storage_values()
         return any(values) and not all(values)
+
+    def persistent_media_storage_required(self) -> bool:
+        """Produção Railway nunca pode cair silenciosamente no disco efêmero."""
+        if self.DEBUG:
+            return False
+        return self.REQUIRE_PERSISTENT_MEDIA_STORAGE or bool(
+            os.environ.get("RAILWAY_ENVIRONMENT_NAME")
+            or os.environ.get("RAILWAY_PROJECT_ID")
+        )
 
 
 settings = Settings()

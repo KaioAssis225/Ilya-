@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, select, text, tuple_, update
+from sqlalchemy import false, or_, select, text, tuple_, update
 from sqlalchemy.orm import load_only, noload, selectinload
 
 from app.api.deps import (
@@ -121,6 +121,7 @@ def _representative_cannot_access_order(
     current_user: User,
     order: Order,
 ) -> bool:
+    """Compatibilidade para regras auxiliares; consultas usam o filtro SQL."""
     return (
         current_user.role == UserRole.representante
         and (
@@ -128,6 +129,28 @@ def _representative_cannot_access_order(
             or order.rep_id != current_user.rep_id
         )
     )
+
+
+def _order_visibility_filters(current_user: User) -> list:
+    """Aplica a carteira na consulta, antes de materializar o pedido.
+
+    Assim UUID e códigos conhecidos de outra carteira têm o mesmo resultado de
+    um pedido inexistente. Contas legadas `vendedor`+`linked_id` seguem a regra
+    de cliente final.
+    """
+    if current_user.role == UserRole.representante:
+        return [
+            Order.rep_id == current_user.rep_id
+            if current_user.rep_id is not None
+            else false()
+        ]
+    if is_client_account(current_user):
+        return [
+            Order.client_id == current_user.linked_id
+            if current_user.linked_id is not None
+            else false()
+        ]
+    return []
 
 
 def _order_document_content(order: Order) -> dict:
@@ -432,22 +455,38 @@ def _calculate_order_line(
     )
 
 
-async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
+async def _get_order(
+    db: AsyncSession,
+    id_or_code: str,
+    current_user: User | None = None,
+) -> Order:
+    visibility = _order_visibility_filters(current_user) if current_user else []
+    lookup_kind = "uuid"
     try:
         oid = uuid.UUID(id_or_code)
-        result = await db.execute(select(Order).where(Order.id == oid))
+        result = await db.execute(select(Order).where(Order.id == oid, *visibility))
         order = result.scalar_one_or_none()
     except ValueError:
         upper = id_or_code.upper()
         if upper.startswith("ORC"):
-            result = await db.execute(select(Order).where(Order.orc_id == upper))
+            lookup_kind = "orc"
+            result = await db.execute(
+                select(Order).where(Order.orc_id == upper, *visibility)
+            )
             order = result.scalar_one_or_none()
         else:
+            lookup_kind = "code"
             result = await db.execute(
-                select(Order).where(Order.code == upper).limit(2)
+                select(Order).where(Order.code == upper, *visibility).limit(2)
             )
             matches = result.scalars().all()
             if len(matches) > 1:
+                logger.warning(
+                    "Busca de pedido ambígua: lookup=%s role=%s matches=%s",
+                    lookup_kind,
+                    current_user.role.value if current_user else "internal",
+                    len(matches),
+                )
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
@@ -457,6 +496,11 @@ async def _get_order(db: AsyncSession, id_or_code: str) -> Order:
                 )
             order = matches[0] if matches else None
     if not order:
+        logger.info(
+            "Pedido inacessível ou inexistente: lookup=%s role=%s",
+            lookup_kind,
+            current_user.role.value if current_user else "internal",
+        )
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     return order
 
@@ -481,13 +525,12 @@ async def create_order(
         source_order = (await db.execute(select(Order).where(
             Order.id == payload.supersedes_order_id,
             Order.market_code == principal.code,
+            *_order_visibility_filters(current_user),
         ).with_for_update())).scalar_one_or_none()
         if source_order is None or source_order.client_id != payload.client_id:
             raise HTTPException(status_code=404, detail="Pedido de origem não encontrado neste mercado e cliente.")
         if source_order.rep_signature is None and source_order.client_signature is None:
             raise HTTPException(status_code=409, detail="Revisão exige pedido de origem assinado.")
-        if _representative_cannot_access_order(current_user, source_order):
-            raise HTTPException(status_code=403, detail="Acesso negado ao pedido de origem.")
         successor = (await db.execute(select(Order.id).where(
             Order.supersedes_order_id == source_order.id,
         ))).scalar_one_or_none()
@@ -693,11 +736,10 @@ async def create_order_revision(
         raise HTTPException(status_code=403, detail="Somente operador pode criar revisão.")
     source = (await db.execute(select(Order).where(
         Order.id == order_id, Order.market_code == principal.code,
+        *_order_visibility_filters(current_user),
     ))).scalar_one_or_none()
     if source is None:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, source):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if source.rep_signature is None and source.client_signature is None:
         raise HTTPException(status_code=409, detail="Somente pedido assinado exige revisão.")
     payload = OrderCreate(
@@ -939,6 +981,7 @@ async def update_order(
         select(Order).where(
             Order.id == order_id,
             Order.market_code == principal.code,
+            *_order_visibility_filters(current_user),
         ).with_for_update()
     )
     order = result.scalar_one_or_none()
@@ -950,9 +993,6 @@ async def update_order(
         raise HTTPException(status_code=409, detail="Pedido cancelado e não pode ser editado.")
     if order.rep_signature is not None or order.client_signature is not None:
         raise HTTPException(status_code=409, detail="Pedido assinado é imutável. Crie uma revisão para corrigir os termos.")
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-
     # Migration/01: toda edição aceita incrementa o frescor para consumidores
     # externos (leitura cross-database do Ilya Estoque).
     order.source_version += 1
@@ -1173,14 +1213,14 @@ async def finalize_order(
     if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
+        select(Order).where(
+            Order.id == order_id,
+            *_order_visibility_filters(current_user),
+        ).with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    # Representante só finaliza os próprios pedidos (mesma regra do update_order)
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
@@ -1227,14 +1267,14 @@ async def cancel_order(
     if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
+        select(Order).where(
+            Order.id == order_id,
+            *_order_visibility_filters(current_user),
+        ).with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    # Representante só cancela os próprios pedidos (mesma regra do update_order/finalize_order)
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.is_finalized:
         raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser cancelado.")
     if order.is_cancelled:
@@ -1271,14 +1311,13 @@ async def get_order_history(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_order_access),
 ):
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(select(Order).where(
+        Order.id == order_id,
+        *_order_visibility_filters(current_user),
+    ))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado.")
-    if is_client_account(current_user) and order.client_id != current_user.linked_id:
-        raise HTTPException(status_code=403, detail="Acesso negado.")
     hist = await db.execute(
         select(OrderHistory).where(OrderHistory.order_id == order_id).order_by(OrderHistory.created_at.asc())
     )
@@ -1334,12 +1373,7 @@ async def get_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_order_access),
 ):
-    order = await _get_order(db, id_or_code)
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-    if is_client_account(current_user) and order.client_id != current_user.linked_id:
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
-    return order
+    return await _get_order(db, id_or_code, current_user)
 
 
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1549,13 +1583,14 @@ async def sign_representative(
     if current_user.role != UserRole.representante:
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
+        select(Order).where(
+            Order.id == order_id,
+            *_order_visibility_filters(current_user),
+        ).with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.rep_signature:
         raise HTTPException(status_code=409, detail="Assinatura do representante já registrada.")
     if order.is_cancelled:
@@ -1579,13 +1614,14 @@ async def sign_client(
     if not is_client_account(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
+        select(Order).where(
+            Order.id == order_id,
+            *_order_visibility_filters(current_user),
+        ).with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if order.client_id != current_user.linked_id:
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     if order.client_signature:
         raise HTTPException(status_code=409, detail="Assinatura do cliente já registrada.")
     if order.is_cancelled:
@@ -1612,12 +1648,13 @@ async def notify_client(
     _require_electronic_signatures_enabled()
     if current_user.role not in {UserRole.admin, UserRole.representante}:
         raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(select(Order).where(
+        Order.id == order_id,
+        *_order_visibility_filters(current_user),
+    ))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if _representative_cannot_access_order(current_user, order):
-        raise HTTPException(status_code=403, detail="Acesso negado a este pedido.")
     client_user = (await db.execute(
         select(User)
         .join(UserMarket, UserMarket.user_id == User.id)

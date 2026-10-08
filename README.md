@@ -315,6 +315,26 @@ do cliente antes do rewrite externo; a allowlist do Uvicorn determina se o
 cabeçalho será aplicado. Confirme fingerprints distintos a partir de duas redes
 na homologação antes de alterar a topologia ou escalar réplicas.
 
+### Identidade cadastral e mídia em produção
+
+O PATCH comum de cliente não aceita mudanças de `email`, `cpf_cnpj` ou
+`tax_id` feitas pelo titular, representante, vendedor ou papel de produtos.
+Correções desses identificadores ficam restritas a `admin` e `cadastros`; uma
+futura alteração pelo titular deve usar um fluxo próprio de reverificação.
+
+URLs de mídia usam `MEDIA_SIGNING_KEY`, separada da `SECRET_KEY` dos JWTs.
+Durante uma rotação, configure `MEDIA_SIGNING_KEY_PREVIOUS` com a chave anterior
+por no máximo `MEDIA_URL_TTL_SECONDS`; depois remova a variável. Em ambiente
+local sem chave explícita, a aplicação deriva uma chave de mídia com separação
+de domínio para manter o desenvolvimento simples.
+
+Na Railway, ou quando `REQUIRE_PERSISTENT_MEDIA_STORAGE=true`, o boot exige os
+buckets persistentes BR e EU habilitados. Uploads também recusam a operação se
+o storage obrigatório desaparecer, sem fallback para o filesystem efêmero. A
+chave explícita é recomendada para permitir rotação independente; gere-a com
+`python -c "import secrets; print(secrets.token_urlsafe(64))"`, confira acesso e
+backup dos dois buckets e só então reinicie o serviço.
+
 ### 3. Subindo o Banco e o Backend (via Docker Compose)
 Na raiz do monorepo, execute:
 ```bash

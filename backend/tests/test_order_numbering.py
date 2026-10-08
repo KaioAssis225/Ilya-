@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.routers.orders import _get_order, _next_codes, delete_order
+from app.models.user import UserRole
 
 
 class _ScalarResult:
@@ -66,6 +67,57 @@ def test_ped_lookup_rejects_ambiguous_code_between_users():
 
         assert exc_info.value.status_code == 409
         assert "ORC" in exc_info.value.detail
+
+    asyncio.run(run_test())
+
+
+@pytest.mark.parametrize(
+    ("role", "linked_id", "rep_id", "expected_column"),
+    [
+        (UserRole.representante, None, uuid.uuid4(), "orders.rep_id"),
+        (UserRole.cliente, uuid.uuid4(), None, "orders.client_id"),
+        # Conta legada: papel vendedor com vínculo continua sendo cliente.
+        (UserRole.vendedor, uuid.uuid4(), None, "orders.client_id"),
+    ],
+)
+def test_lookup_inacessivel_filtra_carteira_antes_da_consulta(
+    role, linked_id, rep_id, expected_column
+):
+    async def run_test():
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db = AsyncMock()
+        db.execute.return_value = result
+        user = SimpleNamespace(role=role, linked_id=linked_id, rep_id=rep_id)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _get_order(db, str(uuid.uuid4()), user)
+
+        assert exc_info.value.status_code == 404
+        statement = db.execute.await_args.args[0]
+        assert expected_column in str(statement)
+
+    asyncio.run(run_test())
+
+
+def test_lookup_por_codigo_aplica_carteira_antes_de_detectar_ambiguidade():
+    async def run_test():
+        db = AsyncMock()
+        db.execute.return_value = _RowsResult([])
+        rep_id = uuid.uuid4()
+        user = SimpleNamespace(
+            role=UserRole.representante,
+            linked_id=None,
+            rep_id=rep_id,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _get_order(db, "PED-0001", user)
+
+        assert exc_info.value.status_code == 404
+        statement = db.execute.await_args.args[0]
+        assert "orders.rep_id" in str(statement)
+        assert rep_id in statement.compile().params.values()
 
     asyncio.run(run_test())
 
