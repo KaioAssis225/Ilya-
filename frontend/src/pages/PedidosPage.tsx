@@ -224,6 +224,9 @@ function OrderDetailModal({
     history: [],
     updated_at: orderLight.created_at,
   }
+  // A tela "Visualizar" é sempre em português (pt-PT em Portugal); o idioma do
+  // documento (order.locale / PDF em inglês) não muda a leitura interna.
+  const viewLocale = order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
   const { data: products = [] } = useProductsByCodes(
     orderDetail?.items.map((item) => item.product_code) ?? [],
     !!orderDetail,
@@ -476,10 +479,10 @@ function OrderDetailModal({
             <div className="grid grid-cols-2 gap-3 text-sm mb-5">
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Cliente</p><p className="text-ink font-medium">{clientName}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Representante</p><p className="text-ink font-medium">{repName || '—'}</p></div>
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(order.locale)}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(viewLocale)}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3">
                 <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? `Total com ${order.market_code === 'EU' ? 'IVA' : 'IPI'}` : 'Total'}</p>
-                <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.locale} /></p>
+                <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} /></p>
               </div>
               {order.notes && (
                 <div className="col-span-2 bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Observações</p><p className="text-ink-2">{order.notes}</p></div>
@@ -519,7 +522,7 @@ function OrderDetailModal({
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs whitespace-nowrap">
-                          {formatDimensions(item, order.market_code, order.locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR')}
+                          {formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
                           {(() => {
@@ -530,7 +533,7 @@ function OrderDetailModal({
                         </td>
                         <td className="px-3 py-2 text-center text-ink">{item.qty}</td>
                         <td className="px-3 py-2 text-right text-xs text-ink-2 font-semibold whitespace-nowrap">
-                          <SafePrice value={Number(item.unit_price)} currency={order.currency} locale={order.locale} />
+                          <SafePrice value={Number(item.unit_price)} currency={order.currency} locale={viewLocale} />
                         </td>
                         <td className="px-3 py-2 text-right align-middle">
                           {Number(item.discount) > 0 ? (
@@ -543,7 +546,7 @@ function OrderDetailModal({
                             : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right font-bold text-ink whitespace-nowrap">
-                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={order.locale} />
+                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={viewLocale} />
                         </td>
                       </tr>
                     )
@@ -553,7 +556,7 @@ function OrderDetailModal({
                   <tr className="border-t border-line bg-bg">
                     <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">Valor Total</td>
                     <td className="px-3 py-2.5 text-right text-gold font-bold text-base">
-                      <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.locale} />
+                      <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} />
                     </td>
                   </tr>
                 </tfoot>

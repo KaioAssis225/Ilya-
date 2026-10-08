@@ -2,7 +2,7 @@ import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
 import { formatDimensions } from './measurements'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
-import { resolveOrderPresentation } from './orderPresentation'
+import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
@@ -98,6 +98,12 @@ function containBox(width: number, height: number, box: number): { w: number; h:
   return { w, h, dx: (box - w) / 2, dy: (box - h) / 2 }
 }
 
+// A Helvetica embutida do jsPDF só cobre WinAnsi: o "″" das polegadas (EU)
+// forçava a linha inteira para UTF-16 e as dimensões saíam ilegíveis.
+function pdfSafe(text: string): string {
+  return text.replace(/″/g, '"')
+}
+
 function formatMoney(value: number, currency: string, locale: string): string {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
@@ -127,7 +133,7 @@ export async function generateOrderPDF(
   // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
   // do mercado em que o usuário está agora.
-  const { currency, locale, taxLabel } = resolveOrderPresentation(order)
+  const { currency, locale, taxLabel, brand, labels: L } = resolveOrderDocument(order)
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -155,7 +161,7 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(28)
   doc.setTextColor(...GOLD)
-  doc.text('ILYA', 20, y)
+  doc.text(brand, 20, y)
   y += 5
 
   doc.setDrawColor(...GOLD)
@@ -166,7 +172,7 @@ export async function generateOrderPDF(
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
   doc.setFont('helvetica', 'bold')
-  doc.text('PEDIDO', w - 20, 28, { align: 'right' })
+  doc.text(L.order, w - 20, 28, { align: 'right' })
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(14)
@@ -176,12 +182,12 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
   doc.text(
-    'Data: ' + new Date(order.created_at).toLocaleDateString(locale),
+    L.date + ': ' + new Date(order.created_at).toLocaleDateString(locale),
     w - 20,
     42,
     { align: 'right' },
   )
-  doc.text('Orçamento: ' + order.orc_id, w - 20, 47, { align: 'right' })
+  doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
   y = 55
 
@@ -196,16 +202,16 @@ export async function generateOrderPDF(
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text('REPRESENTANTE', bx, y + 6)
+  doc.text(L.representative, bx, y + 6)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
-  doc.text(rep ? rep.name : 'Nenhum', bx, y + 12)
+  doc.text(rep ? rep.name : L.none, bx, y + 12)
   if (rep) {
     doc.setFontSize(8)
     doc.setTextColor(...MUTED)
     doc.text(rep.phone, bx, y + 17)
-    doc.text(rep.email || 'E-mail não informado', bx, y + 22)
+    doc.text(rep.email || L.noEmail, bx, y + 22)
     const repAddr = formatAddress(rep, order.market_code)
     doc.text(doc.splitTextToSize(repAddr, boxW - 8).slice(0, 2), bx, y + 27)
   }
@@ -215,7 +221,7 @@ export async function generateOrderPDF(
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text('CLIENTE', rx, y + 6)
+  doc.text(L.client, rx, y + 6)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
@@ -223,7 +229,7 @@ export async function generateOrderPDF(
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
   doc.text(client.phone, rx, y + 17)
-  doc.text(client.email || 'E-mail não informado', rx, y + 22)
+  doc.text(client.email || L.noEmail, rx, y + 22)
   const clientAddr = formatAddress(client, order.market_code)
   doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 27)
 
@@ -238,11 +244,11 @@ export async function generateOrderPDF(
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text('PRODUTO', 22, y)
-  doc.text('QTD', 125, y, { align: 'right' })
-  doc.text('VALOR UN.', 150, y, { align: 'right' })
+  doc.text(L.product, 22, y)
+  doc.text(L.qty, 125, y, { align: 'right' })
+  doc.text(L.unitPrice, 150, y, { align: 'right' })
   doc.text(taxLabel, 167, y, { align: 'right' })
-  doc.text('TOTAL', 186, y, { align: 'right' })
+  doc.text(L.total, 186, y, { align: 'right' })
 
   y += 4
   doc.setDrawColor(...LINE)
@@ -277,16 +283,16 @@ export async function generateOrderPDF(
     // próxima linha da tabela nem com as colunas numéricas (QTD/VALOR/IPI/TOTAL).
     const WRAP_WIDTH = 80
     const dimText = hasDims
-      ? `${locale === 'en-GB' ? 'Dimensions' : 'Dimensões'}: ${formatDimensions(item, order.market_code, measurementLocale)}`
+      ? `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
       : null
-    const obsText = item.observacao ? `Obs.: ${item.observacao}` : null
-    const optText = optSlots.length > 0 ? 'Opcionais: ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ') : null
+    const obsText = item.observacao ? `${L.itemNote}: ${item.observacao}` : null
+    const optText = optSlots.length > 0 ? L.options + ': ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ') : null
 
     const dimLines: string[] = dimText ? doc.splitTextToSize(dimText, WRAP_WIDTH) : []
     const obsLines: string[] = obsText ? doc.splitTextToSize(obsText, WRAP_WIDTH) : []
     const optLines: string[] = optText ? doc.splitTextToSize(optText, WRAP_WIDTH) : []
     const compLineGroups: string[][] = components.map((comp) => {
-      const compDim = formatDimensions(comp, order.market_code, measurementLocale)
+      const compDim = pdfSafe(formatDimensions(comp, order.market_code, measurementLocale))
       // Acabamentos do componente ("Alumínio: Taupe, Teka: Polywood") — mesma
       // informação exibida no carrinho; sem ela o PDF omitia os acabamentos
       // dos itens internos de um conjunto.
@@ -302,7 +308,12 @@ export async function generateOrderPDF(
     // Nome do produto: também quebrado em WRAP_WIDTH (o espaço real até a coluna
     // QTD é ~85mm a partir de x=40) — antes usava 95mm e a 1ª linha invadia o
     // valor unitário em nomes longos. Agora todas as linhas são impressas.
-    const descLines: string[] = doc.splitTextToSize(item.description, WRAP_WIDTH)
+    // Documento EU é em inglês: usa a designação inglesa do produto quando
+    // cadastrada; sem ela, mantém o texto gravado no pedido.
+    const itemDescription = order.market_code === 'EU' && product?.description_en?.trim()
+      ? product.description_en.trim()
+      : item.description
+    const descLines: string[] = doc.splitTextToSize(itemDescription, WRAP_WIDTH)
     const titleExtraLines = Math.max(0, descLines.length - 1)
 
     const extraLines = titleExtraLines + dimLines.length + obsLines.length + optLines.length + compLinesTotal
@@ -328,7 +339,7 @@ export async function generateOrderPDF(
       doc.rect(22, y - 1, 14, 14)
       doc.setFontSize(5)
       doc.setTextColor(...MUTED)
-      doc.text('sem\nfoto', 29, y + 5, { align: 'center' })
+      doc.text(L.noPhoto, 29, y + 5, { align: 'center' })
     }
 
     // Nome do produto — todas as linhas quebradas são impressas (não só a 1ª)
@@ -442,7 +453,7 @@ export async function generateOrderPDF(
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
   doc.setFont('helvetica', 'normal')
-  doc.text('Total de Itens:', 148, y, { align: 'right' })
+  doc.text(L.totalItems, 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
@@ -452,7 +463,7 @@ export async function generateOrderPDF(
   doc.setFontSize(12)
   doc.setTextColor(...GOLD)
   doc.setFont('helvetica', 'normal')
-  doc.text('VALOR TOTAL:', 148, y, { align: 'right' })
+  doc.text(L.grandTotal, 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
   doc.text(formatMoney(finalTotal, currency, locale), 186, y, { align: 'right' })
@@ -467,7 +478,7 @@ export async function generateOrderPDF(
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
     doc.setFont('helvetica', 'bold')
-    doc.text('OBSERVAÇÕES', 24, y)
+    doc.text(L.notes, 24, y)
     y += 5
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
@@ -504,7 +515,7 @@ export async function generateOrderPDF(
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'normal')
-  doc.text('Representante / Ilya', 20 + colW / 2, y + 25, { align: 'center' })
+  doc.text(L.repSignature, 20 + colW / 2, y + 25, { align: 'center' })
 
   // Coluna direita: assinatura do cliente
   const sx = 20 + colW + 10
@@ -518,7 +529,7 @@ export async function generateOrderPDF(
   doc.line(sx, y + 20, sx + colW, y + 20)
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
-  doc.text('Cliente / Contratado', sx + colW / 2, y + 25, { align: 'center' })
+  doc.text(L.clientSignature, sx + colW / 2, y + 25, { align: 'center' })
 
   y += 30
 
@@ -531,7 +542,7 @@ export async function generateOrderPDF(
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'normal')
-  doc.text('Ilya — Documento gerado automaticamente', w / 2, y, { align: 'center' })
+  doc.text(L.footer, w / 2, y, { align: 'center' })
 
   // ── Salva ──────────────────────────────────────────────────────────────────
   const filename = `${order.code}_${client.name.replace(/\s+/g, '_')}.pdf`
