@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM_EMAIL: str = ""
     SMTP_USE_SSL: bool = False
+    # "smtp" preserva provedores existentes. Contas pessoais Outlook usam
+    # Microsoft Graph com consentimento delegado, sem senha da caixa postal.
+    MAIL_DELIVERY_PROVIDER: str = "smtp"
+    MICROSOFT_GRAPH_CLIENT_ID: str = ""
+    MICROSOFT_GRAPH_REFRESH_TOKEN: str = ""
+    MICROSOFT_GRAPH_TENANT: str = "consumers"
+    MICROSOFT_GRAPH_SENDER_EMAIL: str = ""
     CLIENT_INVITE_BASE_URL: str = ""
     CLIENT_INVITE_TTL_MINUTES: int = 30
 
