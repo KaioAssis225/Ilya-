@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 import startup
 
 
@@ -101,3 +103,21 @@ def test_default_mode_preserves_current_deploy_behavior(monkeypatch):
     startup.main([])
 
     assert calls == [("migrate", True), "serve"]
+
+
+@pytest.mark.parametrize("value", ["*", "0.0.0.0/0", "::/0", "invalid-host"])
+def test_proxy_trust_rejects_unsafe_values(value):
+    with pytest.raises(RuntimeError, match="FORWARDED_ALLOW_IPS|internet|inválido"):
+        startup._validated_forwarded_allow_ips(value)
+
+
+def test_proxy_trust_accepts_only_explicit_networks():
+    assert startup._validated_forwarded_allow_ips(
+        "127.0.0.1, 100.64.0.0/10"
+    ) == "127.0.0.1,100.64.0.0/10"
+
+
+def test_multiple_workers_require_shared_rate_limit_storage():
+    with pytest.raises(RuntimeError, match="Redis"):
+        startup._validate_rate_limit_workers(2, "memory://")
+    startup._validate_rate_limit_workers(2, "redis://redis.internal:6379/0")

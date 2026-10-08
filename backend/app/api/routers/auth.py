@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,12 @@ from app.api.deps import (
     is_client_account,
 )
 from app.core.limiter import limiter, refresh_rate_limit_key
+from app.core.login_protection import (
+    clear_login_failure,
+    enforce_login_cooldown,
+    login_attempt_key,
+    record_login_failure,
+)
 from app.core.lifecycle import touch_client_activity
 from app.core.client_invites import hash_invite_token, client_identity_isolated
 from app.core.origin_guard import require_trusted_cookie_origin
@@ -68,10 +74,6 @@ platform_router = APIRouter(prefix="/api/v1/platform/auth", tags=["platform-auth
 _COOKIE_NAME = "ilya_refresh"
 _PLATFORM_COOKIE_NAME = "ilya_platform_refresh"
 _COOKIE_MAX_AGE = settings.REFRESH_TOKEN_TTL_DAYS * 86400
-_LOGIN_LOCK_THRESHOLD = 5
-_LOGIN_LOCK_MINUTES = 15
-
-
 async def _revoke_user_sessions(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -143,7 +145,7 @@ async def _authenticate_credentials(
     db: AsyncSession,
 ) -> User:
     """Aplica uma única política de senha e bloqueio aos dois tipos de sessão."""
-    normalized_identifier = payload.identifier.lower()
+    normalized_identifier = payload.identifier.strip().lower()
     user = (await db.execute(
         select(User).where(
             or_(
@@ -152,45 +154,34 @@ async def _authenticate_credentials(
             )
         )
     )).scalar_one_or_none()
+    attempt_key = login_attempt_key(request, normalized_identifier)
+    await enforce_login_cooldown(db, attempt_key)
 
     if user is None or not user.is_active:
         dummy_verify()
-        logger.warning(
-            "Falha de login: request_id=%s",
-            getattr(request.state, "request_id", "unknown"),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário ou senha incorretos.",
-        )
+        password_valid = False
+    else:
+        password_valid = verify_password(payload.password, user.hashed_password)
 
-    now = datetime.now(timezone.utc)
-    locked_until = user.locked_until
-    if locked_until and locked_until.tzinfo is None:
-        locked_until = locked_until.replace(tzinfo=timezone.utc)
-    if locked_until and locked_until > now:
-        dummy_verify()
-        logger.warning("Login bloqueado temporariamente: user_id=%s", user.id)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário ou senha incorretos.",
-        )
-
-    if not verify_password(payload.password, user.hashed_password):
-        user.failed_login_attempts += 1
-        if user.failed_login_attempts >= _LOGIN_LOCK_THRESHOLD:
-            user.locked_until = now + timedelta(minutes=_LOGIN_LOCK_MINUTES)
-            user.failed_login_attempts = 0
+    if not password_valid:
+        failure_count, cooldown_until, _ = await record_login_failure(db, attempt_key)
         await db.commit()
         logger.warning(
-            "Falha de login: request_id=%s",
+            "Falha de login: request_id=%s identifier_fp=%s origin_fp=%s failures=%s cooldown=%s",
             getattr(request.state, "request_id", "unknown"),
+            attempt_key.identifier[:12],
+            attempt_key.origin[:12],
+            failure_count,
+            cooldown_until is not None,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário ou senha incorretos.",
         )
 
+    await clear_login_failure(db, attempt_key)
+    # Compatibilidade com bancos que ainda possuem os campos do mecanismo
+    # global antigo. Eles não decidem mais se a identidade pode entrar.
     user.failed_login_attempts = 0
     user.locked_until = None
     return user

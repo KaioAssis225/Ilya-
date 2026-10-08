@@ -17,6 +17,7 @@ from app.models.notification import Notification
 from app.models.signature_invitation import SignatureInvitation
 from app.models.order_signature_evidence import OrderSignatureEvidence
 from app.models.client_access_invitation import ClientAccessInvitation
+from app.models.login_attempt_state import LoginAttemptState
 from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
 from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
@@ -46,6 +47,7 @@ __all__ = [
     "SignatureInvitation",
     "OrderSignatureEvidence",
     "ClientAccessInvitation",
+    "LoginAttemptState",
     "IntegrationOutbox",
     "OUTBOX_STATUSES",
     "PrivacyEvent",

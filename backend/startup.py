@@ -8,6 +8,7 @@ DDL concorrente.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 import subprocess
@@ -34,6 +35,37 @@ def _positive_int(name: str, default: int) -> int:
     if value < 1:
         raise RuntimeError(f"{name} precisa ser maior que zero.")
     return value
+
+
+def _validated_forwarded_allow_ips(raw_value: str) -> str:
+    entries = [item.strip() for item in raw_value.split(",") if item.strip()]
+    if not entries:
+        raise RuntimeError("FORWARDED_ALLOW_IPS precisa listar ao menos um proxy controlado.")
+    for entry in entries:
+        if entry == "*":
+            raise RuntimeError("FORWARDED_ALLOW_IPS='*' permite falsificação do IP do cliente.")
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            try:
+                ipaddress.ip_address(entry)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"FORWARDED_ALLOW_IPS contém endereço inválido: {entry}"
+                ) from exc
+            continue
+        if network.prefixlen == 0:
+            raise RuntimeError(
+                f"FORWARDED_ALLOW_IPS não pode confiar em toda a internet: {entry}"
+            )
+    return ",".join(entries)
+
+
+def _validate_rate_limit_workers(workers: int, storage_uri: str) -> None:
+    if workers > 1 and storage_uri.startswith("memory://"):
+        raise RuntimeError(
+            "WEB_CONCURRENCY maior que 1 exige RATE_LIMIT_STORAGE_URI compartilhado (Redis)."
+        )
 
 
 async def prepare_database(*, include_seed: bool = True) -> None:
@@ -103,7 +135,12 @@ def start_server() -> None:
     port = _positive_int("PORT", 8000)
     forwarded_allow_ips = os.environ.get(
         "FORWARDED_ALLOW_IPS",
-        "127.0.0.1,100.0.0.0/8",
+        "127.0.0.1,100.64.0.0/10",
+    )
+    forwarded_allow_ips = _validated_forwarded_allow_ips(forwarded_allow_ips)
+    _validate_rate_limit_workers(
+        workers,
+        os.environ.get("RATE_LIMIT_STORAGE_URI", "memory://"),
     )
     args = [
         sys.executable,
