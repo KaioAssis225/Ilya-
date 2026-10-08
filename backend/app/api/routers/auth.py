@@ -472,6 +472,7 @@ async def me(
     data = UserRead.model_validate(current_user).model_dump()
     data["max_discount"] = max_discount
     data["active_market"] = principal.code
+    data["can_approve_tax"] = bool(principal.access and principal.access.can_approve_tax)
     data["allowed_markets"] = await allowed_markets(db, current_user)
     return data
 

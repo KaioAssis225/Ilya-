@@ -72,7 +72,7 @@ def summarize_group_vat(rows) -> list[ProductGroupVatSummary]:
     ]
 
 
-def _type_key(column):
+def product_type_key(column):
     # Mesma chave do filtro de catálogo (products._normalized_product_type_expression):
     # caixa, espaços e plural simples não separam produto do seu tipo.
     return func.regexp_replace(func.lower(func.btrim(column)), "s$", "")
@@ -93,7 +93,7 @@ async def product_group_vat_summary(
         .select_from(Product)
         .join(ProductType, and_(
             ProductType.market_code == market,
-            _type_key(ProductType.name) == _type_key(Product.type),
+            product_type_key(ProductType.name) == product_type_key(Product.type),
         ))
         .join(ProductMarket, and_(
             ProductMarket.product_id == Product.id,

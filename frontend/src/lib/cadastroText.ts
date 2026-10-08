@@ -303,6 +303,11 @@ const EN: Record<string, string> = {
   'IVA não aprovado': 'VAT not approved',
   'IVA aprovado nos produtos deste grupo': 'VAT approved on the products of this group',
   '{count} produto(s) com IVA pendente': '{count} product(s) with pending VAT',
+  'IVA (%)': 'VAT (%)',
+  'Deixe vazio para não alterar': 'Leave empty to keep unchanged',
+  'Ao salvar, a taxa é aplicada e aprovada em todos os produtos dos subgrupos deste grupo.': 'On save, the rate is applied and approved on every product in the subgroups of this group.',
+  'Informe um IVA entre 0 e 100.': 'Enter a VAT rate between 0 and 100.',
+  'Aplicar e aprovar IVA de {rate}% em {count} produto(s) do grupo "{group}"?': 'Apply and approve {rate}% VAT on {count} product(s) of group "{group}"?',
 }
 
 export type CadastroTextVars = Record<string, string | number>

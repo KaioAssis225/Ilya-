@@ -79,7 +79,11 @@ Uma taxa só pode entrar em pedido quando o vínculo `product_markets` contém:
 - `approved_by_user_id`;
 - `approved_at`.
 
-A aprovação exige `can_approve_tax` no vínculo EU do aprovador. Percentuais e a
+A aprovação exige `can_approve_tax` no vínculo EU do aprovador. Além da decisão
+por produto, quem tem essa permissão pode aplicar e aprovar uma taxa em todos os
+produtos dos subgrupos de um grupo EU (`PUT /api/v1/markets/EU/groups/{id}/vat`,
+botão Editar do grupo; decisão de 08/10/2026). Cada produto continua registrando
+quem aprovou e quando. Percentuais e a
 seleção final de itens são decisões manuais do responsável e não são inferidos
 pelo sistema.
 
