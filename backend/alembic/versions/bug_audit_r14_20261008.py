@@ -114,4 +114,119 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("R14 corrige e normaliza dados; downgrade destrutivo não é suportado.")
+    indexes = (
+        ("ix_legal_holds_released_by_user_id", "legal_holds"),
+        ("ix_legal_holds_created_by_user_id", "legal_holds"),
+        ("ix_retention_reviews_approved_by_user_id", "retention_reviews"),
+        ("ix_retention_reviews_created_by_user_id", "retention_reviews"),
+        ("ix_product_markets_approved_by_user_id", "product_markets"),
+        ("ix_privacy_incidents_updated_by_user_id", "privacy_incidents"),
+        ("ix_user_markets_linked_client_id", "user_markets"),
+        ("ix_user_markets_rep_id", "user_markets"),
+        ("ix_catalogs_market_code", "catalogs"),
+        ("ix_clients_price_list_id", "clients"),
+        ("ix_orders_supersedes_order_id", "orders"),
+    )
+    for name, table in indexes:
+        op.execute(sa.text(f"DROP INDEX IF EXISTS {name}"))
+
+    op.rename_table("market_order_counters", "market_order_counters_global_r14")
+    op.create_table(
+        "market_order_counters",
+        sa.Column("market_code", sa.String(length=2), nullable=False),
+        sa.Column("number_owner_id", sa.Uuid(), nullable=False),
+        sa.Column("next_value", sa.Integer(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.CheckConstraint("next_value > 0", name="ck_market_order_counters_positive"),
+        sa.ForeignKeyConstraint(["market_code"], ["markets.code"]),
+        sa.PrimaryKeyConstraint("market_code", "number_owner_id"),
+    )
+    op.execute("""
+        INSERT INTO market_order_counters (market_code, number_owner_id, next_value)
+        SELECT market_code, number_owner_id, MAX(order_number) + 1
+        FROM orders
+        WHERE number_owner_id IS NOT NULL
+        GROUP BY market_code, number_owner_id
+    """)
+    op.drop_table("market_order_counters_global_r14")
+
+    op.create_table(
+        "order_number_counters",
+        sa.Column("number_owner_id", sa.Uuid(), nullable=False),
+        sa.Column("next_value", sa.Integer(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.CheckConstraint(
+            "next_value > 0", name="ck_order_number_counters_next_value_positive"
+        ),
+        sa.PrimaryKeyConstraint("number_owner_id", name="pk_order_number_counters"),
+    )
+    op.execute("""
+        INSERT INTO order_number_counters (number_owner_id, next_value)
+        SELECT number_owner_id, MAX(order_number) + 1
+        FROM orders
+        WHERE number_owner_id IS NOT NULL
+        GROUP BY number_owner_id
+    """)
+
+    op.drop_constraint("fk_orders_number_owner_user", "orders", type_="foreignkey")
+    op.alter_column(
+        "orders", "number_owner_id", existing_type=sa.Uuid(), nullable=False
+    )
+    op.drop_constraint("uq_orders_market_code", "orders", type_="unique")
+    op.drop_column("orders", "is_superseded")
+
+    for table in ("product_set_components", "product_set_items"):
+        for column in ("updated_at", "created_at"):
+            op.alter_column(
+                table,
+                column,
+                existing_type=sa.DateTime(timezone=True),
+                type_=sa.DateTime(),
+                nullable=True,
+                postgresql_using=f"{column} AT TIME ZONE 'UTC'",
+            )
+
+    op.drop_constraint("product_set_items_product_id_fkey", "product_set_items", type_="foreignkey")
+    op.create_foreign_key(
+        "product_set_items_product_id_fkey",
+        "product_set_items",
+        "products",
+        ["product_id"],
+        ["id"],
+    )
+    op.drop_constraint("order_items_order_id_fkey", "order_items", type_="foreignkey")
+    op.create_foreign_key(
+        "order_items_order_id_fkey", "order_items", "orders", ["order_id"], ["id"]
+    )
+
+    op.drop_column("order_signature_evidence", "hash_version")
+    op.drop_constraint(
+        "fk_order_signature_evidence_invitation",
+        "order_signature_evidence",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_order_signature_evidence_submitted_by",
+        "order_signature_evidence",
+        type_="foreignkey",
+    )
+    for name in (
+        "fk_client_access_invitations_verified_by",
+        "fk_client_access_invitations_requested_by",
+        "fk_client_access_invitations_issued_by",
+        "fk_client_access_invitations_client",
+        "fk_client_access_invitations_user",
+    ):
+        op.drop_constraint(name, "client_access_invitations", type_="foreignkey")
+    op.alter_column(
+        "client_access_invitations",
+        "verified_by_user_id",
+        existing_type=sa.Uuid(),
+        nullable=False,
+    )
+    op.alter_column(
+        "client_access_invitations",
+        "issued_by_user_id",
+        existing_type=sa.Uuid(),
+        nullable=False,
+    )
