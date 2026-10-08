@@ -1004,15 +1004,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       if (editing) {
         const updatePayload = isEurope
           ? {
-              price_lojista: form.price_lojista ?? 0,
-              price_corporativo: form.price_corporativo ?? 0,
-              price_pvp: form.price_pvp ?? 0,
-              description_pt_pt: form.description_pt_pt?.trim() || undefined,
-              description_en: form.description_en?.trim() || undefined,
+              ...payload,
+              // EU usa o mesmo formulário e os mesmos dados operacionais do BR,
+              // mas a atualização continua restrita ao produto EU no backend.
+              description: form.description?.trim() || undefined,
+              description_pt_pt: undefined,
+              description_en: undefined,
             }
           : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
-        if (!isEurope && pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
+        if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
       } else {
         const created = await createM.mutateAsync(payload)
         if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
@@ -1224,55 +1225,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         </Modal>
       )}
 
-      {showForm && isEurope && editing && (
-        <Modal title={tx('Editar Produto em Portugal')} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {formError && (
-              <div role="alert" className="rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-xs leading-snug text-danger">
-                {formError}
-              </div>
-            )}
-            <div className="rounded-xl bg-bg-2 px-4 py-3">
-              <span className="block font-mono text-xs font-semibold" style={{ color }}>{editing.product_code}</span>
-              <p className="mt-2 text-xs leading-relaxed text-ink-2">
-                {tx('Os nomes e os preços abaixo pertencem apenas a Portugal; o catálogo do Brasil não é alterado.')}
-              </p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">{tx('Nome em português (Portugal)')}</span>
-                <input className="input" maxLength={20000} value={form.description_pt_pt ?? ''} onChange={(event) => setForm({ ...form, description_pt_pt: event.target.value })} required />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">{tx('Nome em inglês')}</span>
-                <input className="input" maxLength={20000} lang="en-GB" value={form.description_en ?? ''} onChange={(event) => setForm({ ...form, description_en: event.target.value })} required />
-              </label>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">Lojista (€)</span>
-                <NumberField className="input" min="0" step="0.01" value={form.price_lojista} onValueChange={(value) => setForm({ ...form, price_lojista: value })} required />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">Corporativo (€)</span>
-                <NumberField className="input" min="0" step="0.01" value={form.price_corporativo} onValueChange={(value) => setForm({ ...form, price_corporativo: value })} required />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-muted">PVP (€)</span>
-                <NumberField className="input" min="0" step="0.01" value={form.price_pvp} onValueChange={(value) => setForm({ ...form, price_pvp: value })} required />
-              </label>
-            </div>
-            <div className="flex justify-end gap-3 pt-1">
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
-              <button type="submit" className="btn-primary" style={{ backgroundColor: color }} disabled={updateM.isPending}>
-                {tx(updateM.isPending ? 'A guardar…' : 'Guardar nomes e preços')}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {showForm && (!isEurope || !editing) && (
+      {showForm && (
         <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
@@ -1300,24 +1253,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 </label>
               )}
               <label className="flex flex-col gap-1 col-span-2">
-                <span className="text-xs text-muted">{tx(isEurope ? 'Nome em português (Portugal)' : 'Descrição')} *</span>
+                <span className="text-xs text-muted">{tx('Descrição')} *</span>
                 <input
                   className="input"
-                  value={isEurope ? (form.description_pt_pt ?? '') : form.description}
-                  onChange={(e) => setForm({
-                    ...form,
-                    description: e.target.value,
-                    ...(isEurope ? { description_pt_pt: e.target.value } : {}),
-                  })}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
                   required
                 />
               </label>
-              {isEurope && (
-                <label className="flex flex-col gap-1 col-span-2">
-                  <span className="text-xs text-muted">{tx('Nome em inglês *')}</span>
-                  <input className="input" lang="en-GB" value={form.description_en ?? ''} onChange={(e) => setForm({ ...form, description_en: e.target.value })} required />
-                </label>
-              )}
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-muted">{tx('Observação')}</span>
                 <textarea
