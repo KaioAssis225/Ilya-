@@ -414,7 +414,7 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
   }, [])
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm"
+      className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

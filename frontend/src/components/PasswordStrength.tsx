@@ -6,15 +6,15 @@ import { PASSWORD_RULES, passwordStrength } from '../lib/passwordRules'
 // senha escolhida vai ser aceita, em vez de descobrir só no submit.
 
 const BAR_TONE: Record<number, string> = {
-  1: 'bg-red-500',
-  2: 'bg-amber-500',
+  1: 'bg-danger',
+  2: 'bg-warning',
   3: 'bg-olive',
   4: 'bg-olive',
 }
 
 const TEXT_TONE: Record<number, string> = {
-  1: 'text-red-700',
-  2: 'text-amber-700',
+  1: 'text-danger',
+  2: 'text-warning',
   3: 'text-olive',
   4: 'text-olive',
 }
