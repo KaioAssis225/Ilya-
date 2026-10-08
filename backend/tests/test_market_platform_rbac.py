@@ -15,7 +15,12 @@ from app.api.routers.users import (
     create_user,
     update_user,
 )
-from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
+from app.core.markets import (
+    MARKETS,
+    MarketPrincipal,
+    PlatformPrincipal,
+    suspend_commercial_accesses,
+)
 from app.core.platform import lock_platform_admin_guard
 from app.core.security import create_access_token, decode_access_token
 from app.models.market import UserMarket
@@ -438,6 +443,50 @@ def test_stale_auth_version_token_is_rejected_after_identity_change():
         fresh = create_access_token(user.id, "admin", user.auth_version, "BR")
         principal = await get_market_principal(token=fresh, db=db)
         assert principal.market.code == "BR"
+    asyncio.run(run())
+
+
+def test_existing_market_access_token_is_rejected_after_link_suspension():
+    """Suspender o vínculo revoga o acesso comercial na requisição seguinte.
+
+    O token continua criptograficamente válido e a identidade global permanece
+    ativa, mas a autorização é relida de ``user_markets`` a cada requisição.
+    """
+    async def run():
+        user = _user()
+        client_id = uuid.uuid4()
+        access = UserMarket(
+            user_id=user.id,
+            market_code="BR",
+            role=UserRole.cliente.value,
+            status="active",
+            linked_client_id=client_id,
+        )
+        token = create_access_token(
+            user.id, UserRole.cliente.value, user.auth_version, "BR"
+        )
+        db = AsyncMock()
+        db.sync_session = SimpleNamespace(info={})
+        db.execute.side_effect = [
+            _result(scalars=[access]),
+            _result(),
+            _result(scalar=user),
+            _result(scalars=[]),
+        ]
+
+        affected = await suspend_commercial_accesses(
+            db, market_code="BR", linked_client_id=client_id
+        )
+        assert affected == {user.id}
+        assert access.status == "suspended"
+
+        with pytest.raises(HTTPException) as exc:
+            await get_market_principal(token=token, db=db)
+
+        assert exc.value.status_code == 401
+        assert user.is_active is True
+        assert user.auth_version == 3
+
     asyncio.run(run())
 
 
