@@ -299,6 +299,10 @@ const EN: Record<string, string> = {
   'Importar Foto': 'Import photo',
   'Painel de dados': 'Data panel',
   'Sem tipo': 'No type',
+  'IVA': 'VAT',
+  'IVA não aprovado': 'VAT not approved',
+  'IVA aprovado nos produtos deste grupo': 'VAT approved on the products of this group',
+  '{count} produto(s) com IVA pendente': '{count} product(s) with pending VAT',
 }
 
 export type CadastroTextVars = Record<string, string | number>

@@ -23,3 +23,15 @@ class ProductGroupRead(ProductGroupBase):
     market_code: str = "BR"
 
     model_config = {"from_attributes": True}
+
+
+class ProductGroupVatSummary(BaseModel):
+    """IVA aprovado dos produtos de um grupo (Portugal) — só exibição.
+
+    O IVA é aprovado por produto em `product_markets`; o grupo não tem taxa.
+    """
+
+    group_id: uuid.UUID
+    approved_rates: list[Decimal]
+    approved_products: int
+    pending_products: int

@@ -3,15 +3,18 @@ from decimal import Decimal
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_current_principal, get_db_session, require_product_group_editor, require_roles
 from app.core.fiscal_audit import record_product_group_event
 from app.core.markets import BR_MARKET, MarketPrincipal
+from app.models.market import VAT_APPROVED, ProductMarket
+from app.models.product import Product
 from app.models.product_group import ProductGroup
+from app.models.product_type import ProductType
 from app.models.user import UserRole
-from app.schemas.product_group import ProductGroupCreate, ProductGroupUpdate, ProductGroupRead
+from app.schemas.product_group import ProductGroupCreate, ProductGroupUpdate, ProductGroupRead, ProductGroupVatSummary
 
 router = APIRouter(prefix="/api/v1/product-groups", tags=["product-groups"])
 
@@ -43,6 +46,68 @@ async def _group_in_market(db: AsyncSession, group_id: uuid.UUID, principal: Mar
     if not pg or pg.market_code != principal.code:
         raise HTTPException(status_code=404, detail="Grupo não encontrado.")
     return pg
+
+
+def summarize_group_vat(rows) -> list[ProductGroupVatSummary]:
+    """Agrega (group_id, vat_rate, vat_status, n_produtos) por grupo.
+
+    Só taxa com status aprovado conta como IVA do grupo; o resto é pendente.
+    """
+    by_group: dict[uuid.UUID, dict] = {}
+    for group_id, vat_rate, vat_status, count in rows:
+        entry = by_group.setdefault(group_id, {"rates": set(), "approved": 0, "pending": 0})
+        if vat_status == VAT_APPROVED and vat_rate is not None:
+            entry["rates"].add(Decimal(vat_rate))
+            entry["approved"] += int(count)
+        else:
+            entry["pending"] += int(count)
+    return [
+        ProductGroupVatSummary(
+            group_id=group_id,
+            approved_rates=sorted(entry["rates"]),
+            approved_products=entry["approved"],
+            pending_products=entry["pending"],
+        )
+        for group_id, entry in by_group.items()
+    ]
+
+
+def _type_key(column):
+    # Mesma chave do filtro de catálogo (products._normalized_product_type_expression):
+    # caixa, espaços e plural simples não separam produto do seu tipo.
+    return func.regexp_replace(func.lower(func.btrim(column)), "s$", "")
+
+
+@router.get("/vat-summary", response_model=List[ProductGroupVatSummary])
+async def product_group_vat_summary(
+    db: AsyncSession = Depends(get_db_session),
+    _=_ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """IVA aprovado dos produtos de cada grupo — só fora do Brasil, só leitura."""
+    if principal.code == BR_MARKET:
+        return []
+    market = principal.code
+    rows = (await db.execute(
+        select(ProductType.group_id, ProductMarket.vat_rate, ProductMarket.vat_status, func.count(Product.id))
+        .select_from(Product)
+        .join(ProductType, and_(
+            ProductType.market_code == market,
+            _type_key(ProductType.name) == _type_key(Product.type),
+        ))
+        .join(ProductMarket, and_(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == market,
+        ))
+        .where(
+            Product.market_code == market,
+            Product.is_active.is_(True),
+            ProductMarket.is_available.is_(True),
+            ProductType.group_id.is_not(None),
+        )
+        .group_by(ProductType.group_id, ProductMarket.vat_rate, ProductMarket.vat_status)
+    )).all()
+    return summarize_group_vat(rows)
 
 
 @router.get("", response_model=List[ProductGroupRead])
