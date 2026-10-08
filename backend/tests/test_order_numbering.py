@@ -99,7 +99,7 @@ class TestExclusaoDePedido:
             db.execute.return_value = resultado
 
             with pytest.raises(HTTPException) as exc_info:
-                await delete_order(uuid.uuid4(), db=db, current_user=_admin())
+                await delete_order(uuid.uuid4(), db=db, current_user=_admin(), principal=SimpleNamespace(code="BR"))
 
             assert exc_info.value.status_code == 404
             db.delete.assert_not_awaited()
@@ -111,7 +111,7 @@ class TestExclusaoDePedido:
             order = _pedido()
             db = self._db_com_pedido(order)
 
-            await delete_order(order.id, db=db, current_user=_admin())
+            await delete_order(order.id, db=db, current_user=_admin(), principal=SimpleNamespace(code="BR"))
 
             db.delete.assert_awaited_once_with(order)
             db.commit.assert_awaited_once()
@@ -124,7 +124,7 @@ class TestExclusaoDePedido:
             order = _pedido()
             db = self._db_com_pedido(order)
 
-            await delete_order(order.id, db=db, current_user=_admin())
+            await delete_order(order.id, db=db, current_user=_admin(), principal=SimpleNamespace(code="BR"))
 
             enfileirados = [
                 chamada.args[0] for chamada in db.add.call_args_list
@@ -149,7 +149,7 @@ class TestExclusaoDePedido:
             db.add.side_effect = lambda _linha: ordem_das_chamadas.append("add")
             db.commit.side_effect = lambda: ordem_das_chamadas.append("commit")
 
-            await delete_order(order.id, db=db, current_user=_admin())
+            await delete_order(order.id, db=db, current_user=_admin(), principal=SimpleNamespace(code="BR"))
 
             assert ordem_das_chamadas.index("add") < ordem_das_chamadas.index("commit")
 
@@ -167,4 +167,6 @@ def _pedido():
         orc_id="ORC-0007",
         client_id=uuid.uuid4(),
         is_finalized=False,
+        rep_signature=None,
+        client_signature=None,
     )

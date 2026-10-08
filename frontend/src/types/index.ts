@@ -245,6 +245,8 @@ export interface OrderSummary {
   total_with_ipi: number
   is_finalized: boolean
   is_cancelled: boolean
+  rep_signed?: boolean
+  client_signed?: boolean
   finalized_at: string | null
   cancelled_at: string | null
   items: OrderSummaryItem[]
@@ -266,6 +268,9 @@ export interface Order {
   total_with_ipi: number
   is_finalized: boolean
   is_cancelled: boolean
+  document_version?: number
+  supersedes_order_id?: string | null
+  revision_number?: number
   finalized_at: string | null
   cancelled_at: string | null
   external_code: string | null

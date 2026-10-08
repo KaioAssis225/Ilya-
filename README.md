@@ -267,6 +267,30 @@ confirmar o endereço. Implante backend e frontend atualizados junto com essa
 migration; código antigo de provisionamento não deve continuar atendendo após
 o corte.
 
+### Assinatura eletrônica de pedidos
+
+`ELECTRONIC_SIGNATURES_ENABLED` e `VITE_ELECTRONIC_SIGNATURES_ENABLED` seguem
+desativados até homologação funcional, jurídica e técnica. A migration
+`signature_integrity_r11_20261007` identifica assinaturas antigas como
+`legacy_unverified`: o sistema anterior não guardava o hash dos termos, versão,
+data nem ator, então não há como atestar retroativamente o conteúdo assinado.
+Um administrador do mercado pode consultar `/api/v1/orders/signature-audit`
+para obter IDs e estado de cada evidência, sem expor o desenho da assinatura.
+
+Pedidos assinados não podem ser editados, finalizados, cancelados ou excluídos.
+Correções são feitas em `POST /api/v1/orders/{id}/revision`: cria um novo pedido
+ligado ao anterior, com novo número, preços e impostos recalculados pelas regras
+atuais e sem copiar assinaturas. O cliente ou representante precisa assinar a
+nova versão. Convites de assinatura são enviados somente por admin do mercado
+ao e-mail do titular confirmado fora do sistema; a resposta não contém o token.
+O link apresenta os termos canônicos e exige aceite do hash antes de assinar.
+
+O hash registrado cobre os termos canônicos do pedido e a versão, não os bytes
+do PDF criado no navegador. O PDF usa também dados atuais de cadastro e
+imagens. A flag só pode ser ativada após a homologação conferir essa diferença
+e os documentos resultantes. Assinaturas antigas inconclusivas exigem revisão
+humana e, quando for necessário regularizar, uma revisão com nova assinatura.
+
 ### 3. Subindo o Banco e o Backend (via Docker Compose)
 Na raiz do monorepo, execute:
 ```bash

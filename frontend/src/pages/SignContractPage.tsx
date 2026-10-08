@@ -5,6 +5,28 @@ import { authApi } from '../lib/api'
 interface OrderInfo {
   order_code: string
   is_signed: boolean
+  document_hash: string
+  document: {
+    document_version: number
+    currency: string
+    locale: string
+    notes: string | null
+    total_with_ipi: string
+    items: Array<{
+      product_code: string
+      description: string
+      altura: string
+      largura: string
+      profundidade: string
+      observacao: string | null
+      qty: number
+      unit_price: string
+      discount: string
+      ipi_rate: string
+      tax_label: string
+      optionals: Record<string, string>
+    }>
+  }
 }
 
 type Stage = 'loading' | 'ready' | 'signing' | 'success' | 'error' | 'already_signed'
@@ -12,18 +34,19 @@ type Stage = 'loading' | 'ready' | 'signing' | 'success' | 'error' | 'already_si
 export default function SignContractPage() {
   const [token] = useState<string>(() => {
     // Token vem via fragment (#) para não vazar em logs de servidor nem Referer (V-04)
-    const t = window.location.hash.slice(1)
-    if (t) {
-      window.history.replaceState(null, '', window.location.pathname)
-    }
-    return t
+    return window.location.hash.slice(1)
   })
 
   const [stage, setStage] = useState<Stage>('loading')
   const [orderInfo, setOrderInfo] = useState<OrderInfo | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawingRef = useRef(false)
+
+  useEffect(() => {
+    window.history.replaceState(window.history.state, '', window.location.pathname)
+  }, [])
 
   useEffect(() => {
     if (!token) {
@@ -115,11 +138,12 @@ export default function SignContractPage() {
   }
 
   async function handleSubmit() {
+    if (!acceptedTerms || !orderInfo) return
     const canvas = canvasRef.current!
     const signature = canvas.toDataURL('image/png')
     setStage('signing')
     try {
-      await authApi.post('/orders/sign-with-token', { token, signature })
+      await authApi.post('/orders/sign-with-token', { token, signature, document_hash: orderInfo.document_hash })
       setTimeout(() => setStage('success'), 2000)
     } catch (err: unknown) {
       const msg =
@@ -132,7 +156,7 @@ export default function SignContractPage() {
   }
 
   return (
-    <div className="min-h-screen bg-bg flex flex-col items-center justify-center px-4">
+    <div className="min-h-screen bg-bg flex flex-col items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-5xl tracking-[0.35em] font-light text-gold">ILYA</h1>
@@ -160,11 +184,32 @@ export default function SignContractPage() {
         )}
 
         {stage === 'ready' && orderInfo && (
-          <div className="bg-white rounded-2xl border border-line shadow-sm p-6 space-y-5">
+          <div className="bg-white rounded-2xl border border-line shadow-sm p-6 space-y-5 max-h-[85vh] overflow-y-auto">
             <div>
               <p className="text-xs text-muted uppercase tracking-wider mb-1">Pedido</p>
               <p className="text-gold font-mono font-semibold text-lg">{orderInfo.order_code}</p>
             </div>
+
+            <div className="space-y-3 border-y border-line py-4 text-sm text-ink-2">
+              <p className="font-semibold">Termos do pedido — versão {orderInfo.document.document_version}</p>
+              {orderInfo.document.items.map((item, index) => (
+                <div key={`${item.product_code}-${index}`} className="border-b border-line pb-2 last:border-0">
+                  <p className="font-medium">{item.qty} × {item.description} ({item.product_code})</p>
+                  <p>Preço unitário: {item.unit_price} {orderInfo.document.currency}; desconto: {item.discount}%; {item.tax_label}: {item.ipi_rate}%</p>
+                  <p>Dimensões: {item.altura} × {item.largura} × {item.profundidade}</p>
+                  {item.observacao && <p>Observação do item: {item.observacao}</p>}
+                  {Object.entries(item.optionals).length > 0 && <p>Opcionais: {Object.entries(item.optionals).map(([key, value]) => `${key}: ${value}`).join(', ')}</p>}
+                </div>
+              ))}
+              {orderInfo.document.notes && <p>Observações: {orderInfo.document.notes}</p>}
+              <p className="font-semibold">Total: {orderInfo.document.total_with_ipi} {orderInfo.document.currency}</p>
+              <p className="text-xs text-muted break-all">Identificador dos termos: {orderInfo.document_hash}</p>
+            </div>
+
+            <label className="flex gap-2 text-sm text-ink-2">
+              <input type="checkbox" checked={acceptedTerms} onChange={event => setAcceptedTerms(event.target.checked)} />
+              Li os termos do pedido acima e concordo em assiná-los.
+            </label>
 
             <div>
               <p className="text-xs text-muted uppercase tracking-wider mb-2">Sua Assinatura</p>
@@ -184,7 +229,8 @@ export default function SignContractPage() {
 
             <button
               onClick={handleSubmit}
-              className="w-full py-3 bg-gold text-white rounded-xl font-semibold text-sm hover:bg-gold-600 transition-colors shadow-sm"
+              disabled={!acceptedTerms}
+              className="w-full py-3 bg-gold text-white rounded-xl font-semibold text-sm hover:bg-gold-600 transition-colors shadow-sm disabled:opacity-50"
             >
               Assinar Contrato
             </button>
