@@ -226,7 +226,9 @@ function OrderDetailModal({
   }
   // A tela "Visualizar" é sempre em português (pt-PT em Portugal); o idioma do
   // documento (order.locale / PDF em inglês) não muda a leitura interna.
-  const viewLocale = order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
+  const viewLocale = order.market_code === 'EU' ? 'en-GB' : 'pt-BR'
+  const isEuOrder = order.market_code === 'EU'
+  const viewText = (br: string, en: string) => isEuOrder ? en : br
   const { data: products = [] } = useProductsByCodes(
     orderDetail?.items.map((item) => item.product_code) ?? [],
     !!orderDetail,
@@ -424,10 +426,10 @@ function OrderDetailModal({
                 ? <span className="flex items-center gap-1 text-[11px] font-bold bg-success-soft text-success border border-success/25 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> Finalizado</span>
                 : order.is_cancelled
                 ? <span className="flex items-center gap-1 text-[11px] font-bold bg-danger-soft text-danger border border-danger/25 px-1.5 py-0.5 rounded-full"><Ban className="w-2.5 h-2.5" /> Cancelado</span>
-                : <span className="text-[11px] font-bold bg-warning-soft text-warning border border-warning/25 px-1.5 py-0.5 rounded-full">Em andamento</span>
+                : <span className="text-[11px] font-bold bg-warning-soft text-warning border border-warning/25 px-1.5 py-0.5 rounded-full">{viewText('Em andamento', 'In progress')}</span>
               }
             </div>
-            <p className="text-sm text-ink-3">Orçamento: <span className="text-gold">{order.orc_id}</span>
+            <p className="text-sm text-ink-3">{viewText('Orçamento:', 'Quote:')} <span className="text-gold">{order.orc_id}</span>
               {order.external_code && <span className="ml-2 font-mono text-xs text-ink-2">· {order.external_code}</span>}
             </p>
           </div>
@@ -441,7 +443,7 @@ function OrderDetailModal({
                   onClose()
                   navigate(`/orcamentos?edit=${response.data.id}`)
                 } catch { setRevisionError(true) } finally { setRevisionLoading(false) }
-              }} className="btn-secondary text-xs disabled:opacity-50">{revisionLoading ? 'Criando revisão...' : 'Criar revisão'}</button>
+              }} className="btn-secondary text-xs disabled:opacity-50">{revisionLoading ? viewText('Criando revisão...', 'Creating revision...') : viewText('Criar revisão', 'Create revision')}</button>
             )}
             {canManage && !order.is_finalized && !order.is_cancelled && !isContractSigned && !isClientSigned && (
               <>
@@ -465,7 +467,7 @@ function OrderDetailModal({
         <div className="flex gap-1 border-b border-line mb-4">
           {(['details', 'history'] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-semibold transition-colors ${tab === t ? 'text-gold border-b-2 border-gold -mb-px' : 'text-muted hover:text-ink-2'}`}>
-              {t === 'details' ? 'Detalhes' : 'Histórico'}
+              {t === 'details' ? viewText('Detalhes', 'Details') : viewText('Histórico', 'History')}
             </button>
           ))}
         </div>
@@ -477,32 +479,32 @@ function OrderDetailModal({
         {tab === 'details' && (
           <>
             <div className="grid grid-cols-2 gap-3 text-sm mb-5">
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Cliente</p><p className="text-ink font-medium">{clientName}</p></div>
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Representante</p><p className="text-ink font-medium">{repName || '—'}</p></div>
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(viewLocale)}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Cliente', 'Client')}</p><p className="text-ink font-medium">{clientName}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Representante', 'Representative')}</p><p className="text-ink font-medium">{repName || '—'}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Data', 'Date')}</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(viewLocale)}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3">
-                <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? `Total com ${order.market_code === 'EU' ? 'IVA' : 'IPI'}` : 'Total'}</p>
+                <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? viewText(`Total com ${order.market_code === 'EU' ? 'IVA' : 'IPI'}`, `Total with ${order.market_code === 'EU' ? 'VAT' : 'IPI'}`) : 'Total'}</p>
                 <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} /></p>
               </div>
               {order.notes && (
-                <div className="col-span-2 bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Observações</p><p className="text-ink-2">{order.notes}</p></div>
+                <div className="col-span-2 bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Observações', 'Notes')}</p><p className="text-ink-2">{order.notes}</p></div>
               )}
             </div>
 
-            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-2">Itens</h4>
+            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-2">{viewText('Itens', 'Items')}</h4>
             <div className="border border-line rounded-xl overflow-x-auto">
               <table className="w-full min-w-[700px] text-sm">
                 <thead className="bg-surface-2">
                   <tr>
                     <th className="px-3 py-2 w-10"></th>
-                    <th className="px-3 py-2 text-left text-xs text-muted">Produto</th>
+                    <th className="px-3 py-2 text-left text-xs text-muted">{viewText('Produto', 'Product')}</th>
                     <th className="px-3 py-2 text-left text-xs text-muted">Dim. ({order.market_code === 'EU' ? '″' : 'm'})</th>
-                    <th className="px-3 py-2 text-left text-xs text-muted">Opcionais</th>
-                    <th className="px-3 py-2 text-center text-xs text-muted">Qtd</th>
-                    <th className="px-3 py-2 text-right text-xs text-muted">Preço Base</th>
-                    <th className="px-3 py-2 text-right text-xs text-muted">Desconto</th>
+                    <th className="px-3 py-2 text-left text-xs text-muted">{viewText('Opcionais', 'Options')}</th>
+                    <th className="px-3 py-2 text-center text-xs text-muted">{viewText('Qtd', 'Qty')}</th>
+                    <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Preço Base', 'Base price')}</th>
+                    <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Desconto', 'Discount')}</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">{order.market_code === 'EU' ? 'IVA' : 'IPI'}</th>
-                    <th className="px-3 py-2 text-right text-xs text-muted">Subtotal</th>
+                    <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Subtotal', 'Subtotal')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -518,7 +520,7 @@ function OrderDetailModal({
                         </td>
                         <td className="px-3 py-2">
                           <span className="text-gold font-mono text-xs">{item.product_code}</span>
-                          <div className="text-ink-2 text-xs mt-0.5 max-w-[150px] truncate">{item.description}</div>
+                          <div className="text-ink-2 text-xs mt-0.5 max-w-[150px] truncate">{isEuOrder ? (products.find(p => p.product_code === item.product_code)?.description_en ?? item.description) : item.description}</div>
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs whitespace-nowrap">
@@ -554,7 +556,7 @@ function OrderDetailModal({
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-line bg-bg">
-                    <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">Valor Total</td>
+                    <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">{viewText('Valor Total', 'Total value')}</td>
                     <td className="px-3 py-2.5 text-right text-gold font-bold text-base">
                       <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} />
                     </td>
@@ -1207,3 +1209,4 @@ export default function PedidosPage() {
     </div>
   )
 }
+
