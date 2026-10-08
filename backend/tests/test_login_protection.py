@@ -5,12 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from limits.errors import StorageError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.routers.auth import _authenticate_credentials
+from app.core.limiter import limiter
 from app.core.login_protection import enforce_login_cooldown, login_attempt_key
-from app.main import _rate_limit_storage_unavailable
+from app.main import app, _rate_limit_storage_unavailable
 from app.schemas.auth import LoginRequest
 
 
@@ -112,6 +115,22 @@ def test_redis_failure_is_explicitly_fail_closed():
     response = _rate_limit_storage_unavailable(_request(), StorageError("down"))
     assert response.status_code == 503
     assert response.headers["retry-after"] == "5"
+
+
+def test_runtime_redis_timeout_is_converted_to_service_unavailable():
+    with patch.object(
+        limiter.limiter,
+        "hit",
+        side_effect=RedisTimeoutError("down"),
+    ):
+        response = TestClient(app, raise_server_exceptions=False).post(
+            "/api/v1/auth/login",
+            json={"identifier": "conta@example.com", "password": "errada"},
+        )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "5"
+    assert response.json() == {"detail": "Serviço temporariamente indisponível."}
 
 
 def test_untrusted_peer_cannot_forge_forwarded_ip():

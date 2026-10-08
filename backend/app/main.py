@@ -16,6 +16,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from limits.errors import StorageError
+from redis.exceptions import RedisError
 
 from app.core.config import settings
 from app.core.http_client import close_http_clients
@@ -121,6 +122,7 @@ def _rate_limit_storage_unavailable(_request: Request, _exc: Exception) -> JSONR
 
 
 app.add_exception_handler(StorageError, _rate_limit_storage_unavailable)
+app.add_exception_handler(RedisError, _rate_limit_storage_unavailable)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     GZipMiddleware,
