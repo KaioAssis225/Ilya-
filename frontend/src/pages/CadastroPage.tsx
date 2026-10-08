@@ -1009,7 +1009,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               // mas a atualização continua restrita ao produto EU no backend.
               description: form.description?.trim() || undefined,
               description_pt_pt: undefined,
-              description_en: undefined,
+              description_en: isEurope ? (form.description_en?.trim() || undefined) : undefined,
             }
           : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
@@ -1261,6 +1261,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   required
                 />
               </label>
+              {isEurope && (
+                <label className="flex flex-col gap-1 col-span-2">
+                  <span className="text-xs text-muted">{tx('Nome em inglês *')}</span>
+                  <input className="input" lang="en-GB" value={form.description_en ?? ''} onChange={(e) => setForm({ ...form, description_en: e.target.value })} required />
+                </label>
+              )}
               <label className="flex flex-col gap-1 col-span-2">
                 <span className="text-xs text-muted">{tx('Observação')}</span>
                 <textarea
