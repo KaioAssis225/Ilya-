@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import { DialogPanel } from '../components/Dialog'
+import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
@@ -81,7 +83,7 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
               {h.user && <span className="text-xs text-ink-2 font-medium">{h.user.full_name}</span>}
               <span className="text-[11px] text-muted-3 ml-auto whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
             </div>
-            {h.details && <p className="text-xs text-[#6b5d55] mt-0.5 break-words">{h.details}</p>}
+            {h.details && <p className="text-xs text-ink-3 mt-0.5 break-words">{h.details}</p>}
           </div>
         </div>
       ))}
@@ -108,10 +110,10 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-md p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+      <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-semibold text-ink">Finalizar Pedido</h3>
-          <button onClick={onClose} className="text-muted hover:text-ink w-9 h-9 flex items-center justify-center">
+          <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -133,7 +135,7 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
             {loading ? 'Finalizando...' : 'Finalizar Pedido'}
           </button>
         </div>
-      </div>
+      </DialogPanel>
     </div>
   )
 }
@@ -157,10 +159,10 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-md p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+      <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-semibold text-ink">Cancelar Pedido</h3>
-          <button onClick={onClose} className="text-muted hover:text-ink w-9 h-9 flex items-center justify-center">
+          <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -178,11 +180,11 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
         </label>
         <div className="flex gap-3 justify-end">
           <button className="btn-secondary" onClick={onClose}>Voltar</button>
-          <button className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-lg text-sm font-semibold hover:bg-[#8a3a2e] transition-colors disabled:opacity-60" disabled={loading} onClick={handleSubmit}>
+          <button className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-lg text-sm font-semibold hover:bg-terracotta-700 transition-colors disabled:opacity-60" disabled={loading} onClick={handleSubmit}>
             {loading ? 'Cancelando...' : 'Cancelar Pedido'}
           </button>
         </div>
-      </div>
+      </DialogPanel>
     </div>
   )
 }
@@ -222,6 +224,9 @@ function OrderDetailModal({
     history: [],
     updated_at: orderLight.created_at,
   }
+  // A tela "Visualizar" é sempre em português (pt-PT em Portugal); o idioma do
+  // documento (order.locale / PDF em inglês) não muda a leitura interna.
+  const viewLocale = order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
   const { data: products = [] } = useProductsByCodes(
     orderDetail?.items.map((item) => item.product_code) ?? [],
     !!orderDetail,
@@ -376,7 +381,7 @@ function OrderDetailModal({
   if (detailError) {
     return (
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-panel w-full max-w-md p-8" onClick={(e) => e.stopPropagation()}>
+        <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-8">
           <p className="text-sm text-terracotta text-center">
             Não foi possível carregar os detalhes deste pedido.
           </p>
@@ -386,7 +391,7 @@ function OrderDetailModal({
               Tentar novamente
             </button>
           </div>
-        </div>
+        </DialogPanel>
       </div>
     )
   }
@@ -394,19 +399,19 @@ function OrderDetailModal({
   if (!orderDetail) {
     return (
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-panel w-full max-w-2xl p-10" onClick={(e) => e.stopPropagation()}>
+        <DialogPanel onClose={onClose} className="modal-panel w-full max-w-2xl p-10">
           <div className="flex items-center justify-center gap-3 text-sm text-muted" role="status">
             <span className="w-5 h-5 rounded-full border-2 border-gold/25 border-t-gold animate-spin" />
             Carregando detalhes do pedido…
           </div>
-        </div>
+        </DialogPanel>
       </div>
     )
   }
 
   return (
     <div className="modal-overlay overflow-y-auto" onClick={onClose}>
-      <div className="modal-panel relative w-full max-w-2xl p-6 my-4" onClick={(e) => e.stopPropagation()}>
+      <DialogPanel onClose={onClose} className="modal-panel relative w-full max-w-2xl p-6 my-4">
         {/* Header — em tela estreita as ações descem para a própria linha em vez
             de vazarem o painel; o X fica ancorado no canto para não ser
             empurrado para fora junto com elas. */}
@@ -443,7 +448,7 @@ function OrderDetailModal({
                 <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 border border-line text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
                   <PenLine className="w-3.5 h-3.5" /> Editar
                 </button>
-                <button onClick={onCancel} className="flex items-center gap-1.5 px-3 py-1.5 border border-terracotta text-terracotta rounded-lg text-xs font-semibold hover:bg-[#fbf2f0] transition-colors">
+                <button onClick={onCancel} className="flex items-center gap-1.5 px-3 py-1.5 border border-terracotta text-terracotta rounded-lg text-xs font-semibold hover:bg-danger-soft transition-colors">
                   <Ban className="w-3.5 h-3.5" /> Cancelar
                 </button>
                 <button onClick={onFinalize} className="flex items-center gap-1.5 px-3 py-1.5 bg-gold text-white rounded-lg text-xs font-semibold hover:bg-gold-600 transition-colors">
@@ -453,7 +458,7 @@ function OrderDetailModal({
             )}
           </div>
         </div>
-        {revisionError && <p role="alert" className="text-xs text-red-700 mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}
+        {revisionError && <p role="alert" className="text-xs font-medium text-danger mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}
         {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um pedido anterior. Esta versão exige novas assinaturas.</p>}
 
         {/* Tabs */}
@@ -474,10 +479,10 @@ function OrderDetailModal({
             <div className="grid grid-cols-2 gap-3 text-sm mb-5">
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Cliente</p><p className="text-ink font-medium">{clientName}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Representante</p><p className="text-ink font-medium">{repName || '—'}</p></div>
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(order.locale)}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Data</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(viewLocale)}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3">
                 <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? `Total com ${order.market_code === 'EU' ? 'IVA' : 'IPI'}` : 'Total'}</p>
-                <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.locale} /></p>
+                <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} /></p>
               </div>
               {order.notes && (
                 <div className="col-span-2 bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">Observações</p><p className="text-ink-2">{order.notes}</p></div>
@@ -487,7 +492,7 @@ function OrderDetailModal({
             <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-2">Itens</h4>
             <div className="border border-line rounded-xl overflow-x-auto">
               <table className="w-full min-w-[700px] text-sm">
-                <thead className="bg-bg-2">
+                <thead className="bg-surface-2">
                   <tr>
                     <th className="px-3 py-2 w-10"></th>
                     <th className="px-3 py-2 text-left text-xs text-muted">Produto</th>
@@ -517,7 +522,7 @@ function OrderDetailModal({
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs whitespace-nowrap">
-                          {formatDimensions(item, order.market_code, order.locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR')}
+                          {formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
                           {(() => {
@@ -528,11 +533,11 @@ function OrderDetailModal({
                         </td>
                         <td className="px-3 py-2 text-center text-ink">{item.qty}</td>
                         <td className="px-3 py-2 text-right text-xs text-ink-2 font-semibold whitespace-nowrap">
-                          <SafePrice value={Number(item.unit_price)} currency={order.currency} locale={order.locale} />
+                          <SafePrice value={Number(item.unit_price)} currency={order.currency} locale={viewLocale} />
                         </td>
                         <td className="px-3 py-2 text-right align-middle">
                           {Number(item.discount) > 0 ? (
-                            <span className="text-[9px] bg-[#fdf0d0] text-gold border border-[#e8d8a0] px-1 py-0.5 rounded font-medium">-{Number(item.discount)}%</span>
+                            <span className="text-[9px] bg-gold-wash text-gold border border-line-note px-1 py-0.5 rounded font-medium">-{Number(item.discount)}%</span>
                           ) : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right align-middle whitespace-nowrap">
@@ -541,7 +546,7 @@ function OrderDetailModal({
                             : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right font-bold text-ink whitespace-nowrap">
-                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={order.locale} />
+                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={viewLocale} />
                         </td>
                       </tr>
                     )
@@ -551,7 +556,7 @@ function OrderDetailModal({
                   <tr className="border-t border-line bg-bg">
                     <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">Valor Total</td>
                     <td className="px-3 py-2.5 text-right text-gold font-bold text-base">
-                      <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.locale} />
+                      <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} />
                     </td>
                   </tr>
                 </tfoot>
@@ -563,8 +568,8 @@ function OrderDetailModal({
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted uppercase tracking-wider font-semibold">Assinaturas</span>
-                  <span className="flex items-center gap-1 text-xs">{isContractSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">REP {isContractSigned ? 'assinado' : 'pendente'}</span></span>
-                  <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Clock className="w-3 h-3 text-yellow-600" />}<span className="text-ink-3">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
+                  <span className="flex items-center gap-1 text-xs">{isContractSigned ? <CheckCircle className="w-3 h-3 text-success" /> : <Clock className="w-3 h-3 text-warning" />}<span className="text-ink-3">REP {isContractSigned ? 'assinado' : 'pendente'}</span></span>
+                  <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-success" /> : <Clock className="w-3 h-3 text-warning" />}<span className="text-ink-3">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
                 </div>
                 {canGenerateSignLink && !isClientSigned && !signInviteSent && <span className="text-xs text-muted">Envio por e-mail confirmado</span>}
               </div>
@@ -584,8 +589,8 @@ function OrderDetailModal({
                       setSignInviteSent(true); setSignInviteEmail('')
                     } catch { setSignInviteError(true) } finally { setSignLinkLoading(false) }
                   }} className="btn-primary disabled:opacity-50">{signLinkLoading ? 'Enviando...' : 'Enviar convite de assinatura'}</button>
-                  {signInviteSent && <p role="status" className="text-xs text-green-700">Convite enviado ao e-mail confirmado.</p>}
-                  {signInviteError && <p role="alert" className="text-xs text-red-700">Não foi possível enviar o convite.</p>}
+                  {signInviteSent && <p role="status" className="text-xs text-success">Convite enviado ao e-mail confirmado.</p>}
+                  {signInviteError && <p role="alert" className="text-xs font-medium text-danger">Não foi possível enviar o convite.</p>}
                 </div>
               )}
               {canSignAsClient && (
@@ -598,12 +603,12 @@ function OrderDetailModal({
               {showNotifyBtn && (
                 <div className="mt-2">
                   {notifyDone
-                    ? <div className="flex items-center gap-1.5 text-xs text-green-600"><CheckCircle className="w-3.5 h-3.5" /> Notificação enviada ao cliente.</div>
+                    ? <div className="flex items-center gap-1.5 text-xs text-success"><CheckCircle className="w-3.5 h-3.5" /> Notificação enviada ao cliente.</div>
                     : <>
                         <button disabled={notifyLoading || !clientHasAccount} onClick={handleNotifyClient} title={!clientHasAccount ? 'Cliente não possui conta no sistema' : undefined} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors ${clientHasAccount ? 'border-gold-soft text-gold hover:bg-gold-wash disabled:opacity-50' : 'border-line text-faint cursor-not-allowed'}`}>
                           <Bell className="w-3.5 h-3.5" />{notifyLoading ? 'Enviando...' : 'Notificar Cliente'}
                         </button>
-                        {notifyError && <p className="text-[10px] text-red-500 mt-1">Erro ao enviar notificação.</p>}
+                        {notifyError && <p className="text-[10px] font-medium text-danger mt-1">Erro ao enviar notificação.</p>}
                       </>
                   }
                 </div>
@@ -645,42 +650,42 @@ function OrderDetailModal({
 
         {/* Canvas assinatura cliente */}
         {ELECTRONIC_SIGNATURES_ENABLED && clientSigOpen && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Assinatura do Cliente</h4><button onClick={() => setClientSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
               <p className="text-xs text-muted mb-3">Assine no campo abaixo após revisar os termos do pedido.</p>
-              <canvas ref={clientCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-[#fafaf9] cursor-crosshair touch-none" />
+              <canvas ref={clientCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-surface-quiet cursor-crosshair touch-none" />
               <div className="flex gap-2 mt-4">
                 <button onClick={() => clientCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Limpar</button>
                 <button onClick={handleSaveClientSig} disabled={clientSaving} className="btn-primary flex-1">{clientSaving ? 'Salvando...' : 'Confirmar Assinatura'}</button>
               </div>
-              {sigError && <p className="text-xs text-red-500 mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
+              {sigError && <p className="text-xs font-medium text-danger mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
             </div>
           </div>
         )}
 
         {/* Bloco 81: canvas de assinatura "na hora" para representante sem perfil configurado */}
         {ELECTRONIC_SIGNATURES_ENABLED && repSigOpen && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Sua Assinatura</h4><button onClick={() => setRepSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
               <p className="text-xs text-muted mb-3">Assine no campo abaixo. Sua assinatura será salva para os próximos pedidos.</p>
-              <canvas ref={repCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-[#fafaf9] cursor-crosshair touch-none" />
+              <canvas ref={repCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-surface-quiet cursor-crosshair touch-none" />
               <div className="flex gap-2 mt-4">
                 <button onClick={() => repCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Limpar</button>
                 <button onClick={handleSaveRepSig} disabled={repSaving} className="btn-primary flex-1">{repSaving ? 'Salvando...' : 'Confirmar Assinatura'}</button>
               </div>
-              {sigError && <p className="text-xs text-red-500 mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
+              {sigError && <p className="text-xs font-medium text-danger mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
             </div>
           </div>
         )}
 
         {ELECTRONIC_SIGNATURES_ENABLED && confirmSign && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
               <h4 className="text-base font-semibold text-ink mb-2">Confirmar Assinatura</h4>
               <p className="text-sm text-ink-2 mb-5">Deseja aplicar sua assinatura para o Pedido <span className="text-gold font-mono font-semibold">#{order.code}</span>?</p>
-              {sigError && <p className="text-xs text-red-500 mb-4">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
+              {sigError && <p className="text-xs font-medium text-danger mb-4">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
               <div className="flex gap-3">
                 <button onClick={() => setConfirmSign(false)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
                 <button onClick={async () => {
@@ -701,23 +706,18 @@ function OrderDetailModal({
         )}
 
         {ELECTRONIC_SIGNATURES_ENABLED && isSigning && (
-          <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-bg/90 backdrop-blur-sm">
-            <div className="absolute w-[520px] h-[520px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--color-gold) 18%, transparent) 0%, transparent 68%)', animation: 'pulseRadial 2.2s ease-in-out infinite' }} />
-            <p className="relative text-[80px] leading-none tracking-[0.35em] font-light select-none" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", backgroundImage: 'linear-gradient(90deg, var(--color-gold-800) 0%, var(--color-gold) 25%, var(--color-gold-highlight) 50%, var(--color-gold) 75%, var(--color-gold-800) 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', animation: 'lightSweep 2.4s linear infinite' }}>ILYA</p>
-            <p className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-gold" style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}>Gerando Assinatura</p>
-            <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full"><div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, var(--color-gold-800), var(--color-gold-highlight), var(--color-gold-800))', animation: 'progressLine 3s linear forwards' }} /></div>
-          </div>
+          <BrandLoadingOverlay label="Gerando assinatura" />
         )}
 
         {activePhotoModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/75 backdrop-blur-sm" onClick={() => setActivePhotoModal(null)}>
+          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/75 backdrop-blur-sm" onClick={() => setActivePhotoModal(null)}>
             <div className="relative" onClick={(e) => e.stopPropagation()}>
               <img src={activePhotoModal} alt="" className="max-w-[480px] max-h-[480px] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-line" />
               <button onClick={() => setActivePhotoModal(null)} className="absolute -top-3 -right-3 bg-white border border-line rounded-full w-11 h-11 flex items-center justify-center shadow-md text-muted hover:text-ink transition-colors"><X className="w-4 h-4" /></button>
             </div>
           </div>
         )}
-      </div>
+      </DialogPanel>
     </div>
   )
 }
@@ -760,7 +760,7 @@ function MobileOrderCard({
           <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar pedido"><CheckCircle className="w-4 h-4" /> Finalizar</button>
         )}
         {onDelete && (
-          <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-[#fbf2f0] transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
+          <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-danger-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
         )}
       </div>
     </div>
@@ -1019,16 +1019,33 @@ export default function PedidosPage() {
         {/* Orders tab */}
         {!isAuditActive && (
           isLoading ? (
-            <div className="rounded-xl border border-line overflow-hidden" aria-busy="true" aria-label="Carregando pedidos">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-bg-2 last:border-0">
-                  <div className="h-4 w-20 rounded bg-[#efe9e1] animate-pulse" />
-                  <div className="h-4 w-24 rounded bg-[#efe9e1] animate-pulse hidden sm:block" />
-                  <div className="h-4 flex-1 rounded bg-[#efe9e1] animate-pulse" />
-                  <div className="h-4 w-16 rounded bg-[#efe9e1] animate-pulse hidden md:block" />
-                  <div className="h-5 w-24 rounded-full bg-[#efe9e1] animate-pulse" />
-                </div>
-              ))}
+            <div aria-busy="true" aria-label="Carregando pedidos">
+              {/* Esqueleto no mesmo formato do conteúdo final de cada viewport:
+                  cartões no mobile, linhas de tabela a partir de md (sem CLS). */}
+              <div className="flex flex-col gap-3 md:hidden">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-xl border border-line bg-white p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="h-4 w-24 rounded bg-line-soft animate-pulse" />
+                      <div className="h-5 w-20 rounded-full bg-line-soft animate-pulse" />
+                    </div>
+                    <div className="h-4 w-3/4 rounded bg-line-soft animate-pulse" />
+                    <div className="h-4 w-1/2 rounded bg-line-soft animate-pulse" />
+                    <div className="h-10 rounded-lg bg-line-soft animate-pulse" />
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block rounded-xl border border-line overflow-hidden">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-bg-2 last:border-0">
+                    <div className="h-4 w-20 rounded bg-line-soft animate-pulse" />
+                    <div className="h-4 w-24 rounded bg-line-soft animate-pulse" />
+                    <div className="h-4 flex-1 rounded bg-line-soft animate-pulse" />
+                    <div className="h-4 w-16 rounded bg-line-soft animate-pulse" />
+                    <div className="h-5 w-24 rounded-full bg-line-soft animate-pulse" />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <>
@@ -1062,7 +1079,7 @@ export default function PedidosPage() {
 
               <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
                 <table className="w-full text-sm">
-                  <thead className="bg-bg-2">
+                  <thead className="bg-surface-2">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Order' : 'Pedido'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Quote' : 'Orçamento'}</th>
@@ -1092,20 +1109,20 @@ export default function PedidosPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-1.5 items-center">
-                            <button title="Ver detalhes" className="text-muted hover:text-gold transition-colors p-1" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
-                            <button disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} className="text-muted hover:text-blue-500 transition-colors p-1 disabled:opacity-40" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
+                          <div className="flex gap-0.5 items-center">
+                            <button type="button" title="Ver detalhes" aria-label={`Ver detalhes do pedido ${order.code}`} className="btn-icon" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
+                            <button type="button" disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} aria-label={`Gerar PDF do pedido ${order.code}`} className="btn-icon hover:text-mineral" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
                             {canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed && (
-                              <button title="Finalizar pedido" aria-label="Finalizar pedido" className="text-muted hover:text-green-600 transition-colors p-1" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
+                              <button type="button" title="Finalizar pedido" aria-label={`Finalizar pedido ${order.code}`} className="btn-icon hover:text-success" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
                             )}
                             {canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed && (
                               <>
-                                <button title="Editar" className="text-muted hover:text-gold transition-colors p-1" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
-                                <button title="Cancelar" className="text-muted hover:text-terracotta transition-colors p-1" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
+                                <button type="button" title="Editar" aria-label={`Editar pedido ${order.code}`} className="btn-icon" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
+                                <button type="button" title="Cancelar" aria-label={`Cancelar pedido ${order.code}`} className="btn-icon hover:text-terracotta" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
                               </>
                             )}
                             {canDelete && !order.rep_signed && !order.client_signed && (
-                              <button title="Excluir" className="text-muted hover:text-red-500 transition-colors p-1" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
+                              <button type="button" title="Excluir" aria-label={`Excluir pedido ${order.code}`} className="btn-icon hover:text-danger" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                             )}
                           </div>
                         </td>
@@ -1177,14 +1194,14 @@ export default function PedidosPage() {
 
       {deleting && (
         <div className="modal-overlay" onClick={() => setDeleting(null)}>
-          <div className="modal-panel w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+          <DialogPanel onClose={() => setDeleting(null)} className="modal-panel w-full max-w-md p-6">
             <h3 className="text-lg font-semibold text-ink mb-2">Confirmar exclusão</h3>
             <p className="text-ink-2 mb-6">Excluir pedido <span className="text-gold font-mono">{deleting.code}</span>? Esta ação não pode ser desfeita.</p>
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={() => setDeleting(null)}>Cancelar</button>
               <button className="btn-danger" onClick={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}>Excluir</button>
             </div>
-          </div>
+          </DialogPanel>
         </div>
       )}
     </div>

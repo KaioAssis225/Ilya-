@@ -51,3 +51,65 @@ export function formatOrderMoney(
 ): string {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
+
+// ── Documento (PDF) ───────────────────────────────────────────────────────────
+// Portugal opera com a marca IBTW e envia o pedido ao cliente em inglês; o
+// Brasil segue ILYA em português. A tela interna "Visualizar" continua em
+// português — este idioma vale só para o documento entregue ao cliente.
+
+export interface OrderDocumentLabels {
+  order: string; date: string; quote: string
+  representative: string; client: string; none: string; noEmail: string
+  product: string; qty: string; unitPrice: string; total: string
+  dimensions: string; itemNote: string; options: string; noPhoto: string
+  totalItems: string; grandTotal: string; notes: string
+  repSignature: string; clientSignature: string; footer: string
+}
+
+export interface OrderDocument {
+  brand: 'ILYA' | 'IBTW'
+  locale: string
+  currency: CurrencyCode
+  taxLabel: string
+  labels: OrderDocumentLabels
+}
+
+const PT_LABELS: OrderDocumentLabels = {
+  order: 'PEDIDO', date: 'Data', quote: 'Orçamento',
+  representative: 'REPRESENTANTE', client: 'CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
+  product: 'PRODUTO', qty: 'QTD', unitPrice: 'VALOR UN.', total: 'TOTAL',
+  dimensions: 'Dimensões', itemNote: 'Obs.', options: 'Opcionais', noPhoto: 'sem\nfoto',
+  totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
+  repSignature: 'Representante / Ilya', clientSignature: 'Cliente / Contratado',
+  footer: 'Ilya — Documento gerado automaticamente',
+}
+
+const EN_LABELS: OrderDocumentLabels = {
+  order: 'ORDER', date: 'Date', quote: 'Quote',
+  representative: 'SALES REPRESENTATIVE', client: 'CLIENT', none: 'None', noEmail: 'No email provided',
+  product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', total: 'TOTAL',
+  dimensions: 'Dimensions', itemNote: 'Note', options: 'Options', noPhoto: 'no\nphoto',
+  totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
+  repSignature: 'Representative / IBTW', clientSignature: 'Client',
+  footer: 'IBTW — Automatically generated document',
+}
+
+export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
+  const presentation = resolveOrderPresentation(order)
+  if ((order.market_code ?? 'BR') === 'EU') {
+    return {
+      brand: 'IBTW',
+      locale: 'en-GB',
+      currency: presentation.currency,
+      taxLabel: presentation.taxLabel === 'IVA' ? 'VAT' : presentation.taxLabel,
+      labels: EN_LABELS,
+    }
+  }
+  return {
+    brand: 'ILYA',
+    locale: presentation.locale,
+    currency: presentation.currency,
+    taxLabel: presentation.taxLabel,
+    labels: PT_LABELS,
+  }
+}

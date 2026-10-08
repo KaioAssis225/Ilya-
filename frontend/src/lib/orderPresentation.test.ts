@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { formatOrderMoney, resolveOrderPresentation } from './orderPresentation.ts'
+import { formatOrderMoney, resolveOrderDocument, resolveOrderPresentation } from './orderPresentation.ts'
 
 test('usa moeda, locale e tributo do snapshot do pedido', () => {
   const br = resolveOrderPresentation({
@@ -76,4 +76,24 @@ test('formata o valor na moeda e no locale do pedido', () => {
   assert.match(br, /R\$/)
   assert.match(eu, /€/)
   assert.notEqual(br, eu)
+})
+
+test('PDF de Portugal sai em inglês com a marca IBTW', () => {
+  const doc = resolveOrderDocument({ market_code: 'EU', currency: 'EUR', locale: 'pt-PT', items: [{ tax_label: 'IVA' }] })
+  assert.equal(doc.brand, 'IBTW')
+  assert.equal(doc.locale, 'en-GB')
+  assert.equal(doc.taxLabel, 'VAT')
+  assert.equal(doc.labels.order, 'ORDER')
+  assert.equal(doc.labels.grandTotal, 'GRAND TOTAL:')
+  assert.match(doc.labels.footer, /^IBTW/)
+  assert.match(doc.labels.repSignature, /IBTW/)
+})
+
+test('PDF do Brasil continua em português com a marca ILYA', () => {
+  const doc = resolveOrderDocument({ market_code: 'BR', currency: 'BRL', locale: 'pt-BR', items: [{ tax_label: 'IPI' }] })
+  assert.equal(doc.brand, 'ILYA')
+  assert.equal(doc.locale, 'pt-BR')
+  assert.equal(doc.taxLabel, 'IPI')
+  assert.equal(doc.labels.order, 'PEDIDO')
+  assert.match(doc.labels.footer, /^Ilya/)
 })

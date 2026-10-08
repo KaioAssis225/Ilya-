@@ -47,6 +47,9 @@ def _is_conjunto_type(type_: Optional[str]) -> bool:
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
 
+# Valor-sentinela de "sem tipo" — default do modelo, do schema e da importação.
+NO_PRODUCT_TYPE = "Outro"
+
 _ANY = Depends(get_current_user)
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.produtos))
 _ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
@@ -281,7 +284,9 @@ async def _validate_product_dimensions(
     catalog_id: uuid.UUID | None = None,
     categories: str | None = None,
 ) -> None:
-    if product_type is not None:
+    # Tipo é opcional: "Outro" significa "sem tipo" e não exige um tipo
+    # cadastrado com esse nome (Portugal não tem). Tipos reais seguem validados.
+    if product_type is not None and product_type != NO_PRODUCT_TYPE:
         type_exists = (await db.execute(select(ProductType.id).where(
             ProductType.market_code == market_code,
             ProductType.name == product_type,

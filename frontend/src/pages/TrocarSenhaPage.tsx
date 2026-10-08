@@ -60,7 +60,7 @@ export default function TrocarSenhaPage() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gold/10 mb-4">
             <ShieldCheck className="w-7 h-7 text-gold" />
           </div>
-          <h1 className="text-2xl font-medium text-ink" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+          <h1 className="font-display text-2xl font-medium text-ink">
             Troca de Senha Obrigatória
           </h1>
           <p className="mt-2 text-sm text-muted-2 leading-relaxed">
@@ -94,10 +94,10 @@ export default function TrocarSenhaPage() {
                 />
                 <button
                   type="button"
-                  tabIndex={-1}
                   onClick={() => setShowNew((s) => !s)}
                   aria-label={showNew ? 'Ocultar senha' : 'Mostrar senha'}
-                  className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors"
+                  aria-pressed={showNew}
+                  className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors rounded-r-control"
                 >
                   {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -121,10 +121,10 @@ export default function TrocarSenhaPage() {
                 />
                 <button
                   type="button"
-                  tabIndex={-1}
                   onClick={() => setShowConfirm((s) => !s)}
                   aria-label={showConfirm ? 'Ocultar senha' : 'Mostrar senha'}
-                  className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors"
+                  aria-pressed={showConfirm}
+                  className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors rounded-r-control"
                 >
                   {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -133,7 +133,7 @@ export default function TrocarSenhaPage() {
 
             <PasswordStrength password={newPassword} confirm={confirm} />
 
-            {error && <p className="text-sm text-red-700 text-center" role="alert">{error}</p>}
+            {error && <p className="text-sm text-danger font-medium text-center" role="alert">{error}</p>}
 
             <button
               type="submit"

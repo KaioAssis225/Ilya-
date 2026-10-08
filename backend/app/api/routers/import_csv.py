@@ -447,7 +447,8 @@ async def import_product_groups(
             db,
             names,
             lambda chunk: select(ProductGroup).where(
-                ProductGroup.name.in_(chunk)
+                ProductGroup.name.in_(chunk),
+                ProductGroup.market_code == principal.code,
             ),
         )
     }
@@ -526,7 +527,8 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
             db,
             group_names,
             lambda chunk: select(ProductGroup).where(
-                ProductGroup.name.in_(chunk)
+                ProductGroup.name.in_(chunk),
+                ProductGroup.market_code == principal.code,
             ),
         )
     }
@@ -547,8 +549,6 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
             )
             group_id = None
             if group_name:
-                if principal.code == "EU":
-                    raise ValueError("Tipos EU não podem herdar grupo fiscal brasileiro.")
                 grp = groups.get(group_name)
                 if not grp:
                     raise ValueError(f"Grupo '{group_name}' não encontrado. Importe os grupos primeiro.")

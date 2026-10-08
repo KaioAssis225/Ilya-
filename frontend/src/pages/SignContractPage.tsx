@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { authApi } from '../lib/api'
+import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 
 interface OrderInfo {
   order_code: string
@@ -159,7 +160,7 @@ export default function SignContractPage() {
     <div className="min-h-screen bg-bg flex flex-col items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-5xl tracking-[0.35em] font-light text-gold">ILYA</h1>
+          <h1 className="font-display text-5xl tracking-[0.35em] font-light text-gold">ILYA</h1>
           <div className="w-16 h-px bg-gold-soft mx-auto mt-2" />
         </div>
 
@@ -169,7 +170,7 @@ export default function SignContractPage() {
 
         {stage === 'error' && (
           <div className="bg-white rounded-2xl border border-line shadow-sm p-6 text-center">
-            <p className="text-red-700 text-sm font-medium mb-1">Erro</p>
+            <p className="text-danger text-sm font-medium mb-1" role="alert">Erro</p>
             <p className="text-ink-2 text-sm">{errorMsg}</p>
           </div>
         )}
@@ -212,25 +213,33 @@ export default function SignContractPage() {
             </label>
 
             <div>
-              <p className="text-xs text-muted uppercase tracking-wider mb-2">Sua Assinatura</p>
+              <p id="signature-label" className="text-xs text-muted uppercase tracking-wider mb-2">Sua Assinatura</p>
               <canvas
                 ref={canvasRef}
                 width={600}
                 height={200}
-                className="w-full border border-line rounded-xl bg-[#fafaf9] cursor-crosshair touch-none"
+                role="img"
+                aria-labelledby="signature-label"
+                aria-describedby="signature-hint"
+                className="w-full border border-line rounded-xl bg-surface-quiet cursor-crosshair touch-none"
               />
+              <p id="signature-hint" className="sr-only">
+                Área de desenho da assinatura: desenhe com o dedo, caneta ou mouse.
+              </p>
               <button
+                type="button"
                 onClick={clearCanvas}
-                className="mt-1 text-xs text-muted hover:text-gold underline transition-colors"
+                className="mt-1 min-h-11 lg:min-h-0 text-xs text-muted hover:text-gold underline transition-colors"
               >
                 Limpar
               </button>
             </div>
 
             <button
+              type="button"
               onClick={handleSubmit}
               disabled={!acceptedTerms}
-              className="w-full py-3 bg-gold text-white rounded-xl font-semibold text-sm hover:bg-gold-600 transition-colors shadow-sm disabled:opacity-50"
+              className="btn-primary w-full py-3"
             >
               Assinar Contrato
             </button>
@@ -241,46 +250,7 @@ export default function SignContractPage() {
           </div>
         )}
 
-        {stage === 'signing' && (
-          <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-[#f8f6f2]/90 backdrop-blur-sm">
-            <div
-              className="absolute w-[520px] h-[520px] rounded-full pointer-events-none"
-              style={{
-                background: 'radial-gradient(circle, rgba(139,105,20,0.18) 0%, transparent 68%)',
-                animation: 'pulseRadial 2.2s ease-in-out infinite',
-              }}
-            />
-            <p
-              className="relative text-[50px] sm:text-[80px] leading-none tracking-[0.35em] font-light select-none"
-              style={{
-                fontFamily: "'Cormorant Garamond', Georgia, serif",
-                backgroundImage: 'linear-gradient(90deg, #7a5a10 0%, #c8952e 25%, #f5d78e 50%, #c8952e 75%, #7a5a10 100%)',
-                backgroundSize: '200% auto',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-                animation: 'lightSweep 2.4s linear infinite',
-              }}
-            >
-              ILYA
-            </p>
-            <p
-              className="mt-5 text-[11px] tracking-[0.55em] uppercase font-semibold text-[#8b6914]"
-              style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}
-            >
-              GERANDO ASSINATURA
-            </p>
-            <div className="mt-9 w-52 h-[1px] bg-gold/25 overflow-hidden rounded-full">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  background: 'linear-gradient(90deg, #7a5a10, #f5d78e, #7a5a10)',
-                  animation: 'progressLine 3s linear forwards',
-                }}
-              />
-            </div>
-          </div>
-        )}
+        {stage === 'signing' && <BrandLoadingOverlay label="Gerando assinatura" />}
 
         {stage === 'success' && (
           <div className="bg-white rounded-2xl border border-line shadow-sm p-8 text-center space-y-3">

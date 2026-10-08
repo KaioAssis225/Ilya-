@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import get_current_principal, get_db_session, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import group_ipi, record_product_type_fiscal_event
 from app.core.markets import MarketPrincipal, PlatformPrincipal
+from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
 from app.models.product import Product
 from app.models.user import User, UserRole
@@ -26,6 +27,19 @@ _ANY = Depends(
 )
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor, UserRole.produtos))
 _ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
+
+
+async def _require_group_in_market(db: AsyncSession, group_id: uuid.UUID | None, market_code: str) -> None:
+    """Tipo fora do Brasil só entra em grupo do próprio mercado (sem IPI).
+
+    O Brasil continua validando pelo IPI do grupo (group_ipi); a FK composta
+    `fk_product_types_group_same_market` repete a regra no banco.
+    """
+    if group_id is None:
+        return
+    group = await db.get(ProductGroup, group_id)
+    if group is None or group.market_code != market_code:
+        raise HTTPException(status_code=422, detail="Grupo não encontrado neste mercado.")
 
 
 @router.get("", response_model=List[ProductTypeRead])
@@ -50,8 +64,8 @@ async def create_product_type(
     if principal.code == "BR":
         require_br_fiscal_admin(principal)
     data = payload.model_dump()
-    if principal.code == "EU" and data.get("group_id") is not None:
-        raise HTTPException(status_code=422, detail="Tipo EU não pode herdar grupo fiscal brasileiro.")
+    if principal.code != "BR":
+        await _require_group_in_market(db, data.get("group_id"), principal.code)
     new_ipi = await group_ipi(db, data.get("group_id")) if principal.code == "BR" else None
     if principal.code == "BR" and data.get("group_id") is not None and new_ipi is None:
         raise HTTPException(status_code=422, detail="Grupo fiscal BR não encontrado.")
@@ -90,8 +104,7 @@ async def create_europe_product_type_before_activation(
     db: AsyncSession = Depends(get_db_session),
     _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
-    if payload.group_id is not None:
-        raise HTTPException(status_code=422, detail="Tipo EU não pode herdar grupo fiscal brasileiro.")
+    await _require_group_in_market(db, payload.group_id, "EU")
     product_type = ProductType(market_code="EU", **payload.model_dump())
     db.add(product_type)
     try:
@@ -128,8 +141,8 @@ async def update_product_type(
         )))).scalar_one()
         if in_use:
             raise HTTPException(status_code=409, detail="Tipo em uso por produto BR; reclassifique os produtos antes de renomear.")
-    if principal.code == "EU" and payload.group_id is not None:
-        raise HTTPException(status_code=422, detail="Tipo EU não pode herdar grupo fiscal brasileiro.")
+    if principal.code != "BR":
+        await _require_group_in_market(db, payload.group_id, principal.code)
     old_ipi = await group_ipi(db, old_group_id) if principal.code == "BR" else None
     new_ipi = await group_ipi(db, payload.group_id) if principal.code == "BR" else None
     if principal.code == "BR" and payload.group_id is not None and new_ipi is None:

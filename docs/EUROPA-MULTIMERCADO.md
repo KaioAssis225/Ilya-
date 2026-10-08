@@ -51,8 +51,15 @@ Também pertencem a um mercado:
 
 As rotas validam que catálogo, tipo, categorias, opcionais e componentes
 pertencem ao mesmo mercado do produto. A barreira ORM aplica o mercado ativo às
-leituras dessas entidades. Tipos EU não podem apontar para `product_groups`,
-pois essa tabela contém a regra brasileira de IPI.
+leituras dessas entidades.
+
+Grupos de produto (`product_groups`) também são por mercado desde a revisão
+`eu_product_groups_r13_20261008` (decisão de 08/10/2026). No Brasil o grupo
+carrega o IPI e sua manutenção segue a guarda fiscal (admin BR) com evento de
+auditoria. Em Portugal o grupo só organiza o catálogo: o banco exige `ipi = 0`
+(`ck_product_groups_eu_sem_ipi`) e o pedido EU continua usando o IVA aprovado de
+`product_markets`, nunca o grupo. A FK composta
+`fk_product_types_group_same_market` impede tipo de um mercado em grupo do outro.
 
 A migration R6 classifica as dimensões legadas como BR para preservar o
 catálogo-base confirmado. Ela não cria dimensões, produtos, vínculos nem preços

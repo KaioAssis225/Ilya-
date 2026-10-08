@@ -71,6 +71,9 @@ function DashboardFabGate() {
   const location = useLocation()
   if (!user || user.must_change_password) return null
   if (!canSeeDashboard(user)) return null
+  // No montador de orçamento o FAB pousava sobre o totalizador fixo do rodapé
+  // móvel: um toque no valor ejetava o representante para o BI.
+  if (location.pathname.startsWith('/orcamentos')) return null
   if (location.pathname.startsWith('/dashboard')) return <DashboardFab mode="exit" />
   return <DashboardFab mode="enter" currentPath={location.pathname} />
 }
@@ -132,8 +135,10 @@ function BottomNav() {
         </NavLink>
       )}
       <button
-        onClick={logout}
-        aria-label="Sair"
+        type="button"
+        // Fica na zona do polegar: um toque acidental derrubava a sessão.
+        onClick={() => { if (window.confirm(t('confirmLogout'))) logout() }}
+        aria-label={t('logout')}
         className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-muted-3 active:text-ink transition-colors"
       >
         <LogOut className="w-5 h-5" />
@@ -172,8 +177,7 @@ function Nav() {
       <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label={t('mainNavigation')}>
         <div className="flex items-center gap-1">
           <div
-            className="mr-3 whitespace-nowrap text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
-            style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
+            className="mr-3 whitespace-nowrap font-display text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
           >
             {brandName} <span className="text-xs font-semibold tracking-[0.08em] text-gold sm:text-sm">— {marketName}</span>
           </div>
@@ -216,22 +220,24 @@ function Nav() {
               <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-line rounded-xl shadow-lg z-50 overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-line flex items-center justify-between">
                   <span className="text-xs font-semibold text-ink uppercase tracking-wider">Notificações</span>
-                  <button onClick={() => setShowNotifs(false)} className="text-muted hover:text-ink text-lg leading-none">&times;</button>
+                  <button type="button" onClick={() => setShowNotifs(false)} aria-label="Fechar notificações" className="btn-icon text-lg leading-none">&times;</button>
                 </div>
                 {notifications.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-muted">Nenhuma notificação.</div>
                 ) : (
                   <ul className="divide-y divide-bg-2 max-h-72 overflow-y-auto">
                     {notifications.map(n => (
-                      <li
-                        key={n.id}
-                        className="px-4 py-3 hover:bg-gold-wash cursor-pointer transition-colors"
-                        onClick={() => { markRead.mutate(n.id); setShowNotifs(false) }}
-                      >
-                        <p className="text-xs text-ink">{n.message}</p>
-                        <p className="text-[10px] text-muted-3 mt-0.5">
-                          {new Date(n.created_at).toLocaleString(user.active_market === 'EU' ? locale : 'pt-BR')}
-                        </p>
+                      <li key={n.id}>
+                        <button
+                          type="button"
+                          className="block w-full px-4 py-3 text-left hover:bg-gold-wash focus-visible:bg-gold-wash transition-colors"
+                          onClick={() => { markRead.mutate(n.id); setShowNotifs(false) }}
+                        >
+                          <span className="block text-xs text-ink">{n.message}</span>
+                          <span className="block text-[10px] text-muted-3 mt-0.5">
+                            {new Date(n.created_at).toLocaleString(user.active_market === 'EU' ? locale : 'pt-BR')}
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -289,12 +295,13 @@ export default function PrivateApp() {
         <div data-market={user.active_market} className="min-h-screen bg-bg">
           <a
             href="#main-content"
-            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-skip-link focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
           >
             Saltar para o conteúdo
           </a>
           <Nav />
-          <main id="main-content">
+          {/* pb no mobile: a BottomNav fixa cobria paginação e botões de rodapé. */}
+          <main id="main-content" className="pb-24 md:pb-0">
             <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<RouteFallback />}>
               <Routes>

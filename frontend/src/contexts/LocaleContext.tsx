@@ -7,6 +7,7 @@ const messages = {
   'pt-PT': {
     products: 'Produtos', quote: 'Novo orçamento', orders: 'Pedidos', registrations: 'Cadastros',
     admin: 'Administração', logout: 'Sair', notifications: 'Notificações', noNotifications: 'Sem notificações.',
+    confirmLogout: 'Deseja realmente encerrar a sessão?',
     mainNavigation: 'Navegação principal', skipContent: 'Saltar para o conteúdo',
     catalogTitle: 'Catálogo de produtos', catalogSubtitle: 'Selecione um produto para adicionar ao orçamento',
     searchProducts: 'Pesquisar produtos', searchPlaceholder: 'Pesquisar por código ou designação…', clearSearch: 'Limpar pesquisa',
@@ -17,6 +18,7 @@ const messages = {
   'en-GB': {
     products: 'Products', quote: 'New quote', orders: 'Orders', registrations: 'Records',
     admin: 'Admin', logout: 'Sign out', notifications: 'Notifications', noNotifications: 'No notifications.',
+    confirmLogout: 'Do you really want to sign out?',
     mainNavigation: 'Main navigation', skipContent: 'Skip to content',
     catalogTitle: 'Product catalogue', catalogSubtitle: 'Select a product to add it to the quote',
     searchProducts: 'Search products', searchPlaceholder: 'Search by code or product name…', clearSearch: 'Clear search',

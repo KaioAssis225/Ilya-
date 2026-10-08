@@ -147,6 +147,29 @@ def require_br_fiscal_admin(
     return principal
 
 
+_EU_GROUP_EDITOR_ROLES = {UserRole.admin, UserRole.vendedor, UserRole.produtos}
+
+
+def require_product_group_editor(
+    principal: MarketPrincipal = Depends(get_current_principal),
+) -> MarketPrincipal:
+    """Quem pode criar/editar/excluir grupos de produto no mercado ativo.
+
+    Brasil: o grupo carrega o IPI, então vale exatamente a guarda fiscal
+    (`require_br_fiscal_admin`). Portugal: grupo EU não tem alíquota
+    (eu_product_groups_r13_20261008) e segue os mesmos papéis que já editam
+    os subgrupos EU (admin, vendedor, produtos).
+    """
+    if principal.code == BR_MARKET:
+        return require_br_fiscal_admin(principal)
+    if principal.actor.role not in _EU_GROUP_EDITOR_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sem permissão para manter grupos neste mercado.",
+        )
+    return principal
+
+
 async def get_platform_principal(
     token: str = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db_session),

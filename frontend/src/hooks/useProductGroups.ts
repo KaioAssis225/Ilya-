@@ -5,6 +5,7 @@ export interface ProductGroup {
   id: string
   name: string
   ipi: number
+  market_code?: 'BR' | 'EU'
 }
 
 const KEY = ['product-groups']

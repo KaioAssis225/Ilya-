@@ -20,5 +20,6 @@ class ProductGroupUpdate(BaseModel):
 
 class ProductGroupRead(ProductGroupBase):
     id: uuid.UUID
+    market_code: str = "BR"
 
     model_config = {"from_attributes": True}

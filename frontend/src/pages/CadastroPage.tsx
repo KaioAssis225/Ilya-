@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
+import { DialogPanel } from '../components/Dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
 import { useProductsPage, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
@@ -45,15 +46,24 @@ const ESTADOS = [
 // `parseApiError` e a normalização vivem em lib/personForm — compartilhados com
 // o cadastro rápido do Orçamento, que antes tinha a própria lógica (divergente).
 
+// DESIGN.md §Sidebar de Abas: só Produtos, Clientes e Representantes têm
+// acento próprio; as abas de apoio usam o café neutro. Valores são variáveis
+// CSS (tokens), nunca hexadecimais soltos.
 const TAB_PALETTE = {
-  produtos:        { color: '#b25e50', label: 'Terracota' },
-  clientes:        { color: '#648261', label: 'Verde Oliva' },
-  representantes:  { color: '#507a9b', label: 'Azul Mineral' },
-  opcionais:       { color: '#c47e4a', label: 'Âmbar' },
-  tipos:           { color: '#7a5c9b', label: 'Violeta' },
-  catalogos:       { color: '#8a6d3b', label: 'Bronze' },
-  importacao:      { color: '#3f6f6f', label: 'Petróleo' },
+  produtos:        { color: 'var(--color-terracotta)', label: 'Terracota' },
+  clientes:        { color: 'var(--color-olive)',      label: 'Verde Oliva' },
+  representantes:  { color: 'var(--color-mineral)',    label: 'Azul Mineral' },
+  opcionais:       { color: 'var(--color-muted)',      label: 'Neutro' },
+  tipos:           { color: 'var(--color-muted)',      label: 'Neutro' },
+  catalogos:       { color: 'var(--color-muted)',      label: 'Neutro' },
+  importacao:      { color: 'var(--color-muted)',      label: 'Neutro' },
 } as const
+
+// Lavagem translúcida de um acento (substitui o antigo `${hex}12`, que não
+// funciona com variáveis CSS).
+function tint(color: string, percent: number) {
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -132,11 +142,26 @@ function ResizableProductTh({
     const startX = e.clientX
     const startWidth = width
 
+    // Um setState por frame, não por evento: mousemove dispara bem acima de
+    // 60 Hz e cada atualização re-renderiza a tabela inteira.
+    let rafId: number | null = null
+    let pendingX = startX
+
     function handleMove(event: MouseEvent) {
-      onResize(column, startWidth + event.clientX - startX)
+      pendingX = event.clientX
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        onResize(column, startWidth + pendingX - startX)
+      })
     }
 
     function handleUp() {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+        onResize(column, startWidth + pendingX - startX)
+      }
       document.removeEventListener('mousemove', handleMove)
       document.removeEventListener('mouseup', handleUp)
       document.body.style.cursor = ''
@@ -256,9 +281,9 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
       setForm({
         ...form,
         address: data.logradouro ? `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}` : form.address,
-        city: data.localidade,
+        city: data.localidade || form.city,
         state: market === 'BR' ? data.uf : '--',
-        region: market === 'EU' ? (data.regiao ?? form.region) : form.region,
+        region: market === 'EU' ? (data.regiao || form.region) : form.region,
       })
     }
     setCepLoading(false)
@@ -289,7 +314,8 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">{tx('Número')}</span>
-        <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: formatOnlyNumbers(e.target.value) })} />
+        {/* Portugal: porta com letra/andar ("12A", "2.º Esq.") — só dígitos cortava a morada. */}
+        <input className="input" value={form.numero ?? ''} maxLength={50} onChange={(e) => setForm({ ...form, numero: market === 'BR' ? formatOnlyNumbers(e.target.value) : e.target.value })} />
       </label>
       <label className="col-span-2 flex flex-col gap-1">
         <span className="text-xs text-muted">{tx('Endereço *')}</span>
@@ -319,14 +345,14 @@ function Modal({ title, onClose, children, accentColor }: {
   const tx = useCadastroText()
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel w-full max-w-lg mx-4 md:mx-auto" onClick={(e) => e.stopPropagation()}>
+      <DialogPanel onClose={onClose} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-line"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
           <h3 className="text-base font-semibold text-ink">{title}</h3>
-          <button onClick={onClose} className="text-muted hover:text-ink transition-colors" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} className="btn-icon -mr-2" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
-      </div>
+      </DialogPanel>
     </div>
   )
 }
@@ -412,17 +438,17 @@ function Pagination({ page, totalPages, onPage, color }: {
   const canPrev = page > 1
   const canNext = page < totalPages
   const base = "flex items-center gap-1 px-3.5 py-2 rounded-lg border text-sm font-medium transition-[background-color,color,border-color,transform,opacity] active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
-  const ring = (e: React.FocusEvent<HTMLButtonElement>, on: boolean) => { e.currentTarget.style.boxShadow = on ? `0 0 0 3px ${color}33` : '' }
+  const ring = (e: React.FocusEvent<HTMLButtonElement>, on: boolean) => { e.currentTarget.style.boxShadow = on ? `0 0 0 3px ${tint(color, 20)}` : '' }
   return (
     <div className="flex items-center justify-center gap-3 mt-4">
       <button type="button" disabled={!canPrev} onClick={() => onPage(page - 1)}
-        className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canPrev ? '#4a3f38' : '#c8bdb5' }}
+        className={base} style={{ borderColor: 'var(--color-line)', backgroundColor: 'var(--color-surface-quiet)', color: canPrev ? 'var(--color-ink-2)' : 'var(--color-faint)' }}
         onFocus={(e) => ring(e, canPrev)} onBlur={(e) => ring(e, false)}>
         <ChevronLeft className="w-4 h-4" /> {tx('Anterior')}
       </button>
       <span className="text-sm text-ink-3 tabular-nums select-none">{tx('Página')} <span className="font-semibold text-ink">{page}</span> {tx('de')} {totalPages}</span>
       <button type="button" disabled={!canNext} onClick={() => onPage(page + 1)}
-        className={base} style={{ borderColor: '#e8e0d6', backgroundColor: '#faf8f4', color: canNext ? '#4a3f38' : '#c8bdb5' }}
+        className={base} style={{ borderColor: 'var(--color-line)', backgroundColor: 'var(--color-surface-quiet)', color: canNext ? 'var(--color-ink-2)' : 'var(--color-faint)' }}
         onFocus={(e) => ring(e, canNext)} onBlur={(e) => ring(e, false)}>
         {tx('Próximo')} <ChevronRight className="w-4 h-4" />
       </button>
@@ -637,7 +663,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-[#fcfbfa] text-left"
+          className="w-full flex items-center justify-between px-4 py-3 bg-surface-quiet text-left"
         >
           <span className="flex items-center gap-2 text-sm font-semibold text-ink">
             <Upload className="w-4 h-4" style={{ color }} /> {tx(title)}
@@ -658,9 +684,9 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${uploading || resolving ? 'opacity-60' : ''}`}
-            style={{ borderColor: dragOver ? color : '#e8e0d6', backgroundColor: dragOver ? `${color}0a` : '#faf8f4' }}
+            style={{ borderColor: dragOver ? color : 'var(--color-line)', backgroundColor: dragOver ? `${tint(color, 4)}` : 'var(--color-surface-quiet)' }}
           >
-            <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: dragOver ? color : '#c8bdb5' }} />
+            <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: dragOver ? color : 'var(--color-faint)' }} />
             <p className="text-sm text-ink-3">{tx('Arraste uma pasta ou arquivos de fotos aqui')}</p>
             <p className="text-xs text-muted mt-1">{tx('O nome do arquivo deve ser o código do produto (ex.: IML0001.png)')}</p>
             <div className="flex items-center justify-center gap-2 mt-3">
@@ -690,17 +716,17 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
             <p className="text-xs text-muted">{tx('Validando códigos no catálogo…')}</p>
           )}
           {lookupError && (
-            <p className="text-xs text-red-600">{lookupError}</p>
+            <p className="text-xs text-danger">{lookupError}</p>
           )}
           {(items.length > 0 || rejected.length > 0) && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-4 text-xs">
-                <span className="flex items-center gap-1.5 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {tx('{count} validada(s)', { count: items.length })}</span>
+                <span className="flex items-center gap-1.5 text-success"><CheckCircle className="w-3.5 h-3.5" /> {tx('{count} validada(s)', { count: items.length })}</span>
                 {rejected.length > 0 && <span className="flex items-center gap-1.5 text-terracotta"><X className="w-3.5 h-3.5" /> {tx('{count} rejeitada(s)', { count: rejected.length })}</span>}
               </div>
 
               {rejected.length > 0 && (
-                <div className="bg-[#fef3f2] border border-red-200 rounded-lg p-2.5 max-h-24 overflow-y-auto">
+                <div className="bg-danger-soft border border-danger/25 rounded-lg p-2.5 max-h-24 overflow-y-auto">
                   {rejected.map((item) => (
                     <p key={item.key} className="text-[11px] text-terracotta font-mono">
                       {item.name} — {item.reason}
@@ -723,7 +749,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
                         <span className="text-muted truncate flex-1 px-2">{item.file.name}</span>
                         {item.status === 'pending' && <span className="text-muted">{tx('Aguardando')}</span>}
                         {item.status === 'uploading' && <span style={{ color }}>{tx('Enviando…')}</span>}
-                        {item.status === 'success' && <span className="flex items-center gap-1 text-[#4a7a47]"><CheckCircle className="w-3.5 h-3.5" /> {tx('Enviada')}</span>}
+                        {item.status === 'success' && <span className="flex items-center gap-1 text-success"><CheckCircle className="w-3.5 h-3.5" /> {tx('Enviada')}</span>}
                         {item.status === 'error' && <span className="text-terracotta" title={item.error}>{tx('Erro')}</span>}
                       </div>
                     ))}
@@ -1039,7 +1065,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
           {/* ── Mobile cards ──────────────────────────────────── */}
           <div className="lg:hidden flex flex-col gap-3">
             {pageItems.map((p) => (
-              <div key={p.id} className="bg-[#fcfbfa] border border-line rounded-xl p-3.5 flex gap-3">
+              <div key={p.id} className="bg-surface-quiet border border-line rounded-xl p-3.5 flex gap-3">
                 {p.photo_url
                   ? <img src={p.photo_url} alt="" className="w-14 h-14 object-cover rounded-lg border border-line flex-shrink-0" />
                   : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
@@ -1051,10 +1077,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
                     </div>
                     <div className="flex gap-0 flex-shrink-0">
-                      <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="w-11 h-11 flex items-center justify-center text-muted active:text-danger transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -1083,7 +1109,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             <p className="text-[11px] text-muted">
               {tx('Arraste os divisores para redimensionar ou dê duplo clique para autoajustar.')}
             </p>
-            <div className="flex items-center rounded-lg border border-line bg-[#fbfaf8] p-0.5 flex-shrink-0">
+            <div className="flex items-center rounded-lg border border-line bg-surface-2 p-0.5 flex-shrink-0">
               <button
                 type="button"
                 onClick={fitColumnsToContainer}
@@ -1115,7 +1141,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   <col key={column} style={{ width: columnWidths[column] }} />
                 ))}
               </colgroup>
-              <thead style={{ backgroundColor: `${color}12` }}>
+              <thead style={{ backgroundColor: `${tint(color, 7)}` }}>
                 <tr>
                   <ResizableProductTh label={tx('Código')} column="code" width={columnWidths.code} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'product_code', dir: sortDir, onClick: () => toggle('product_code') }} />
@@ -1154,10 +1180,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     </td>
                     <td data-product-col="actions" className="px-2 py-3 align-top">
                       <div className="flex gap-2">
-                        <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="text-muted transition-colors"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -1189,7 +1213,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               <span className="text-xs text-muted">{tx('Nome do Novo Tipo *')}</span>
               <input className="input" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} required autoFocus />
             </label>
-            {newTypeErr && <p className="text-xs text-red-500">{newTypeErr}</p>}
+            {newTypeErr && <p className="text-xs text-danger">{newTypeErr}</p>}
             <div className="flex gap-2">
               <button type="submit" disabled={createTypeM.isPending} className="btn-primary flex-1">
                 {tx(createTypeM.isPending ? 'Salvando...' : 'Criar e Selecionar')}
@@ -1204,7 +1228,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         <Modal title={tx('Editar Produto em Portugal')} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-5">
             {formError && (
-              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-snug text-red-700">
+              <div role="alert" className="rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-xs leading-snug text-danger">
                 {formError}
               </div>
             )}
@@ -1252,8 +1276,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                <span className="text-xs text-red-700 leading-snug">{formError}</span>
+              <div className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2">
+                <span className="text-xs text-danger leading-snug">{formError}</span>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -1310,9 +1334,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   if (e.target.value === '__new__') { setShowNewTypeModal(true) }
                   else setForm({ ...form, type: e.target.value })
                 }}>
-                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro']).map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                  {/* Tipo é opcional: "Outro" é o "sem tipo" aceito em qualquer mercado. */}
+                  <option value="Outro">{tx('Sem tipo')}</option>
+                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
+                    .filter(t => t !== 'Outro')
+                    .map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
                   {(isEurope || canClassifyBr) && <option value="__new__">{tx('+ Adicionar Novo...')}</option>}
                 </select>
               </label>
@@ -1388,7 +1416,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {(form.components ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.components ?? []).map((comp, idx) => (
-                      <div key={idx} className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-line bg-[#fcfbfa]">
+                      <div key={idx} className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-line bg-surface-quiet">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-ink leading-snug">{comp.description}</p>
                           <p className="text-[10px] text-muted mt-0.5">
@@ -1410,7 +1438,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               )))
                               setEditingCompIndex(idx)
                             }}
-                            className="text-muted hover:opacity-70 transition-colors mt-0.5"
+                            className="btn-icon -mt-1.5"
                             style={{ color: editingCompIndex === idx ? color : undefined }}
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -1418,7 +1446,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           <button
                             type="button"
                             onClick={() => setForm(prev => ({ ...prev, components: (prev.components ?? []).filter((_, i) => i !== idx) }))}
-                            className="text-muted hover:text-red-500 transition-colors mt-0.5"
+                            className="btn-icon hover:text-danger -mt-1.5"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -1428,7 +1456,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </div>
                 )}
 
-                <div className="border border-[#e8dccb] rounded-xl p-4 bg-[#fdf8f2] space-y-3">
+                <div className="border border-line-warm rounded-xl p-4 bg-surface-note space-y-3">
                   <span className="text-xs font-semibold text-ink-2">{tx(editingCompIndex !== null ? 'Editar Componente' : 'Novo Componente')}</span>
                   <label className="flex flex-col gap-1">
                     <span className="text-xs text-muted">{tx('Descrição *')}</span>
@@ -1508,7 +1536,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     {compActiveCategories.length > 0 && (
                       <div className="space-y-2.5">
                         {compActiveCategories.map((cat) => (
-                          <div key={cat} className="border border-line rounded-lg p-2.5 bg-[#fdfdfd]">
+                          <div key={cat} className="border border-line rounded-lg p-2.5 bg-white">
                             <span className="text-[11px] font-semibold block mb-1.5" style={{ color }}>{catLabel(cat).toUpperCase()}</span>
                             <div className="flex flex-wrap gap-1.5">
                               {allOptionals.filter(o => o.category === cat).map(opt => {
@@ -1520,7 +1548,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                       return { ...f, optional_ids: ids.includes(opt.id) ? ids.filter(id => id !== opt.id) : [...ids, opt.id] }
                                     })}
                                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-[background-color,color,border-color]"
-                                    style={isSel ? { backgroundColor: `${color}20`, borderColor: color, color } : { backgroundColor: '#f8f6f2', borderColor: '#e8e0d6', color: '#6b5d55' }}
+                                    style={isSel ? { backgroundColor: `${tint(color, 13)}`, borderColor: color, color } : { backgroundColor: 'var(--color-bg)', borderColor: 'var(--color-line)', color: 'var(--color-ink-3)' }}
                                   >
                                     {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
                                     <span>{opt.color_name}</span>
@@ -1575,7 +1603,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {(form.set_items ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.set_items ?? []).map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-[#fcfbfa]">
+                      <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-surface-quiet">
                         <span className="font-mono text-xs font-semibold text-gold flex-1">{item.product_code}</span>
                         <span className="text-xs text-muted">×{item.qty}</span>
                         <button
@@ -1584,7 +1612,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                             ...prev,
                             set_items: (prev.set_items ?? []).filter((_, i) => i !== idx),
                           }))}
-                          className="text-muted hover:text-red-500 transition-colors ml-1"
+                          className="text-muted hover:text-danger transition-colors ml-1"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -1663,8 +1691,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       const isAllowed = allOptCats.has(catValue)
                       const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
-                        <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-[#fdfdfd] shadow-sm">
-                          <div className="flex items-center justify-between pb-1 border-b border-[#f3ede6]">
+                        <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-white shadow-sm">
+                          <div className="flex items-center justify-between pb-1 border-b border-line-soft">
                             <span className="text-xs font-semibold" style={{ color }}>{catValueLabel.toUpperCase()}</span>
                             <label className="flex items-center gap-1.5 cursor-pointer select-none">
                               <input
@@ -1687,7 +1715,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                 }}
                                 className="w-3.5 h-3.5"
                               />
-                              <span className="text-[11px] text-[#6b5d55]">{tx('Permitir todos')}</span>
+                              <span className="text-[11px] text-ink-3">{tx('Permitir todos')}</span>
                             </label>
                           </div>
                           {isAllowed ? (
@@ -1923,22 +1951,22 @@ function PeopleTab<T extends Client | Representative>({
       ) : (
         <>
           {/* ── Mobile cards ──────────────────────────────────── */}
-          <div className="md:hidden flex flex-col gap-3">
+          <div className="lg:hidden flex flex-col gap-3">
             {pageItems.map((item) => (
-              <div key={item.id} className="bg-[#fcfbfa] border border-line rounded-xl p-3.5">
+              <div key={item.id} className="bg-surface-quiet border border-line rounded-xl p-3.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-ink">{item.name}</p>
                     <p className="text-xs text-muted mt-0.5">{item.city} / {item.state}</p>
                   </div>
                   <div className="flex gap-0 flex-shrink-0">
-                    <button onClick={() => openView(item)} aria-label={tx('Visualizar')} className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => openView(item)} aria-label={tx('Visualizar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button onClick={() => openEdit(item)} aria-label={tx('Editar')} className="w-9 h-9 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => openEdit(item)} aria-label={tx('Editar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setDeleting(item)} aria-label={tx('Excluir')} className="w-9 h-9 flex items-center justify-center text-muted active:text-red-500 transition-colors" style={{ touchAction: 'manipulation' }}>
+                    <button onClick={() => setDeleting(item)} aria-label={tx('Excluir')} className="w-11 h-11 flex items-center justify-center text-muted active:text-danger transition-colors" style={{ touchAction: 'manipulation' }}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -1958,9 +1986,9 @@ function PeopleTab<T extends Client | Representative>({
           </div>
 
           {/* ── Desktop table ──────────────────────────────────── */}
-          <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
+          <div className="hidden lg:block overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-sm">
-              <thead style={{ backgroundColor: `${color}12` }}>
+              <thead style={{ backgroundColor: `${tint(color, 7)}` }}>
                 <tr>
                   <Th label={tx('Nome')} col="name" {...thProps} />
                   <Th label={tx('Telefone')} col="phone" {...thProps} />
@@ -1992,13 +2020,9 @@ function PeopleTab<T extends Client | Representative>({
                     )}
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openView(item)} title={tx('Visualizar')} aria-label={tx('Visualizar')} className="text-muted transition-colors"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Eye className="w-4 h-4" /></button>
-                        <button onClick={() => openEdit(item)} title={tx('Editar')} aria-label={tx('Editar')} className="text-muted transition-colors"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => setDeleting(item)} title={tx('Excluir')} aria-label={tx('Excluir')} className="text-muted hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => openView(item)} title={tx('Visualizar')} aria-label={tx('Visualizar')} className="btn-icon"><Eye className="w-4 h-4" /></button>
+                        <button onClick={() => openEdit(item)} title={tx('Editar')} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleting(item)} title={tx('Excluir')} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -2038,8 +2062,8 @@ function PeopleTab<T extends Client | Representative>({
               <p className="text-xs font-semibold text-muted-2 uppercase tracking-wider mb-3">{tx('Acesso ao Sistema')}</p>
 
               {createdUser ? (
-                <div className="bg-[#f0f7f0] border border-[#c5dfc4] rounded-xl p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-[#4a7a47]">
+                <div className="bg-success-soft border border-success/25 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-success">
                     <CheckCircle className="w-5 h-5 flex-shrink-0" />
                     <span className="text-sm font-semibold">{tx('Usuário criado com sucesso!')}</span>
                   </div>
@@ -2093,8 +2117,8 @@ function PeopleTab<T extends Client | Representative>({
                   <button className="btn-primary" onClick={() => void handleIssueInvitation()} disabled={!confirmedEmail.trim() || issueInvitation.isPending || inviteSent}>
                     {tx(issueInvitation.isPending ? 'Enviando…' : 'Confirmar e enviar convite')}
                   </button>
-                  {inviteSent && <p role="status" className="text-xs text-green-700">{tx('Convite enviado ao endereço confirmado.')}</p>}
-                  {inviteError && <p role="alert" className="text-xs text-red-700">{inviteError}</p>}
+                  {inviteSent && <p role="status" className="text-xs text-success">{tx('Convite enviado ao endereço confirmado.')}</p>}
+                  {inviteError && <p role="alert" className="text-xs text-danger">{inviteError}</p>}
                 </div>
               )}
             </div>}
@@ -2139,9 +2163,9 @@ function PeopleTab<T extends Client | Representative>({
               </div>
             )}
             {formError && (
-              <div className="flex items-start gap-2 bg-[#fef3f2] border border-red-200 rounded-lg px-3 py-2.5">
-                <X className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                <span className="text-xs text-red-700 leading-snug">{formError}</span>
+              <div className="flex items-start gap-2 bg-danger-soft border border-danger/25 rounded-lg px-3 py-2.5">
+                <X className="w-4 h-4 text-danger flex-shrink-0 mt-0.5" />
+                <span className="text-xs text-danger leading-snug">{formError}</span>
               </div>
             )}
             <p className="text-xs text-muted leading-relaxed pt-1">
@@ -2285,37 +2309,35 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       ) : (
         <div className="space-y-4">
           {grouped.map(({ category, label, items, cat }) => (
-            <div key={category} className={`rounded-xl border overflow-hidden ${cat ? 'border-line' : 'border-dashed border-[#e0b88a]'}`}>
+            <div key={category} className={`rounded-xl border overflow-hidden ${cat ? 'border-line' : 'border-dashed border-warning/40'}`}>
               <div className="px-4 py-2 flex items-center justify-between gap-2"
-                style={{ backgroundColor: cat ? `${color}12` : '#fdf6ec' }}>
+                style={{ backgroundColor: cat ? `${tint(color, 7)}` : 'var(--color-warning-soft)' }}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-semibold uppercase tracking-wider truncate" style={{ color: cat ? color : '#a3690f' }}>
+                  <span className="text-xs font-semibold uppercase tracking-wider truncate" style={{ color: cat ? color : 'var(--color-warning)' }}>
                     {label}
                   </span>
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: cat ? `${color}20` : '#f3ddb8', color: cat ? color : '#a3690f' }}>
+                    style={{ backgroundColor: cat ? `${tint(color, 13)}` : 'color-mix(in srgb, var(--color-warning) 20%, transparent)', color: cat ? color : 'var(--color-warning)' }}>
                     {items.length}
                   </span>
-                  {!cat && <span className="text-[10px] text-[#a3690f] italic truncate">{tx('grupo não cadastrado')}</span>}
+                  {!cat && <span className="text-[10px] text-warning italic truncate">{tx('grupo não cadastrado')}</span>}
                 </div>
                 {!readOnly && (
                   <div className="flex gap-2 flex-shrink-0">
                     {cat ? (
                       <>
-                        <button onClick={() => openEditGroup(cat)} className="text-muted transition-colors"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '')} title={tx('Editar grupo')}>
+                        <button onClick={() => openEditGroup(cat)} className="btn-icon" title={tx('Editar grupo')}>
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setDeletingGroup({ id: cat.id, name: cat.name, count: items.length })}
-                          className="text-muted hover:text-red-500 transition-colors" title={tx('Excluir grupo')}>
+                          className="btn-icon hover:text-danger" title={tx('Excluir grupo')}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>
                     ) : (
                       <button
                         onClick={() => { setEditingGroup(null); setGroupForm({ name: label, code: category }); setGroupErr(''); setShowGroupForm(true) }}
-                        className="text-[10px] font-semibold px-2 py-1 rounded-lg border border-[#e0b88a] text-[#a3690f] hover:bg-[#fdf6ec] transition-colors"
+                        className="text-[10px] font-semibold px-2 py-1 rounded-lg border border-warning/40 text-warning hover:bg-warning-soft transition-colors"
                       >
                         {tx('Cadastrar grupo')}
                       </button>
@@ -2342,12 +2364,10 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                       {!readOnly && (
                         <td className="px-4 py-2.5 w-16">
                           <div className="flex gap-2">
-                            <button onClick={() => openEdit(opt)} aria-label={tx('Editar')} className="text-muted transition-colors"
-                              onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-                              onMouseLeave={(e) => (e.currentTarget.style.color = '')}>
+                            <button onClick={() => openEdit(opt)} aria-label={tx('Editar')} className="btn-icon">
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleting(opt)} aria-label={tx('Excluir')} className="text-muted hover:text-red-500 transition-colors">
+                            <button onClick={() => setDeleting(opt)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -2368,16 +2388,16 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 
       {/* Lightbox */}
       {lightboxUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/75 backdrop-blur-sm"
           onClick={() => setLightboxUrl(null)}>
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <DialogPanel onClose={() => setLightboxUrl(null)} label={tx('Swatch ampliado')} className="relative">
             <img src={lightboxUrl} alt={tx('Swatch ampliado')}
               className="max-w-[90vw] max-h-[80vh] w-64 h-64 object-cover rounded-2xl shadow-2xl border border-white/20" />
             <button onClick={() => setLightboxUrl(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-lg text-ink hover:bg-bg transition-colors">
+              type="button" aria-label={tx('Fechar')} className="absolute -top-3 -right-3 w-11 h-11 flex items-center justify-center bg-white rounded-full shadow-lg text-ink hover:bg-bg transition-colors">
               <X className="w-4 h-4" />
             </button>
-          </div>
+          </DialogPanel>
         </div>
       )}
 
@@ -2445,7 +2465,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
               <input className="input font-mono text-sm" value={groupForm.code} onChange={(e) => setGroupForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, '_') }))} required placeholder={tx('ex: aluminio')} />
               <span className="text-[10px] text-muted">{tx('Apenas letras minúsculas, números e underscores.')}</span>
             </label>
-            {groupErr && <p className="text-xs text-red-500">{groupErr}</p>}
+            {groupErr && <p className="text-xs text-danger">{groupErr}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={createCatM.isPending || updateCatM.isPending} className="btn-primary flex-1" style={{ backgroundColor: color }}>
                 {tx(createCatM.isPending || updateCatM.isPending ? 'Salvando...' : editingGroup ? 'Salvar' : 'Criar Grupo')}
@@ -2476,13 +2496,18 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 type GroupModal =
   | { kind: 'new-group' }
   | { kind: 'edit-group'; group: ProductGroup }
-  | { kind: 'new-type'; groupId: string }
+  | { kind: 'new-type'; groupId: string | null }
   | { kind: 'edit-type'; type: ProductType }
 
-function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
+function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }: {
   color: string; page: number; onPage: (p: number) => void
-  canEditGroups: boolean; canEditTypes: boolean
+  canEditGroups: boolean; canEditTypes: boolean; market: 'BR' | 'EU'
 }) {
+  // Grupos são por mercado (eu_product_groups_r13_20261008). No Brasil o grupo
+  // carrega o IPI: mover subgrupo é reclassificação fiscal e pede confirmação.
+  // Em Portugal o grupo só organiza o catálogo (sem IPI): move direto.
+  const canAssignGroup = canEditTypes
+  const isBrazil = market === 'BR'
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
@@ -2510,12 +2535,12 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
   // `handleGroupSubmit` já trata string vazia como 0.
   function openNewGroup() { setGName(''); setGIpi(''); setErr(''); setModal({ kind: 'new-group' }) }
   function openEditGroup(g: ProductGroup) { setGName(g.name); setGIpi(Number(g.ipi).toFixed(2)); setErr(''); setModal({ kind: 'edit-group', group: g }) }
-  function openNewType(groupId: string) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
+  function openNewType(groupId: string | null) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
   function openEditType(t: ProductType) { setTName(t.name); setTGroupId(t.group_id); setErr(''); setModal({ kind: 'edit-type', type: t }) }
 
   async function handleGroupSubmit(e: React.FormEvent) {
     e.preventDefault(); setErr('')
-    const ipiNum = parseFloat(gIpi.replace(',', '.')) || 0
+    const ipiNum = isBrazil ? (parseFloat(gIpi.replace(',', '.')) || 0) : 0
     try {
       if (modal?.kind === 'edit-group') {
         await updateGroupM.mutateAsync({ id: modal.group.id, name: gName.trim(), ipi: ipiNum })
@@ -2549,6 +2574,94 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
   const orphanTypes = types.filter(t => !t.group_id)
   const { pageItems: pagedGroups, totalPages, safePage } = paginate(groups, page)
 
+  // ── Arrastar subgrupo para um grupo ───────────────────────────────────────
+  // Soltar não grava direto: mover muda o IPI dos produtos do subgrupo, então
+  // pede confirmação. Sem mouse (tablet/teclado) o lápis abre o mesmo ajuste.
+  const [draggingTypeId, setDraggingTypeId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [pendingMove, setPendingMove] = useState<{ type: ProductType; group: ProductGroup | null } | null>(null)
+  const [moveErr, setMoveErr] = useState('')
+  const NO_GROUP_TARGET = '__none__'
+
+  function dropZoneProps(targetGroup: ProductGroup | null) {
+    if (!canAssignGroup) return {}
+    const key = targetGroup?.id ?? NO_GROUP_TARGET
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        if (!draggingTypeId) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (dropTarget !== key) setDropTarget(key)
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null)
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault()
+        const typeId = e.dataTransfer.getData('text/plain') || draggingTypeId
+        setDropTarget(null)
+        setDraggingTypeId(null)
+        const type = types.find(t => t.id === typeId)
+        if (!type || (type.group_id ?? null) === (targetGroup?.id ?? null)) return
+        setMoveErr('')
+        if (isBrazil) setPendingMove({ type, group: targetGroup })
+        else void moveType(type, targetGroup)
+      },
+    }
+  }
+
+  function dropHighlight(targetGroup: ProductGroup | null) {
+    const key = targetGroup?.id ?? NO_GROUP_TARGET
+    if (!draggingTypeId) return ''
+    return dropTarget === key ? 'ring-2 ring-gold/50 border-gold/60 bg-gold-wash' : 'border-dashed'
+  }
+
+  async function moveType(type: ProductType, group: ProductGroup | null): Promise<boolean> {
+    setMoveErr('')
+    try {
+      await updateTypeM.mutateAsync({ id: type.id, name: type.name, group_id: group?.id ?? null })
+      return true
+    } catch (ex: unknown) {
+      setMoveErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao salvar subgrupo.'))
+      return false
+    }
+  }
+
+  async function confirmMove() {
+    if (!pendingMove) return
+    if (await moveType(pendingMove.type, pendingMove.group)) setPendingMove(null)
+  }
+
+  // Função de render (não componente): um componente declarado aqui dentro
+  // remontaria a cada setState e o navegador cancelaria o arraste em curso.
+  function renderTypeChip(t: ProductType, surface: 'bg-bg' | 'bg-white') {
+    return (
+      <div
+        key={t.id}
+        draggable={canAssignGroup}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', t.id)
+          e.dataTransfer.effectAllowed = 'move'
+          setDraggingTypeId(t.id)
+        }}
+        onDragEnd={() => { setDraggingTypeId(null); setDropTarget(null) }}
+        title={canAssignGroup ? tx('Arraste para um grupo') : undefined}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line ${surface} text-xs text-ink ${
+          canAssignGroup ? 'cursor-grab active:cursor-grabbing' : ''
+        } ${draggingTypeId === t.id ? 'opacity-40' : ''}`}
+      >
+        {canAssignGroup && <GripVertical className="w-3 h-3 text-muted -ml-1" aria-hidden="true" />}
+        <span>{t.name}</span>
+        {canEditTypes && <button type="button" onClick={() => openEditType(t)} aria-label={`${tx('Editar')} ${t.name}`} className="text-muted hover:text-gold transition-colors">
+          <Pencil className="w-2.5 h-2.5" />
+        </button>}
+        {canEditTypes && <button type="button" onClick={() => setDeletingType(t)} aria-label={`${tx('Excluir')} ${t.name}`} className="btn-icon hover:text-danger">
+          <Trash2 className="w-2.5 h-2.5" />
+        </button>}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -2559,6 +2672,10 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
           <Plus className="w-3.5 h-3.5" /> {tx('Novo Grupo')}
         </button>}
       </div>
+
+      {moveErr && !pendingMove && (
+        <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{moveErr}</p>
+      )}
 
       {/* Group form modal */}
       {canEditGroups && (modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
@@ -2572,6 +2689,8 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
               <span className="text-xs text-muted">{tx('Nome do Grupo *')}</span>
               <input className="input" value={gName} onChange={(e) => setGName(e.target.value)} required autoFocus />
             </label>
+            {/* IPI é brasileiro; grupo de Portugal só organiza o catálogo. */}
+            {isBrazil && (
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">{tx('Alíquota IPI (%)')}</span>
               <input
@@ -2584,7 +2703,8 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
                 onChange={(e) => setGIpi(e.target.value)}
               />
             </label>
-            {err && <p className="text-xs text-red-500">{err}</p>}
+            )}
+            {err && <p className="text-xs text-danger">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isGroupPending} className="btn-primary flex-1">
                 {tx(isGroupPending ? 'Salvando...' : modal.kind === 'edit-group' ? 'Salvar Alterações' : 'Criar Grupo')}
@@ -2614,7 +2734,7 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
-            {err && <p className="text-xs text-red-500">{err}</p>}
+            {err && <p className="text-xs text-danger">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isTypePending} className="btn-primary flex-1">
                 {tx(isTypePending ? 'Salvando...' : modal.kind === 'edit-type' ? 'Salvar Alterações' : 'Criar Subgrupo')}
@@ -2644,21 +2764,22 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
           {pagedGroups.map(group => {
             const groupTypes = types.filter(t => t.group_id === group.id)
             return (
-              <div key={group.id} className="border border-line rounded-xl p-4 bg-white space-y-3">
+              <div key={group.id} {...dropZoneProps(group)}
+                className={`border border-line rounded-xl p-4 bg-white space-y-3 transition-[background-color,border-color,box-shadow] ${dropHighlight(group)}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <span className="font-semibold text-sm text-ink">{group.name}</span>
                     {Number(group.ipi) > 0 && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#fdf6ec] text-gold border border-[#e8d8b8]">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-note text-gold border border-line-note">
                         IPI {Number(group.ipi).toFixed(2).replace('.', ',')}%
                       </span>
                     )}
                   </div>
                   {canEditGroups && <div className="flex items-center gap-1">
-                    <button onClick={() => openEditGroup(group)} className="p-1 text-muted hover:text-gold transition-colors">
+                    <button type="button" onClick={() => openEditGroup(group)} aria-label={`${tx('Editar')} ${group.name}`} className="btn-icon">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => setDeletingGroup(group)} className="p-1 text-muted hover:text-red-500 transition-colors">
+                    <button type="button" onClick={() => setDeletingGroup(group)} aria-label={`${tx('Excluir')} ${group.name}`} className="btn-icon hover:text-danger">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>}
@@ -2666,22 +2787,14 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
 
                 {groupTypes.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {groupTypes.map(t => (
-                      <div key={t.id}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-bg text-xs text-ink">
-                        <span>{t.name}</span>
-                        {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
-                          <Pencil className="w-2.5 h-2.5" />
-                        </button>}
-                        {canEditTypes && <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
-                          <Trash2 className="w-2.5 h-2.5" />
-                        </button>}
-                      </div>
-                    ))}
+                    {groupTypes.map(t => renderTypeChip(t, 'bg-bg'))}
                   </div>
                 )}
+                {groupTypes.length === 0 && draggingTypeId && (
+                  <p className="text-xs text-muted">{tx('Solte aqui para mover para este grupo')}</p>
+                )}
 
-                {canEditTypes && <button
+                {canAssignGroup && <button
                   onClick={() => openNewType(group.id)}
                   className="flex items-center gap-1 text-xs font-medium transition-colors"
                   style={{ color }}
@@ -2696,24 +2809,47 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes }: {
             <p className="text-sm text-muted">{tx('Nenhum grupo cadastrado.')}</p>
           )}
 
-          {orphanTypes.length > 0 && (
-            <div className="border border-dashed border-line rounded-xl p-4 space-y-3">
-              <span className="text-xs font-semibold text-muted uppercase tracking-wider">{tx('Sem grupo')}</span>
+          {(orphanTypes.length > 0 || (draggingTypeId && canAssignGroup) || (market === 'EU' && canEditTypes)) && (
+            <div {...dropZoneProps(null)}
+              className={`border border-dashed border-line rounded-xl p-4 space-y-3 transition-[background-color,border-color,box-shadow] ${dropHighlight(null)}`}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-xs font-semibold text-muted uppercase tracking-wider">{tx('Sem grupo')}</span>
+                {canAssignGroup && orphanTypes.length > 0 && (
+                  <span className="text-xs text-muted">{tx('Arraste um subgrupo até o grupo desejado.')}</span>
+                )}
+                {market === 'EU' && canEditTypes && (
+                  <button type="button" onClick={() => openNewType(null)}
+                    className="flex min-h-11 lg:min-h-0 items-center gap-1 text-xs font-medium transition-colors" style={{ color }}>
+                    <Plus className="w-3 h-3" /> {tx('Novo Subgrupo')}
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5">
-                {orphanTypes.map(t => (
-                  <div key={t.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-line bg-white text-xs text-ink">
-                    <span>{t.name}</span>
-                    {canEditTypes && <button onClick={() => openEditType(t)} className="text-muted hover:text-gold transition-colors">
-                      <Pencil className="w-2.5 h-2.5" />
-                    </button>}
-                    {canEditTypes && <button onClick={() => setDeletingType(t)} className="text-muted hover:text-red-500 transition-colors">
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>}
-                  </div>
-                ))}
+                {orphanTypes.map(t => renderTypeChip(t, 'bg-white'))}
               </div>
             </div>
+          )}
+
+          {pendingMove && (
+            <Modal title={tx('Mover subgrupo')} onClose={() => setPendingMove(null)} accentColor={color}>
+              <p className="text-sm text-ink-2 mb-2">
+                {pendingMove.group
+                  ? tx('Mover "{type}" para o grupo "{group}"?', { type: pendingMove.type.name, group: pendingMove.group.name })
+                  : tx('Tirar "{type}" do grupo?', { type: pendingMove.type.name })}
+              </p>
+              <p className="text-xs text-muted mb-5">
+                {pendingMove.group
+                  ? tx('Os produtos deste subgrupo passam a usar IPI de {ipi}%.', { ipi: Number(pendingMove.group.ipi).toFixed(2).replace('.', ',') })
+                  : tx('Sem grupo, pedidos com produtos deste subgrupo são recusados até reclassificar.')}
+              </p>
+              {moveErr && <p role="alert" className="text-xs font-medium text-danger mb-3">{moveErr}</p>}
+              <div className="flex justify-end gap-3">
+                <button type="button" className="btn-secondary" onClick={() => setPendingMove(null)}>{tx('Cancelar')}</button>
+                <button type="button" className="btn-primary" disabled={updateTypeM.isPending} onClick={() => void confirmMove()}>
+                  {tx(updateTypeM.isPending ? 'Salvando...' : 'Mover')}
+                </button>
+              </div>
+            </Modal>
           )}
 
           <Pagination page={safePage} totalPages={totalPages} onPage={onPage} color={color} />
@@ -2795,10 +2931,10 @@ function CatalogsTab({ color, readOnly }: { color: string; readOnly: boolean }) 
               <span className="text-sm text-ink font-medium">{c.name}</span>
               {!readOnly && (
                 <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(c)} className="p-1.5 text-muted hover:text-ink transition-colors" title={tx('Editar')}>
+                  <button onClick={() => openEdit(c)} className="btn-icon" title={tx('Editar')}>
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => { setErr(''); setDeleting(c) }} className="p-1.5 text-muted hover:text-terracotta transition-colors" title={tx('Excluir')}>
+                  <button onClick={() => { setErr(''); setDeleting(c) }} className="btn-icon hover:text-danger" title={tx('Excluir')}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -2906,17 +3042,17 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
           <Upload className="w-3.5 h-3.5" /> {tx(loading ? 'Enviando...' : 'Importar')}
         </button>
       </div>
-      {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
+      {error && <p className="text-xs text-danger mt-3">{error}</p>}
       {result && (
-        <div className={`mt-3 rounded-lg border p-3 ${result.committed ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40'}`}>
+        <div className={`mt-3 rounded-lg border p-3 ${result.committed ? 'border-success/25 bg-success-soft' : 'border-danger/25 bg-danger-soft'}`}>
           {result.committed ? (
             <p className="text-xs text-ink">
               ✓ <span className="font-semibold">{result.processed}</span> {tx('linhas processadas')} ·{' '}
-              <span className="text-green-700 font-semibold">{result.created}</span> {tx('criadas')} ·{' '}
+              <span className="text-success font-semibold">{result.created}</span> {tx('criadas')} ·{' '}
               <span className="text-gold font-semibold">{result.updated}</span> {tx('atualizadas')}
             </p>
           ) : (
-            <p className="text-xs text-red-700 font-semibold">
+            <p className="text-xs text-danger font-semibold">
               {tx('Arquivo rejeitado — nada foi importado. Corrija {count} {errors} em {rows} linhas e reenvie.', { count: result.errors.length, errors: tx(result.errors.length === 1 ? 'erro' : 'erros'), rows: result.processed })}
             </p>
           )}
@@ -3094,7 +3230,7 @@ export default function CadastroPage() {
                 className="min-h-11 flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold border transition-[background-color,color,border-color,transform,opacity] active:scale-[0.97] active:opacity-80"
                 style={isActive
                   ? { backgroundColor: color, color: 'white', borderColor: color, touchAction: 'manipulation' }
-                  : { backgroundColor: 'white', color: '#6b5d55', borderColor: '#e8e0d6', touchAction: 'manipulation' }
+                  : { backgroundColor: 'white', color: 'var(--color-ink-3)', borderColor: 'var(--color-line)', touchAction: 'manipulation' }
                 }
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -3103,7 +3239,7 @@ export default function CadastroPage() {
                   className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                   style={isActive
                     ? { backgroundColor: 'rgba(255,255,255,0.3)', color: 'white' }
-                    : { backgroundColor: '#f0ece6', color: '#9d8d81' }
+                    : { backgroundColor: 'var(--color-bg-2)', color: 'var(--color-muted)' }
                   }
                 >
                   {counts[key]}
@@ -3113,7 +3249,7 @@ export default function CadastroPage() {
           })}
         </div>
 
-        <div className="flex flex-col gap-4 md:grid md:gap-6" style={{ gridTemplateColumns: '220px 1fr' }}>
+        <div className="flex flex-col gap-4 md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
 
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
@@ -3128,21 +3264,21 @@ export default function CadastroPage() {
                   <button
                     key={key}
                     onClick={() => setTab(key)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-[background-color,color,box-shadow] duration-150 text-left"
+                    type="button"
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-[background-color,color,box-shadow] duration-150 text-left ${isActive ? '' : 'hover:bg-bg'}`}
                     style={isActive
-                      ? { backgroundColor: `${color}12`, color, boxShadow: `inset 0 0 0 1px ${color}24` }
+                      ? { backgroundColor: tint(color, 7), color, boxShadow: `inset 0 0 0 1px ${tint(color, 14)}` }
                       : undefined
                     }
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-bg)' }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}
                   >
-                    <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: '#9d8d81' }} />
-                    <span className="flex-1" style={isActive ? {} : { color: '#6b5d55' }}>{label}</span>
+                    <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: 'var(--color-muted)' }} />
+                    <span className="flex-1" style={isActive ? {} : { color: 'var(--color-ink-3)' }}>{label}</span>
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-full font-semibold min-w-[22px] text-center"
                       style={isActive
-                        ? { backgroundColor: `${color}20`, color }
-                        : { backgroundColor: '#f0ece6', color: '#9d8d81' }}
+                        ? { backgroundColor: tint(color, 13), color }
+                        : { backgroundColor: 'var(--color-bg-2)', color: 'var(--color-muted)' }}
                     >
                       {count}
                     </span>
@@ -3153,7 +3289,7 @@ export default function CadastroPage() {
           </aside>
 
           {/* ── Painel de Dados ───────────────────────────────────── */}
-          <main className="min-w-0 max-w-full bg-white border border-line rounded-xl shadow-sm p-6"
+          <section aria-label={tx('Painel de dados')} className="min-w-0 max-w-full bg-white border border-line rounded-xl shadow-sm p-6"
             style={{ borderTop: `3px solid ${activeColor}` }}>
             {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} page={productPage} onPage={setProductPage} />}
 
@@ -3185,12 +3321,12 @@ export default function CadastroPage() {
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={canEditFiscal} canEditTypes={canEditTypes} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={activeMarket === 'EU' ? canEditTypes : canEditFiscal} canEditTypes={canEditTypes} market={activeMarket} />}
 
             {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
 
             {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} canEditFiscal={canEditFiscal} market={activeMarket} />}
-          </main>
+          </section>
         </div>
       </div>
     </div>

@@ -2,11 +2,11 @@ export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-bg px-4 py-12">
       <div className="max-w-2xl mx-auto">
+        <a href="/" className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-gold hover:text-gold-600 rounded-sm">
+          ← Voltar para o sistema
+        </a>
         <div className="text-center mb-10">
-          <p
-            className="text-4xl tracking-[0.35em] font-light text-gold"
-            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-          >
+          <p className="font-display text-4xl tracking-[0.35em] font-light text-gold">
             ILYA
           </p>
           <div className="w-16 h-px bg-gold-soft mx-auto mt-2 mb-4" />

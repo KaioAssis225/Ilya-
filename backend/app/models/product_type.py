@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional, TYPE_CHECKING
-from sqlalchemy import String, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import String, ForeignKey, ForeignKeyConstraint, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -16,10 +16,17 @@ class ProductType(Base):
         ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR"
     )
     name: Mapped[str] = mapped_column(String(50), nullable=False)
-    group_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("product_groups.id"), nullable=True)
+    group_id: Mapped[Optional[uuid.UUID]] = mapped_column(nullable=True)
     group: Mapped[Optional["ProductGroup"]] = relationship("ProductGroup", lazy="selectin")
 
     __table_args__ = (
         Index("ix_product_types_group_id", "group_id"),
         UniqueConstraint("market_code", "name", name="uq_product_types_market_name"),
+        # Grupo e tipo sempre do mesmo mercado (eu_product_groups_r13_20261008).
+        # O SET NULL do DDL anula só group_id.
+        ForeignKeyConstraint(
+            ["group_id", "market_code"],
+            ["product_groups.id", "product_groups.market_code"],
+            name="fk_product_types_group_same_market",
+        ),
     )

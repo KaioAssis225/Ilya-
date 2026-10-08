@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import api from '../lib/api'
 import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
 import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
+import { useDialog } from '../hooks/useDialog'
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrador',
@@ -52,6 +53,14 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const [anonBusy, setAnonBusy] = useState(false)
   const [anonError, setAnonError] = useState('')
   const canAnonymize = isCliente || user?.role === 'representante'
+
+  // Escape fecha só o diálogo do topo; foco preso no painel ativo.
+  const closeDel = () => { if (delBusy) return; setDelOpen(false); setDelPassword(''); setDelError('') }
+  const closeAnon = () => { if (anonBusy) return; setAnonOpen(false); setAnonPassword(''); setAnonError('') }
+  const mainRef = useDialog(onClose)
+  const delRef = useDialog(closeDel, delOpen)
+  const anonRef = useDialog(closeAnon, anonOpen)
+  const sigRef = useDialog(() => setSigModalOpen(false), sigModalOpen)
 
   async function handleChangePassword() {
     if (!currentPw || !newPw) return
@@ -224,17 +233,25 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-scrim/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay z-modal items-center" onClick={onClose}>
+      <div
+        ref={mainRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-title"
+        tabIndex={-1}
+        className="modal-panel w-full max-w-md p-6 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
 
         <div className="flex items-start justify-between mb-5">
           <div>
-            <h3 className="text-lg font-semibold text-ink">Minha Conta</h3>
+            <h3 id="profile-title" className="text-lg font-semibold text-ink">Minha Conta</h3>
             <span className="text-xs text-gold uppercase tracking-wider font-medium">
               {ROLE_LABELS[user.role] ?? user.role}
             </span>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-ink transition-colors">
+          <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -273,11 +290,11 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
           <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">Assinatura Pessoal</p>
           {sigData ? (
             <div className="flex flex-col items-center gap-2">
-              <div className="w-full border border-line rounded-xl px-4 py-3 bg-[#fafaf9] flex items-center justify-center">
+              <div className="w-full border border-line rounded-xl px-4 py-3 bg-surface-quiet flex items-center justify-center">
                 <img src={sigData} alt="Assinatura" className="max-h-16 max-w-full" />
               </div>
               {saved && (
-                <p className="text-xs text-green-600 flex items-center gap-1">
+                <p className="text-xs text-success flex items-center gap-1">
                   <Check className="w-3 h-3" /> Disponível somente nesta sessão.
                 </p>
               )}
@@ -325,9 +342,10 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                     placeholder="••••••••"
                     autoComplete="current-password"
                   />
-                  <button type="button" onClick={() => setShowCurPw(s => !s)} tabIndex={-1}
+                  <button type="button" onClick={() => setShowCurPw(s => !s)}
                     aria-label={showCurPw ? 'Ocultar senha' : 'Mostrar senha'}
-                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors">
+                    aria-pressed={showCurPw}
+                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors rounded-r-control">
                     {showCurPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
@@ -344,14 +362,15 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                     placeholder="Mín. 8 caracteres, maiúscula, minúscula e número"
                     autoComplete="new-password"
                   />
-                  <button type="button" onClick={() => setShowNewPw(s => !s)} tabIndex={-1}
+                  <button type="button" onClick={() => setShowNewPw(s => !s)}
                     aria-label={showNewPw ? 'Ocultar senha' : 'Mostrar senha'}
-                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors">
+                    aria-pressed={showNewPw}
+                    className="absolute inset-y-0 right-0 w-11 flex items-center justify-center text-muted hover:text-ink transition-colors rounded-r-control">
                     {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
-              {pwError && <p className="text-xs text-red-700" role="alert">{pwError}</p>}
+              {pwError && <p className="text-xs text-danger font-medium" role="alert">{pwError}</p>}
               <div className="flex gap-2">
                 <button
                   onClick={() => { setPwOpen(false); setCurrentPw(''); setNewPw(''); setPwError('') }}
@@ -372,7 +391,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
 
           <button
             onClick={() => { setDelOpen(true); setDelError('') }}
-            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 border border-red-200 text-red-700 rounded-xl hover:bg-red-50 transition-colors text-sm font-medium"
+            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 border border-danger/30 text-danger rounded-xl hover:bg-danger-soft transition-colors text-sm font-medium"
           >
             <Trash2 className="w-4 h-4" />
             Remover Meu Acesso
@@ -400,7 +419,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                 placeholder="Senha atual"
                 autoComplete="current-password"
               />
-              {exportError && <p className="text-xs text-red-700" role="alert">{exportError}</p>}
+              {exportError && <p className="text-xs text-danger font-medium" role="alert">{exportError}</p>}
               <div className="flex gap-2">
                 <button
                   onClick={() => { setExportOpen(false); setExportPassword(''); setExportError('') }}
@@ -447,14 +466,14 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
 
       {/* Confirmação de remoção da conta de acesso (Bloco 93) */}
       {delOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay z-modal-sub items-center" onClick={(e) => { e.stopPropagation(); closeDel() }}>
+          <div ref={delRef} role="dialog" aria-modal="true" aria-labelledby="del-title" tabIndex={-1} className="modal-panel p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
+              <div className="w-10 h-10 rounded-full bg-danger-soft flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <div>
-                <h4 className="text-base font-semibold text-ink">Remover seu acesso?</h4>
+                <h4 id="del-title" className="text-base font-semibold text-ink">Remover seu acesso?</h4>
                 <p className="text-sm text-muted-2 mt-1 leading-snug">
                   Esta ação é <strong>permanente</strong>. Sua conta de acesso será removida
                   imediatamente e todas as sessões serão encerradas. Cadastros comerciais,
@@ -466,7 +485,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                 </p>
               </div>
             </div>
-            {delError && <p className="text-xs text-red-700 mb-3" role="alert">{delError}</p>}
+            {delError && <p className="text-xs text-danger font-medium mb-3" role="alert">{delError}</p>}
             <label htmlFor="del-password" className="text-xs text-muted block mb-1">
               Confirme sua senha atual
             </label>
@@ -492,10 +511,11 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               >
                 Cancelar
               </button>
-                <button
-                  onClick={handleDeleteAccount}
-                  disabled={delBusy || !delPassword}
-                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={delBusy || !delPassword}
+                className="btn-danger flex-1"
               >
                 {delBusy ? 'Removendo…' : 'Remover Acesso'}
               </button>
@@ -505,14 +525,14 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
       )}
 
       {anonOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-overlay z-modal-sub items-center" onClick={(e) => { e.stopPropagation(); closeAnon() }}>
+          <div ref={anonRef} role="dialog" aria-modal="true" aria-labelledby="anon-title" tabIndex={-1} className="modal-panel p-6 w-full max-w-sm" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
-                <UserX className="w-5 h-5 text-amber-700" />
+              <div className="w-10 h-10 rounded-full bg-warning-soft flex items-center justify-center flex-shrink-0">
+                <UserX className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <h4 className="text-base font-semibold text-ink">Anonimizar seus dados?</h4>
+                <h4 id="anon-title" className="text-base font-semibold text-ink">Anonimizar seus dados?</h4>
                 <p className="text-sm text-muted-2 mt-1 leading-snug">
                   Seus identificadores diretos serão substituídos e sua conta será
                   desativada. Pedidos e registros sujeitos à política de retenção
@@ -533,7 +553,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               autoComplete="current-password"
               maxLength={128}
             />
-            {anonError && <p className="text-xs text-red-700 mt-2" role="alert">{anonError}</p>}
+            {anonError && <p className="text-xs text-danger font-medium mt-2" role="alert">{anonError}</p>}
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => {
@@ -549,7 +569,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               <button
                 onClick={handleAnonymizeData}
                 disabled={anonBusy || !anonPassword}
-                className="flex-1 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-50"
+                className="flex-1 py-2 bg-warning text-white rounded-lg text-sm font-medium hover:bg-gold-700 transition-colors disabled:opacity-50"
               >
                 {anonBusy ? 'Anonimizando…' : 'Anonimizar Dados'}
               </button>
@@ -560,11 +580,11 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
 
       {/* Canvas modal */}
       {ELECTRONIC_SIGNATURES_ENABLED && sigModalOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-scrim/80 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay z-modal-sub items-center" onClick={(e) => { e.stopPropagation(); setSigModalOpen(false) }}>
+          <div ref={sigRef} role="dialog" aria-modal="true" aria-labelledby="sig-title" tabIndex={-1} className="modal-panel p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-base font-semibold text-ink">Assinatura Pessoal</h4>
-              <button onClick={() => setSigModalOpen(false)} className="text-muted hover:text-ink">
+              <h4 id="sig-title" className="text-base font-semibold text-ink">Assinatura Pessoal</h4>
+              <button type="button" onClick={() => setSigModalOpen(false)} aria-label="Fechar" className="btn-icon">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -573,7 +593,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
               ref={canvasRef}
               width={420}
               height={160}
-              className="w-full border border-line rounded-xl bg-[#fafaf9] cursor-crosshair touch-none"
+              className="w-full border border-line rounded-xl bg-surface-quiet cursor-crosshair touch-none"
             />
             <div className="flex gap-2 mt-4">
               <button

@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 // visual do módulo BI, distinta do wordmark "ILYA" usado em Login/Orçamento.
 const BAR_HEIGHTS = [0.35, 0.6, 0.42, 0.78, 0.55, 0.9, 0.68]
 
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 function useCountUp(target: number | null, durationMs: number) {
   const [value, setValue] = useState(0)
   const startRef = useRef<number | null>(null)
@@ -12,6 +15,11 @@ function useCountUp(target: number | null, durationMs: number) {
     if (target === null) return
     const finalValue = target
     let raf: number
+    // Sem animação: o número final aparece de imediato.
+    if (prefersReducedMotion()) {
+      raf = requestAnimationFrame(() => setValue(finalValue))
+      return () => cancelAnimationFrame(raf)
+    }
     function tick(now: number) {
       if (startRef.current === null) startRef.current = now
       const elapsed = now - startRef.current
@@ -50,10 +58,12 @@ export default function DashboardIntro({
   useEffect(() => {
     // Espera pelo menos a entrada terminar (barras + contagem); se os dados
     // demorarem, sai de qualquer forma em 3s para nunca travar a tela.
+    // Com movimento reduzido, a intro só segura a tela enquanto os dados chegam.
+    const reduce = prefersReducedMotion()
     const minTimer = setTimeout(() => {
       if (revenueTotal !== null) setVisible(false)
-    }, 1400)
-    const maxTimer = setTimeout(() => setVisible(false), 3000)
+    }, reduce ? 0 : 1400)
+    const maxTimer = setTimeout(() => setVisible(false), reduce ? 1500 : 3000)
     return () => { clearTimeout(minTimer); clearTimeout(maxTimer) }
   }, [revenueTotal])
 
@@ -66,9 +76,12 @@ export default function DashboardIntro({
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#f8f6f2]/95 backdrop-blur-sm overflow-hidden transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-      aria-hidden="true"
+      className={`fixed inset-0 z-loading flex flex-col items-center justify-center bg-bg/95 backdrop-blur-sm overflow-hidden transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      role="status"
+      aria-live="polite"
     >
+      {/* Leitores de tela ouvem o estado, não cada passo da contagem animada. */}
+      <span className="sr-only">Carregando indicadores do Dashboard BI</span>
       {/* Grid sutil de fundo — motivo visual do BI */}
       <div
         className="absolute inset-0 opacity-[0.06]"
@@ -88,7 +101,7 @@ export default function DashboardIntro({
         />
       </div>
 
-      <div className="relative flex flex-col items-center gap-6">
+      <div className="relative flex flex-col items-center gap-6" aria-hidden="true">
         {/* Mini-gráfico de barras subindo */}
         <div className="flex items-end gap-2 h-16" role="presentation">
           {BAR_HEIGHTS.map((h, i) => (
@@ -106,10 +119,7 @@ export default function DashboardIntro({
         </div>
 
         <div className="text-center">
-          <p
-            className="text-2xl tracking-[0.2em] uppercase text-ink"
-            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
-          >
+          <p className="font-display text-2xl tracking-[0.2em] uppercase text-ink">
             Dashboard <span className="text-gold">BI</span>
           </p>
           <p className="mt-2 text-[11px] tracking-[0.5em] uppercase font-semibold text-gold" style={{ animation: 'fadeInOut 1.8s ease-in-out infinite' }}>

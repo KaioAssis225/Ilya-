@@ -77,13 +77,13 @@ function DashboardChart({ series, activeMetric, granularity, locale, currency, i
         return (
           <g key={i}>
             <line x1={left} y1={y} x2={left + width} y2={y} stroke="#e8e0d6" strokeWidth={1} />
-            <text x={4} y={y + 4} fontSize={11} fill="#9d8d81">{kind === 'revenue' ? fmtCompact(value, currency) : integer.format(Math.round(value))}</text>
+            <text x={4} y={y + 4} fontSize={11} className="fill-muted">{kind === 'revenue' ? fmtCompact(value, currency) : integer.format(Math.round(value))}</text>
           </g>
         )
       })}
       {series.map((p, i) => (
         (i % showEvery === 0 || i === series.length - 1) && (
-          <text key={p.key} x={coords[i][0]} y={height + top + 24} textAnchor="middle" fontSize={11} fill="#9d8d81">
+          <text key={p.key} x={coords[i][0]} y={height + top + 24} textAnchor="middle" fontSize={11} className="fill-muted">
             {fmtAxis(p.key, granularity, locale)}
           </text>
         )
@@ -197,7 +197,7 @@ export default function DashboardPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-ink flex items-center gap-2" style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}>
+            <h1 className="font-display text-2xl font-semibold text-ink flex items-center gap-2">
               <LayoutDashboard className="w-6 h-6 text-gold" /> Dashboard BI Comercial
             </h1>
             <p className="text-sm text-muted mt-1">Valores e orçamentos consolidados</p>
@@ -228,7 +228,9 @@ export default function DashboardPage() {
               {DASHBOARD_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1 col-span-2 md:col-span-1">
+          {/* No mobile o Representante (2 colunas) vai para o fim; Região e
+              "Limpar filtros" dividem a mesma linha, sem célula vazia. */}
+          <label className="flex flex-col gap-1 col-span-2 md:col-span-1 order-last md:order-none">
             <span className="text-xs text-muted font-semibold">Representante</span>
             <input
               className="input"
@@ -262,7 +264,8 @@ export default function DashboardPage() {
               <button
                 key={key}
                 onClick={() => setActiveMetric(key)}
-                className={`text-left p-4 border-line ${i % 4 !== 3 ? 'border-r' : ''} ${i < 4 ? 'border-b' : ''} transition-colors ${selected ? 'bg-gold-wash' : 'hover:bg-bg'}`}
+                // Divisórias por breakpoint: 2 colunas × 4 linhas no mobile, 4 × 2 a partir de md.
+                className={`text-left p-4 border-line ${i % 2 === 0 ? 'max-md:border-r' : ''} ${i < 6 ? 'max-md:border-b' : ''} ${i % 4 !== 3 ? 'md:border-r' : ''} ${i < 4 ? 'md:border-b' : ''} transition-colors ${selected ? 'bg-gold-wash' : 'hover:bg-bg'}`}
                 style={selected ? { boxShadow: 'inset 0 3px var(--color-gold)' } : undefined}
               >
                 <span className="text-xs text-muted">{config.label}</span>

@@ -38,11 +38,14 @@
   --color-gold-highlight: #c8952e;
   --color-gold-wash:   #fdf9f0;
 
-  --color-terracotta:  #b25e50;
+  /* Acentos de módulo calibrados para WCAG AA: ≥ 4.5:1 também sobre os
+     badges de 10% de alfa no linho (BR) e no fundo rosado de Portugal. */
+  --color-terracotta:  #9e473a;
   --color-terracotta-700: #8a3a2e;
   --color-terracotta-soft: #f0c8c0;
-  --color-mineral:     #507a9b;
-  --color-olive:       #648261;
+  --color-mineral:     #3f6685;
+  --color-mineral-700: #34566f;
+  --color-olive:       #4c6a49;
   --color-note-ink:    #5a4a2c;
   --color-success:     #4a7a47;
   --color-success-soft:#f0f7f0;
@@ -61,6 +64,17 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-display: 'Cormorant Garamond', Georgia, serif;
+
+  /* Escala única de camadas — gera z-sticky-nav, z-modal etc. */
+  --z-index-sticky-nav: 40;
+  --z-index-fab:        45;
+  --z-index-dropdown:   50;
+  --z-index-drawer:     60;
+  --z-index-modal:      70;
+  --z-index-modal-sub:  80;
+  --z-index-toast:      90;
+  --z-index-loading:    300;
+  --z-index-skip-link:  400;
 }
 
 /* Portugal preserva a mesma hierarquia visual do Brasil, mas troca o acento
@@ -126,14 +140,15 @@
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 bg-red-700 hover:bg-red-600 active:bg-red-800
-      text-white font-semibold text-sm px-4 py-2 rounded-control transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150;
+    @apply inline-flex min-h-11 lg:min-h-0 items-center justify-center gap-2 bg-danger hover:bg-terracotta-700 active:bg-terracotta-700
+      disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm px-4 py-2 rounded-control transition-[background-color,color,border-color,box-shadow,transform,opacity] duration-150;
   }
 
-  /* Icon-only action button — replaces the ad-hoc muted icon buttons in tables. */
+  /* Icon-only action button — replaces the ad-hoc muted icon buttons in tables.
+     44×44 abaixo de 1024px (toque em tablet/celular), 32×32 no desktop denso. */
   .btn-icon {
-    @apply text-muted hover:text-gold transition-colors w-8 h-8 inline-flex items-center justify-center rounded-lg
-      hover:bg-bg;
+    @apply text-muted hover:text-gold transition-colors w-11 h-11 lg:w-8 lg:h-8 inline-flex shrink-0 items-center justify-center rounded-lg
+      hover:bg-bg disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   /* ── Modal overlay + panel ───────────────────────────────────────── */
@@ -432,14 +447,17 @@
 
 /* ── Reduced motion ─────────────────────────────────────────────────────────
    Honour the user's OS preference. Brand loading flourishes collapse to a
-   static, legible state instead of looping animation.                        */
+   static, legible state instead of looping animation. Movimento (translate,
+   scale, rotate) é anulado; trocas curtas de cor e opacidade continuam, pois
+   confirmam hover/foco sem provocar desconforto vestibular.                   */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    transition-duration: 0.08s !important;
+    transition-property: color, background-color, border-color, opacity, box-shadow, outline-color !important;
     scroll-behavior: auto !important;
   }
 }
