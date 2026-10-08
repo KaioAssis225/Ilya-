@@ -9,7 +9,7 @@ import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } fro
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
 import { useProductTypes, useCreateProductType, useUpdateProductType, useDeleteProductType } from '../hooks/useProductTypes'
-import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup } from '../hooks/useProductGroups'
+import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup, useProductGroupVatSummary } from '../hooks/useProductGroups'
 import { useCatalogs, useCreateCatalog, useUpdateCatalog, useDeleteCatalog } from '../hooks/useCatalogs'
 import type { Catalog } from '../hooks/useCatalogs'
 import type { ProductGroup } from '../hooks/useProductGroups'
@@ -2508,6 +2508,12 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   // Em Portugal o grupo só organiza o catálogo (sem IPI): move direto.
   const canAssignGroup = canEditTypes
   const isBrazil = market === 'BR'
+  // Portugal: o grupo não tem taxa; mostra o IVA já aprovado nos produtos dos
+  // seus subgrupos (aprovação continua por produto).
+  const { data: vatSummary = [] } = useProductGroupVatSummary(!isBrazil)
+  const vatByGroup = new Map(vatSummary.map(item => [item.group_id, item]))
+  const fmtRate = (rate: string | number) =>
+    `${Number(rate).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}%`
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
@@ -2777,11 +2783,32 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <span className="font-semibold text-sm text-ink">{group.name}</span>
-                    {Number(group.ipi) > 0 && (
+                    {isBrazil && Number(group.ipi) > 0 && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-note text-gold border border-line-note">
                         IPI {Number(group.ipi).toFixed(2).replace('.', ',')}%
                       </span>
                     )}
+                    {!isBrazil && (() => {
+                      const vat = vatByGroup.get(group.id)
+                      const rates = vat?.approved_rates ?? []
+                      return (
+                        <>
+                          <span
+                            title={tx('IVA aprovado nos produtos deste grupo')}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              rates.length > 0 ? 'bg-surface-note text-gold border-line-note' : 'bg-bg-2 text-muted border-line'
+                            }`}
+                          >
+                            {rates.length > 0 ? `${tx('IVA')} ${rates.map(fmtRate).join(' · ')}` : tx('IVA não aprovado')}
+                          </span>
+                          {(vat?.pending_products ?? 0) > 0 && (
+                            <span className="text-[10px] font-semibold text-warning">
+                              {tx('{count} produto(s) com IVA pendente', { count: vat!.pending_products })}
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   {canEditGroups && <div className="flex items-center gap-1">
                     <button type="button" onClick={() => openEditGroup(group)} aria-label={`${tx('Editar')} ${group.name}`} className="btn-icon">

@@ -40,3 +40,21 @@ export function useDeleteProductGroup() {
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   })
 }
+
+// IVA aprovado dos produtos de cada grupo (Portugal) — só exibição; o IVA é
+// aprovado por produto. A chave fica sob 'product-types' porque mover um
+// subgrupo (useUpdateProductType) muda o resumo e já invalida esse prefixo.
+export interface ProductGroupVatSummary {
+  group_id: string
+  approved_rates: (string | number)[]
+  approved_products: number
+  pending_products: number
+}
+
+export function useProductGroupVatSummary(enabled: boolean) {
+  return useQuery<ProductGroupVatSummary[]>({
+    queryKey: ['product-types', 'group-vat-summary'],
+    queryFn: () => api.get<ProductGroupVatSummary[]>('/product-groups/vat-summary').then(r => r.data),
+    enabled,
+  })
+}
