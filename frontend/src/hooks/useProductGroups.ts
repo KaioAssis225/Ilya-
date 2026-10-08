@@ -58,3 +58,21 @@ export function useProductGroupVatSummary(enabled: boolean) {
     enabled,
   })
 }
+
+// Aplica e aprova o IVA em todos os produtos do grupo (Portugal). Exige
+// permissão fiscal; o backend registra quem aprovou em cada produto.
+export function useApproveGroupVat() {
+  const qc = useQueryClient()
+  return useMutation<
+    { group_id: string; vat_rate: string; approved_products: number },
+    { response?: { data?: { detail?: string } } },
+    { groupId: string; vatRate: number }
+  >({
+    mutationFn: ({ groupId, vatRate }) =>
+      api.put(`/markets/EU/groups/${groupId}/vat`, { vat_rate: vatRate }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['product-types'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+}

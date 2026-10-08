@@ -58,6 +58,8 @@ class UserRead(BaseModel):
     must_change_password: bool
     max_discount: Decimal = Decimal("0.00")
     can_view_dashboard: bool = False
+    # Permissão fiscal do vínculo do mercado ativo (aprovar IVA em Portugal).
+    can_approve_tax: bool = False
     home_market: Literal["BR", "EU"] = "BR"
     active_market: Literal["BR", "EU"] = "BR"
     allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])

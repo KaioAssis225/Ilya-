@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, not_, or_, select, text
+from sqlalchemy import func, not_, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,9 @@ from app.models.market import (
     VAT_SOURCE_IMPORT,
 )
 from app.models.product import Product
+from app.models.product_group import ProductGroup
+from app.models.product_type import ProductType
+from app.api.routers.product_groups import product_type_key
 from app.models.optional_color import OptionalColor
 from app.models.client import Client
 from app.models.representative import Representative
@@ -328,7 +331,8 @@ async def decide_europe_vat(
     db: AsyncSession = Depends(get_db_session),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    """Registra uma decisão fiscal individual, sem inferência ou aprovação em lote."""
+    """Registra uma decisão fiscal individual (sem inferência). A aprovação em
+    lote existe só pelo grupo EU — ver approve_europe_group_vat."""
     if principal.code != "EU" or not principal.access or not principal.access.can_approve_tax:
         raise HTTPException(403, "Permissão fiscal não concedida neste mercado.")
     return _vat_response(await _apply_vat_decision(
@@ -475,3 +479,55 @@ async def import_europe_catalog(
         "market": "EU", "currency": "EUR", "imported": len(parsed), "errors": [],
         "pending_vat_approval": len(parsed),
     }
+
+
+# ── IVA em lote pelo grupo (Portugal) ────────────────────────────────────────
+# Decisão de 08/10/2026: além da decisão individual acima, quem tem permissão
+# fiscal no vínculo EU pode aplicar e aprovar uma taxa em todos os produtos dos
+# subgrupos de um grupo EU (botão Editar do grupo). Cada produto continua
+# registrando quem aprovou e quando; o pedido segue lendo só product_markets.
+
+
+class GroupVatRequest(BaseModel):
+    vat_rate: Decimal = Field(ge=0, le=100, decimal_places=2)
+
+
+@router.put("/EU/groups/{group_id}/vat")
+async def approve_europe_group_vat(
+    group_id: uuid.UUID,
+    body: GroupVatRequest,
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Aplica e aprova o IVA em todos os produtos disponíveis do grupo EU."""
+    if principal.code != "EU" or not principal.access or not principal.access.can_approve_tax:
+        raise HTTPException(403, "Permissão fiscal não concedida neste mercado.")
+    group = await db.get(ProductGroup, group_id)
+    if group is None or group.market_code != "EU":
+        raise HTTPException(404, "Grupo não encontrado.")
+    type_keys = select(product_type_key(ProductType.name)).where(
+        ProductType.group_id == group_id,
+        ProductType.market_code == "EU",
+    )
+    product_ids = select(Product.id).where(
+        Product.market_code == "EU",
+        Product.is_active.is_(True),
+        product_type_key(Product.type).in_(type_keys),
+    )
+    result = await db.execute(
+        update(ProductMarket)
+        .where(
+            ProductMarket.market_code == "EU",
+            ProductMarket.is_available.is_(True),
+            ProductMarket.product_id.in_(product_ids),
+        )
+        .values(
+            vat_rate=body.vat_rate,
+            vat_status=VAT_APPROVED,
+            approved_by_user_id=principal.user.id,
+            approved_at=datetime.now(timezone.utc),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return {"group_id": group_id, "vat_rate": body.vat_rate, "approved_products": result.rowcount}
