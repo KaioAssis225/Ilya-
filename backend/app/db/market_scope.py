@@ -14,6 +14,7 @@ from app.models.product import Product
 from app.models.catalog import Catalog
 from app.models.optional_category import OptionalCategory
 from app.models.optional_color import OptionalColor
+from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
 
 
@@ -27,6 +28,7 @@ MARKET_SCOPED_MODELS = (
     OptionalCategory,
     OptionalColor,
     ProductType,
+    ProductGroup,
 )
 
 

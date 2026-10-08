@@ -154,7 +154,7 @@ async def activate_europe(
               ON c.id = p.catalog_id AND c.market_code = 'EU'
             WHERE p.market_code = 'EU'
               AND (
-                pt.id IS NULL
+                (pt.id IS NULL AND p.type <> 'Outro')
                 OR (p.catalog_id IS NOT NULL AND c.id IS NULL)
                 OR EXISTS (
                     SELECT 1

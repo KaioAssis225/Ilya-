@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.api.deps import require_br_fiscal_admin
+from app.api.deps import require_br_fiscal_admin, require_product_group_editor
 from app.api.routers.import_csv import import_product_groups, import_product_types, import_products
 from app.api.routers.product_groups import (
     create_product_group,
@@ -82,12 +82,103 @@ class TestFiscalAdminGuard:
             create_product_group,
             update_product_group,
             delete_product_group,
-            import_product_groups,
         ],
     )
-    def test_quatro_vias_usam_o_mesmo_guard(self, handler):
+    def test_api_de_grupos_usa_a_guarda_por_mercado(self, handler):
+        # Grupos são por mercado (eu_product_groups_r13_20261008). A guarda
+        # delega ao fiscal no Brasil — ver testes abaixo.
         dependency = inspect.signature(handler).parameters["principal"].default
+        assert dependency.dependency is require_product_group_editor
+
+    def test_importacao_csv_de_grupos_continua_so_fiscal_br(self):
+        dependency = inspect.signature(import_product_groups).parameters["principal"].default
         assert dependency.dependency is require_br_fiscal_admin
+
+    @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.produtos, UserRole.cadastros])
+    def test_no_brasil_a_guarda_de_grupo_e_a_fiscal(self, role):
+        assert require_product_group_editor(principal=_principal("BR", UserRole.admin)).code == "BR"
+        with pytest.raises(HTTPException) as exc:
+            require_product_group_editor(principal=_principal("BR", role))
+        assert exc.value.status_code == 403
+
+    @pytest.mark.parametrize("role", [UserRole.admin, UserRole.vendedor, UserRole.produtos])
+    def test_em_portugal_quem_edita_subgrupo_edita_grupo(self, role):
+        assert require_product_group_editor(principal=_principal("EU", role)).code == "EU"
+
+    @pytest.mark.parametrize("role", [UserRole.representante, UserRole.cliente, UserRole.cadastros])
+    def test_em_portugal_demais_papeis_recebem_403(self, role):
+        with pytest.raises(HTTPException) as exc:
+            require_product_group_editor(principal=_principal("EU", role))
+        assert exc.value.status_code == 403
+
+
+class TestEuropeanGroups:
+    """Portugal: grupos próprios, sem IPI e sem evento fiscal."""
+
+    def test_grupo_eu_nasce_no_mercado_eu_sem_ipi_e_sem_evento_fiscal(self):
+        async def run():
+            db = _db()
+            group = await create_product_group(
+                payload=ProductGroupCreate(name="Exterior"),
+                db=db, principal=_principal("EU", UserRole.vendedor),
+            )
+            assert group.market_code == "EU"
+            assert group.ipi == Decimal("0")
+            assert not any(isinstance(c.args[0], ProductGroupAuditEvent) for c in db.add.call_args_list)
+            db.commit.assert_awaited_once()
+        asyncio.run(run())
+
+    def test_grupo_eu_com_ipi_e_recusado(self):
+        async def run():
+            db = _db()
+            with pytest.raises(HTTPException) as exc:
+                await create_product_group(
+                    payload=ProductGroupCreate(name="Exterior", ipi=Decimal("3.25")),
+                    db=db, principal=_principal("EU", UserRole.admin),
+                )
+            assert exc.value.status_code == 422
+            db.commit.assert_not_awaited()
+        asyncio.run(run())
+
+    def test_grupo_br_nao_e_editavel_a_partir_de_portugal(self):
+        async def run():
+            db = _db()
+            db.get.return_value = ProductGroup(id=uuid.uuid4(), market_code="BR", name="Moveis", ipi=Decimal("3.25"))
+            with pytest.raises(HTTPException) as exc:
+                await update_product_group(
+                    group_id=uuid.uuid4(), payload=ProductGroupUpdate(name="X"),
+                    db=db, principal=_principal("EU", UserRole.admin),
+                )
+            assert exc.value.status_code == 404
+            db.commit.assert_not_awaited()
+        asyncio.run(run())
+
+    def test_tipo_eu_entra_em_grupo_eu(self):
+        async def run():
+            db = _db()
+            eu_group = ProductGroup(id=uuid.uuid4(), market_code="EU", name="Exterior", ipi=Decimal("0"))
+            db.get.return_value = eu_group
+            created = await create_product_type(
+                payload=ProductTypeCreate(name="MESA", group_id=eu_group.id),
+                db=db, _=None, principal=_principal("EU", UserRole.admin),
+            )
+            assert created.group_id == eu_group.id
+            assert created.market_code == "EU"
+            db.commit.assert_awaited_once()
+        asyncio.run(run())
+
+    def test_tipo_eu_nao_entra_em_grupo_br(self):
+        async def run():
+            db = _db()
+            db.get.return_value = ProductGroup(id=uuid.uuid4(), market_code="BR", name="Moveis", ipi=Decimal("3.25"))
+            with pytest.raises(HTTPException) as exc:
+                await create_product_type(
+                    payload=ProductTypeCreate(name="MESA", group_id=uuid.uuid4()),
+                    db=db, _=None, principal=_principal("EU", UserRole.admin),
+                )
+            assert exc.value.status_code == 422
+            db.commit.assert_not_awaited()
+        asyncio.run(run())
 
 
 class TestFiscalAudit:
@@ -298,6 +389,7 @@ class TestProductGroupAuditWrites:
             group_id = uuid.uuid4()
             group = ProductGroup(
                 id=group_id,
+                market_code="BR",
                 name="BANQUETA",
                 ipi=Decimal("3.25"),
             )
@@ -320,7 +412,7 @@ class TestProductGroupAuditWrites:
 
     def test_edicao_apenas_do_nome_nao_finge_mudanca_de_ipi(self):
         async def run():
-            group = ProductGroup(id=uuid.uuid4(), name="Mesa", ipi=Decimal("0"))
+            group = ProductGroup(id=uuid.uuid4(), market_code="BR", name="Mesa", ipi=Decimal("0"))
             db = _db()
             db.get.return_value = group
             await update_product_group(
@@ -338,6 +430,7 @@ class TestProductGroupAuditWrites:
             group_id = uuid.uuid4()
             group = ProductGroup(
                 id=group_id,
+                market_code="BR",
                 name="BANQUETA",
                 ipi=Decimal("3.25"),
             )

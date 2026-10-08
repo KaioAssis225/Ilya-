@@ -663,7 +663,6 @@ function ProductFullView({
 export default function ProdutosPage() {
   const { user } = useAuth()
   const { locale, t } = useLocale()
-  const isEurope = user?.active_market === 'EU'
   const queryClient = useQueryClient()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
@@ -869,25 +868,6 @@ export default function ProdutosPage() {
             ))}
           </select>
 
-          {isEurope ? (
-            // Portugal: grupos fiscais (IPI) são brasileiros e tipos EU não podem
-            // apontar para eles — escolher um "grupo" devolvia zero produtos. O
-            // agrupamento real do catálogo EU são os próprios tipos do mercado.
-            <select
-              value={selectedTypeName}
-              onChange={(e) => {
-                setSelectedTypeName(e.target.value)
-                setPage(1)
-              }}
-              aria-label={t('allGroups')}
-              className="w-full min-h-11 lg:min-h-0 md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
-            >
-              <option value="">{t('allGroups')}</option>
-              {productTypes.filter(pt => pt.name !== 'Outro').map(pt => (
-                <option key={pt.id} value={pt.name}>{localizeFurnitureTerm(pt.name, locale)}</option>
-              ))}
-            </select>
-          ) : (<>
           {/* Group dropdown */}
           <select
             value={selectedGroupId}
@@ -915,7 +895,6 @@ export default function ProdutosPage() {
               <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale)}</option>
             ))}
           </select>
-          </>)}
 
           {/* Seletor de tabela: fica sempre à vista para o representante
               conferir o estado de relance ANTES de virar a tela para o cliente. */}

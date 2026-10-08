@@ -2503,10 +2503,11 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   color: string; page: number; onPage: (p: number) => void
   canEditGroups: boolean; canEditTypes: boolean; market: 'BR' | 'EU'
 }) {
-  // Vincular subgrupo a grupo define o IPI (regra fiscal brasileira). Em
-  // Portugal o backend recusa o vínculo (tipo EU não herda grupo BR), então
-  // arrastar só é oferecido no Brasil, para quem pode reclassificar.
-  const canAssignGroup = canEditTypes && market === 'BR'
+  // Grupos são por mercado (eu_product_groups_r13_20261008). No Brasil o grupo
+  // carrega o IPI: mover subgrupo é reclassificação fiscal e pede confirmação.
+  // Em Portugal o grupo só organiza o catálogo (sem IPI): move direto.
+  const canAssignGroup = canEditTypes
+  const isBrazil = market === 'BR'
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
@@ -2539,7 +2540,7 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
 
   async function handleGroupSubmit(e: React.FormEvent) {
     e.preventDefault(); setErr('')
-    const ipiNum = parseFloat(gIpi.replace(',', '.')) || 0
+    const ipiNum = isBrazil ? (parseFloat(gIpi.replace(',', '.')) || 0) : 0
     try {
       if (modal?.kind === 'edit-group') {
         await updateGroupM.mutateAsync({ id: modal.group.id, name: gName.trim(), ipi: ipiNum })
@@ -2603,7 +2604,8 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
         const type = types.find(t => t.id === typeId)
         if (!type || (type.group_id ?? null) === (targetGroup?.id ?? null)) return
         setMoveErr('')
-        setPendingMove({ type, group: targetGroup })
+        if (isBrazil) setPendingMove({ type, group: targetGroup })
+        else void moveType(type, targetGroup)
       },
     }
   }
@@ -2614,19 +2616,20 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
     return dropTarget === key ? 'ring-2 ring-gold/50 border-gold/60 bg-gold-wash' : 'border-dashed'
   }
 
-  async function confirmMove() {
-    if (!pendingMove) return
+  async function moveType(type: ProductType, group: ProductGroup | null): Promise<boolean> {
     setMoveErr('')
     try {
-      await updateTypeM.mutateAsync({
-        id: pendingMove.type.id,
-        name: pendingMove.type.name,
-        group_id: pendingMove.group?.id ?? null,
-      })
-      setPendingMove(null)
+      await updateTypeM.mutateAsync({ id: type.id, name: type.name, group_id: group?.id ?? null })
+      return true
     } catch (ex: unknown) {
       setMoveErr((ex as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? tx('Erro ao salvar subgrupo.'))
+      return false
     }
+  }
+
+  async function confirmMove() {
+    if (!pendingMove) return
+    if (await moveType(pendingMove.type, pendingMove.group)) setPendingMove(null)
   }
 
   // Função de render (não componente): um componente declarado aqui dentro
@@ -2670,6 +2673,10 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
         </button>}
       </div>
 
+      {moveErr && !pendingMove && (
+        <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{moveErr}</p>
+      )}
+
       {/* Group form modal */}
       {canEditGroups && (modal?.kind === 'new-group' || modal?.kind === 'edit-group') && (
         <Modal
@@ -2682,6 +2689,8 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
               <span className="text-xs text-muted">{tx('Nome do Grupo *')}</span>
               <input className="input" value={gName} onChange={(e) => setGName(e.target.value)} required autoFocus />
             </label>
+            {/* IPI é brasileiro; grupo de Portugal só organiza o catálogo. */}
+            {isBrazil && (
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">{tx('Alíquota IPI (%)')}</span>
               <input
@@ -2694,6 +2703,7 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
                 onChange={(e) => setGIpi(e.target.value)}
               />
             </label>
+            )}
             {err && <p className="text-xs text-danger">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isGroupPending} className="btn-primary flex-1">
@@ -2717,8 +2727,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
               <span className="text-xs text-muted">{tx('Nome do Subgrupo *')}</span>
               <input className="input" value={tName} onChange={(e) => setTName(e.target.value)} required autoFocus />
             </label>
-            {/* Portugal: grupo fiscal é brasileiro; o backend recusa o vínculo. */}
-            {market === 'BR' && (
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">{tx('Grupo')}</span>
               <select className="input" value={tGroupId ?? ''} onChange={(e) => setTGroupId(e.target.value || null)}>
@@ -2726,7 +2734,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
-            )}
             {err && <p className="text-xs text-danger">{err}</p>}
             <div className="flex gap-2 pt-1">
               <button type="submit" disabled={isTypePending} className="btn-primary flex-1">
@@ -3314,7 +3321,7 @@ export default function CadastroPage() {
 
             {tab === 'opcionais' && <OptionaisTab color={TAB_PALETTE.opcionais.color} readOnly={isLimited} />}
 
-            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={canEditFiscal} canEditTypes={canEditTypes} market={activeMarket} />}
+            {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={activeMarket === 'EU' ? canEditTypes : canEditFiscal} canEditTypes={canEditTypes} market={activeMarket} />}
 
             {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
 
