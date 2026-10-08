@@ -112,10 +112,16 @@ def test_platform_login_does_not_require_a_commercial_market():
         db.add = MagicMock()
         db.execute.side_effect = [
             _result(scalar=user),
+            _result(scalar=None),
+            _result(),
             _result(scalar=user.id),
         ]
         response = MagicMock()
-        request = SimpleNamespace(state=SimpleNamespace(request_id="test"))
+        request = SimpleNamespace(
+            state=SimpleNamespace(request_id="test"),
+            client=SimpleNamespace(host="203.0.113.10"),
+            headers={},
+        )
         with patch("app.api.routers.auth.verify_password", return_value=True):
             result = await platform_login.__wrapped__(
                 request=request,
@@ -151,8 +157,14 @@ def test_commercial_login_denies_identity_without_active_market():
     async def run():
         user = _user()
         db = AsyncMock()
-        db.execute.side_effect = [_result(scalar=user), _result(scalars=[])]
-        request = SimpleNamespace(state=SimpleNamespace(request_id="test"))
+        db.execute.side_effect = [
+            _result(scalar=user), _result(scalar=None), _result(), _result(scalars=[])
+        ]
+        request = SimpleNamespace(
+            state=SimpleNamespace(request_id="test"),
+            client=SimpleNamespace(host="203.0.113.10"),
+            headers={},
+        )
         with patch("app.api.routers.auth.verify_password", return_value=True):
             with pytest.raises(HTTPException) as exc:
                 await login.__wrapped__(

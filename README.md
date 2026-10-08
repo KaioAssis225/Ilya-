@@ -291,6 +291,30 @@ imagens. A flag só pode ser ativada após a homologação conferir essa diferen
 e os documentos resultantes. Assinaturas antigas inconclusivas exigem revisão
 humana e, quando for necessário regularizar, uma revisão com nova assinatura.
 
+### Rate limit, proxy e contenção de login
+
+O login combina uma cota de rede com contenção progressiva por
+`origem + identificador`. E-mail/username e IP são persistidos somente como
+HMAC SHA-256, usando os segredos da aplicação. Após 5, 10 e 15 falhas dentro de
+15 minutos, apenas aquele par aguarda respectivamente 30 segundos, 2 minutos e
+5 minutos. Outra rede continua capaz de autenticar a mesma conta, e colegas no
+mesmo NAT não compartilham o estado de um identificador. Repetição distribuída
+gera alerta estruturado por fingerprint, sem registrar PII. Estados com mais de
+7 dias são removidos no boot.
+
+`RATE_LIMIT_STORAGE_URI` deve apontar para Redis antes de usar mais de um
+worker ou réplica. O startup recusa múltiplos workers com `memory://`; se o
+Redis configurado ficar indisponível, a API retorna 503 com `Retry-After` em vez
+de liberar chamadas sem cota. O endpoint `/health/ready` também acusa a falha.
+
+`FORWARDED_ALLOW_IPS` aceita somente IPs e CIDRs explícitos; `*`, redes `/0` e
+valores inválidos impedem o boot. O valor deve listar exclusivamente o proxy
+controlado que se conecta ao Uvicorn. O código nunca lê `X-Forwarded-For`
+diretamente. A Vercel documenta que sobrescreve esse cabeçalho com o IP público
+do cliente antes do rewrite externo; a allowlist do Uvicorn determina se o
+cabeçalho será aplicado. Confirme fingerprints distintos a partir de duas redes
+na homologação antes de alterar a topologia ou escalar réplicas.
+
 ### 3. Subindo o Banco e o Backend (via Docker Compose)
 Na raiz do monorepo, execute:
 ```bash

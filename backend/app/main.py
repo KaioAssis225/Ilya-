@@ -15,10 +15,12 @@ from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from limits.errors import StorageError
 
 from app.core.config import settings
 from app.core.http_client import close_http_clients
 from app.core.limiter import limiter
+from app.core.login_protection import cleanup_login_attempt_states
 from app.core.request_size import RequestSizeLimitMiddleware
 from app.db.session import AsyncSessionLocal, engine
 from app.models.refresh_token import cleanup_expired_tokens
@@ -45,6 +47,19 @@ async def _cleanup_tokens_background() -> None:
         logger.exception("Falha na limpeza de refresh tokens expirados")
 
 
+async def _cleanup_login_attempts_background() -> None:
+    try:
+        async with AsyncSessionLocal() as session:
+            removed = await cleanup_login_attempt_states(
+                session,
+                settings.LOGIN_ATTEMPT_RETENTION_DAYS,
+            )
+            if removed:
+                logger.info("Estados antigos de login removidos: %s", removed)
+    except Exception:
+        logger.exception("Falha na limpeza de estados antigos de login")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.object_storage_partially_configured():
@@ -59,11 +74,15 @@ async def lifespan(app: FastAPI):
     # Limpeza em background: não bloqueia a prontidão da API a cada boot
     # e um advisory lock evita trabalho duplicado entre workers/réplicas.
     cleanup_task = asyncio.create_task(_cleanup_tokens_background())
+    login_cleanup_task = asyncio.create_task(_cleanup_login_attempts_background())
     logger.info("Ilya API iniciada")
     yield
     cleanup_task.cancel()
+    login_cleanup_task.cancel()
     with suppress(asyncio.CancelledError):
         await cleanup_task
+    with suppress(asyncio.CancelledError):
+        await login_cleanup_task
     await close_http_clients()
     await engine.dispose()
     logger.info("Ilya API encerrada")
@@ -81,6 +100,18 @@ app = FastAPI(
 # ── Rate limit handler ────────────────────────────────────────────────────────
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _rate_limit_storage_unavailable(_request: Request, _exc: Exception) -> JSONResponse:
+    logger.error("Armazenamento compartilhado do rate limit indisponível")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Serviço temporariamente indisponível."},
+        headers={"Retry-After": "5"},
+    )
+
+
+app.add_exception_handler(StorageError, _rate_limit_storage_unavailable)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     GZipMiddleware,
