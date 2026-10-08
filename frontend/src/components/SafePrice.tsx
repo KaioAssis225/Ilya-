@@ -14,6 +14,8 @@ export function SafePrice({ value, className, prefix, currency = 'BRL', locale =
     ? `${prefix}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value))
 
+  // O observer só restaura o texto se alguém o reescrever no DOM; o valor que
+  // vale é sempre o do servidor. Copiar o preço (WhatsApp, e-mail) é permitido.
   useEffect(() => {
     const el = spanRef.current
     if (!el) return
@@ -27,11 +29,7 @@ export function SafePrice({ value, className, prefix, currency = 'BRL', locale =
   }, [formatted])
 
   return (
-    <span
-      ref={spanRef}
-      className={className}
-      style={{ userSelect: 'none', pointerEvents: 'none' }}
-    >
+    <span ref={spanRef} className={`select-text tabular-nums ${className ?? ''}`}>
       {formatted}
     </span>
   )

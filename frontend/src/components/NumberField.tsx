@@ -20,7 +20,11 @@ type NumberFieldProps = Omit<
   onValueChange: (value: number) => void
 }
 
-export function NumberField({ value, onValueChange, ...props }: NumberFieldProps) {
+// Sem as setas nativas: em células estreitas (w-14/w-16) elas esmagavam os dígitos.
+const NO_SPIN =
+  '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+
+export function NumberField({ value, onValueChange, className, ...props }: NumberFieldProps) {
   const [draft, setDraft] = useState<string | null>(null)
 
   const current = value ?? 0
@@ -29,7 +33,9 @@ export function NumberField({ value, onValueChange, ...props }: NumberFieldProps
 
   return (
     <input
+      inputMode="decimal"
       {...props}
+      className={`${NO_SPIN} ${className ?? ''}`}
       type="number"
       value={draftMatchesValue ? (draft as string) : current === 0 ? '' : String(current)}
       onChange={(e) => {
