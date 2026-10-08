@@ -223,20 +223,25 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
   }, [])
 
   async function handleCepBlur() {
-    if (market !== 'BR') return
     const clean = form.cep.replace(/\D/g, '')
-    if (clean.length !== 8) return
+    // Brasil: CEP de 8 dígitos (ViaCEP). Portugal: código postal 0000-000
+    // (GeoAPI.pt pelo backend) — antes o cadastro rápido EU não consultava nada.
+    if (clean.length !== (market === 'BR' ? 8 : 7)) return
     cepAbortRef.current?.abort()
     const controller = new AbortController()
     cepAbortRef.current = controller
     setCepLoading(true); setCepError(false)
     try {
-      const { data } = await api.get(`/utils/cep/${clean}`, { signal: controller.signal })
+      const path = market === 'BR' ? `/utils/cep/${clean}` : `/utils/postal-code/${clean}`
+      const { data } = await api.get(path, { signal: controller.signal })
       setForm((f) => ({
         ...f,
-        address: `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}`,
-        city: data.localidade,
-        state: data.uf,
+        address: data.logradouro
+          ? `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}`
+          : f.address,
+        city: data.localidade || f.city,
+        state: market === 'BR' ? data.uf : '--',
+        region: market === 'EU' ? (data.regiao || f.region) : f.region,
       }))
     } catch {
       // Requisição abortada (unmount / novo CEP) não é erro real (V-F2/M4).
@@ -288,9 +293,22 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
           </label>
           <label className="flex flex-col gap-1 relative">
             <span className="text-xs text-muted">{market === 'EU' ? (isEnglish ? 'Postcode *' : 'Código postal *') : 'CEP *'}</span>
-            <input className="input" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} onBlur={handleCepBlur} maxLength={20} required />
+            <input
+              className="input"
+              value={form.cep}
+              inputMode="numeric"
+              placeholder={market === 'EU' ? '0000-000' : '00000-000'}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, '').slice(0, market === 'BR' ? 8 : 7)
+                const split = market === 'BR' ? 5 : 4
+                setForm({ ...form, cep: digits.length > split ? `${digits.slice(0, split)}-${digits.slice(split)}` : digits })
+              }}
+              onBlur={handleCepBlur}
+              maxLength={market === 'BR' ? 9 : 8}
+              required
+            />
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
-            {cepError && <span className="text-xs leading-snug font-medium text-danger">{isEnglish ? 'Postcode not found or service unavailable.' : 'CEP não encontrado ou serviço indisponível.'}</span>}
+            {cepError && <span className="text-xs leading-snug font-medium text-danger">{isEnglish ? 'Postcode not found or service unavailable.' : market === 'EU' ? 'Código postal não encontrado ou serviço indisponível.' : 'CEP não encontrado ou serviço indisponível.'}</span>}
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">{isEnglish ? 'Number' : 'Número'}</span>

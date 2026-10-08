@@ -281,9 +281,9 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
       setForm({
         ...form,
         address: data.logradouro ? `${data.logradouro}${data.bairro ? ', ' + data.bairro : ''}` : form.address,
-        city: data.localidade,
+        city: data.localidade || form.city,
         state: market === 'BR' ? data.uf : '--',
-        region: market === 'EU' ? (data.regiao ?? form.region) : form.region,
+        region: market === 'EU' ? (data.regiao || form.region) : form.region,
       })
     }
     setCepLoading(false)
@@ -314,7 +314,8 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">{tx('Número')}</span>
-        <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: formatOnlyNumbers(e.target.value) })} />
+        {/* Portugal: porta com letra/andar ("12A", "2.º Esq.") — só dígitos cortava a morada. */}
+        <input className="input" value={form.numero ?? ''} maxLength={50} onChange={(e) => setForm({ ...form, numero: market === 'BR' ? formatOnlyNumbers(e.target.value) : e.target.value })} />
       </label>
       <label className="col-span-2 flex flex-col gap-1">
         <span className="text-xs text-muted">{tx('Endereço *')}</span>
@@ -1333,9 +1334,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   if (e.target.value === '__new__') { setShowNewTypeModal(true) }
                   else setForm({ ...form, type: e.target.value })
                 }}>
-                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador','Outro']).map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                  {/* Tipo é opcional: "Outro" é o "sem tipo" aceito em qualquer mercado. */}
+                  <option value="Outro">{tx('Sem tipo')}</option>
+                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
+                    .filter(t => t !== 'Outro')
+                    .map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
                   {(isEurope || canClassifyBr) && <option value="__new__">{tx('+ Adicionar Novo...')}</option>}
                 </select>
               </label>
