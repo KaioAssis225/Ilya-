@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import io
 import time
 from unittest.mock import AsyncMock, patch
@@ -11,6 +13,7 @@ import pytest
 
 from app.api.routers.media import get_media
 from app.core import uploads
+from app.core.config import settings
 
 
 def _sample_png(size: tuple[int, int] = (1600, 1200)) -> bytes:
@@ -57,6 +60,35 @@ def test_assinatura_expirada_ou_adulterada_e_rejeitada():
         expires + 1000,
         signature,
     )
+
+
+def test_assinatura_de_midia_usa_material_separado_da_jwt(monkeypatch):
+    monkeypatch.setattr(settings, "MEDIA_SIGNING_KEY", "")
+    monkeypatch.setattr(settings, "MEDIA_SIGNING_KEY_PREVIOUS", "")
+    key = "products/foto.jpg"
+    expires = int(time.time()) + 60
+    legacy = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        f"{key}\n{expires}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    assert uploads._media_signature(key, expires) != legacy
+    assert not uploads.verify_media_signature(key, expires, legacy)
+
+
+def test_rotacao_aceita_chave_anterior_durante_transicao(monkeypatch):
+    current = "current-media-key-with-at-least-32-characters"
+    previous = "previous-media-key-with-at-least-32-characters"
+    monkeypatch.setattr(settings, "MEDIA_SIGNING_KEY", current)
+    monkeypatch.setattr(settings, "MEDIA_SIGNING_KEY_PREVIOUS", previous)
+    key = "products/foto.jpg"
+    expires = int(time.time()) + 60
+    old_signature = uploads._media_signature_with_key(
+        key, expires, previous.encode("utf-8")
+    )
+
+    assert uploads.verify_media_signature(key, expires, old_signature)
 
 
 def test_rota_de_midia_exige_assinatura_valida():

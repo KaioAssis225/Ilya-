@@ -55,13 +55,32 @@ _CONTENT_TYPES = {
 }
 
 
-def _media_signature(object_key: str, expires: int) -> str:
-    payload = f"{object_key}\n{expires}".encode("utf-8")
+def _derived_media_signing_key() -> bytes:
+    """Separa criptograficamente mídia e JWT no ambiente local/teste."""
     return hmac.new(
         settings.SECRET_KEY.encode("utf-8"),
-        payload,
+        b"ilya-media-url-signing-v1",
         hashlib.sha256,
-    ).hexdigest()
+    ).digest()
+
+
+def _current_media_signing_key() -> bytes:
+    if settings.MEDIA_SIGNING_KEY:
+        return settings.MEDIA_SIGNING_KEY.encode("utf-8")
+    return _derived_media_signing_key()
+
+
+def _media_signature_with_key(object_key: str, expires: int, key: bytes) -> str:
+    payload = f"{object_key}\n{expires}".encode("utf-8")
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
+
+def _media_signature(object_key: str, expires: int) -> str:
+    return _media_signature_with_key(
+        object_key,
+        expires,
+        _current_media_signing_key(),
+    )
 
 
 def verify_media_signature(
@@ -74,7 +93,16 @@ def verify_media_signature(
     current = int(time.time()) if now is None else now
     if expires < current or not signature:
         return False
-    return hmac.compare_digest(_media_signature(object_key, expires), signature)
+    keys = [_current_media_signing_key()]
+    if settings.MEDIA_SIGNING_KEY_PREVIOUS:
+        keys.append(settings.MEDIA_SIGNING_KEY_PREVIOUS.encode("utf-8"))
+    return any(
+        hmac.compare_digest(
+            _media_signature_with_key(object_key, expires, key),
+            signature,
+        )
+        for key in keys
+    )
 
 
 def _signed_media_url(object_key: str, *, now: int | None = None) -> str:
@@ -465,9 +493,12 @@ async def persist_upload(
             return await run_in_threadpool(
                 _persist_object_upload, content, directory, extension, "EU"
             )
-        # Com o principal em objetos e o europeu ausente, gravar EU no bucket
-        # brasileiro desfaria a separação sem ninguém perceber. Recusa.
-        if settings.object_storage_configured():
+        # Em produção, ausência do bucket do mercado é falha de configuração;
+        # nunca grava no BR nem em disco efêmero.
+        if (
+            settings.object_storage_configured()
+            or settings.persistent_media_storage_required()
+        ):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Armazenamento de fotos do mercado europeu não configurado.",
@@ -482,6 +513,11 @@ async def persist_upload(
             content,
             directory,
             extension,
+        )
+    elif settings.persistent_media_storage_required():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Armazenamento persistente de fotos não configurado.",
         )
     return await run_in_threadpool(
         _persist_upload,
