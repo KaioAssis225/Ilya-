@@ -19,7 +19,7 @@ para não travar a tabela durante a verificação das linhas existentes.
 A revisão é abortiva: se alguma linha BR tiver UF fora da lista, ela falha
 dizendo quantas e em qual tabela, em vez de deixar a constraint inválida.
 """
-from alembic import op
+from alembic import context, op
 
 from app.core.addresses import BR_STATES, br_uf_check_condition
 
@@ -45,6 +45,8 @@ def _constraint_name(table: str) -> str:
 
 
 def _assert_no_invalid_uf() -> None:
+    if context.is_offline_mode():
+        return
     conn = op.get_bind()
     offenders = []
     for table in _TABLES:

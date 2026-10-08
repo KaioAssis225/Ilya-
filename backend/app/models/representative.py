@@ -101,4 +101,4 @@ def anonymize_representative_fields(representative: Representative) -> None:
     representative.numero = None
     representative.address = "ENDEREÇO ANONIMIZADO"
     representative.city = "NÃO INFORMADO"
-    representative.state = "EX"
+    # A UF é agregada e precisa continuar válida para a constraint brasileira.

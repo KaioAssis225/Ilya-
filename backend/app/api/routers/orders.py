@@ -156,7 +156,6 @@ def _order_visibility_filters(current_user: User) -> list:
 def _order_document_content(order: Order) -> dict:
     return {
         "order_id": str(order.id),
-        "document_version": order.document_version or 1,
         "market_code": order.market_code,
         "code": order.code,
         "orc_id": order.orc_id,
@@ -165,9 +164,7 @@ def _order_document_content(order: Order) -> dict:
         "price_list_code": order.price_list_code,
         "currency": order.currency,
         "locale": order.locale,
-        "is_finalized": order.is_finalized,
         "is_cancelled": order.is_cancelled,
-        "external_code": order.external_code,
         "total_value": str(order.total_value),
         "total_ipi": str(order.total_ipi),
         "total_with_ipi": str(order.total_with_ipi),
@@ -200,6 +197,18 @@ def _order_document_hash(order: Order) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _legacy_order_document_hash(order: Order, document_version: int | None) -> str:
+    """Reproduz o contrato de hash anterior para evidências já persistidas."""
+    content = _order_document_content(order)
+    content.update({
+        "document_version": document_version or 1,
+        "is_finalized": False,
+        "external_code": None,
+    })
+    canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def _record_signature(
     db: AsyncSession, order: Order, *, signer_kind: str, signature: str,
     method: str, submitted_by_user_id: uuid.UUID | None = None,
@@ -212,7 +221,7 @@ def _record_signature(
         signature_hash=hashlib.sha256(signature.encode("utf-8")).hexdigest(),
         signed_at=datetime.now(timezone.utc), method=method,
         submitted_by_user_id=submitted_by_user_id,
-        invitation_id=invitation_id, verification_status="captured",
+        invitation_id=invitation_id, verification_status="captured", hash_version=2,
     ))
 
 
@@ -227,28 +236,26 @@ def _invitation_is_valid(invitation: SignatureInvitation | None) -> bool:
 
 async def _next_codes(
     db: AsyncSession,
-    number_owner_id: uuid.UUID,
+    _number_owner_id: uuid.UUID,
     market_code: str,
 ) -> tuple[str, str, int]:
-    # O UPSERT bloqueia atomicamente apenas o contador deste usuário e não
-    # reutiliza números de pedidos apagados. O ORC segue na sequence global.
+    # PED e ORC são sequenciais por mercado, portanto legíveis e não ambíguos.
     order_number = (
         await db.execute(
             text(
                 """
                 INSERT INTO market_order_counters (
-                    market_code, number_owner_id,
-                    next_value
+                    market_code, next_value
                 )
-                VALUES (:market_code, :number_owner_id, 2)
-                ON CONFLICT (market_code, number_owner_id) DO UPDATE
+                VALUES (:market_code, 2)
+                ON CONFLICT (market_code) DO UPDATE
                 SET
                     next_value = market_order_counters.next_value + 1,
                     updated_at = NOW()
                 RETURNING next_value - 1
                 """
             ),
-            {"market_code": market_code, "number_owner_id": str(number_owner_id)},
+            {"market_code": market_code},
         )
     ).scalar_one()
     orc_number = (
@@ -292,14 +299,25 @@ def _decode_order_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 
 async def _load_products_and_types(
-    db: AsyncSession, codes: list[str], market_code: str
+    db: AsyncSession,
+    codes: list[str],
+    market_code: str,
+    *,
+    allow_inactive_codes: set[str] | None = None,
 ) -> tuple[dict[str, Product], dict[str, ProductType]]:
     """Carrega produtos e seus tipos em 2 queries (evita N+1 por item — V-B1)."""
+    activity_filter = Product.is_active.is_(True)
+    if allow_inactive_codes:
+        activity_filter = or_(
+            activity_filter,
+            Product.product_code.in_(allow_inactive_codes),
+        )
     products = (await db.execute(
         select(Product)
         .where(
             Product.market_code == market_code,
             Product.product_code.in_(codes),
+            activity_filter,
         )
         .options(
             load_only(
@@ -350,9 +368,10 @@ def _resolve_max_discount(
     """Bloco 69: teto dinamico por Cliente/Representante em vez de limite fixo por role."""
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO
-    # cliente-final e operador interno de vendas respeitam o teto do cliente
-    if is_client_account(current_user) or current_user.role == UserRole.vendedor:
+    if is_client_account(current_user):
         return _decimal(client.max_discount)
+    if current_user.role == UserRole.vendedor:
+        return _decimal(rep.max_discount) if rep else _decimal(client.max_discount)
     if current_user.role == UserRole.admin:
         return _HUNDRED
     # Papéis sem autorização comercial recebem zero por padrão. Isso evita que
@@ -709,6 +728,16 @@ async def create_order(
         revision_number=(source_order.revision_number + 1) if source_order else 1,
         items=order_items,
     )
+    if source_order:
+        source_order.is_superseded = True
+        source_order.source_version += 1
+        db.add(OrderHistory(
+            id=uuid.uuid4(),
+            order_id=source_order.id,
+            user_id=current_user.id,
+            action="superseded",
+            details=f"Pedido substituído pela revisão {code}",
+        ))
     try:
         db.add(order)
         await touch_client_activity(db, client.id)
@@ -777,7 +806,7 @@ async def list_orders(
     current_user: User = Depends(require_order_access),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    conditions = []
+    conditions = [Order.is_superseded.is_(False)]
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
             response.headers["X-Has-More"] = "false"
@@ -1046,7 +1075,10 @@ async def update_order(
         # Valida e calcula TODOS os itens novos ANTES de deletar os antigos (V-B2).
         # Batch-fetch de produtos/tipos elimina N+1 (V-B1).
         product_map, type_map = await _load_products_and_types(
-            db, [i.product_code for i in payload.items], principal.code
+            db,
+            [i.product_code for i in payload.items],
+            principal.code,
+            allow_inactive_codes=old_codes,
         )
         client = (await db.execute(select(Client).where(
             Client.id == order.client_id,
@@ -1109,7 +1141,7 @@ async def update_order(
             product = product_map.get(item_in.product_code)
             if not product:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-            if product.id not in available_ids:
+            if product.id not in available_ids and product.product_code not in old_codes:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
             if product.id not in price_map:
                 raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
@@ -1225,13 +1257,10 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
-    if order.rep_signature is not None or order.client_signature is not None:
-        raise HTTPException(status_code=409, detail="Pedido assinado é imutável. Crie uma revisão para corrigir os termos.")
     terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
     order.finalized_at = terminal_at
     order.source_version += 1
-    order.document_version += 1
     if payload.external_code:
         order.external_code = payload.external_code
     await db.execute(update(SignatureInvitation).where(
@@ -1343,7 +1372,12 @@ async def signature_audit(
     result = []
     for order, evidence in rows:
         signature = order.client_signature if evidence.signer_kind == "client" else order.rep_signature
-        current_hash = _order_document_hash(order) if evidence.document_hash else None
+        if not evidence.document_hash:
+            current_hash = None
+        elif getattr(evidence, "hash_version", 1) >= 2:
+            current_hash = _order_document_hash(order)
+        else:
+            current_hash = _legacy_order_document_hash(order, evidence.document_version)
         signature_hash = hashlib.sha256(signature.encode("utf-8")).hexdigest() if signature else None
         if evidence.verification_status == "unverified":
             status_value = "legacy_unverified"
@@ -1457,6 +1491,8 @@ async def generate_sign_token(
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser assinado.")
+    if order.is_finalized:
+        raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser assinado.")
     if order.client_signature:
         raise HTTPException(status_code=409, detail="Pedido já foi assinado pelo cliente.")
     client = (await db.execute(select(Client).where(
@@ -1595,7 +1631,10 @@ async def sign_representative(
         raise HTTPException(status_code=409, detail="Assinatura do representante já registrada.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser assinado.")
+    if order.is_finalized:
+        raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser assinado.")
     order.rep_signature = payload.signature
+    order.source_version += 1
     _record_signature(db, order, signer_kind="representative", signature=payload.signature,
                       method="authenticated", submitted_by_user_id=current_user.id)
     await touch_client_activity(db, order.client_id)
@@ -1626,7 +1665,10 @@ async def sign_client(
         raise HTTPException(status_code=409, detail="Assinatura do cliente já registrada.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser assinado.")
+    if order.is_finalized:
+        raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser assinado.")
     order.client_signature = payload.signature
+    order.source_version += 1
     _record_signature(db, order, signer_kind="client", signature=payload.signature,
                       method="authenticated", submitted_by_user_id=current_user.id)
     await db.execute(update(SignatureInvitation).where(
@@ -1710,7 +1752,7 @@ async def sign_with_token(
     ).with_for_update())).scalar_one_or_none()
     if not _invitation_is_valid(invitation):
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    if not order or order.is_cancelled or invitation.client_id != order.client_id:
+    if not order or order.is_cancelled or order.is_finalized or invitation.client_id != order.client_id:
         raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
     client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
     if (client is None or not client.email
@@ -1727,6 +1769,7 @@ async def sign_with_token(
         raise HTTPException(status_code=409, detail="Pedido já foi assinado.")
 
     order.client_signature = payload.signature
+    order.source_version += 1
     _record_signature(db, order, signer_kind="client", signature=payload.signature,
                       method="emailed_token", invitation_id=invitation.id)
     invitation.consumed_at = datetime.now(timezone.utc)

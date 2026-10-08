@@ -1061,6 +1061,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             if p:
                 for k, v in fields.items():
                     setattr(p, k, v)
+                p.source_version += 1
                 is_update = True
             else:
                 p = Product(id=uuid.uuid4(), market_code=principal.code, product_code=code, **fields)

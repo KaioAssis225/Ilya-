@@ -85,6 +85,7 @@ class PrivacyIncident(Base, TimestampMixin):
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
 
     __table_args__ = (
