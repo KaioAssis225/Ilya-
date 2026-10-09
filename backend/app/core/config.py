@@ -133,6 +133,23 @@ class Settings(BaseSettings):
     WEBHOOK_RETRY_AFTER_MAX_SECONDS: int = 86_400
     WEBHOOK_RESPONSE_BODY_MAX_BYTES: int = 4_096
 
+    # Moloni: os segredos OAuth e a chave Fernet ficam exclusivamente no
+    # ambiente. A conexão, empresa e mapeamento de IVA são persistidos no DB.
+    MOLONI_ENABLED: bool = False
+    MOLONI_CLIENT_ID: str = ""
+    MOLONI_CLIENT_SECRET: str = ""
+    MOLONI_REDIRECT_URI: str = ""
+    MOLONI_TOKEN_ENCRYPTION_KEY: str = ""
+    MOLONI_API_BASE_URL: str = "https://api.moloni.pt/v1"
+    MOLONI_TIMEOUT_SECONDS: float = 15.0
+    MOLONI_MAX_ATTEMPTS: int = 7
+    MOLONI_DOCUMENT_SET_ID: int = 0
+    MOLONI_LANGUAGE_ID: int = 1
+    MOLONI_MATURITY_DATE_ID: int = 0
+    MOLONI_PAYMENT_METHOD_ID: int = 0
+    MOLONI_PRODUCT_CATEGORY_ID: int = 0
+    MOLONI_PRODUCT_UNIT_ID: int = 0
+
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"
 

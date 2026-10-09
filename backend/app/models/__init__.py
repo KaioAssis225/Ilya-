@@ -19,6 +19,7 @@ from app.models.order_signature_evidence import OrderSignatureEvidence
 from app.models.client_access_invitation import ClientAccessInvitation
 from app.models.login_attempt_state import LoginAttemptState
 from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
+from app.models.moloni import MoloniConnection, MoloniOAuthState, MoloniTaxMapping, MoloniExportJob, MoloniCustomerLink, MoloniProductLink
 from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
 from app.models.retention import LegalHold, RetentionReview
@@ -50,6 +51,7 @@ __all__ = [
     "LoginAttemptState",
     "IntegrationOutbox",
     "OUTBOX_STATUSES",
+    "MoloniConnection", "MoloniOAuthState", "MoloniTaxMapping", "MoloniExportJob", "MoloniCustomerLink", "MoloniProductLink",
     "PrivacyEvent",
     "PrivacyIncident",
     "LegalHold",
