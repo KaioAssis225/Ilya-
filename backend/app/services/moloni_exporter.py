@@ -91,6 +91,39 @@ class MoloniApi:
             raise MoloniError(f"Moloni rejeitou {endpoint}: " + str(payload.get("errors", payload))[:800])
         return payload
 
+async def _resolve_product_category_id(api: MoloniApi, company_id: int) -> int:
+    """Return a category accepted by the Moloni API for this company.
+
+    The category id shown in Moloni's web panel is not always the id exposed
+    by the API connection. Validate the configured id first, then use the
+    first top-level category returned by the API as a safe account-local
+    fallback.
+    """
+    configured_id = int(settings.MOLONI_PRODUCT_CATEGORY_ID)
+    try:
+        category = await api.post(
+            "productCategories/getOne",
+            {"company_id": company_id, "category_id": configured_id},
+        )
+        if isinstance(category, dict) and int(category.get("category_id", 0)) == configured_id:
+            return configured_id
+    except MoloniError:
+        pass
+    categories = await api.post(
+        "productCategories/getAll",
+        {"company_id": company_id, "parent_id": 0, "qty": 50, "offset": 0},
+    )
+    if isinstance(categories, dict):
+        categories = categories.get("categories") or categories.get("data") or []
+    for category in categories or []:
+        category_id = category.get("category_id") if isinstance(category, dict) else None
+        if category_id is not None:
+            return int(category_id)
+    raise MoloniError(
+        "Moloni não devolveu categorias de artigos para a empresa "
+        f"{company_id}; configure MOLONI_PRODUCT_CATEGORY_ID com um category_id válido."
+    )
+
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
@@ -100,6 +133,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one()
     if not client.tax_id: raise MoloniError("Cliente EU sem NIF/tax_id.")
     api = MoloniApi(connection, db)
+    product_category_id = await _resolve_product_category_id(api, connection.company_id)
     # Moloni validates this field even when its customer-insert documentation
     # describes salesman_id as optional. Reuse the same configured seller on
     # the customer and estimate so both requests carry a valid integer.
@@ -126,7 +160,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         plink = (await db.execute(select(MoloniProductLink).where(MoloniProductLink.connection_id == connection.id, MoloniProductLink.product_id == product.id))).scalar_one_or_none()
         if plink: pid = plink.moloni_product_id
         else:
-            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": settings.MOLONI_PRODUCT_CATEGORY_ID, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0, "exemption_reason": "M99"}), "products/insert")
+            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": product_category_id, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0, "exemption_reason": "M99"}), "products/insert")
             pid = _entity_id(created, "product_id", "productId", "id", endpoint="products/insert"); db.add(MoloniProductLink(connection_id=connection.id, product_id=product.id, moloni_product_id=pid))
         rate = str(item.ipi_rate)
         if rate not in mappings: raise MoloniError("IVA sem mapeamento Moloni: " + rate)
