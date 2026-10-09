@@ -1,5 +1,6 @@
 """Adaptador profundo: transforma um pedido EU finalizado em orçamento Moloni."""
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -144,6 +145,40 @@ async def _resolve_salesman_id(api: MoloniApi, company_id: int) -> int:
         return next(iter(valid_ids))
     raise MoloniError(f"Moloni não devolveu vendedores para a empresa {company_id}.")
 
+async def _resolve_tax_mappings(api: MoloniApi, company_id: int, configured: dict[str, int]) -> dict[str, int]:
+    """Validate local tax ids and replace stale ids with account-local taxes."""
+    taxes = await api.post("taxes/getAll", {"company_id": company_id, "country_id": 1, "qty": 50, "offset": 0})
+    if isinstance(taxes, dict):
+        taxes = taxes.get("taxes") or taxes.get("data") or []
+    by_rate: dict[Decimal, list[dict]] = {}
+    valid_ids: set[int] = set()
+    for tax in taxes or []:
+        if not isinstance(tax, dict) or tax.get("tax_id") is None or tax.get("value") is None:
+            continue
+        try:
+            rate = Decimal(str(tax["value"]))
+        except (InvalidOperation, TypeError):
+            continue
+        tax_id = int(tax["tax_id"])
+        valid_ids.add(tax_id)
+        by_rate.setdefault(rate, []).append(tax)
+    resolved: dict[str, int] = {}
+    for rate_text, configured_id in configured.items():
+        if int(configured_id) in valid_ids:
+            resolved[rate_text] = int(configured_id)
+            continue
+        try:
+            rate = Decimal(str(rate_text))
+        except InvalidOperation as exc:
+            raise MoloniError(f"IVA inválido configurado: {rate_text}") from exc
+        candidates = by_rate.get(rate, [])
+        if candidates:
+            active = next((tax for tax in candidates if int(tax.get("active_by_default", 0) or 0) == 1), candidates[0])
+            resolved[rate_text] = int(active["tax_id"])
+            continue
+        raise MoloniError(f"Moloni não devolveu imposto para a taxa {rate_text} na empresa {company_id}.")
+    return resolved
+
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
@@ -172,7 +207,8 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
             created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "salesman_id": salesman_id, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID, "payment_day": 0, "discount": 0, "credit_limit": 0, "delivery_method_id": 0}), "customers/insert")
             customer_id = _entity_id(created, "customer_id", "customerId", "id", endpoint="customers/insert")
         db.add(MoloniCustomerLink(connection_id=connection.id, client_id=client.id, moloni_customer_id=customer_id))
-    mappings = {str(rate): tax_id for rate, tax_id in (await db.execute(select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id).where(MoloniTaxMapping.connection_id == connection.id))).all()}
+    mappings = {str(rate): int(tax_id) for rate, tax_id in (await db.execute(select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id).where(MoloniTaxMapping.connection_id == connection.id))).all()}
+    mappings = await _resolve_tax_mappings(api, connection.company_id, mappings)
     products = []
     for index, item in enumerate(order.items):
         product = (await db.execute(select(Product).where(Product.market_code == "EU", Product.product_code == item.product_code))).scalar_one_or_none()
