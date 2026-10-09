@@ -149,6 +149,7 @@ class Settings(BaseSettings):
     MOLONI_PAYMENT_METHOD_ID: int = 0
     MOLONI_PRODUCT_CATEGORY_ID: int = 0
     MOLONI_PRODUCT_UNIT_ID: int = 0
+    MOLONI_SALESMAN_ID: int = 182219
 
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"
