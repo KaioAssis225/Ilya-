@@ -47,6 +47,7 @@ def test_moloni_uses_json_mode_for_nested_document_data(monkeypatch):
     from app.services import moloni_exporter
     captured = {}
     class Response:
+        status_code = 200
         def raise_for_status(self): pass
         def json(self): return {"valid": 1}
     class Client:
@@ -90,3 +91,44 @@ def test_moloni_refreshes_expiring_token(monkeypatch):
     assert api.token == "new-access"
     assert connection.access_token_ciphertext == "encrypted:new-access"
     assert calls[0][1]["params"]["grant_type"] == "refresh_token"
+
+
+def test_moloni_retries_once_after_server_rejects_token(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("PASSWORD_PEPPER", "test-pepper")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
+    from app.services import moloni_exporter
+
+    responses = []
+    class Response:
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {"valid": 1}
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(self.status_code)
+        def json(self): return self._payload
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
+        async def post(self, *args, **kwargs):
+            response = Response(403 if not responses else 200)
+            responses.append(response)
+            return response
+
+    connection = SimpleNamespace(
+        access_token_ciphertext="cipher",
+        token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    monkeypatch.setattr(moloni_exporter, "decrypt_token", lambda _: "old-access")
+    api = moloni_exporter.MoloniApi(connection, SimpleNamespace())
+    api.token = "old-access"
+    async def refresh(): api.token = "new-access"
+    api._refresh_if_needed = refresh
+    monkeypatch.setattr(moloni_exporter.httpx, "AsyncClient", lambda **_: Client())
+
+    asyncio.run(api.post("customers/getByVat", {"company_id": 1, "vat": "123456789"}))
+    assert len(responses) == 2
+    assert api.token == "new-access"
+    assert connection.token_expires_at is None

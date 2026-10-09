@@ -57,6 +57,12 @@ class MoloniApi:
         url = settings.MOLONI_API_BASE_URL.rstrip("/") + "/" + endpoint.lstrip("/") + "/"
         async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS) as client:
             response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data)
+            if response.status_code in (401, 403):
+                # Moloni can revoke a token before its locally stored expiry.
+                # Force one refresh and retry the same idempotent lookup/write once.
+                self.connection.token_expires_at = None
+                await self._refresh_if_needed()
+                response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data)
         response.raise_for_status()
         payload = response.json()
         if not payload.get("valid"):
