@@ -1,11 +1,11 @@
 """Adaptador profundo: transforma um pedido EU finalizado em orçamento Moloni."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.core.moloni_crypto import decrypt_token
+from app.core.moloni_crypto import decrypt_token, encrypt_token
 from app.models.client import Client
 from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExportJob, MoloniProductLink, MoloniTaxMapping
 from app.models.order import Order
@@ -17,14 +17,48 @@ def _configured():
     return all((settings.MOLONI_DOCUMENT_SET_ID, settings.MOLONI_MATURITY_DATE_ID, settings.MOLONI_PAYMENT_METHOD_ID, settings.MOLONI_PRODUCT_CATEGORY_ID, settings.MOLONI_PRODUCT_UNIT_ID))
 
 class MoloniApi:
-    def __init__(self, connection): self.connection = connection; self.token = decrypt_token(connection.access_token_ciphertext)
+    def __init__(self, connection, db: AsyncSession):
+        self.connection = connection
+        self.db = db
+        self.token = decrypt_token(connection.access_token_ciphertext)
+
+    async def _refresh_if_needed(self) -> None:
+        expires_at = getattr(self.connection, "token_expires_at", None)
+        if expires_at and expires_at > datetime.now(timezone.utc) + timedelta(minutes=2):
+            return
+        try:
+            async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS) as client:
+                response = await client.get(
+                    settings.MOLONI_API_BASE_URL.rstrip("/") + "/grant/",
+                    params={
+                        "grant_type": "refresh_token",
+                        "client_id": settings.MOLONI_CLIENT_ID,
+                        "client_secret": settings.MOLONI_CLIENT_SECRET,
+                        "refresh_token": decrypt_token(self.connection.refresh_token_ciphertext),
+                    },
+                )
+            response.raise_for_status()
+            token = response.json()
+            access = token["access_token"]
+            refresh = token.get("refresh_token") or decrypt_token(self.connection.refresh_token_ciphertext)
+            expires_in = int(token.get("expires_in", 0) or 0)
+            if expires_in <= 0:
+                raise ValueError("resposta sem validade do token")
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            raise MoloniError("Não foi possível renovar a conexão Moloni. Reconecte a integração.") from exc
+        self.token = access
+        self.connection.access_token_ciphertext = encrypt_token(access)
+        self.connection.refresh_token_ciphertext = encrypt_token(refresh)
+        self.connection.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        await self.db.flush()
+
     async def post(self, endpoint, data):
+        await self._refresh_if_needed()
         url = settings.MOLONI_API_BASE_URL.rstrip("/") + "/" + endpoint.lstrip("/") + "/"
         async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS) as client:
-            # Moloni aceita JSON somente com json=true; assim arrays de produtos
-            # e impostos chegam como estruturas, sem serialização ambígua de form.
             response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data)
-        response.raise_for_status(); payload = response.json()
+        response.raise_for_status()
+        payload = response.json()
         if not payload.get("valid"):
             raise MoloniError("Moloni rejeitou os dados: " + str(payload.get("errors", "erro desconhecido"))[:400])
         return payload
@@ -37,7 +71,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if order.market_code != "EU" or not order.is_finalized: raise MoloniError("Pedido não é um pedido EU finalizado.")
     client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one()
     if not client.tax_id: raise MoloniError("Cliente EU sem NIF/tax_id.")
-    api = MoloniApi(connection)
+    api = MoloniApi(connection, db)
     link = (await db.execute(select(MoloniCustomerLink).where(MoloniCustomerLink.connection_id == connection.id, MoloniCustomerLink.client_id == client.id))).scalar_one_or_none()
     if link: customer_id = link.moloni_customer_id
     else:

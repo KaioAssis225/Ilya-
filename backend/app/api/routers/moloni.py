@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +15,7 @@ from app.api.deps import get_db_session, require_platform_capability
 from app.core.config import settings
 from app.core.markets import PlatformPrincipal
 from app.core.moloni_crypto import encrypt_token
-from app.models.moloni import MoloniConnection, MoloniOAuthState, MoloniExportJob
+from app.models.moloni import MoloniConnection, MoloniOAuthState, MoloniExportJob, MoloniTaxMapping
 from app.models.order import Order
 from app.services.moloni_jobs import enqueue_finalized_eu_order
 
@@ -22,6 +24,15 @@ _ADMIN = Depends(require_platform_capability("platform_admin"))
 
 class ConnectRequest(BaseModel):
     company_id: int = Field(gt=0)
+
+
+class TaxMappingInput(BaseModel):
+    vat_rate: Decimal = Field(ge=0, le=100)
+    moloni_tax_id: int = Field(gt=0)
+
+
+class TaxMappingsRequest(BaseModel):
+    mappings: list[TaxMappingInput] = Field(min_length=1, max_length=30)
 
 def _require_oauth_settings() -> None:
     if not all((settings.MOLONI_CLIENT_ID, settings.MOLONI_CLIENT_SECRET, settings.MOLONI_REDIRECT_URI)):
@@ -66,7 +77,36 @@ async def status(db: AsyncSession = Depends(get_db_session), _: PlatformPrincipa
     connection = (await db.execute(select(MoloniConnection).order_by(MoloniConnection.created_at.desc()).limit(1))).scalar_one_or_none()
     jobs = (await db.execute(select(MoloniExportJob.status).order_by(MoloniExportJob.created_at.desc()).limit(50))).scalars().all()
     counts = {key: jobs.count(key) for key in ("pending", "processing", "delivered", "dead_letter")}
-    return {"configured": bool(connection), "active": bool(connection and connection.is_active), "company_id": connection.company_id if connection else None, "jobs": counts}
+    mappings = []
+    if connection:
+        mappings = list((await db.execute(
+            select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id)
+            .where(MoloniTaxMapping.connection_id == connection.id)
+            .order_by(MoloniTaxMapping.vat_rate)
+        )).all())
+    return {"enabled": settings.MOLONI_ENABLED, "configured": bool(connection), "active": bool(connection and connection.is_active), "company_id": connection.company_id if connection else None, "jobs": counts, "tax_mappings": [{"vat_rate": str(rate), "moloni_tax_id": tax_id} for rate, tax_id in mappings]}
+
+
+@router.put("/tax-mappings")
+async def save_tax_mappings(payload: TaxMappingsRequest, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):
+    """Registra a correspondencia explicita IVA Ilya para imposto Moloni."""
+    connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
+    if not connection:
+        raise HTTPException(422, "Conecte o Moloni antes de configurar impostos.")
+    rates = [item.vat_rate for item in payload.mappings]
+    if len(set(rates)) != len(rates):
+        raise HTTPException(422, "Cada aliquota de IVA deve aparecer uma unica vez.")
+    existing = {row.vat_rate: row for row in (await db.execute(
+        select(MoloniTaxMapping).where(MoloniTaxMapping.connection_id == connection.id)
+    )).scalars()}
+    for item in payload.mappings:
+        row = existing.get(item.vat_rate)
+        if row:
+            row.moloni_tax_id = item.moloni_tax_id
+        else:
+            db.add(MoloniTaxMapping(connection_id=connection.id, vat_rate=item.vat_rate, moloni_tax_id=item.moloni_tax_id))
+    await db.commit()
+    return {"saved": len(payload.mappings)}
 
 @router.post("/orders/{order_id}/enqueue", status_code=202)
 async def enqueue_existing(order_id: str, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):

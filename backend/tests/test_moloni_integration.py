@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.services.moloni_jobs import enqueue_finalized_eu_order
@@ -54,7 +55,38 @@ def test_moloni_uses_json_mode_for_nested_document_data(monkeypatch):
         async def post(self, *args, **kwargs): captured.update(kwargs); return Response()
     monkeypatch.setattr(moloni_exporter, "decrypt_token", lambda _: "token")
     monkeypatch.setattr(moloni_exporter.httpx, "AsyncClient", lambda **_: Client())
-    api = moloni_exporter.MoloniApi(SimpleNamespace(access_token_ciphertext="cipher"))
+    api = moloni_exporter.MoloniApi(SimpleNamespace(access_token_ciphertext="cipher", token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1)), SimpleNamespace())
     asyncio.run(api.post("estimates/insert", {"products": [{"taxes": [{"tax_id": 1}]}]}))
     assert captured["params"]["json"] == "true"
     assert captured["json"]["products"][0]["taxes"][0]["tax_id"] == 1
+
+
+def test_moloni_refreshes_expiring_token(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("PASSWORD_PEPPER", "test-pepper")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
+    from app.services import moloni_exporter
+
+    calls = []
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return {"access_token": "new-access", "refresh_token": "new-refresh", "expires_in": 3600}
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
+        async def get(self, *args, **kwargs): calls.append((args, kwargs)); return Response()
+    class Db:
+        async def flush(self): pass
+    connection = SimpleNamespace(
+        access_token_ciphertext="access-cipher",
+        refresh_token_ciphertext="refresh-cipher",
+        token_expires_at=datetime.now(timezone.utc),
+    )
+    monkeypatch.setattr(moloni_exporter, "decrypt_token", lambda value: {"access-cipher": "old-access", "refresh-cipher": "old-refresh"}[value])
+    monkeypatch.setattr(moloni_exporter, "encrypt_token", lambda value: "encrypted:" + value)
+    monkeypatch.setattr(moloni_exporter.httpx, "AsyncClient", lambda **_: Client())
+    api = moloni_exporter.MoloniApi(connection, Db())
+    asyncio.run(api._refresh_if_needed())
+    assert api.token == "new-access"
+    assert connection.access_token_ciphertext == "encrypted:new-access"
+    assert calls[0][1]["params"]["grant_type"] == "refresh_token"
