@@ -82,7 +82,10 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if link: customer_id = link.moloni_customer_id
     else:
         found = await api.post("customers/getByVat", {"company_id": connection.company_id, "vat": client.tax_id})
-        customers = found.get("customers") or found.get("data") or []
+        if isinstance(found, list):
+            customers = found
+        else:
+            customers = found.get("customers") or found.get("data") or []
         if customers: customer_id = int(customers[0]["customer_id"])
         else:
             number = (await api.post("customers/getNextNumber", {"company_id": connection.company_id})).get("number")
