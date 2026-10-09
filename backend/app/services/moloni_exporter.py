@@ -11,7 +11,7 @@ from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExport
 from app.models.order import Order
 from app.models.product import Product
 
-'class MoloniError(RuntimeError): pass
+class MoloniError(RuntimeError): pass
 
 def _record(payload):
     """Normaliza respostas de criação do Moloni que podem vir como lista ou objeto."""
@@ -20,7 +20,7 @@ def _record(payload):
             raise MoloniError("Moloni devolveu uma lista vazia para uma operação de gravação.")
         return payload[0]
     return payload
-'
+
 
 def _configured():
     return all((settings.MOLONI_DOCUMENT_SET_ID, settings.MOLONI_MATURITY_DATE_ID, settings.MOLONI_PAYMENT_METHOD_ID, settings.MOLONI_PRODUCT_CATEGORY_ID, settings.MOLONI_PRODUCT_UNIT_ID))
