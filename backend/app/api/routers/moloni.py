@@ -47,7 +47,8 @@ async def connect(payload: ConnectRequest, db: AsyncSession = Depends(get_db_ses
     await db.commit()
     return {"authorization_url": "https://api.moloni.pt/v1/authorize/?" + urlencode({"response_type": "code", "client_id": settings.MOLONI_CLIENT_ID, "redirect_uri": settings.MOLONI_REDIRECT_URI, "state": state}), "expires_in_seconds": 600}
 
-@router.get("/callback")
+@router.get("/oauth-return")
+@router.get("/callback", include_in_schema=False)
 async def callback(code: str = Query(min_length=1), state: str = Query(min_length=20), db: AsyncSession = Depends(get_db_session)):
     """Callback público: a autorização vem do estado opaco, de uso único."""
     row = (await db.execute(select(MoloniOAuthState).where(MoloniOAuthState.state == state).with_for_update())).scalar_one_or_none()
