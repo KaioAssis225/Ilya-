@@ -1,12 +1,12 @@
 """Permite IDs reais de empresa Moloni acima de 32 bits.
 
-Revision ID: moloni_company_id_bigint_r15_20261009
+Revision ID: moloni_company_id_bigint_r15
 Revises: moloni_integration_r14_20261009
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "moloni_company_id_bigint_r15_20261009"
+revision = "moloni_company_id_bigint_r15"
 down_revision = "moloni_integration_r14_20261009"
 branch_labels = None
 depends_on = None
