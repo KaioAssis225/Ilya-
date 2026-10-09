@@ -30,6 +30,7 @@ from app.core.client_invites import invitation_delivery_ready, send_signature_in
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
+from app.services.moloni_jobs import enqueue_finalized_eu_order
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.product import Product
@@ -1247,6 +1248,8 @@ async def finalize_order(
         details=f"código externo: {payload.external_code}" if payload.external_code else None,
     ))
     await touch_client_activity(db, order.client_id, terminal_at)
+    if order.market_code == "EU":
+        await enqueue_finalized_eu_order(db, order.id)
     await db.commit()
     await db.refresh(order)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
