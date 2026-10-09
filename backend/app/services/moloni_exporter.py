@@ -13,11 +13,12 @@ from app.models.product import Product
 
 class MoloniError(RuntimeError): pass
 
-def _record(payload):
+def _record(payload, endpoint: str = ""):
     """Normaliza respostas de criação do Moloni que podem vir como lista ou objeto."""
     if isinstance(payload, list):
         if not payload:
-            raise MoloniError("Moloni devolveu uma lista vazia para uma operação de gravação.")
+            suffix = f" ({endpoint})" if endpoint else ""
+            raise MoloniError("Moloni devolveu uma lista vazia para uma operação de gravação" + suffix + ".")
         return payload[0]
     return payload
 
@@ -86,7 +87,7 @@ class MoloniApi:
         if isinstance(payload, list):
             return payload
         if payload.get("valid", True) in (False, 0, "0"):
-            raise MoloniError("Moloni rejeitou os dados: " + str(payload.get("errors", payload))[:800])
+            raise MoloniError(f"Moloni rejeitou {endpoint}: " + str(payload.get("errors", payload))[:800])
         return payload
 
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
@@ -109,7 +110,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         if customers: customer_id = int(customers[0]["customer_id"])
         else:
             number = (await api.post("customers/getNextNumber", {"company_id": connection.company_id})).get("number")
-            created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID}))
+            created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID}), "customers/insert")
             customer_id = _entity_id(created, "customer_id", "customerId", "id")
         db.add(MoloniCustomerLink(connection_id=connection.id, client_id=client.id, moloni_customer_id=customer_id))
     mappings = {str(rate): tax_id for rate, tax_id in (await db.execute(select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id).where(MoloniTaxMapping.connection_id == connection.id))).all()}
@@ -120,14 +121,14 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         plink = (await db.execute(select(MoloniProductLink).where(MoloniProductLink.connection_id == connection.id, MoloniProductLink.product_id == product.id))).scalar_one_or_none()
         if plink: pid = plink.moloni_product_id
         else:
-            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": settings.MOLONI_PRODUCT_CATEGORY_ID, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0}))
+            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": settings.MOLONI_PRODUCT_CATEGORY_ID, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0}), "products/insert")
             pid = _entity_id(created, "product_id", "productId", "id"); db.add(MoloniProductLink(connection_id=connection.id, product_id=product.id, moloni_product_id=pid))
         rate = str(item.ipi_rate)
         if rate not in mappings: raise MoloniError("IVA sem mapeamento Moloni: " + rate)
         products.append({"product_id": pid, "name": item.description, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [{"tax_id": mappings[rate], "order": 1, "cumulative": 0}]})
     salesman_id = settings.MOLONI_SALESMAN_ID or 182219
     try:
-        response = _record(await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}))
+        response = _record(await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}), "estimates/insert")
     except MoloniError as exc:
         raise MoloniError(f"{exc} (salesman_id={salesman_id})") from exc
     return _entity_id(response, "document_id", "documentId", "id")
