@@ -126,7 +126,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         plink = (await db.execute(select(MoloniProductLink).where(MoloniProductLink.connection_id == connection.id, MoloniProductLink.product_id == product.id))).scalar_one_or_none()
         if plink: pid = plink.moloni_product_id
         else:
-            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": settings.MOLONI_PRODUCT_CATEGORY_ID, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0}), "products/insert")
+            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": settings.MOLONI_PRODUCT_CATEGORY_ID, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0, "exemption_reason": "Não aplicável"}), "products/insert")
             pid = _entity_id(created, "product_id", "productId", "id", endpoint="products/insert"); db.add(MoloniProductLink(connection_id=connection.id, product_id=product.id, moloni_product_id=pid))
         rate = str(item.ipi_rate)
         if rate not in mappings: raise MoloniError("IVA sem mapeamento Moloni: " + rate)
