@@ -124,6 +124,26 @@ async def _resolve_product_category_id(api: MoloniApi, company_id: int) -> int:
         f"{company_id}; configure MOLONI_PRODUCT_CATEGORY_ID com um category_id válido."
     )
 
+async def _resolve_salesman_id(api: MoloniApi, company_id: int) -> int:
+    """Return a salesman id accepted by the API connection."""
+    configured_id = int(settings.MOLONI_SALESMAN_ID or 182219)
+    salesmen = await api.post(
+        "salesmen/getAll",
+        {"company_id": company_id, "qty": 50, "offset": 0},
+    )
+    if isinstance(salesmen, dict):
+        salesmen = salesmen.get("salesmen") or salesmen.get("data") or []
+    valid_ids = {
+        int(salesman["salesman_id"])
+        for salesman in salesmen or []
+        if isinstance(salesman, dict) and salesman.get("salesman_id") is not None
+    }
+    if configured_id in valid_ids:
+        return configured_id
+    if valid_ids:
+        return next(iter(valid_ids))
+    raise MoloniError(f"Moloni não devolveu vendedores para a empresa {company_id}.")
+
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
@@ -137,7 +157,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     # Moloni validates this field even when its customer-insert documentation
     # describes salesman_id as optional. Reuse the same configured seller on
     # the customer and estimate so both requests carry a valid integer.
-    salesman_id = settings.MOLONI_SALESMAN_ID or 182219
+    salesman_id = await _resolve_salesman_id(api, connection.company_id)
     link = (await db.execute(select(MoloniCustomerLink).where(MoloniCustomerLink.connection_id == connection.id, MoloniCustomerLink.client_id == client.id))).scalar_one_or_none()
     if link: customer_id = link.moloni_customer_id
     else:
