@@ -84,7 +84,7 @@ async def status(db: AsyncSession = Depends(get_db_session), _: PlatformPrincipa
             .where(MoloniTaxMapping.connection_id == connection.id)
             .order_by(MoloniTaxMapping.vat_rate)
         )).all())
-    return {"configured": bool(connection), "active": bool(connection and connection.is_active), "company_id": connection.company_id if connection else None, "jobs": counts, "tax_mappings": [{"vat_rate": str(rate), "moloni_tax_id": tax_id} for rate, tax_id in mappings]}
+    return {"enabled": settings.MOLONI_ENABLED, "configured": bool(connection), "active": bool(connection and connection.is_active), "company_id": connection.company_id if connection else None, "jobs": counts, "tax_mappings": [{"vat_rate": str(rate), "moloni_tax_id": tax_id} for rate, tax_id in mappings]}
 
 
 @router.put("/tax-mappings")
