@@ -100,6 +100,10 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one()
     if not client.tax_id: raise MoloniError("Cliente EU sem NIF/tax_id.")
     api = MoloniApi(connection, db)
+    # Moloni validates this field even when its customer-insert documentation
+    # describes salesman_id as optional. Reuse the same configured seller on
+    # the customer and estimate so both requests carry a valid integer.
+    salesman_id = settings.MOLONI_SALESMAN_ID or 182219
     link = (await db.execute(select(MoloniCustomerLink).where(MoloniCustomerLink.connection_id == connection.id, MoloniCustomerLink.client_id == client.id))).scalar_one_or_none()
     if link: customer_id = link.moloni_customer_id
     else:
@@ -111,7 +115,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         if customers: customer_id = int(customers[0]["customer_id"])
         else:
             number = (await api.post("customers/getNextNumber", {"company_id": connection.company_id})).get("number")
-            created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID}), "customers/insert")
+            created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "salesman_id": salesman_id, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID}), "customers/insert")
             customer_id = _entity_id(created, "customer_id", "customerId", "id", endpoint="customers/insert")
         db.add(MoloniCustomerLink(connection_id=connection.id, client_id=client.id, moloni_customer_id=customer_id))
     mappings = {str(rate): tax_id for rate, tax_id in (await db.execute(select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id).where(MoloniTaxMapping.connection_id == connection.id))).all()}
@@ -127,7 +131,6 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         rate = str(item.ipi_rate)
         if rate not in mappings: raise MoloniError("IVA sem mapeamento Moloni: " + rate)
         products.append({"product_id": pid, "name": item.description, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [{"tax_id": mappings[rate], "order": 1, "cumulative": 0}]})
-    salesman_id = settings.MOLONI_SALESMAN_ID or 182219
     try:
         response = _record(await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}), "estimates/insert")
     except MoloniError as exc:
