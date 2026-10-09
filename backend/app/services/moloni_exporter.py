@@ -85,7 +85,7 @@ class MoloniApi:
         # enquanto endpoints de escrita devolvem o envelope {valid: true, ...}.
         if isinstance(payload, list):
             return payload
-        if payload.get("valid") is False:
+        if payload.get("valid", True) in (False, 0, "0"):
             raise MoloniError("Moloni rejeitou os dados: " + str(payload.get("errors", payload))[:800])
         return payload
 
