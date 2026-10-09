@@ -69,7 +69,7 @@ class MoloniApi:
         # enquanto endpoints de escrita devolvem o envelope {valid: true, ...}.
         if isinstance(payload, list):
             return payload
-        if not payload.get("valid"):
+        if payload.get("valid") is False:
             raise MoloniError("Moloni rejeitou os dados: " + str(payload.get("errors", payload))[:800])
         return payload
 
@@ -111,5 +111,6 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         products.append({"product_id": pid, "name": item.description, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [{"tax_id": mappings[rate], "order": 1, "cumulative": 0}]})
     response = await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0})
     return int(response["document_id"])
+
 
 
