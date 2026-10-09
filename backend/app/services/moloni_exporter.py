@@ -126,7 +126,10 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         if rate not in mappings: raise MoloniError("IVA sem mapeamento Moloni: " + rate)
         products.append({"product_id": pid, "name": item.description, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [{"tax_id": mappings[rate], "order": 1, "cumulative": 0}]})
     salesman_id = settings.MOLONI_SALESMAN_ID or 182219
-    response = _record(await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}))
+    try:
+        response = _record(await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}))
+    except MoloniError as exc:
+        raise MoloniError(f"{exc} (salesman_id={salesman_id})") from exc
     return _entity_id(response, "document_id", "documentId", "id")
 
 
