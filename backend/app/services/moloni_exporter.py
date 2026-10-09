@@ -115,7 +115,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         if customers: customer_id = int(customers[0]["customer_id"])
         else:
             number = (await api.post("customers/getNextNumber", {"company_id": connection.company_id})).get("number")
-            created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "salesman_id": salesman_id, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID, "payment_day": 0}), "customers/insert")
+            created = _record(await api.post("customers/insert", {"company_id": connection.company_id, "vat": client.tax_id, "number": number, "name": client.name, "language_id": settings.MOLONI_LANGUAGE_ID, "address": client.address, "zip_code": client.cep, "city": client.city, "country_id": 1, "email": client.email or "", "phone": client.phone, "salesman_id": salesman_id, "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "payment_method_id": settings.MOLONI_PAYMENT_METHOD_ID, "payment_day": 0, "discount": 0}), "customers/insert")
             customer_id = _entity_id(created, "customer_id", "customerId", "id", endpoint="customers/insert")
         db.add(MoloniCustomerLink(connection_id=connection.id, client_id=client.id, moloni_customer_id=customer_id))
     mappings = {str(rate): tax_id for rate, tax_id in (await db.execute(select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id).where(MoloniTaxMapping.connection_id == connection.id))).all()}
