@@ -7,7 +7,7 @@ como a fonte comercial do documento.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -16,7 +16,7 @@ from app.models.base import Base, TimestampMixin
 class MoloniConnection(Base, TimestampMixin):
     __tablename__ = "moloni_connections"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    company_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    company_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     access_token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -27,7 +27,7 @@ class MoloniConnection(Base, TimestampMixin):
 class MoloniOAuthState(Base):
     __tablename__ = "moloni_oauth_states"
     state: Mapped[str] = mapped_column(String(128), primary_key=True)
-    company_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    company_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
