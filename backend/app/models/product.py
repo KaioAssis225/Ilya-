@@ -98,7 +98,7 @@ class ProductSetItem(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     set_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
-    product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id"), nullable=False)
+    product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     product: Mapped["Product"] = relationship("Product", foreign_keys=[product_id], lazy="selectin")

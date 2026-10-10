@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 
 from app.api.deps import (
     get_db_session,
@@ -32,6 +32,7 @@ from app.models.client import Client
 from app.models.representative import Representative
 from app.models.refresh_token import RefreshToken
 from app.models.client_access_invitation import ClientAccessInvitation
+from app.models.notification import Notification
 from app.models.market import (
     PLATFORM_CAPABILITIES,
     ProductMarket,
@@ -661,8 +662,20 @@ async def delete_user(
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked.is_(False))
         .values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
-    await db.delete(user)
-    await db.commit()
+    await db.execute(
+        delete(Notification)
+        .where(Notification.user_id == user_id)
+        .execution_options(skip_market_scope=True)
+    )
+    try:
+        await db.delete(user)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Não é possível excluir o usuário porque existem registros históricos vinculados.",
+        )
 
 
 @router.post("/from-client/{client_id}", response_model=ClientProvisionResponse, status_code=status.HTTP_201_CREATED)
@@ -800,13 +813,12 @@ async def issue_client_invitation(
         expires_at=invite_expiry(),
     )
     db.add(invitation)
-    await db.commit()
+    await db.flush()
     try:
         await send_client_invitation(recipient, user.username or "", token)
     except Exception:
         logger.warning("Falha ao enviar convite de cliente: invitation_id=%s", invitation.id)
-        invitation.revoked_at = datetime.now(timezone.utc)
-        await db.commit()
+        await db.rollback()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Não foi possível enviar o convite. Tente novamente.")
     invitation.sent_at = datetime.now(timezone.utc)
     await db.commit()

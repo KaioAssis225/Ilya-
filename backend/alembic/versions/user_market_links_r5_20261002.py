@@ -8,7 +8,7 @@ Impede duas identidades de representarem o mesmo cliente ou representante no
 mesmo mercado. A mesma identidade comercial pode continuar existindo de forma
 independente em BR e EU.
 """
-from alembic import op
+from alembic import context, op
 import sqlalchemy as sa
 
 
@@ -19,6 +19,8 @@ depends_on = None
 
 
 def _reject_duplicate_links(column: str) -> None:
+    if context.is_offline_mode():
+        return
     duplicate = op.get_bind().execute(sa.text(
         f"SELECT market_code, {column} FROM user_markets "
         f"WHERE {column} IS NOT NULL GROUP BY market_code, {column} "

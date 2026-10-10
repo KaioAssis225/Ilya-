@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
@@ -24,4 +24,5 @@ class Catalog(Base):
         UniqueConstraint("market_code", "name", name="uq_catalogs_market_name"),
         # Alvo da FK composta de products (market_fk_r7_20261005).
         UniqueConstraint("id", "market_code", name="uq_catalogs_id_market"),
+        Index("ix_catalogs_market_code", "market_code"),
     )

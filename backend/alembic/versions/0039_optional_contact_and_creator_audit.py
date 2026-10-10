@@ -6,7 +6,7 @@ Create Date: 2026-08-04
 """
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 
 revision = "0039"
@@ -16,26 +16,27 @@ depends_on = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    oversized = bind.execute(
-        sa.text(
-            """
-            SELECT 'clients' AS source, id, phone
-            FROM clients
-            WHERE length(phone) > 20
-            UNION ALL
-            SELECT 'representatives' AS source, id, phone
-            FROM representatives
-            WHERE length(phone) > 20
-            LIMIT 1
-            """
-        )
-    ).mappings().first()
-    if oversized:
-        raise RuntimeError(
-            "Migração 0039 interrompida: telefone maior que 20 caracteres em "
-            f"{oversized['source']} id={oversized['id']}."
-        )
+    if not context.is_offline_mode():
+        bind = op.get_bind()
+        oversized = bind.execute(
+            sa.text(
+                """
+                SELECT 'clients' AS source, id, phone
+                FROM clients
+                WHERE length(phone) > 20
+                UNION ALL
+                SELECT 'representatives' AS source, id, phone
+                FROM representatives
+                WHERE length(phone) > 20
+                LIMIT 1
+                """
+            )
+        ).mappings().first()
+        if oversized:
+            raise RuntimeError(
+                "Migração 0039 interrompida: telefone maior que 20 caracteres em "
+                f"{oversized['source']} id={oversized['id']}."
+            )
 
     op.alter_column(
         "clients",
@@ -114,26 +115,27 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    missing_email = bind.execute(
-        sa.text(
-            """
-            SELECT 'clients' AS source, id
-            FROM clients
-            WHERE email IS NULL
-            UNION ALL
-            SELECT 'representatives' AS source, id
-            FROM representatives
-            WHERE email IS NULL
-            LIMIT 1
-            """
-        )
-    ).mappings().first()
-    if missing_email:
-        raise RuntimeError(
-            "Downgrade 0039 não é seguro: existe e-mail vazio em "
-            f"{missing_email['source']} id={missing_email['id']}."
-        )
+    if not context.is_offline_mode():
+        bind = op.get_bind()
+        missing_email = bind.execute(
+            sa.text(
+                """
+                SELECT 'clients' AS source, id
+                FROM clients
+                WHERE email IS NULL
+                UNION ALL
+                SELECT 'representatives' AS source, id
+                FROM representatives
+                WHERE email IS NULL
+                LIMIT 1
+                """
+            )
+        ).mappings().first()
+        if missing_email:
+            raise RuntimeError(
+                "Downgrade 0039 não é seguro: existe e-mail vazio em "
+                f"{missing_email['source']} id={missing_email['id']}."
+            )
 
     op.alter_column(
         "representatives",

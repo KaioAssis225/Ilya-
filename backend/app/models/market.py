@@ -107,6 +107,8 @@ class UserMarket(Base, TimestampMixin):
             unique=True,
             postgresql_where=rep_id.is_not(None),
         ),
+        Index("ix_user_markets_linked_client_id", "linked_client_id"),
+        Index("ix_user_markets_rep_id", "rep_id"),
     )
 
 
@@ -147,7 +149,7 @@ class ProductMarket(Base, TimestampMixin):
         String(20), nullable=False, server_default=VAT_SOURCE_LEGACY
     )
     approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -209,7 +211,6 @@ class MarketOrderCounter(Base):
     __tablename__ = "market_order_counters"
 
     market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), primary_key=True)
-    number_owner_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     next_value: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

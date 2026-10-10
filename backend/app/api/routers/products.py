@@ -880,6 +880,12 @@ async def delete_product(
     # Migration/01 + decisão do Alto Comando (05/08/2026): desativação, não
     # exclusão física. O product_code permanece reservado (Opção A) e a foto
     # não é apagada — o produto pode ser reativado no futuro.
+    availability = (await db.execute(select(ProductMarket).where(
+        ProductMarket.product_id == product_id,
+        ProductMarket.market_code == principal.code,
+    ))).scalar_one_or_none()
+    if availability:
+        availability.is_available = False
     product.is_active = False
     product.source_version += 1
     await db.commit()

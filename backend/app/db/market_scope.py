@@ -53,3 +53,10 @@ def add_market_scope(execute_state) -> None:
                 )
             )
         execute_state.statement = statement
+    elif execute_state.is_update or execute_state.is_delete:
+        mapper = execute_state.bind_mapper
+        entity = mapper.class_ if mapper is not None else None
+        if entity in MARKET_SCOPED_MODELS:
+            execute_state.statement = execute_state.statement.where(
+                entity.market_code == market
+            )

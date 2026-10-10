@@ -34,7 +34,7 @@ class _RowsResult:
         return _Scalars(self.values)
 
 
-def test_next_codes_uses_owner_sequence_and_global_orc():
+def test_next_codes_uses_global_market_sequences():
     async def run_test():
         owner_id = uuid.uuid4()
         db = AsyncMock()
@@ -49,9 +49,7 @@ def test_next_codes_uses_owner_sequence_and_global_orc():
         assert orc_id == "ORC-0042"
         assert order_number == 3
         assert db.execute.await_count == 2
-        assert db.execute.await_args_list[0].args[1] == {
-            "market_code": "EU", "number_owner_id": str(owner_id)
-        }
+        assert db.execute.await_args_list[0].args[1] == {"market_code": "EU"}
         assert db.execute.await_args_list[1].args[1] == {"market_code": "EU"}
 
     asyncio.run(run_test())
