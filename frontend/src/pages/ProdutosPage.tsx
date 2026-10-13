@@ -165,9 +165,9 @@ type PriceTable = PriceKey | 'todos'
 const PRICE_TABLE_KEY = 'catalogo_tabela_preco'
 const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
   { value: 'lojista', label: 'Lojista' },
+  { value: 'arquiteto', label: 'Arquiteto' },
   { value: 'corporativo', label: 'Corporativo' },
   { value: 'pvp', label: 'PVP' },
-  { value: 'arquiteto', label: 'Arquiteto' },
   { value: 'todos', label: 'Todos' },
 ]
 
