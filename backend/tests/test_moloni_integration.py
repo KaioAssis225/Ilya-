@@ -132,3 +132,59 @@ def test_moloni_retries_once_after_server_rejects_token(monkeypatch):
     assert len(responses) == 2
     assert api.token == "new-access"
     assert connection.token_expires_at is None
+
+
+def test_moloni_resolves_nested_article_category_without_recreating_it():
+    from app.services.moloni_exporter import _resolve_product_category_id
+
+    class Api:
+        def __init__(self): self.calls = []
+        async def post(self, endpoint, payload):
+            self.calls.append((endpoint, payload))
+            if endpoint == "productCategories/getAll":
+                if payload["parent_id"] == 0:
+                    return [{"category_id": 12, "name": "Móveis"}]
+                return [{"category_id": 34, "name": "Cadeiras"}]
+            raise AssertionError(endpoint)
+
+    api = Api()
+    assert asyncio.run(_resolve_product_category_id(api, 1, "Móveis / Cadeiras")) == 34
+    assert [call[1]["parent_id"] for call in api.calls] == [0, 12]
+
+
+def test_moloni_creates_missing_article_category_under_parent():
+    from app.services.moloni_exporter import _resolve_product_category_id
+
+    class Api:
+        def __init__(self): self.calls = []
+        async def post(self, endpoint, payload):
+            self.calls.append((endpoint, payload))
+            if endpoint == "productCategories/getAll":
+                return [{"category_id": 12, "name": "Móveis"}] if payload["parent_id"] == 0 else []
+            if endpoint == "productCategories/insert":
+                return {"category_id": 34}
+            raise AssertionError(endpoint)
+
+    api = Api()
+    assert asyncio.run(_resolve_product_category_id(api, 1, "Móveis / Cadeiras")) == 34
+    assert api.calls[-1] == ("productCategories/insert", {"company_id": 1, "parent_id": 12, "name": "Cadeiras"})
+
+
+def test_product_article_metadata_normalizes_path_and_blank_fields():
+    from app.schemas.product import ProductUpdate
+
+    product = ProductUpdate(ean="  ", summary="  Resumo  ", article_category_path=" Móveis / Cadeiras ")
+    assert product.ean is None
+    assert product.summary == "Resumo"
+    assert product.article_category_path == "Móveis / Cadeiras"
+
+
+def test_moloni_tax_payload_requires_explicit_nonzero_rate():
+    import pytest
+    from app.services.moloni_exporter import MoloniError, _tax_for_rate
+
+    assert _tax_for_rate("23.00", {"23.00": 7}) == {
+        "tax_id": 7, "value": 23.0, "order": 1, "cumulative": 0,
+    }
+    with pytest.raises(MoloniError, match="motivo de isenção"):
+        _tax_for_rate("0.00", {"0.00": 8})

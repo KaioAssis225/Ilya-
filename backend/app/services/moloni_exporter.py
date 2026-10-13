@@ -92,14 +92,41 @@ class MoloniApi:
             raise MoloniError(f"Moloni rejeitou {endpoint}: " + str(payload.get("errors", payload))[:800])
         return payload
 
-async def _resolve_product_category_id(api: MoloniApi, company_id: int) -> int:
-    """Return a category accepted by the Moloni API for this company.
+async def _resolve_product_category_id(api: MoloniApi, company_id: int, path: str | None = None) -> int:
+    """Resolve a nested article category, creating missing levels when needed.
 
-    The category id shown in Moloni's web panel is not always the id exposed
-    by the API connection. Validate the configured id first, then use the
-    first top-level category returned by the API as a safe account-local
-    fallback.
+    Without a path, validate the configured fallback category for this account.
     """
+    if path:
+        parent_id = 0
+        for name in path.split(" / "):
+            offset = 0
+            matches = []
+            while True:
+                response = await api.post(
+                    "productCategories/getAll",
+                    {"company_id": company_id, "parent_id": parent_id, "qty": 50, "offset": offset},
+                )
+                categories = response if isinstance(response, list) else response.get("categories") or response.get("data") or []
+                matches.extend(
+                    category for category in categories
+                    if isinstance(category, dict) and str(category.get("name", "")).casefold() == name.casefold()
+                )
+                if len(categories) < 50:
+                    break
+                offset += 50
+            if len(matches) > 1:
+                raise MoloniError(f"Categoria Moloni ambígua: {path}")
+            if matches:
+                parent_id = int(matches[0]["category_id"])
+            else:
+                created = _record(await api.post(
+                    "productCategories/insert",
+                    {"company_id": company_id, "parent_id": parent_id, "name": name},
+                ), "productCategories/insert")
+                parent_id = _entity_id(created, "category_id", "id", endpoint="productCategories/insert")
+        return parent_id
+
     configured_id = int(settings.MOLONI_PRODUCT_CATEGORY_ID)
     try:
         category = await api.post(
@@ -179,6 +206,15 @@ async def _resolve_tax_mappings(api: MoloniApi, company_id: int, configured: dic
         raise MoloniError(f"Moloni não devolveu imposto para a taxa {rate_text} na empresa {company_id}.")
     return resolved
 
+
+def _tax_for_rate(rate: str, mappings: dict[str, int]) -> dict:
+    if rate not in mappings:
+        raise MoloniError("IVA sem mapeamento Moloni: " + rate)
+    value = Decimal(rate)
+    if value == 0:
+        raise MoloniError("Artigo com IVA zero precisa de motivo de isenção validado antes do envio ao Moloni.")
+    return {"tax_id": mappings[rate], "value": float(value), "order": 1, "cumulative": 0}
+
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
@@ -188,7 +224,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one()
     if not client.tax_id: raise MoloniError("Cliente EU sem NIF/tax_id.")
     api = MoloniApi(connection, db)
-    product_category_id = await _resolve_product_category_id(api, connection.company_id)
+    category_ids: dict[str | None, int] = {}
     # Moloni validates this field even when its customer-insert documentation
     # describes salesman_id as optional. Reuse the same configured seller on
     # the customer and estimate so both requests carry a valid integer.
@@ -213,16 +249,34 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     for index, item in enumerate(order.items):
         product = (await db.execute(select(Product).where(Product.market_code == "EU", Product.product_code == item.product_code))).scalar_one_or_none()
         if not product: raise MoloniError("Produto EU não encontrado: " + item.product_code)
+        rate = str(item.ipi_rate)
+        tax = _tax_for_rate(rate, mappings)
         plink = (await db.execute(select(MoloniProductLink).where(MoloniProductLink.connection_id == connection.id, MoloniProductLink.product_id == product.id))).scalar_one_or_none()
         if plink: pid = plink.moloni_product_id
         else:
-            created = _record(await api.post("products/insert", {"company_id": connection.company_id, "category_id": product_category_id, "type": 1, "name": product.description, "reference": product.product_code, "price": str(product.price_lojista), "unit_id": settings.MOLONI_PRODUCT_UNIT_ID, "has_stock": 0, "stock": 0, "exemption_reason": "M99"}), "products/insert")
+            path = product.article_category_path
+            if path not in category_ids:
+                category_ids[path] = await _resolve_product_category_id(api, connection.company_id, path)
+            article = {
+                "company_id": connection.company_id,
+                "category_id": category_ids[path],
+                "type": 1,
+                "name": product.description,
+                "summary": product.summary or "",
+                "reference": product.product_code,
+                "ean": product.ean or "",
+                "price": str(product.price_lojista),
+                "unit_id": settings.MOLONI_PRODUCT_UNIT_ID,
+                "has_stock": 0,
+                "stock": 0,
+                "taxes": [tax],
+            }
+            created = _record(await api.post("products/insert", article), "products/insert")
             pid = _entity_id(created, "product_id", "productId", "id", endpoint="products/insert"); db.add(MoloniProductLink(connection_id=connection.id, product_id=product.id, moloni_product_id=pid))
-        rate = str(item.ipi_rate)
-        if rate not in mappings: raise MoloniError("IVA sem mapeamento Moloni: " + rate)
-        products.append({"product_id": pid, "name": item.description, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "exemption_reason": "M99", "taxes": [{"tax_id": mappings[rate], "order": 1, "cumulative": 0}]})
+        products.append({"product_id": pid, "name": item.description, "summary": product.summary or "", "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [tax]})
     try:
-        response = _record(await api.post("estimates/insert", {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0, "exemption_reason": "M99"}), "estimates/insert")
+        estimate = {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}
+        response = _record(await api.post("estimates/insert", estimate), "estimates/insert")
     except MoloniError as exc:
         raise MoloniError(f"{exc} (salesman_id={salesman_id})") from exc
     return _entity_id(response, "document_id", "documentId", "id", endpoint="estimates/insert")

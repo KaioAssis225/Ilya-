@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
-import { useProductsPage, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
+import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
@@ -373,7 +373,8 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 // ── PRODUTOS ──────────────────────────────────────────────────────────────────
 
 const EMPTY_PRODUCT: ProductCreate = {
-  product_code: '', description: '', type: 'Outro', catalog_id: null, is_circular: false,
+  product_code: '', description: '', ean: null, summary: null, article_category_path: null,
+  type: 'Outro', catalog_id: null, is_circular: false,
   is_set: false, set_items: [], components: [],
   altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, observacao: null,
   all_optionals_categories: null, optional_ids: [],
@@ -785,6 +786,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     product.market_prices?.[key] ?? (key === 'lojista' ? product.price_lojista : key === 'corporativo' ? product.price_corporativo : null)
   const [search, setSearch] = useState('')
   const [filterCatalogId, setFilterCatalogId] = useState('')
+  const [filterArticleCategory, setFilterArticleCategory] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)
   const [sortKey, setSortKey] = useState<'product_code' | 'description' | 'price_lojista'>('product_code')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -801,6 +803,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     limit: ITEMS_PER_PAGE,
     q: debouncedSearch || undefined,
     catalog_id: filterCatalogId || undefined,
+    article_category_path: filterArticleCategory || undefined,
     sort_by: sortKey,
     sort_dir: sortDir,
   })
@@ -818,6 +821,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const { data: allOptionals = [] } = useOptionals()
   const { data: allTypes = [] } = useProductTypes()
   const { data: allCatalogs = [] } = useCatalogs()
+  const { data: articleCategories = [] } = useArticleCategories()
   const { data: optCategories = [] } = useOptionalCategories()
   const createM = useCreateProduct()
   const updateM = useUpdateProduct()
@@ -929,6 +933,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     setForm({
       product_code: p.product_code,
       description: p.description,
+      ean: p.ean ?? null,
+      summary: p.summary ?? null,
+      article_category_path: p.article_category_path ?? null,
       description_pt_pt: p.description_pt_pt ?? p.description,
       description_en: p.description_en ?? '',
       type: p.type ?? 'Outro',
@@ -1031,7 +1038,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <span className="text-sm text-muted whitespace-nowrap">{totalProducts} {tx(totalProducts === 1 ? 'produto' : 'produtos')}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
             <input aria-label={tx('Buscar produtos por código ou descrição')} className="input pl-9" placeholder={tx('Buscar por código ou descrição...')} value={search} onChange={(e) => { setSearch(e.target.value); onPage(1) }} />
@@ -1045,6 +1052,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             {allCatalogs.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
+          </select>
+          <select
+            className="input w-full sm:w-44 flex-shrink-0"
+            aria-label={tx('Filtrar por categoria de artigo')}
+            value={filterArticleCategory}
+            onChange={(e) => { setFilterArticleCategory(e.target.value); onPage(1) }}
+          >
+            <option value="">{tx('Todas as categorias')}</option>
+            {articleCategories.map(path => <option key={path} value={path}>{path}</option>)}
           </select>
           {(isEurope || canClassifyBr) && (
             <button className="btn-primary flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: color, touchAction: 'manipulation' } as React.CSSProperties} onClick={openCreate}>
@@ -1076,6 +1092,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <div className="min-w-0">
                       <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
                       <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
+                      {p.ean && <p className="text-[10px] text-muted">EAN {p.ean}</p>}
+                      {p.article_category_path && <p className="text-[10px] text-muted">{p.article_category_path}</p>}
                     </div>
                     <div className="flex gap-0 flex-shrink-0">
                       <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
@@ -1161,8 +1179,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               <tbody>
                 {pageItems.map((p) => (
                   <tr key={p.id} className="table-row">
-                    <td data-product-col="code" className="px-4 py-3 font-mono text-sm font-medium border-r border-line whitespace-normal break-words align-top" style={{ color }}>{p.product_code}</td>
-                    <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>{p.description}</td>
+                    <td data-product-col="code" className="px-4 py-3 font-mono text-sm font-medium border-r border-line whitespace-normal break-words align-top" style={{ color }}>
+                      {p.product_code}
+                      {p.ean && <span className="block text-[10px] text-muted">EAN {p.ean}</span>}
+                    </td>
+                    <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>
+                      {p.description}
+                      {p.article_category_path && <span className="block text-xs text-muted">{p.article_category_path}</span>}
+                    </td>
                     <td data-product-col="dimensions" className="px-4 py-3 text-ink-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}
                     </td>
@@ -1260,6 +1284,23 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   required
                 />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted">{tx('EAN')}</span>
+                <input className="input" inputMode="numeric" pattern="[0-9]{8,13}" maxLength={13}
+                  value={form.ean ?? ''} onChange={(e) => setForm({ ...form, ean: e.target.value || null })} />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted">{tx('Categoria de artigo')}</span>
+                <input className="input" list="article-category-options" placeholder={tx('Ex.: Móveis / Cadeiras')}
+                  value={form.article_category_path ?? ''}
+                  onChange={(e) => setForm({ ...form, article_category_path: e.target.value || null })} />
+                <datalist id="article-category-options">{articleCategories.map(path => <option key={path} value={path} />)}</datalist>
+              </label>
+              <label className="flex flex-col gap-1 col-span-2">
+                <span className="text-xs text-muted">{tx('Resumo do artigo')}</span>
+                <input className="input" maxLength={1000} value={form.summary ?? ''}
+                  onChange={(e) => setForm({ ...form, summary: e.target.value || null })} />
               </label>
               {isEurope && (
                 <label className="flex flex-col gap-1 col-span-2">
