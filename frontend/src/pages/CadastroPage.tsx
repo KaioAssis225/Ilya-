@@ -860,6 +860,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     column => isEurope || (column !== 'price_pvp' && column !== 'price_arquiteto')
   )
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  // Um produto pode já ter um tipo salvo enquanto a lista de tipos ainda
+  // carrega, ou depois de uma importação anterior ao cadastro do tipo no
+  // mercado. Mantê-lo entre as opções evita que o navegador caia visualmente
+  // no primeiro item, "Sem tipo", e permite corrigir o vínculo sem apagá-lo.
+  const formTypeNames = Array.from(new Set([
+    ...allTypes.map(({ name }) => name),
+    ...(form.type && form.type !== 'Outro' ? [form.type] : []),
+  ])).sort((left, right) => left.localeCompare(right, locale))
 
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
     const width = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[column], Math.min(requestedWidth, 1600))
@@ -1349,10 +1357,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 }}>
                   {/* Tipo é opcional: "Outro" é o "sem tipo" aceito em qualquer mercado. */}
                   <option value="Outro">{tx('Sem tipo')}</option>
-                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
-                    .filter(t => t !== 'Outro')
-                    .map(t => (
-                      <option key={t} value={t}>{t}</option>
+                  {(formTypeNames.length > 0 ? formTypeNames : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
+                    .filter(typeName => typeName !== 'Outro')
+                    .map(typeName => (
+                      <option key={typeName} value={typeName}>{typeName}</option>
                     ))}
                   {(isEurope || canClassifyBr) && <option value="__new__">{tx('+ Adicionar Novo...')}</option>}
                 </select>
