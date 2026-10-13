@@ -527,6 +527,7 @@ async def _create_product_for_market(
         "set_items",
         "components",
         "price_pvp",
+        "price_arquiteto",
         "description_pt_pt",
         "description_en",
     })
@@ -578,7 +579,14 @@ async def _create_product_for_market(
     amounts = {
         "lojista": payload.price_lojista,
         "corporativo": payload.price_corporativo,
-        **({"pvp": payload.price_pvp} if market_code == "EU" else {}),
+        **(
+            {
+                "pvp": payload.price_pvp,
+                "arquiteto": payload.price_arquiteto,
+            }
+            if market_code == "EU"
+            else {}
+        ),
     }
     required_lists = set(amounts)
     available_lists = {price_list.code for price_list in lists}
@@ -710,6 +718,7 @@ async def update_product(
             exclude_unset=True,
             exclude={
                 "optional_ids", "set_items", "components", "price_pvp",
+                "price_arquiteto",
                 "description_pt_pt", "description_en",
             },
         )
@@ -717,6 +726,7 @@ async def update_product(
             "lojista": payload.price_lojista,
             "corporativo": payload.price_corporativo,
             "pvp": payload.price_pvp,
+            "arquiteto": payload.price_arquiteto,
         }
         translation_changes = {
             "description_pt_pt": payload.description_pt_pt,
@@ -755,7 +765,10 @@ async def update_product(
         if any(code not in lists_by_code for code in price_changes):
             raise HTTPException(
                 status_code=422,
-                detail="As listas Lojista, Corporativo e PVP não estão configuradas em Portugal.",
+                detail=(
+                    "As listas Lojista, Corporativo, PVP e Arquiteto não estão "
+                    "configuradas em Portugal."
+                ),
             )
         for code, amount in price_changes.items():
             if amount is None:
@@ -809,6 +822,7 @@ async def update_product(
 
     data = payload.model_dump(exclude_unset=True, exclude={"optional_ids", "set_items", "components"})
     data.pop("price_pvp", None)
+    data.pop("price_arquiteto", None)
     data.pop("description_pt_pt", None)
     data.pop("description_en", None)
     optional_ids = payload.optional_ids

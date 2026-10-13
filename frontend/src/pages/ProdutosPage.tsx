@@ -159,7 +159,7 @@ function FullProductImage({ product }: { product: Product }) {
 // A escolha é só de EXIBIÇÃO — o valor aplicado no orçamento segue resolvido no
 // servidor pelo perfil do cliente, nunca por esse seletor.
 
-type PriceKey = 'lojista' | 'corporativo' | 'pvp'
+type PriceKey = 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
 type PriceTable = PriceKey | 'todos'
 
 const PRICE_TABLE_KEY = 'catalogo_tabela_preco'
@@ -167,6 +167,7 @@ const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
   { value: 'lojista', label: 'Lojista' },
   { value: 'corporativo', label: 'Corporativo' },
   { value: 'pvp', label: 'PVP' },
+  { value: 'arquiteto', label: 'Arquiteto' },
   { value: 'todos', label: 'Todos' },
 ]
 
@@ -174,7 +175,7 @@ const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
 // duas de uma vez.
 function readPriceTable(): PriceTable {
   const saved = localStorage.getItem(PRICE_TABLE_KEY)
-  if (saved === 'corporativo' || saved === 'pvp' || saved === 'todos') return saved
+  if (saved === 'corporativo' || saved === 'pvp' || saved === 'arquiteto' || saved === 'todos') return saved
   if (saved === 'ambos') return 'todos'
   return 'lojista'
 }
@@ -708,7 +709,7 @@ export default function ProdutosPage() {
   }, [priceTable])
 
   useEffect(() => {
-    const discovered = (['lojista', 'corporativo', 'pvp'] as PriceKey[]).filter(key =>
+    const discovered = (['lojista', 'corporativo', 'pvp', 'arquiteto'] as PriceKey[]).filter(key =>
       products.some(product => product.market_prices?.[key] != null ||
         (key === 'lojista' && product.price_lojista != null) ||
         (key === 'corporativo' && product.price_corporativo != null))

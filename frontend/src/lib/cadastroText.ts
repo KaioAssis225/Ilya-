@@ -9,7 +9,7 @@
  *
  * `{nome}` no texto é substituído por `vars.nome` nos dois idiomas.
  *
- * "Lojista", "Corporativo" e "PVP" são nomes comerciais e ficam iguais em
+ * "Lojista", "Corporativo", "PVP" e "Arquiteto" são nomes comerciais e ficam iguais em
  * inglês, como no catálogo e no orçamento.
  */
 const EN: Record<string, string> = {
@@ -128,6 +128,7 @@ const EN: Record<string, string> = {
   'Preço Lojista ({currency}) *': 'Lojista price ({currency}) *',
   'Preço Corporativo ({currency}) *': 'Corporativo price ({currency}) *',
   'Preço PVP (€) *': 'PVP price (€) *',
+  'Preço Arquiteto (€) *': 'Architect price (€) *',
   'Observação': 'Notes',
   'Informações técnicas, restrições, montagem...': 'Technical details, restrictions, assembly...',
   'Tipo': 'Type',

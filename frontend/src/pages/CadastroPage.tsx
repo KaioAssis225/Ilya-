@@ -92,7 +92,7 @@ function Th({ label, col, sortKey, sortDir, onSort, color }: {
   )
 }
 
-type ProductColumnKey = 'code' | 'description' | 'dimensions' | 'price_lojista' | 'price_corporativo' | 'price_pvp' | 'optionals' | 'photo' | 'actions'
+type ProductColumnKey = 'code' | 'description' | 'dimensions' | 'price_lojista' | 'price_corporativo' | 'price_pvp' | 'price_arquiteto' | 'optionals' | 'photo' | 'actions'
 
 const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
   code: 110,
@@ -101,6 +101,7 @@ const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
   price_lojista: 120,
   price_corporativo: 120,
   price_pvp: 120,
+  price_arquiteto: 120,
   optionals: 150,
   photo: 72,
   actions: 72,
@@ -113,6 +114,7 @@ const INITIAL_PRODUCT_COLUMN_WIDTHS: Record<ProductColumnKey, number> = {
   price_lojista: 140,
   price_corporativo: 140,
   price_pvp: 140,
+  price_arquiteto: 140,
   optionals: 240,
   photo: 88,
   actions: 80,
@@ -376,7 +378,7 @@ const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', ean: null, summary: null, article_category_path: null,
   type: 'Outro', catalog_id: null, is_circular: false,
   is_set: false, set_items: [], components: [],
-  altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, observacao: null,
+  altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, price_arquiteto: 0, observacao: null,
   all_optionals_categories: null, optional_ids: [],
 }
 
@@ -782,7 +784,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const locale = isEurope ? 'pt-PT' : 'pt-BR'
   const currency = isEurope ? 'EUR' : 'BRL'
   const money = (value: number | null | undefined) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value ?? 0))
-  const marketPrice = (product: Product, key: 'lojista' | 'corporativo' | 'pvp') =>
+  const marketPrice = (product: Product, key: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto') =>
     product.market_prices?.[key] ?? (key === 'lojista' ? product.price_lojista : key === 'corporativo' ? product.price_corporativo : null)
   const [search, setSearch] = useState('')
   const [filterCatalogId, setFilterCatalogId] = useState('')
@@ -852,7 +854,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
   const [columnWidths, setColumnWidths] = useState<Record<ProductColumnKey, number>>(INITIAL_PRODUCT_COLUMN_WIDTHS)
-  const visibleColumnKeys = (Object.keys(columnWidths) as ProductColumnKey[]).filter(column => isEurope || column !== 'price_pvp')
+  const visibleColumnKeys = (Object.keys(columnWidths) as ProductColumnKey[]).filter(
+    column => isEurope || (column !== 'price_pvp' && column !== 'price_arquiteto')
+  )
   const tableContainerRef = useRef<HTMLDivElement>(null)
 
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
@@ -895,6 +899,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       price_lojista: 0.11,
       price_corporativo: 0.11,
       price_pvp: isEurope ? 0.11 : 0,
+      price_arquiteto: isEurope ? 0.11 : 0,
       optionals: 0.12,
       photo: 0.05,
       actions: 0.04,
@@ -949,6 +954,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       price_lojista: p.price_lojista ?? 0,
       price_corporativo: p.price_corporativo ?? 0,
       price_pvp: p.market_prices?.pvp ?? 0,
+      price_arquiteto: p.market_prices?.arquiteto ?? 0,
       observacao: p.observacao ?? null,
       optional_ids: isConjunto ? [] : p.optionals.map((o) => o.id),
       set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
@@ -1112,6 +1118,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <span className="block text-[10px] text-muted">Lojista <strong className="text-sm text-ink">{money(marketPrice(p, 'lojista'))}</strong></span>
                       <span className="block text-[10px] text-muted">Corporativo <strong className="text-ink-2">{money(marketPrice(p, 'corporativo'))}</strong></span>
                       {isEurope && <span className="block text-[10px] text-muted">PVP <strong className="text-gold">{money(marketPrice(p, 'pvp'))}</strong></span>}
+                      {isEurope && <span className="block text-[10px] text-muted">Arquiteto <strong className="text-gold">{money(marketPrice(p, 'arquiteto'))}</strong></span>}
                     </span>
                   </div>
                   {(p.optionals.length > 0 || p.all_optionals_categories) && (
@@ -1171,6 +1178,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     sort={{ active: sortKey === 'price_lojista', dir: sortDir, onClick: () => toggle('price_lojista') }} />
                   <ResizableProductTh label="Corporativo" column="price_corporativo" width={columnWidths.price_corporativo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   {isEurope && <ResizableProductTh label="PVP" column="price_pvp" width={columnWidths.price_pvp} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />}
+                  {isEurope && <ResizableProductTh label="Arquiteto" column="price_arquiteto" width={columnWidths.price_arquiteto} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />}
                   <ResizableProductTh label={tx('Opcionais')} column="optionals" width={columnWidths.optionals} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label={tx('Foto')} column="photo" width={columnWidths.photo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label="" column="actions" width={columnWidths.actions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
@@ -1193,6 +1201,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td data-product-col="price_lojista" className="px-4 py-3 text-sm font-medium text-ink border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'lojista'))}</td>
                     <td data-product-col="price_corporativo" className="px-4 py-3 text-sm text-ink-2 border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'corporativo'))}</td>
                     {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'pvp'))}</td>}
+                    {isEurope && <td data-product-col="price_arquiteto" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'arquiteto'))}</td>}
                     <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {p.optionals.length > 0 || p.all_optionals_categories
                         ? getProductOptionalsLabel(p, catLabel, ', ', tx('Todos'))
@@ -1274,6 +1283,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-muted">{tx('Preço PVP (€) *')}</span>
                   <NumberField className="input" min="0" step="0.01" value={form.price_pvp} onValueChange={(v) => setForm({ ...form, price_pvp: v })} required />
+                </label>
+              )}
+              {isEurope && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-muted">{tx('Preço Arquiteto (€) *')}</span>
+                  <NumberField className="input" min="0" step="0.01" value={form.price_arquiteto} onValueChange={(v) => setForm({ ...form, price_arquiteto: v })} required />
                 </label>
               )}
               <label className="flex flex-col gap-1 col-span-2">
@@ -2128,7 +2143,7 @@ function PeopleTab<T extends Client | Representative>({
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{tx('Perfil de faturamento *')}</span>
                 <div className="flex gap-2">
-                  {(activeMarket === 'EU' ? ['lojista', 'corporativo', 'pvp'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
+                  {(activeMarket === 'EU' ? ['lojista', 'corporativo', 'pvp', 'arquiteto'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
                     <button
                       key={profile}
                       type="button"
