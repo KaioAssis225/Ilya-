@@ -92,11 +92,12 @@ function Th({ label, col, sortKey, sortDir, onSort, color }: {
   )
 }
 
-type ProductColumnKey = 'code' | 'description' | 'dimensions' | 'price_lojista' | 'price_corporativo' | 'price_pvp' | 'price_arquiteto' | 'optionals' | 'photo' | 'actions'
+type ProductColumnKey = 'code' | 'description' | 'type' | 'dimensions' | 'price_lojista' | 'price_corporativo' | 'price_pvp' | 'price_arquiteto' | 'optionals' | 'photo' | 'actions'
 
 const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
   code: 110,
   description: 180,
+  type: 130,
   dimensions: 190,
   price_lojista: 120,
   price_corporativo: 120,
@@ -110,6 +111,7 @@ const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
 const INITIAL_PRODUCT_COLUMN_WIDTHS: Record<ProductColumnKey, number> = {
   code: 140,
   description: 320,
+  type: 160,
   dimensions: 270,
   price_lojista: 140,
   price_corporativo: 140,
@@ -894,13 +896,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     // espaço; todo texto continua visível por quebra de linha, sem reticências.
     const ratios: Record<ProductColumnKey, number> = {
       code: 0.11,
-      description: isEurope ? 0.19 : 0.22,
-      dimensions: 0.16,
-      price_lojista: 0.11,
-      price_corporativo: 0.11,
-      price_pvp: isEurope ? 0.11 : 0,
-      price_arquiteto: isEurope ? 0.11 : 0,
-      optionals: 0.12,
+      description: isEurope ? 0.16 : 0.19,
+      type: 0.10,
+      dimensions: 0.14,
+      price_lojista: 0.10,
+      price_corporativo: 0.10,
+      price_pvp: isEurope ? 0.10 : 0,
+      price_arquiteto: isEurope ? 0.10 : 0,
+      optionals: 0.10,
       photo: 0.05,
       actions: 0.04,
     }
@@ -1098,6 +1101,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <div className="min-w-0">
                       <span className="text-[11px] font-mono font-semibold" style={{ color }}>{p.product_code}</span>
                       <p className="text-sm font-medium text-ink leading-snug break-words">{p.description}</p>
+                      <p className="text-[10px] font-medium text-muted uppercase">{tx('Tipo')}: {p.type || tx('Sem tipo')}</p>
                       {p.ean && <p className="text-[10px] text-muted">EAN {p.ean}</p>}
                       {p.article_category_path && <p className="text-[10px] text-muted">{p.article_category_path}</p>}
                     </div>
@@ -1173,6 +1177,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     sort={{ active: sortKey === 'product_code', dir: sortDir, onClick: () => toggle('product_code') }} />
                   <ResizableProductTh label={tx('Descrição')} column="description" width={columnWidths.description} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'description', dir: sortDir, onClick: () => toggle('description') }} />
+                  <ResizableProductTh label={tx('Tipo')} column="type" width={columnWidths.type} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label={tx('Dimensões')} column="dimensions" width={columnWidths.dimensions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
                   <ResizableProductTh label="Lojista" column="price_lojista" width={columnWidths.price_lojista} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'price_lojista', dir: sortDir, onClick: () => toggle('price_lojista') }} />
@@ -1194,6 +1199,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>
                       {p.description}
                       {p.article_category_path && <span className="block text-xs text-muted">{p.article_category_path}</span>}
+                    </td>
+                    <td data-product-col="type" className="px-4 py-3 text-xs font-medium text-ink-2 border-r border-line whitespace-normal break-words align-top">
+                      {p.type || tx('Sem tipo')}
                     </td>
                     <td data-product-col="dimensions" className="px-4 py-3 text-ink-2 text-xs border-r border-line whitespace-normal break-words align-top">
                       {isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}
