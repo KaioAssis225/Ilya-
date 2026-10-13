@@ -53,6 +53,9 @@ class ProductSetComponentRead(BaseModel):
 class ProductBase(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1, max_length=20_000)
+    ean: Optional[str] = Field(None, pattern=r"^\d{8,13}$")
+    summary: Optional[str] = Field(None, max_length=1_000)
+    article_category_path: Optional[str] = Field(None, max_length=255)
     type: str = Field(default="Outro", min_length=1, max_length=50)
     catalog_id: Optional[uuid.UUID] = None
     is_circular: bool = False
@@ -71,6 +74,23 @@ class ProductBase(BaseModel):
     def normalize_type(cls, value: str) -> str:
         return _strip_product_type(value) or ""
 
+    @field_validator("ean", "summary", mode="before")
+    @classmethod
+    def normalize_article_text(cls, value: Optional[str]) -> Optional[str]:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("article_category_path", mode="before")
+    @classmethod
+    def normalize_article_category(cls, value: Optional[str]) -> Optional[str]:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        parts = [part.strip() for part in value.split("/")]
+        if any(not part or len(part) > 80 for part in parts):
+            raise ValueError("Cada nível da categoria deve ter entre 1 e 80 caracteres.")
+        return " / ".join(parts)
+
 
 class ProductCreate(ProductBase):
     price_pvp: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
@@ -84,6 +104,9 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     product_code: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, min_length=1, max_length=20_000)
+    ean: Optional[str] = Field(None, pattern=r"^\d{8,13}$")
+    summary: Optional[str] = Field(None, max_length=1_000)
+    article_category_path: Optional[str] = Field(None, max_length=255)
     type: Optional[str] = Field(None, min_length=1, max_length=50)
     catalog_id: Optional[uuid.UUID] = None
     is_circular: Optional[bool] = None
@@ -107,6 +130,16 @@ class ProductUpdate(BaseModel):
     @classmethod
     def normalize_type(cls, value: Optional[str]) -> Optional[str]:
         return _strip_product_type(value)
+
+    @field_validator("ean", "summary", mode="before")
+    @classmethod
+    def normalize_article_text(cls, value: Optional[str]) -> Optional[str]:
+        return ProductBase.normalize_article_text(value)
+
+    @field_validator("article_category_path", mode="before")
+    @classmethod
+    def normalize_article_category(cls, value: Optional[str]) -> Optional[str]:
+        return ProductBase.normalize_article_category(value)
 
 
 class ProductBatchRequest(BaseModel):

@@ -312,6 +312,23 @@ async def _validate_product_dimensions(
             raise HTTPException(422, "Uma ou mais categorias de opcionais não pertencem ao mercado ativo.")
 
 
+@router.get("/article-categories", response_model=list[str])
+async def list_article_categories(
+    db: AsyncSession = Depends(get_db_session),
+    _: User = _ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Caminhos comerciais usados nos produtos do mercado ativo."""
+    rows = (await db.execute(
+        select(Product.article_category_path).distinct().where(
+            Product.market_code == principal.code,
+            Product.is_active.is_(True),
+            Product.article_category_path.is_not(None),
+        ).order_by(Product.article_category_path)
+    )).scalars().all()
+    return list(rows)
+
+
 @router.get("", response_model=List[ProductRead])
 async def list_products(
     response: Response,
@@ -325,6 +342,7 @@ async def list_products(
     ),
     group_id: uuid.UUID | None = Query(default=None),
     catalog_id: uuid.UUID | None = Query(default=None),
+    article_category_path: str | None = Query(default=None, max_length=255),
     include_total: bool = Query(default=True),
     sort_by: Literal[
         "product_code",
@@ -362,6 +380,9 @@ async def list_products(
             or_(
                 Product.product_code.ilike(search_pattern, escape="\\"),
                 Product.description.ilike(search_pattern, escape="\\"),
+                Product.ean.ilike(search_pattern, escape="\\"),
+                Product.summary.ilike(search_pattern, escape="\\"),
+                Product.article_category_path.ilike(search_pattern, escape="\\"),
                 exists().where(
                     ProductMarket.product_id == Product.id,
                     ProductMarket.market_code == active_market,
@@ -376,6 +397,13 @@ async def list_products(
         )
     if catalog_id:
         filters.append(Product.catalog_id == catalog_id)
+    if article_category_path:
+        category_path = article_category_path.strip()
+        if category_path:
+            filters.append(or_(
+                Product.article_category_path == category_path,
+                Product.article_category_path.startswith(category_path + " / ", autoescape=True),
+            ))
     if group_id:
         filters.append(
             _normalized_product_type_expression(Product.type).in_(

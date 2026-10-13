@@ -2,6 +2,7 @@ import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/r
 import api from '../lib/api'
 import type { PageResult, Product, ProductCreate, ProductUpdate } from '../types'
 import { useLocale } from './useLocale'
+import { useAuth } from './useAuth'
 
 const KEY = 'products'
 
@@ -12,6 +13,7 @@ export interface ProductPageParams {
   type?: string
   group_id?: string
   catalog_id?: string
+  article_category_path?: string
   include_total?: boolean
   sort_by?: 'product_code' | 'description' | 'type' | 'price_lojista' | 'price_corporativo'
   sort_dir?: 'asc' | 'desc'
@@ -39,6 +41,15 @@ export function useProductsPage(params: ProductPageParams, enabled = true) {
   return useQuery({
     ...productsPageQueryOptions({ ...params, language: locale }),
     enabled,
+  })
+}
+
+export function useArticleCategories() {
+  const { user } = useAuth()
+  return useQuery<string[]>({
+    queryKey: [KEY, 'article-categories', user?.active_market],
+    queryFn: () => api.get<string[]>('/products/article-categories').then((response) => response.data),
+    enabled: Boolean(user?.active_market),
   })
 }
 

@@ -24,6 +24,9 @@ class Product(Base, TimestampMixin):
     )
     product_code: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    ean: Mapped[str | None] = mapped_column(String(13), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    article_category_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
     # FK composta com market_code em __table_args__.
     catalog_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
@@ -69,6 +72,7 @@ class Product(Base, TimestampMixin):
         ),
         UniqueConstraint("market_code", "product_code", name="uq_products_market_code"),
         Index("ix_products_market_id", "market_code", "id"),
+        Index("ix_products_market_article_category", "market_code", "article_category_path"),
         Index(
             "ix_products_description_prefix_id",
             func.left(description, 512),

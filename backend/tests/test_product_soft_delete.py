@@ -293,6 +293,7 @@ class TestLeituraEscondeDesativado:
                 q=None,
                 product_type=None,
                 group_id=None,
+                article_category_path=None,
                 include_total=True,
                 sort_by="product_code",
                 sort_dir="asc",

@@ -62,6 +62,9 @@ export interface Product {
   id: string
   product_code: string
   description: string
+  ean?: string | null
+  summary?: string | null
+  article_category_path?: string | null
   description_pt_pt?: string | null
   description_en?: string | null
   type: string
@@ -94,6 +97,9 @@ export interface Product {
 export interface ProductCreate {
   product_code: string
   description: string
+  ean?: string | null
+  summary?: string | null
+  article_category_path?: string | null
   description_pt_pt?: string | null
   description_en?: string | null
   type?: string
