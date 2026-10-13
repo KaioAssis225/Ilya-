@@ -991,7 +991,7 @@ export default function ProdutosPage() {
                 onPointerEnter={() => warmProductImage(product)}
                 onPointerDown={() => warmProductImage(product)}
                 onFocus={() => warmProductImage(product)}
-                className="w-full bg-white border border-line rounded-2xl overflow-hidden text-left active:scale-[0.99] transition-transform duration-300"
+                className="w-full h-full flex flex-col bg-white border border-line rounded-2xl overflow-hidden text-left active:scale-[0.99] transition-transform duration-300"
                 style={{ touchAction: 'manipulation' }}
               >
                 {/* object-contain sobre fundo BRANCO: fotos de estúdio têm fundo
@@ -1008,7 +1008,7 @@ export default function ProdutosPage() {
                       </div>
                   }
                 </div>
-                <div className="px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
+                <div className="w-full flex-1 px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="type-code">{product.product_code}</span>
                     {selectedGroupId === '' && product.type && (
