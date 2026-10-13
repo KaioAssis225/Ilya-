@@ -800,10 +800,21 @@ export default function ProdutosPage() {
     setPage(1)
   }
 
-  // Types shown in subgroup dropdown cascade from selected group
-  const availableTypes = selectedGroupId
-    ? productTypes.filter(t => t.group_id === selectedGroupId)
-    : productTypes
+  // Types shown in subgroup dropdown cascade from selected group. Sort after
+  // every data refresh so types created later also follow the displayed locale.
+  const availableTypes = useMemo(() => {
+    const types = selectedGroupId
+      ? productTypes.filter(t => t.group_id === selectedGroupId)
+      : productTypes
+
+    return [...types].sort((a, b) =>
+      localizeFurnitureTerm(a.name, locale).localeCompare(
+        localizeFurnitureTerm(b.name, locale),
+        locale === 'en-GB' ? 'en' : 'pt-BR',
+        { sensitivity: 'base' },
+      ),
+    )
+  }, [locale, productTypes, selectedGroupId])
 
   const hasFilters = searchTerm || selectedCatalogId || selectedGroupId || selectedTypeName
 
