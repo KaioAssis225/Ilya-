@@ -327,7 +327,7 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             <div className="sm:col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted">{isEnglish ? 'Billing profile *' : 'Perfil de faturamento *'}</span>
               <div className="flex gap-2">
-                {(market === 'EU' ? ['lojista', 'corporativo', 'pvp'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
+                {(market === 'EU' ? ['lojista', 'corporativo', 'pvp', 'arquiteto'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
                   <button
                     key={profile}
                     type="button"
@@ -962,16 +962,17 @@ export default function OrcamentoPage() {
   const createRepM = useCreateRepresentative()
 
   // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62).
-  // A proteção adicional impede que um cadastro legado PVP no Brasil anuncie
+  // A proteção adicional impede que um perfil exclusivo de Portugal no Brasil anuncie
   // uma tabela inexistente enquanto o cálculo faz fallback para lojista.
   const requestedPriceProfile = selectedClient?.price_profile ?? 'lojista'
-  const priceProfile = market === 'BR' && requestedPriceProfile === 'pvp'
+  const priceProfile = market === 'BR' && (requestedPriceProfile === 'pvp' || requestedPriceProfile === 'arquiteto')
     ? 'lojista'
     : requestedPriceProfile
   const priceProfileLabel = {
     lojista: 'Lojista',
     corporativo: 'Corporativo',
     pvp: 'PVP',
+    arquiteto: 'Arquiteto',
   }[priceProfile]
 
   function handleClientChange(client: Client | null) {

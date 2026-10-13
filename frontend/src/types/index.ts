@@ -113,6 +113,7 @@ export interface ProductCreate {
   price_lojista?: number
   price_corporativo?: number
   price_pvp?: number
+  price_arquiteto?: number
   observacao?: string | null
   all_optionals_categories?: string | null
   optional_ids?: string[]
@@ -138,7 +139,7 @@ export interface Client {
   region: string | null
   tax_id: string | null
   market_code: 'BR' | 'EU'
-  price_profile: 'lojista' | 'corporativo' | 'pvp'
+  price_profile: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   max_discount: number
   rep_id: string | null
   created_at: string
@@ -162,7 +163,7 @@ export interface ClientCreate {
   country?: string
   region?: string | null
   tax_id?: string | null
-  price_profile?: 'lojista' | 'corporativo' | 'pvp'
+  price_profile?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   max_discount?: number
 }
 

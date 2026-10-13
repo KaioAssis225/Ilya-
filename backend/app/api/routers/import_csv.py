@@ -851,7 +851,11 @@ async def import_clients(file: UploadFile = File(...), db: AsyncSession = Depend
                     f"CPF/CNPJ '{f['cpf_cnpj']}' aparece mais de uma vez no CSV."
                 )
             profile = (_first(row, "price_profile", "perfil") or "lojista").lower()
-            allowed_profiles = ("lojista", "corporativo", "pvp") if market == "EU" else ("lojista", "corporativo")
+            allowed_profiles = (
+                ("lojista", "corporativo", "pvp", "arquiteto")
+                if market == "EU"
+                else ("lojista", "corporativo")
+            )
             if profile not in allowed_profiles or profile not in price_list_ids:
                 raise ValueError(f"price_profile inválido para o mercado {market}.")
             rep_key = _first(row, "rep_email", "representante_email")

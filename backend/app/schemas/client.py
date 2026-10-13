@@ -23,7 +23,7 @@ class ClientBase(BaseModel):
     country: str = Field("BR", min_length=2, max_length=2)
     region: Optional[str] = Field(None, max_length=120)
     tax_id: Optional[str] = Field(None, max_length=40)
-    price_profile: Literal["lojista", "corporativo", "pvp"] = "lojista"
+    price_profile: Literal["lojista", "corporativo", "pvp", "arquiteto"] = "lojista"
     max_discount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
 
     @field_validator("cpf_cnpj", mode="before")
@@ -71,7 +71,7 @@ class ClientUpdate(BaseModel):
     country: Optional[str] = Field(None, min_length=2, max_length=2)
     region: Optional[str] = Field(None, max_length=120)
     tax_id: Optional[str] = Field(None, max_length=40)
-    price_profile: Optional[Literal["lojista", "corporativo", "pvp"]] = None
+    price_profile: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
     # Permite reatribuir a carteira e consertar cliente órfão (ver ClientCreate).
     rep_id: Optional[uuid.UUID] = None

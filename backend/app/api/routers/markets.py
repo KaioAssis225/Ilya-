@@ -40,7 +40,7 @@ from app.models.client import Client
 from app.models.representative import Representative
 
 router = APIRouter(prefix="/api/v1/markets", tags=["markets"])
-_EU_LISTS = ("lojista", "corporativo", "pvp")
+_EU_LISTS = ("lojista", "corporativo", "pvp", "arquiteto")
 
 
 class VatDecisionRequest(BaseModel):
@@ -209,11 +209,12 @@ async def activate_europe(
         .where(
             Product.market_code == "EU",
             PriceList.market_code == "EU",
+            PriceList.code.in_(_EU_LISTS),
             ProductMarket.market_code == "EU",
             ProductMarket.is_available.is_(True),
         )
         .group_by(ProductPrice.product_id)
-        .having(func.count(ProductPrice.price_list_id) == 3)
+        .having(func.count(func.distinct(PriceList.code)) == len(_EU_LISTS))
     )).all()
     # IVA sem aprovação humana não fatura. A ativação só aceita taxas que
     # passaram pelo fluxo nominal de aprovação fiscal do mercado EU.
@@ -381,7 +382,7 @@ async def import_europe_catalog(
 ):
     """Importação atômica sobre produtos EU já cadastrados manualmente.
 
-    Colunas: product_code, lojista, corporativo, pvp, vat_rate e opcionalmente
+    Colunas: product_code, lojista, corporativo, pvp, arquiteto, vat_rate e opcionalmente
     is_available, description_pt_pt e description_en. O vat_rate é obrigatório e
     explícito por linha (inclusive 0) — não há herança do IPI do grupo do Ilya.
     A importação nunca cria ou copia um produto BR. Toda taxa importada nasce
@@ -438,7 +439,10 @@ async def import_europe_catalog(
     lists = (await db.execute(select(PriceList).where(PriceList.market_code == "EU"))).scalars().all()
     list_ids = {item.code: item.id for item in lists if item.currency == "EUR"}
     if set(list_ids) != set(_EU_LISTS):
-        errors.append("As listas europeias Lojista, Corporativo e PVP em EUR não estão configuradas.")
+        errors.append(
+            "As listas europeias Lojista, Corporativo, PVP e Arquiteto em EUR "
+            "não estão configuradas."
+        )
     if errors:
         raise HTTPException(422, {"message": "Importação rejeitada; nenhum dado foi alterado.", "errors": errors[:100]})
     for row in parsed:

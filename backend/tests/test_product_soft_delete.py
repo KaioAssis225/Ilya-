@@ -74,7 +74,7 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
     async def run_test():
         price_lists = [
             SimpleNamespace(id=uuid.uuid4(), code=code)
-            for code in ("lojista", "corporativo", "pvp")
+            for code in ("lojista", "corporativo", "pvp", "arquiteto")
         ]
         lists_result = MagicMock()
         lists_result.scalars.return_value.all.return_value = price_lists
@@ -106,6 +106,7 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
                     price_lojista=100,
                     price_corporativo=90,
                     price_pvp=150,
+                    price_arquiteto=120,
                 ),
                 db=db,
                 current_user=ADMIN,
@@ -122,7 +123,7 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
             isinstance(item, ProductMarket) and item.market_code == "BR"
             for item in added
         )
-        assert {price.amount for price in prices} == {90, 100, 150}
+        assert {price.amount for price in prices} == {90, 100, 120, 150}
         assert product.product_code == "EU-ONLY-001"
         assert result is returned
         db.commit.assert_awaited_once()
@@ -184,13 +185,14 @@ def test_delete_product_in_europe_deactivates_the_independent_european_product()
     asyncio.run(run_test())
 
 
-def test_update_product_in_europe_changes_only_three_euro_prices():
+def test_update_product_in_europe_changes_only_four_euro_prices():
     async def run_test():
         product = SimpleNamespace(id=uuid.uuid4(), source_version=1)
         price_lists = [
             SimpleNamespace(id=uuid.uuid4(), code="lojista"),
             SimpleNamespace(id=uuid.uuid4(), code="corporativo"),
             SimpleNamespace(id=uuid.uuid4(), code="pvp"),
+            SimpleNamespace(id=uuid.uuid4(), code="arquiteto"),
         ]
         stored_prices = [SimpleNamespace(amount=0) for _ in price_lists]
         product_result = _ScalarResult(product)
@@ -222,13 +224,14 @@ def test_update_product_in_europe_changes_only_three_euro_prices():
                     price_lojista=100,
                     price_corporativo=200,
                     price_pvp=300,
+                    price_arquiteto=400,
                 ),
                 db=db,
                 current_user=ADMIN,
                 principal=EU_PRINCIPAL,
             )
 
-        assert [price.amount for price in stored_prices] == [100, 200, 300]
+        assert [price.amount for price in stored_prices] == [100, 200, 300, 400]
         assert result is returned
         db.commit.assert_awaited_once()
 
@@ -240,7 +243,7 @@ def test_update_product_in_europe_keeps_separate_portuguese_and_english_names():
         product = SimpleNamespace(id=uuid.uuid4(), source_version=1)
         price_lists = [
             SimpleNamespace(id=uuid.uuid4(), code=code)
-            for code in ("lojista", "corporativo", "pvp")
+            for code in ("lojista", "corporativo", "pvp", "arquiteto")
         ]
         lists_result = MagicMock()
         lists_result.scalars.return_value.all.return_value = price_lists

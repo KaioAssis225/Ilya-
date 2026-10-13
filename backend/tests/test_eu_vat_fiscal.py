@@ -45,7 +45,7 @@ def _upload(csv_text: str) -> UploadFile:
 def _price_lists():
     return [
         SimpleNamespace(id=uuid.uuid4(), code=code, currency="EUR")
-        for code in ("lojista", "corporativo", "pvp")
+        for code in ("lojista", "corporativo", "pvp", "arquiteto")
     ]
 
 
@@ -103,7 +103,10 @@ class TestParseRequiredVat:
 def test_import_sem_coluna_vat_rate_rejeita_lote():
     async def run():
         # Cabeçalho sem vat_rate: rejeita antes de tocar o banco.
-        csv_text = "product_code;lojista;corporativo;pvp\nEU-1;100;90;150\n"
+        csv_text = (
+            "product_code;lojista;corporativo;pvp;arquiteto\n"
+            "EU-1;100;90;150;120\n"
+        )
         db = AsyncMock()
         with pytest.raises(HTTPException) as exc:
             await import_europe_catalog(file=_upload(csv_text), db=db, _=ADMIN)
@@ -120,9 +123,9 @@ def test_import_linha_sem_valor_de_vat_rejeita_lote():
         # Coluna presente, mas uma linha sem valor → lote inteiro rejeitado,
         # nada é gravado (nenhum commit).
         csv_text = (
-            "product_code;lojista;corporativo;pvp;vat_rate\n"
-            "EU-1;100;90;150;23\n"
-            "EU-2;100;90;150;\n"
+            "product_code;lojista;corporativo;pvp;arquiteto;vat_rate\n"
+            "EU-1;100;90;150;120;23\n"
+            "EU-2;100;90;150;120;\n"
         )
         pid1, pid2 = uuid.uuid4(), uuid.uuid4()
         db = AsyncMock()
@@ -145,9 +148,9 @@ def test_import_grava_pending_e_zera_aprovacao_sem_herdar_ipi():
     async def run():
         # Inclui a linha com 0 (válida) para provar que zero entra como taxa.
         csv_text = (
-            "product_code;lojista;corporativo;pvp;vat_rate\n"
-            "EU-1;100;90;150;23\n"
-            "EU-2;100;90;150;0\n"
+            "product_code;lojista;corporativo;pvp;arquiteto;vat_rate\n"
+            "EU-1;100;90;150;120;23\n"
+            "EU-2;100;90;150;120;0\n"
         )
         pid1, pid2 = uuid.uuid4(), uuid.uuid4()
         statements = []
@@ -195,14 +198,14 @@ def test_import_grava_pending_e_zera_aprovacao_sem_herdar_ipi():
 
 def test_activate_recusa_eu_sem_iva_aprovado():
     async def run():
-        # Três listas OK, mas há 1 SKU disponível sem IVA aprovado → 409.
+        # Quatro listas OK, mas há 1 SKU disponível sem IVA aprovado → 409.
         db = AsyncMock()
         db.execute.side_effect = [
             _CountResult(0),                         # clientes fora de PT
             _CountResult(0),                         # representantes fora de PT
             _CountResult(0),                         # dimensões EU válidas
             _CountResult(1),                         # disponíveis
-            _AllResult([(uuid.uuid4(), 3)]),         # com as 3 listas
+            _AllResult([(uuid.uuid4(), 4)]),         # com as 4 listas
             _CountResult(1),                         # sem IVA aprovado
         ]
         with pytest.raises(HTTPException) as exc:
@@ -243,7 +246,7 @@ def test_activate_passa_quando_tudo_aprovado():
             _CountResult(0),
             _CountResult(0),
             _CountResult(1),                         # disponíveis
-            _AllResult([(uuid.uuid4(), 3)]),         # com as 3 listas
+            _AllResult([(uuid.uuid4(), 4)]),         # com as 4 listas
             _CountResult(0),                         # nenhum sem IVA aprovado
         ]
         db.get = AsyncMock(return_value=market)
