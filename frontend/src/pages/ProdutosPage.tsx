@@ -194,11 +194,10 @@ function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
       : [])
   if (table === 'todos') return prices
 
-  // A conta do cliente-final recebe uma tabela só. Se a escolhida não for a que
-  // o servidor liberou, mostra a que existe em vez de esconder o preço: o
-  // seletor só restringe quando há de fato duas para escolher.
-  const picked = prices.filter(price => price.key === table)
-  return picked.length > 0 ? picked : prices
+  // Uma tabela selecionada nunca pode exibir o valor de outra. Isso também
+  // permite mostrar Arquiteto antes de todos os produtos receberem esse preço:
+  // os itens ainda não preenchidos ficam sem valor em vez de cair em Lojista.
+  return prices.filter(price => price.key === table)
 }
 
 function PriceTableToggle({ value, onChange, available }: { value: PriceTable; onChange: (next: PriceTable) => void; available: PriceKey[] }) {
@@ -714,10 +713,20 @@ export default function ProdutosPage() {
         (key === 'lojista' && product.price_lojista != null) ||
         (key === 'corporativo' && product.price_corporativo != null))
     )
-    if (discovered.length > 0) {
-      setAvailablePriceTables(current => Array.from(new Set([...current, ...discovered])))
+    if (user?.active_market === 'EU' && user.role !== 'cliente') {
+      // Operadores podem preparar a nova tabela mesmo enquanto produtos antigos
+      // ainda não possuem valor Arquiteto cadastrado.
+      setAvailablePriceTables(['lojista', 'corporativo', 'pvp', 'arquiteto'])
+      return
     }
-  }, [products])
+    const allowed = user?.active_market === 'BR'
+      ? (['lojista', 'corporativo'] as PriceKey[])
+      : discovered
+    setAvailablePriceTables(current => Array.from(new Set([
+      ...current.filter(key => allowed.includes(key)),
+      ...discovered,
+    ])))
+  }, [products, user?.active_market, user?.role])
 
   useEffect(() => {
     if (availablePriceTables.length === 0 || priceTable === 'todos') return
