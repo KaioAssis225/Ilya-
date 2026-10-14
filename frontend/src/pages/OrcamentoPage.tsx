@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, Check } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useClient, useClientsPage, useCreateClient } from '../hooks/useClients'
@@ -16,7 +16,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
-import { allowedForApplication, applicationName, formatChoice, productApplications, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, applicationName, formatChoice, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice } from '../types'
@@ -398,6 +398,17 @@ function readPersistedCart(userId?: string, market: 'BR' | 'EU' = 'BR'): Persist
   }
 }
 
+function initialLegacyOptionCategories(product: Product): Partial<Record<string, string>> {
+  const freeCategories = new Set((product.all_optionals_categories ?? '').split(',').filter(Boolean))
+  const categories: Partial<Record<string, string>> = {}
+  for (const optional of product.optionals) {
+    if (!(optional.category in categories) && !freeCategories.has(optional.category)) {
+      categories[optional.category] = optional.color_name
+    }
+  }
+  return categories
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
 function Toast({ message, onDone, variant = 'success' }: { message: string; onDone: () => void; variant?: 'success' | 'error' }) {
@@ -476,33 +487,89 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
 }) {
   const entries = productApplications(product)
   if (!entries.length) return null
-  const required = entries.filter(entry => entry.application.required)
-  const filled = required.filter(entry => choices.some(choice => choice.application_id === entry.application.id)).length
+  const progress = requiredApplicationProgress(product, choices, allOptionals)
   const errors = validateApplicationChoices(product, choices, allOptionals)
   const grouped = Array.from(new Set(entries.map(entry => entry.application.category_code)))
-  return <section className="mt-2 space-y-2" aria-label={english ? 'Optional applications' : 'Aplicações do opcional'}>
-    {required.length > 0 && <p className="text-xs font-medium text-ink-2" aria-live="polite">
-      {english ? `Choose options — ${filled} of ${required.length} required applications filled` : `Escolha os opcionais — ${filled} de ${required.length} aplicações preenchidas`}
-    </p>}
-    {grouped.map(category => <div key={category} className="border border-line rounded-lg p-2">
-      <strong className="text-xs text-gold">{entries.find(entry => entry.application.category_code === category)?.application.category_name ?? category}</strong>
-      <div className="grid gap-2 mt-1">
+  return <section className="mt-3 space-y-3" aria-label={english ? 'Optional applications' : 'Aplicações do opcional'}>
+    {progress.total > 0 && <div className="space-y-1.5" aria-live="polite">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className={`inline-flex items-center gap-1.5 font-semibold ${progress.missing > 0 ? 'text-warning' : 'text-success'}`}>
+          {progress.missing > 0 ? <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" /> : <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />}
+          {progress.missing > 0
+            ? (english ? `${progress.missing} required ${progress.missing === 1 ? 'choice' : 'choices'} remaining` : `${progress.missing} ${progress.missing === 1 ? 'escolha obrigatória pendente' : 'escolhas obrigatórias pendentes'}`)
+            : (english ? 'Required options complete' : 'Opcionais obrigatórios completos')}
+        </span>
+        <span className="tabular-nums text-ink-3">{progress.filled}/{progress.total}</span>
+      </div>
+      <progress
+        className="h-1.5 w-full overflow-hidden rounded-full accent-gold"
+        max={progress.total}
+        value={progress.filled}
+        aria-label={english ? 'Required options progress' : 'Progresso dos opcionais obrigatórios'}
+      />
+    </div>}
+    {grouped.map(category => <div key={category} className="border border-line rounded-xl p-3">
+      <strong className="text-xs uppercase tracking-wide text-gold">{entries.find(entry => entry.application.category_code === category)?.application.category_name ?? category}</strong>
+      <div className="grid gap-3 mt-2.5">
         {entries.filter(entry => entry.application.category_code === category).map(({ application, componentName }) => {
           const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
           const missing = application.required && !value
-          return <label key={application.id} className="text-xs text-ink-2 flex flex-col gap-1">
-            <span>{componentName ? `${componentName} — ` : ''}{applicationName(application, english)} {application.required && <span className="text-danger" aria-label={english ? 'Required' : 'Obrigatória'}>*</span>}</span>
-            <select className={`input max-w-xs ${missing ? 'border-danger' : ''}`} value={value} onChange={event => onChange(application.id, event.target.value || null)} aria-invalid={missing}>
-              <option value="">{english ? 'Choose an option' : 'Escolha uma opção'}</option>
-              {allowedForApplication(application, allOptionals).map(option => <option key={option.id} value={option.id}>{option.color_name}</option>)}
-            </select>
-            {missing && <span className="text-danger">{english ? `Select ${applicationName(application, true)}` : `Preencha ${application.name}`}</span>}
-          </label>
+          const options = allowedForApplication(application, allOptionals)
+          const label = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
+          return <fieldset key={application.id} className="min-w-0 border-0 p-0">
+            <legend className="mb-2 flex w-full items-center gap-1.5 text-xs font-medium text-ink-2">
+              <span>{label}</span>
+              {application.required && <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">{english ? 'Required' : 'Obrigatório'}</span>}
+            </legend>
+            <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1" role="radiogroup" aria-label={label} aria-invalid={missing}>
+              {options.map(option => {
+                const selected = value === option.id
+                const preview = option.thumbnail_url ?? option.photo_url
+                return <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => onChange(application.id, option.id)}
+                  className={`group relative flex min-h-14 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/45 active:scale-[0.98] ${selected ? 'border-gold bg-gold/10' : 'border-line bg-white hover:border-gold/50 hover:bg-surface-2'}`}
+                >
+                  {preview
+                    ? <img src={preview} alt="" loading="lazy" decoding="async" className="h-10 w-10 flex-shrink-0 rounded-md border border-line object-cover" />
+                    : <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-bg-2" aria-hidden="true"><ImageIcon className="h-4 w-4 text-faint" /></span>}
+                  <span className="min-w-0 flex-1 break-words text-[11px] font-medium leading-tight text-ink">{option.color_name}</span>
+                  {selected && <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gold text-white" aria-hidden="true"><Check className="h-2.5 w-2.5" /></span>}
+                </button>
+              })}
+            </div>
+            {value && <button type="button" onClick={() => onChange(application.id, null)} className="mt-1.5 min-h-8 text-[11px] font-medium text-muted underline decoration-line underline-offset-4 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/45">
+              {english ? 'Clear choice' : 'Limpar escolha'}
+            </button>}
+            {missing && <span className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-warning"><CircleAlert className="h-3 w-3" aria-hidden="true" />{english ? `Choose ${applicationName(application, true)}` : `Escolha ${application.name}`}</span>}
+          </fieldset>
         })}
       </div>
     </div>)}
     {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
   </section>
+}
+
+function ApplicationStatus({ product, choices, allOptionals, english }: {
+  product: Product
+  choices: CartItem['optional_choices']
+  allOptionals: OptionalColor[]
+  english: boolean
+}) {
+  const progress = requiredApplicationProgress(product, choices, allOptionals)
+  if (progress.total === 0) return null
+  return progress.missing > 0
+    ? <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+        <CircleAlert className="h-3 w-3" aria-hidden="true" />
+        {english ? `${progress.missing} pending` : `${progress.missing} ${progress.missing === 1 ? 'pendente' : 'pendentes'}`}
+      </span>
+    : <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-success-soft px-1.5 py-0.5 text-[10px] font-semibold text-success">
+        <CheckCircle className="h-3 w-3" aria-hidden="true" />
+        {english ? 'Options complete' : 'Opcionais completos'}
+      </span>
 }
 
 // ── Lightbox de foto ──────────────────────────────────────────────────────────
@@ -591,6 +658,7 @@ function MobileCartCard({
             <div className="min-w-0">
               <span className="type-code">{item.product_code}</span>
               <p className="text-xs font-semibold text-ink leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
+              {!item.preserve_optional_choices && <ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} />}
               {item._product.components.length > 0 && (
                 <ul className="mt-0.5 space-y-0.5">
                   {item._product.components.map((comp) => (
@@ -916,6 +984,8 @@ export default function OrcamentoPage() {
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const productRef = useRef<HTMLDivElement>(null)
+  const itemsSectionRef = useRef<HTMLElement>(null)
+  const handledConfigureCodeRef = useRef<string | null>(null)
 
   const debouncedProductQuery = useDebouncedValue(productQuery.trim(), 300)
   const debouncedClientQuery = useDebouncedValue(clientQuery.trim(), 300)
@@ -933,15 +1003,30 @@ export default function OrcamentoPage() {
   })
   const products = productSearch.data?.items ?? EMPTY_PRODUCTS
   useEffect(() => {
-    if (!configureCode) return
+    if (!configureCode || !cartHydrated || handledConfigureCodeRef.current === configureCode) return
     const product = products.find(item => item.product_code === configureCode)
     if (!product) return
-    setSelectedProduct(product)
+    handledConfigureCodeRef.current = configureCode
+    setCart(previous => [...previous, {
+      line_id: crypto.randomUUID(),
+      product_code: product.product_code,
+      qty: 1,
+      discount: 0,
+      opt_categories: initialLegacyOptionCategories(product),
+      optional_choices: [],
+      _product: product,
+    }])
+    setSelectedProduct(null)
     setSelectedChoices([])
+    setCartFilter('')
     setProductQuery('')
     setConfigureCode(null)
     setSearchParams({}, { replace: true })
-  }, [configureCode, products, setSearchParams])
+    window.requestAnimationFrame(() => {
+      itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      itemsSectionRef.current?.focus({ preventScroll: true })
+    })
+  }, [cartHydrated, configureCode, products, setSearchParams])
   const clientSearch = useClientsPage({
     skip: 0,
     limit: 15,
@@ -1211,14 +1296,7 @@ export default function OrcamentoPage() {
     if (!cartHydrated || !selectedProduct) return
     const errors = validateApplicationChoices(selectedProduct, selectedChoices, allOptionals)
     if (errors.length) { setToast({ message: errors[0], variant: 'error' }); return }
-    const freeCats = new Set((selectedProduct.all_optionals_categories ?? '').split(',').filter(Boolean))
-    const auto_categories: Partial<Record<string, string>> = {}
-    for (const opt of selectedProduct.optionals) {
-      // Don't pre-select for "all" categories — user picks freely in the cart
-      if (!(opt.category in auto_categories) && !freeCats.has(opt.category)) {
-        auto_categories[opt.category] = opt.color_name
-      }
-    }
+    const auto_categories = initialLegacyOptionCategories(selectedProduct)
     setCart((prev) => {
       const signature = JSON.stringify({ legacy: auto_categories, choices: [...selectedChoices].sort((a, b) => a.application_id.localeCompare(b.application_id)) })
       const existing = prev.find((i) => i.product_code === selectedProduct.product_code && i.discount === 0 &&
@@ -1507,7 +1585,7 @@ export default function OrcamentoPage() {
         <div className="lg:hidden">{productSearchCard}</div>
 
         {/* ── Items Panel ──────────────────────────────────────────────────── */}
-        <section aria-labelledby="budget-items-title" className="bg-white border border-line rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px]">
+        <section ref={itemsSectionRef} tabIndex={-1} aria-labelledby="budget-items-title" className="bg-white border border-line rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[400px] lg:min-h-[550px] focus:outline-none">
           <div className="px-4 lg:px-6 py-3.5 lg:py-4 border-b border-line flex flex-col gap-3 bg-white flex-shrink-0 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
               <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
@@ -1629,6 +1707,7 @@ export default function OrcamentoPage() {
                               <div className="flex-1 min-w-0">
                                 <span className="type-code">{item.product_code}</span>
                                 <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item._product.description}</span>
+                                {!item.preserve_optional_choices && <div><ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} /></div>}
                                 {item._product.components.length > 0 && (
                                   <ul className="mt-0.5 space-y-0.5">
                                     {item._product.components.map((comp) => (

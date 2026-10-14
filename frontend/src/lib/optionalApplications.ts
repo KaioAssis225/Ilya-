@@ -5,6 +5,12 @@ export interface ProductApplication {
   componentName: string | null
 }
 
+export interface RequiredApplicationProgress {
+  filled: number
+  total: number
+  missing: number
+}
+
 export function productApplications(product: Product): ProductApplication[] {
   return [
     ...(product.optional_applications ?? []).map(application => ({ application, componentName: null })),
@@ -20,6 +26,20 @@ export function allowedForApplication(application: OptionalApplication, allOptio
   return application.allow_all
     ? allOptionals.filter(option => option.category === application.category_code)
     : application.allowed_optionals
+}
+
+export function requiredApplicationProgress(
+  product: Product,
+  choices: OptionalChoiceInput[],
+  allOptionals: OptionalColor[],
+): RequiredApplicationProgress {
+  const required = productApplications(product).filter(entry => entry.application.required)
+  const choicesByApplication = new Map(choices.map(choice => [choice.application_id, choice.optional_id]))
+  const filled = required.filter(({ application }) => {
+    const selectedId = choicesByApplication.get(application.id)
+    return Boolean(selectedId && allowedForApplication(application, allOptionals).some(option => option.id === selectedId))
+  }).length
+  return { filled, total: required.length, missing: required.length - filled }
 }
 
 export function validateApplicationChoices(product: Product, choices: OptionalChoiceInput[], allOptionals: OptionalColor[]): string[] {

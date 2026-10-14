@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { formatChoice, orderOptionalSlots, validateApplicationChoices } from './optionalApplications.ts'
+import { formatChoice, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
 import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'
 
 const option = (id: string, category: string): OptionalColor => ({ id, category, color_name: id }) as OptionalColor
@@ -28,6 +28,22 @@ test('duas aplicações da mesma categoria preservam escolhas independentes e re
   assert.deepEqual(validateApplicationChoices(product([first, second]), choices, [option('taupe', 'PINTURA')]), [])
   second.allow_repeat = false
   assert.match(validateApplicationChoices(product([first, second]), choices, [option('taupe', 'PINTURA')])[0], /repetida/)
+})
+
+test('progresso considera somente aplicações obrigatórias preenchidas', () => {
+  const first = application('Pés')
+  const second = application('Encosto')
+  const optional = application('Almofada', 'TECIDO', false)
+  const item = product([first, second, optional])
+  const available = [option('taupe', 'PINTURA'), option('taupe', 'TECIDO')]
+  assert.deepEqual(requiredApplicationProgress(item, [], available), { filled: 0, total: 2, missing: 2 })
+  assert.deepEqual(requiredApplicationProgress(item, [
+    { application_id: first.id, optional_id: 'taupe' },
+    { application_id: optional.id, optional_id: 'taupe' },
+  ], available), { filled: 1, total: 2, missing: 1 })
+  assert.deepEqual(requiredApplicationProgress(item, [
+    { application_id: first.id, optional_id: 'removed-option' },
+  ], available), { filled: 0, total: 2, missing: 2 })
 })
 
 test('categoria diferente, aplicação opcional e opção não autorizada', () => {
