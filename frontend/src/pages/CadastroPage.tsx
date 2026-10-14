@@ -1141,9 +1141,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
-                      {(!p.is_set || isConjuntoType(p.type)) && <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="px-2 h-11 text-xs font-medium text-gold active:opacity-60" style={{ touchAction: 'manipulation' }}>
+                      <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="px-2 h-11 text-xs font-medium text-gold active:opacity-60" style={{ touchAction: 'manipulation' }}>
                         Aplicações
-                      </button>}
+                      </button>
                       <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="w-11 h-11 flex items-center justify-center text-muted active:text-danger transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1256,7 +1256,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td data-product-col="actions" className="px-2 py-3 align-top">
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
-                        {(!p.is_set || isConjuntoType(p.type)) && <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="text-xs font-medium text-gold hover:underline">Aplicações</button>}
+                        <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="text-xs font-medium text-gold hover:underline">Aplicações</button>
                         <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -1655,7 +1655,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 </div>
               </div>
             ) : form.is_set ? (
-              <div ref={optionalSectionRef}>
+              <div>
                 <span className="text-xs text-muted block mb-2 font-medium">{tx('Componentes do Conjunto')}</span>
                 {(form.set_items ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
@@ -1703,6 +1703,45 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </button>
                 </div>
                 <p className="text-[10px] text-muted mt-1.5">{tx('Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.')}</p>
+                <div ref={optionalSectionRef} className="border-t border-line mt-5 pt-4 space-y-3">
+                  <span className="text-xs text-muted block font-medium">Aplicações do opcional</span>
+                  <p className="text-xs text-muted">Selecione uma categoria para configurar escolhas independentes para este conjunto.</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {optCategories.map(category => <label key={category.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-line cursor-pointer">
+                      <input type="checkbox" checked={activeCategories.includes(category.code)} onChange={event => {
+                        if (event.target.checked) {
+                          setActiveCategories(previous => [...previous, category.code])
+                        } else {
+                          setActiveCategories(previous => previous.filter(code => code !== category.code))
+                          setAllOptCats(previous => { const next = new Set(previous); next.delete(category.code); return next })
+                          setForm(previous => ({
+                            ...previous,
+                            optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== category.code),
+                            optional_applications: (previous.optional_applications ?? []).filter(app => app.category_id !== category.id),
+                          }))
+                        }
+                      }} />
+                      <span className="text-xs text-ink-2">{category.name}</span>
+                    </label>)}
+                  </div>
+                  {activeCategories.map(code => {
+                    const category = optCategories.find(candidate => candidate.code === code)
+                    if (!category) return null
+                    const categoryOptionals = allOptionals.filter(option => option.category === code)
+                    return <OptionalApplicationGroup key={category.id}
+                      category={category}
+                      optionals={categoryOptionals}
+                      applications={form.optional_applications ?? []}
+                      onChange={applications => setForm(previous => ({ ...previous, optional_applications: applications }))}
+                      onFirstAdd={() => {
+                        setAllOptCats(previous => { const next = new Set(previous); next.delete(code); return next })
+                        setForm(previous => ({ ...previous, optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== code) }))
+                      }}
+                      initialAllowedIds={(form.optional_ids ?? []).filter(id => categoryOptionals.some(option => option.id === id))}
+                      initialAllowAll={allOptCats.has(code)}
+                    />
+                  })}
+                </div>
               </div>
             ) : (
               <div ref={optionalSectionRef}>
