@@ -26,6 +26,7 @@ import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
 import { withMarketProductNames } from '../lib/productPayload'
+import { shouldCloseModal } from '../lib/modalDismissal'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao'
@@ -345,17 +346,20 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
 
 // ── Modal wrapper ─────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children, accentColor }: {
-  title: string; onClose: () => void; children: React.ReactNode; accentColor?: string
+function Modal({ title, onClose, children, accentColor, closeOnlyByButton = false }: {
+  title: string; onClose: () => void; children: React.ReactNode; accentColor?: string; closeOnlyByButton?: boolean
 }) {
   const tx = useCadastroText()
+  const closeFrom = (reason: 'backdrop' | 'escape' | 'close-button') => {
+    if (shouldCloseModal(reason, closeOnlyByButton)) onClose()
+  }
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <DialogPanel onClose={onClose} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
+    <div className="modal-overlay" onClick={() => closeFrom('backdrop')}>
+      <DialogPanel onClose={() => closeFrom('escape')} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-line"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
           <h3 className="text-base font-semibold text-ink">{title}</h3>
-          <button type="button" onClick={onClose} className="btn-icon -mr-2" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
+          <button type="button" onClick={() => closeFrom('close-button')} className="btn-icon -mr-2" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
       </DialogPanel>
@@ -1295,7 +1299,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       )}
 
       {showForm && (
-        <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
+        <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color} closeOnlyByButton>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
               <div className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2">
