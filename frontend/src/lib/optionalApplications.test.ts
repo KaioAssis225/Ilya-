@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { formatChoice, validateApplicationChoices } from './optionalApplications.ts'
-import type { OptionalApplication, OptionalColor, Product } from '../types'
+import { formatChoice, orderOptionalSlots, validateApplicationChoices } from './optionalApplications.ts'
+import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'
 
 const option = (id: string, category: string): OptionalColor => ({ id, category, color_name: id }) as OptionalColor
 const application = (id: string, category = 'PINTURA', required = true, allowRepeat = true): OptionalApplication => ({
@@ -41,4 +41,19 @@ test('snapshot usa nome em inglês quando disponível e inclui o componente', ()
   const choice = { application_name: 'Pintura dos pés', application_name_en: 'Leg paint', component_name: 'Cadeira', optional_name: 'Taupe' }
   assert.equal(formatChoice(choice as Parameters<typeof formatChoice>[0], true), 'Cadeira — Leg paint: Taupe')
   assert.equal(formatChoice(choice as Parameters<typeof formatChoice>[0], false), 'Cadeira — Pintura dos pés: Taupe')
+})
+
+test('PDF mantém opcionais legados e aplicações independentes na ordem da linha', () => {
+  const item = {
+    opt_categories: { CORDA: 'Natural' },
+    optional_choices: [
+      { application_name: 'Pintura dos pés', application_name_en: 'Leg paint', component_name: null, optional_name: 'Taupe' },
+      { application_name: 'Couro do assento', application_name_en: 'Seat leather', component_name: 'Poltrona', optional_name: 'Caramelo' },
+    ],
+  } as unknown as OrderItem
+  assert.deepEqual(orderOptionalSlots(item, true, category => category), [
+    { label: 'CORDA', value: 'Natural' },
+    { label: 'Leg paint', value: 'Taupe' },
+    { label: 'Poltrona — Seat leather', value: 'Caramelo' },
+  ])
 })
