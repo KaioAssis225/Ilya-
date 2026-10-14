@@ -1,7 +1,7 @@
-import { Fragment, useState, useRef, useEffect, useId } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, Check } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useClient, useClientsPage, useCreateClient } from '../hooks/useClients'
@@ -478,78 +478,54 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
   )
 }
 
-function ApplicationSelectors({ product, choices, allOptionals, onChange, english, wide = false }: {
+function ApplicationSelectors({ product, choices, allOptionals, onChange, english }: {
   product: Product
   choices: CartItem['optional_choices']
   allOptionals: OptionalColor[]
   onChange: (applicationId: string, optionalId: string | null) => void
   english: boolean
-  wide?: boolean
 }) {
   const entries = productApplications(product)
   if (!entries.length) return null
   const progress = requiredApplicationProgress(product, choices, allOptionals)
   const errors = validateApplicationChoices(product, choices, allOptionals)
-  const grouped = Array.from(new Set(entries.map(entry => entry.application.category_code)))
-  return <section className="mt-3 space-y-3" aria-label={english ? 'Optional applications' : 'Aplicações do opcional'}>
-    {progress.total > 0 && <div className="space-y-1.5" aria-live="polite">
-      <div className="flex items-center justify-between gap-3 text-xs">
+  return <section className="mt-2 space-y-1.5" aria-label={english ? 'Optional applications' : 'Aplicações do opcional'}>
+    {progress.total > 0 && <div className="flex items-center justify-between gap-3 text-[11px]" aria-live="polite">
         <span className={`inline-flex items-center gap-1.5 font-semibold ${progress.missing > 0 ? 'text-warning' : 'text-success'}`}>
-          {progress.missing > 0 ? <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" /> : <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />}
+          {progress.missing > 0 ? <CircleAlert className="h-3 w-3" aria-hidden="true" /> : <CheckCircle className="h-3 w-3" aria-hidden="true" />}
           {progress.missing > 0
             ? (english ? `${progress.missing} required ${progress.missing === 1 ? 'choice' : 'choices'} remaining` : `${progress.missing} ${progress.missing === 1 ? 'escolha obrigatória pendente' : 'escolhas obrigatórias pendentes'}`)
             : (english ? 'Required options complete' : 'Opcionais obrigatórios completos')}
         </span>
         <span className="tabular-nums text-ink-3">{progress.filled}/{progress.total}</span>
-      </div>
-      <progress
-        className="h-1.5 w-full overflow-hidden rounded-full accent-gold"
-        max={progress.total}
-        value={progress.filled}
-        aria-label={english ? 'Required options progress' : 'Progresso dos opcionais obrigatórios'}
-      />
     </div>}
-    {grouped.map(category => <div key={category} className="border border-line rounded-xl p-3">
-      <strong className="text-xs uppercase tracking-wide text-gold">{entries.find(entry => entry.application.category_code === category)?.application.category_name ?? category}</strong>
-      <div className={`grid gap-4 mt-2.5 ${wide ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        {entries.filter(entry => entry.application.category_code === category).map(({ application, componentName }) => {
-          const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
-          const missing = application.required && !value
-          const options = allowedForApplication(application, allOptionals)
-          const label = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
-          return <fieldset key={application.id} className="min-w-0 border-0 p-0">
-            <legend className="mb-2 flex w-full items-center gap-1.5 text-xs font-medium text-ink-2">
-              <span>{label}</span>
-              {application.required && <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">{english ? 'Required' : 'Obrigatório'}</span>}
-            </legend>
-            <div className={`grid max-h-56 gap-2 overflow-y-auto pr-1 ${wide ? 'grid-cols-2' : 'grid-cols-1'}`} role="radiogroup" aria-label={label} aria-invalid={missing}>
-              {options.map(option => {
-                const selected = value === option.id
-                const preview = option.thumbnail_url ?? option.photo_url
-                return <button
-                  key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => onChange(application.id, option.id)}
-                  className={`group relative flex min-h-16 min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/45 active:scale-[0.98] ${selected ? 'border-gold bg-gold/10' : 'border-line bg-white hover:border-gold/50 hover:bg-surface-2'}`}
-                >
-                  {preview
-                    ? <img src={preview} alt="" loading="lazy" decoding="async" className="h-12 w-12 flex-shrink-0 rounded-md border border-line object-cover" />
-                    : <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-md bg-bg-2" aria-hidden="true"><ImageIcon className="h-4 w-4 text-faint" /></span>}
-                  <span className="min-w-0 flex-1 break-words text-xs font-medium leading-snug text-ink">{option.color_name}</span>
-                  {selected && <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gold text-white" aria-hidden="true"><Check className="h-2.5 w-2.5" /></span>}
-                </button>
-              })}
-            </div>
-            {value && <button type="button" onClick={() => onChange(application.id, null)} className="mt-1.5 min-h-8 text-[11px] font-medium text-muted underline decoration-line underline-offset-4 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/45">
-              {english ? 'Clear choice' : 'Limpar escolha'}
-            </button>}
-            {missing && <span className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-warning"><CircleAlert className="h-3 w-3" aria-hidden="true" />{english ? `Choose ${applicationName(application, true)}` : `Escolha ${application.name}`}</span>}
-          </fieldset>
-        })}
-      </div>
-    </div>)}
+    {entries.map(({ application, componentName }) => {
+      const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
+      const missing = application.required && !value
+      const options = allowedForApplication(application, allOptionals)
+      const selected = options.find(option => option.id === value)
+      const preview = selected?.thumbnail_url ?? selected?.photo_url
+      const label = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
+      const repeatedCategory = entries.filter(entry => entry.application.category_code === application.category_code).length > 1
+      const displayLabel = repeatedCategory ? `${application.category_name} · ${label}` : application.category_name
+      return <label key={application.id} className={`flex min-h-8 min-w-0 items-center rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 ${missing ? 'border-warning/60' : 'border-line'}`}>
+        <span title={`${application.category_name}: ${label}`} className="w-[42%] min-w-0 truncate px-2 text-[10px] font-semibold uppercase tracking-wide text-gold">
+          {displayLabel}{application.required && <span className="ml-0.5 text-warning" aria-hidden="true">•</span>}
+        </span>
+        <span className="h-4 w-px flex-shrink-0 bg-line" aria-hidden="true" />
+        {preview && <img src={preview} alt="" loading="lazy" decoding="async" className="ml-2 h-5 w-5 flex-shrink-0 rounded object-cover" />}
+        <select
+          value={value}
+          onChange={event => onChange(application.id, event.target.value || null)}
+          aria-label={`${application.category_name}: ${label}`}
+          aria-invalid={missing}
+          className={`min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-2 py-1 text-[11px] font-medium focus:outline-none ${value ? 'text-ink' : 'text-warning'}`}
+        >
+          <option value="">{english ? 'Choose an option' : 'Escolha uma opção'}</option>
+          {options.map(option => <option key={option.id} value={option.id}>{option.color_name}</option>)}
+        </select>
+      </label>
+    })}
     {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
   </section>
 }
@@ -1674,10 +1650,10 @@ export default function OrcamentoPage() {
                 </div>
 
                 {/* ── Desktop table ────────────────────────────── */}
-                <table className="hidden lg:table w-full min-w-[680px] text-sm">
+                <table className="hidden lg:table w-full min-w-[920px] text-sm">
                   <thead className="bg-surface-2 text-xs text-muted uppercase font-semibold border-b border-line sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3 text-left">{isEnglish ? 'Product' : 'Produto'}</th>
+                      <th className="min-w-[340px] px-4 py-3 text-left">{isEnglish ? 'Product' : 'Produto'}</th>
                       <th className="px-4 py-3 text-left w-16">{isEnglish ? 'Qty' : 'Qtd'}</th>
                       <th className="px-4 py-3 text-left w-28">{isEnglish ? 'Base Price' : 'Preço Base'}</th>
                       <th className="px-4 py-3 text-left w-24">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</th>
@@ -1686,16 +1662,14 @@ export default function OrcamentoPage() {
                       <th className="px-4 py-3 w-8"></th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-line">
                     {filteredCart.map((item) => {
                       const pt = productTypes.find(t => t.name === item._product.type)
                       const ipiRate = Number(pt?.group?.ipi ?? 0)
                       const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                       const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
-                      const hasEditableApplications = !item.preserve_optional_choices && productApplications(item._product).length > 0
                       return (
-                        <Fragment key={item.line_id}>
-                        <tr className="border-t border-line hover:bg-surface-2 align-top transition-colors">
+                        <tr key={item.line_id} className="hover:bg-surface-2 align-top transition-colors">
                           <td className="px-4 py-3.5">
                             <div className="flex gap-3">
                               {item._product.photo_url
@@ -1734,6 +1708,7 @@ export default function OrcamentoPage() {
                                   {(item.saved_choices ?? []).map(choice => <p key={choice.id}>{formatChoice(choice, isEnglish)}</p>)}
                                   <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                                 </div>}
+                                {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} english={isEnglish} />}
                               </div>
                             </div>
                           </td>
@@ -1777,21 +1752,6 @@ export default function OrcamentoPage() {
                             </button>
                           </td>
                         </tr>
-                        {hasEditableApplications && <tr className="bg-surface-2/55">
-                          <td colSpan={7} className="px-4 pb-5 pt-1">
-                            <div className="rounded-xl border border-line bg-white px-4 pb-4 pt-1 shadow-sm">
-                              <ApplicationSelectors
-                                product={item._product}
-                                choices={item.optional_choices}
-                                allOptionals={allOptionals}
-                                onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)}
-                                english={isEnglish}
-                                wide
-                              />
-                            </div>
-                          </td>
-                        </tr>}
-                        </Fragment>
                       )
                     })}
                   </tbody>
