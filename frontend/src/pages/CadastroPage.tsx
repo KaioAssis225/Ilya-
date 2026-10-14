@@ -839,6 +839,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   const pageItems = products
   const [showForm, setShowForm] = useState(false)
+  const [focusOptionals, setFocusOptionals] = useState(false)
+  const optionalSectionRef = useRef<HTMLDivElement>(null)
   const [editing, setEditing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
   const [form, setForm] = useState<ProductCreate>(EMPTY_PRODUCT)
@@ -927,12 +929,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
+    setFocusOptionals(false)
     setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setShowForm(true)
   }
-  function openEdit(p: Product) {
+  function openEdit(p: Product, showOptionals = false) {
     const isConjunto = isConjuntoType(p.type)
     const allCats = isConjunto ? new Set<string>() : new Set<string>(
       (p.all_optionals_categories ?? '').split(',').filter(Boolean)
@@ -994,8 +997,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
+    setFocusOptionals(showOptionals)
     setShowForm(true)
   }
+  useEffect(() => {
+    if (!showForm || !focusOptionals) return
+    const frame = requestAnimationFrame(() => {
+      optionalSectionRef.current?.scrollIntoView({ block: 'start' })
+      setFocusOptionals(false)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [showForm, focusOptionals])
 
   function addSetItem() {
     const code = addItemCode.trim().toUpperCase()
@@ -1129,6 +1141,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
+                      {(!p.is_set || isConjuntoType(p.type)) && <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="px-2 h-11 text-xs font-medium text-gold active:opacity-60" style={{ touchAction: 'manipulation' }}>
+                        Aplicações
+                      </button>}
                       <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="w-11 h-11 flex items-center justify-center text-muted active:text-danger transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1241,6 +1256,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td data-product-col="actions" className="px-2 py-3 align-top">
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
+                        {(!p.is_set || isConjuntoType(p.type)) && <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="text-xs font-medium text-gold hover:underline">Aplicações</button>}
                         <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -1442,8 +1458,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
 
             {isConjuntoType(form.type) ? (
-              <div>
+              <div ref={optionalSectionRef}>
                 <span className="text-xs text-muted block mb-2 font-medium">{tx('Componentes do Conjunto')}</span>
+                <p className="text-xs text-muted mb-2">Edite um componente para configurar suas aplicações do opcional.</p>
                 {(form.components ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.components ?? []).map((comp, idx) => (
@@ -1638,7 +1655,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 </div>
               </div>
             ) : form.is_set ? (
-              <div>
+              <div ref={optionalSectionRef}>
                 <span className="text-xs text-muted block mb-2 font-medium">{tx('Componentes do Conjunto')}</span>
                 {(form.set_items ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
@@ -1688,8 +1705,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 <p className="text-[10px] text-muted mt-1.5">{tx('Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.')}</p>
               </div>
             ) : (
-              <div>
+              <div ref={optionalSectionRef}>
                 <span className="text-xs text-muted block mb-2 font-medium">{tx('Categorias de Opcionais Disponíveis')}</span>
+                <p className="text-xs text-muted mb-2">Selecione uma categoria para configurar as aplicações do opcional deste produto.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {optCategories.map(({ code: value, name: label }) => {
                     const isActive = activeCategories.includes(value)
@@ -1725,11 +1743,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
-                    <span className="text-xs text-muted block font-medium">{tx('Cores e Permissões por Categoria')}</span>
+                    <span className="text-xs text-muted block font-medium">Opcionais e aplicações por categoria</span>
+                    <p className="text-xs text-muted">Em cada categoria, use “Adicionar outra aplicação” para criar escolhas independentes para partes do produto.</p>
                     {activeCategories.map((catValue) => {
                       const catValueLabel = catLabel(catValue)
                       const catItems = allOptionals.filter(o => o.category === catValue)
                       const isAllowed = allOptCats.has(catValue)
+                      const category = optCategories.find(group => group.code === catValue)
+                      const hasApplications = (form.optional_applications ?? []).some(app => app.category_id === category?.id)
                       const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
                           <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-white shadow-sm">
@@ -1739,6 +1760,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               <input
                                 type="checkbox"
                                 checked={isAllowed}
+                                disabled={hasApplications}
                                 style={{ accentColor: color }}
                                 onChange={(e) => {
                                   setAllOptCats(prev => {
@@ -1759,7 +1781,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               <span className="text-[11px] text-ink-3">{tx('Permitir todos')}</span>
                             </label>
                           </div>
-                            {(form.optional_applications ?? []).some(app => app.category_id === optCategories.find(group => group.code === catValue)?.id) ? null : isAllowed ? (
+                            {hasApplications ? (
+                            <p className="text-[11px] text-muted italic">Esta categoria usa aplicações independentes.</p>
+                          ) : isAllowed ? (
                             <p className="text-[11px] text-muted italic">
                               {tx('Todos os opcionais desta categoria estarão disponíveis no carrinho.')}
                             </p>
@@ -1784,21 +1808,21 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                   ))}
                                 </select>
                             )}
-                            {optCategories.find(group => group.code === catValue) && <OptionalApplicationGroup
-                              category={optCategories.find(group => group.code === catValue)!}
-                              optionals={catItems}
-                              applications={form.optional_applications ?? []}
-                              onChange={applications => setForm(previous => ({ ...previous, optional_applications: applications }))}
-                              onFirstAdd={() => {
-                                setAllOptCats(previous => { const next = new Set(previous); next.delete(catValue); return next })
-                                setForm(previous => ({ ...previous, optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== catValue) }))
-                              }}
-                              initialAllowedIds={selectedIds}
-                              initialAllowAll={isAllowed}
-                            />}
                               <p className="text-[10px] text-muted mt-1">{tx('Ctrl+clique para selecionar múltiplas cores.')}</p>
                             </div>
                           )}
+                          {category && <OptionalApplicationGroup
+                            category={category}
+                            optionals={catItems}
+                            applications={form.optional_applications ?? []}
+                            onChange={applications => setForm(previous => ({ ...previous, optional_applications: applications }))}
+                            onFirstAdd={() => {
+                              setAllOptCats(previous => { const next = new Set(previous); next.delete(catValue); return next })
+                              setForm(previous => ({ ...previous, optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== catValue) }))
+                            }}
+                            initialAllowedIds={selectedIds}
+                            initialAllowAll={isAllowed}
+                          />}
                         </div>
                       )
                     })}
