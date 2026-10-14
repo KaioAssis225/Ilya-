@@ -31,6 +31,7 @@ class LegalHold(Base):
     created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
@@ -43,6 +44,7 @@ class LegalHold(Base):
     released_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     release_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -104,10 +106,12 @@ class RetentionReview(Base):
     created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     approved_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
     approved_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),

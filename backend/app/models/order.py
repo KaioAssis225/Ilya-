@@ -17,9 +17,11 @@ class Order(Base, TimestampMixin):
     price_list_code: Mapped[str] = mapped_column(String(30), nullable=False, default="lojista", server_default="lojista")
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="BRL", server_default="BRL")
     locale: Mapped[str] = mapped_column(String(10), nullable=False, default="pt-BR", server_default="pt-BR")
-    # O código PED é sequencial dentro do usuário que criou o pedido.
+    # O código PED é sequencial por mercado; number_owner_id preserva o autor.
     code: Mapped[str] = mapped_column(String(50), nullable=False)
-    number_owner_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    number_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     order_number: Mapped[int] = mapped_column(Integer, nullable=False)
     orc_id: Mapped[str] = mapped_column(String(50), nullable=False)
     # FK composta com market_code em __table_args__.
@@ -42,9 +44,10 @@ class Order(Base, TimestampMixin):
     source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     document_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     supersedes_order_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("orders.id", name="fk_orders_supersedes_order", ondelete="RESTRICT"), nullable=True
+        ForeignKey("orders.id", name="fk_orders_supersedes_order", ondelete="RESTRICT"), nullable=True, index=True
     )
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    is_superseded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan", lazy="selectin")
     history: Mapped[list["OrderHistory"]] = relationship("OrderHistory", back_populates="order", cascade="all, delete-orphan", lazy="selectin", order_by="OrderHistory.created_at")
@@ -89,6 +92,7 @@ class Order(Base, TimestampMixin):
             name="uq_orders_market_owner_order_number",
         ),
         UniqueConstraint("market_code", "orc_id", name="uq_orders_market_orc_id"),
+        UniqueConstraint("market_code", "code", name="uq_orders_market_code"),
         Index("ix_orders_market_created_id", "market_code", "created_at", "id"),
         Index("ix_orders_number_owner_id", "number_owner_id"),
         Index(
@@ -167,7 +171,7 @@ class OrderItem(Base, TimestampMixin):
     __tablename__ = "order_items"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.id"), nullable=False)
+    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
 
     # Snapshot histórico — cópia dos dados do produto no momento da venda
     product_code: Mapped[str] = mapped_column(String(100), nullable=False)

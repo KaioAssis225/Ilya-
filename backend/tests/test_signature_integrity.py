@@ -31,6 +31,7 @@ def _order():
         orc_id="ORC-0001", client_id=uuid.uuid4(), rep_id=None,
         price_list_code="lojista", currency="BRL", locale="pt-BR",
         is_finalized=False, is_cancelled=False, external_code=None,
+        source_version=1,
         total_value=Decimal("100.00"), total_ipi=Decimal("5.00"),
         total_with_ipi=Decimal("105.00"), notes="Condição original",
         items=[item], rep_signature=None, client_signature=None,
@@ -62,6 +63,9 @@ class _Session:
     async def commit(self):
         self.commits += 1
 
+    async def refresh(self, _obj):
+        return None
+
 
 def test_canonical_hash_changes_with_every_material_term():
     original = _order()
@@ -72,12 +76,19 @@ def test_canonical_hash_changes_with_every_material_term():
         lambda o: setattr(o.items[0], "discount", Decimal("1.00")),
         lambda o: setattr(o.items[0], "ipi_rate", Decimal("6.00")),
         lambda o: setattr(o.items[0], "observacao", "Acabamento especial"),
-        lambda o: setattr(o, "document_version", 2),
     )
     for mutate in mutations:
         changed = copy.deepcopy(original)
         mutate(changed)
         assert orders._order_document_hash(changed) != baseline
+
+
+def test_legacy_hash_remains_verifiable_after_finalization():
+    order = _order()
+    legacy_hash = orders._legacy_order_document_hash(order, order.document_version)
+    order.is_finalized = True
+    order.external_code = "ERP-42"
+    assert orders._legacy_order_document_hash(order, order.document_version) == legacy_hash
 
 
 def test_signed_order_cannot_be_edited():
@@ -97,14 +108,30 @@ def test_signed_order_cannot_be_edited():
     assert order.notes == "Condição original"
 
 
-def test_signed_order_cannot_be_finalized_cancelled_or_deleted():
+def test_signed_order_can_be_finalized_without_invalidating_its_hash(monkeypatch):
+    order = _order()
+    order.client_signature = "legacy-signature"
+    admin = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
+    signed_hash = orders._order_document_hash(order)
+
+    async def touch(*_args):
+        return datetime.now(timezone.utc)
+
+    monkeypatch.setattr(orders, "touch_client_activity", touch)
+    session = _Session(order)
+    result = asyncio.run(orders.finalize_order(
+        order.id, orders.FinalizePayload(), db=session, current_user=admin,
+    ))
+    assert result.is_finalized
+    assert orders._order_document_hash(result) == signed_hash
+    assert session.commits == 1
+
+
+def test_signed_order_cannot_be_cancelled_or_deleted():
     order = _order()
     order.client_signature = "legacy-signature"
     admin = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
     operations = (
-        lambda session: orders.finalize_order(
-            order.id, orders.FinalizePayload(), db=session, current_user=admin,
-        ),
         lambda session: orders.cancel_order(
             order.id, orders.CancelPayload(), db=session, current_user=admin,
         ),
@@ -150,6 +177,7 @@ def test_client_signature_records_hash_version_and_actor(monkeypatch):
     ))
     evidence = session.added[0]
     assert evidence.document_hash == orders._order_document_hash(order)
+    assert evidence.hash_version == 2
     assert evidence.document_version == order.document_version
     assert evidence.submitted_by_user_id == client.id
     assert evidence.method == "authenticated"

@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models.base import Base
+import app.models  # noqa: F401 - registra todos os modelos no metadata
 from app.db.url import render_database_url, resolve_async_database_url
 
 config = context.config
@@ -19,10 +20,13 @@ try:
 except Exception:
     _settings_db_url = ""
 
-config.set_main_option(
-    "sqlalchemy.url",
-    render_database_url(resolve_async_database_url(_settings_db_url)),
-)
+try:
+    _database_url = render_database_url(resolve_async_database_url(_settings_db_url))
+except RuntimeError:
+    if not context.is_offline_mode():
+        raise
+    _database_url = "postgresql://dummy:dummy@localhost:5432/dummy"
+config.set_main_option("sqlalchemy.url", _database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

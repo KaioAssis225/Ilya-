@@ -13,7 +13,7 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(512), unique=True, index=True, nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     # R2a: scope separa sessões de mercado (active_market obrigatório) das de
     # plataforma (active_market NULL). Antigos tokens ficam scope='market'.
@@ -31,6 +31,9 @@ class RefreshToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     user: Mapped["User"] = relationship(lazy="selectin")

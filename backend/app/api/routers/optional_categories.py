@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_current_principal, get_db_session, require_platform_capability, require_roles
@@ -156,5 +156,16 @@ async def delete_optional_category(
     ))).scalar_one_or_none()
     if not cat:
         raise HTTPException(status_code=404, detail="Categoria não encontrada.")
+    in_use = await db.scalar(
+        select(func.count()).select_from(OptionalColor).where(
+            OptionalColor.category == cat.code,
+            OptionalColor.market_code == principal.code,
+        )
+    )
+    if in_use:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Categoria em uso por {in_use} opcional(is). Remova as opções antes de excluir a categoria.",
+        )
     await db.delete(cat)
     await db.commit()

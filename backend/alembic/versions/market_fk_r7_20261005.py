@@ -32,7 +32,7 @@ criadas por `op.execute` com DDL explícito.
 A revisão é abortiva: havendo linha cruzada, falha nomeando a relação em vez de
 deixar a integridade pela metade.
 """
-from alembic import op
+from alembic import context, op
 
 
 revision = "market_fk_r7_20261005"
@@ -71,6 +71,8 @@ _CROSS_CHECKS = (
 
 
 def _assert_no_cross_market_rows() -> None:
+    if context.is_offline_mode():
+        return
     conn = op.get_bind()
     offenders = []
     for label, sql in _CROSS_CHECKS:

@@ -24,7 +24,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.core import webhook_signature as ws
 from app.core.config import settings
@@ -114,17 +114,51 @@ async def _claim_batch(session, limit: int = BATCH_SIZE) -> list[IntegrationOutb
     esperar pela outra.
     """
     now = datetime.now(timezone.utc)
+    stale_before = now - timedelta(
+        seconds=max(60, int(settings.WEBHOOK_TIMEOUT_SECONDS * 2))
+    )
     result = await session.execute(
         select(IntegrationOutbox)
         .where(
-            IntegrationOutbox.status == "pending",
-            IntegrationOutbox.next_attempt_at <= now,
+            or_(
+                (
+                    (IntegrationOutbox.status == "pending")
+                    & (IntegrationOutbox.next_attempt_at <= now)
+                ),
+                (
+                    (IntegrationOutbox.status == "processing")
+                    & (IntegrationOutbox.updated_at <= stale_before)
+                ),
+            ),
         )
         .order_by(IntegrationOutbox.created_at)
         .limit(limit)
         .with_for_update(skip_locked=True)
     )
-    return list(result.scalars().all())
+    rows = list(result.scalars().all())
+    for row in rows:
+        row.status = "processing"
+        row.updated_at = now
+    return rows
+
+
+async def _persist_delivery(row: IntegrationOutbox) -> None:
+    """Persiste um único desfecho em transação curta, após o I/O de rede."""
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            current = (await session.execute(
+                select(IntegrationOutbox).where(
+                    IntegrationOutbox.id == row.id,
+                    IntegrationOutbox.status == "processing",
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if current is None:
+                return
+            for field in (
+                "status", "attempts", "next_attempt_at", "last_error",
+                "delivered_at", "dead_lettered_at",
+            ):
+                setattr(current, field, getattr(row, field))
 
 
 async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None:
@@ -218,9 +252,16 @@ async def process_batch(client: httpx.AsyncClient) -> dict[str, int]:
         async with session.begin():
             rows = await _claim_batch(session)
             stats["claimed"] = len(rows)
-            for row in rows:
-                await deliver_one(client, row)
-                stats[row.status] = stats.get(row.status, 0) + 1
+    for row in rows:
+        attempts_before = row.attempts or 0
+        try:
+            await deliver_one(client, row)
+        except Exception as exc:
+            if (row.attempts or 0) <= attempts_before:
+                row.attempts = attempts_before + 1
+            _schedule_retry(row, _truncate_error(f"{type(exc).__name__}: {exc}"))
+        await _persist_delivery(row)
+        stats[row.status] = stats.get(row.status, 0) + 1
 
     return stats
 

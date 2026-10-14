@@ -2,16 +2,16 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, false, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_principal, get_db_session, require_dashboard_access
+from app.api.deps import get_current_principal, get_db_session, is_client_account, require_dashboard_access
 from app.core.limiter import limiter
 from app.core.regions import REGIONS, states_for_region
 from app.models.client import Client
 from app.models.order import Order, OrderItem
 from app.models.representative import Representative
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.dashboard import (
     ChartPoint,
     DashboardMetrics,
@@ -65,10 +65,23 @@ async def get_overview(
     )
     conditions = [
         Order.market_code == principal.code,
+        Order.is_superseded.is_(False),
         Order.created_at >= start_dt,
         Order.created_at < end_exclusive,
     ]
-    if rep_id:
+    if current_user.role == UserRole.representante:
+        conditions.append(
+            Order.rep_id == current_user.rep_id
+            if current_user.rep_id is not None
+            else false()
+        )
+    elif is_client_account(current_user):
+        conditions.append(
+            Order.client_id == current_user.linked_id
+            if current_user.linked_id is not None
+            else false()
+        )
+    elif rep_id:
         conditions.append(Order.rep_id == rep_id)
     region_states = states_for_region(region) if region else None
 
@@ -86,7 +99,13 @@ async def get_overview(
     )
     metrics_stmt = filtered(
         select(
-            func.coalesce(func.sum(Order.total_with_ipi), 0).label("revenue_total"),
+            func.coalesce(
+                func.sum(case(
+                    (Order.is_cancelled.is_(False), Order.total_with_ipi),
+                    else_=0,
+                )),
+                0,
+            ).label("revenue_total"),
             func.coalesce(
                 func.sum(
                     case(
@@ -149,6 +168,7 @@ async def get_overview(
             func.count(Order.id).label("orders"),
         )
         .select_from(Order)
+        .where(Order.is_cancelled.is_(False))
         .group_by(bucket)
         .order_by(bucket)
     )
@@ -170,6 +190,7 @@ async def get_overview(
             func.coalesce(func.sum(Order.total_with_ipi), 0).label("revenue"),
         )
         .select_from(Order)
+        .where(Order.is_cancelled.is_(False))
         .outerjoin(Representative, Representative.id == Order.rep_id)
         .group_by(Order.rep_id, Representative.name)
         .order_by(func.sum(Order.total_with_ipi).desc())
@@ -199,6 +220,7 @@ async def get_overview(
         )
         .select_from(OrderItem)
         .join(Order, Order.id == OrderItem.order_id)
+        .where(Order.is_cancelled.is_(False))
         .group_by(OrderItem.product_code)
         .order_by(func.sum(item_revenue).desc())
         .limit(ranking_limit)

@@ -49,6 +49,9 @@ class _Session:
     async def commit(self):
         self.commits += 1
 
+    async def flush(self):
+        return None
+
 
 def _entities(*, expired=False, recipient="titular@example.com"):
     token = generate_invite_token()
@@ -293,7 +296,7 @@ def test_admin_invite_returns_no_secret_and_records_verified_recipient(monkeypat
     assert invitation.verified_by_user_id == admin_id
     assert invitation.sent_at is not None
     assert delivered[0][2] not in str(result)
-    assert session.commits == 2
+    assert session.commits == 1
 
 
 def test_representative_creates_only_inactive_client_account(monkeypatch):

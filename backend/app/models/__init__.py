@@ -1,6 +1,7 @@
 from app.models.base import Base, TimestampMixin
 from app.models.optional_color import OptionalColor, product_optionals
-from app.models.product import Product
+from app.models.product import Product, ProductSetItem, ProductSetComponent
+from app.models.catalog import Catalog
 from app.models.product_group import ProductGroup
 from app.models.product_group_audit_event import ProductGroupAuditEvent
 from app.models.product_type import ProductType
@@ -31,6 +32,9 @@ __all__ = [
     "OptionalColor",
     "product_optionals",
     "Product",
+    "ProductSetItem",
+    "ProductSetComponent",
+    "Catalog",
     "ProductGroup",
     "ProductGroupAuditEvent",
     "ProductType",

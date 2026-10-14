@@ -23,7 +23,7 @@ Abortiva: se existir tipo apontando para grupo de outro mercado (hoje, tipo EU
 com grupo), falha nomeando a contagem em vez de aplicar pela metade.
 """
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 
 revision = "eu_product_groups_r13_20261008"
@@ -33,16 +33,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    crossed = conn.exec_driver_sql(
-        "SELECT count(*) FROM product_types WHERE market_code <> 'BR' AND group_id IS NOT NULL"
-    ).scalar() or 0
-    if crossed:
-        raise RuntimeError(
-            "Migration abortada — há "
-            f"{crossed} tipo(s) não-BR apontando para grupo fiscal BR. "
-            "Desvincule-os antes de separar os grupos por mercado."
-        )
+    if not context.is_offline_mode():
+        crossed = op.get_bind().exec_driver_sql(
+            "SELECT count(*) FROM product_types WHERE market_code <> 'BR' AND group_id IS NOT NULL"
+        ).scalar() or 0
+        if crossed:
+            raise RuntimeError(
+                "Migration abortada — há "
+                f"{crossed} tipo(s) não-BR apontando para grupo fiscal BR. "
+                "Desvincule-os antes de separar os grupos por mercado."
+            )
 
     op.add_column(
         "product_groups",

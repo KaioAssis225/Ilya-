@@ -5,7 +5,7 @@ Revises: 0045
 Create Date: 2026-08-10
 """
 
-from alembic import op
+from alembic import context, op
 import sqlalchemy as sa
 
 
@@ -19,17 +19,17 @@ NEW_USERNAME = "flprepresentacoes"
 
 
 def upgrade() -> None:
-    connection = op.get_bind()
-    existing_target = connection.execute(
-        sa.text("SELECT 1 FROM users WHERE username = :username LIMIT 1"),
-        {"username": NEW_USERNAME},
-    ).scalar_one_or_none()
-    if existing_target:
-        raise RuntimeError(
-            f"Não foi possível corrigir {OLD_USERNAME}: {NEW_USERNAME} já existe."
-        )
+    if not context.is_offline_mode():
+        existing_target = op.get_bind().execute(
+            sa.text("SELECT 1 FROM users WHERE username = :username LIMIT 1"),
+            {"username": NEW_USERNAME},
+        ).scalar_one_or_none()
+        if existing_target:
+            raise RuntimeError(
+                f"Não foi possível corrigir {OLD_USERNAME}: {NEW_USERNAME} já existe."
+            )
 
-    connection.execute(
+    op.execute(
         sa.text(
             """
             UPDATE users
@@ -38,11 +38,10 @@ def upgrade() -> None:
                    updated_at = CURRENT_TIMESTAMP
              WHERE username = :old_username
             """
-        ),
-        {"old_username": OLD_USERNAME, "new_username": NEW_USERNAME},
+        ).bindparams(old_username=OLD_USERNAME, new_username=NEW_USERNAME)
     )
 
-    connection.execute(
+    op.execute(
         sa.text(
             """
             UPDATE refresh_tokens
@@ -53,23 +52,22 @@ def upgrade() -> None:
              )
                AND revoked = FALSE
             """
-        ),
-        {"new_username": NEW_USERNAME},
+        ).bindparams(new_username=NEW_USERNAME)
     )
 
 
 def downgrade() -> None:
-    connection = op.get_bind()
-    existing_old = connection.execute(
-        sa.text("SELECT 1 FROM users WHERE username = :username LIMIT 1"),
-        {"username": OLD_USERNAME},
-    ).scalar_one_or_none()
-    if existing_old:
-        raise RuntimeError(
-            f"Não foi possível restaurar {OLD_USERNAME}: o login já existe."
-        )
+    if not context.is_offline_mode():
+        existing_old = op.get_bind().execute(
+            sa.text("SELECT 1 FROM users WHERE username = :username LIMIT 1"),
+            {"username": OLD_USERNAME},
+        ).scalar_one_or_none()
+        if existing_old:
+            raise RuntimeError(
+                f"Não foi possível restaurar {OLD_USERNAME}: o login já existe."
+            )
 
-    connection.execute(
+    op.execute(
         sa.text(
             """
             UPDATE users
@@ -78,6 +76,5 @@ def downgrade() -> None:
                    updated_at = CURRENT_TIMESTAMP
              WHERE username = :new_username
             """
-        ),
-        {"old_username": OLD_USERNAME, "new_username": NEW_USERNAME},
+        ).bindparams(old_username=OLD_USERNAME, new_username=NEW_USERNAME)
     )
