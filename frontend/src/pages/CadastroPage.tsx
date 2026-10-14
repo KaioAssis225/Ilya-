@@ -25,6 +25,7 @@ import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
+import { withMarketProductNames } from '../lib/productPayload'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao'
@@ -1039,7 +1040,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       return opt ? (activeCatsSet.has(opt.category) && !allOptCats.has(opt.category)) : false
     })
 
-    const payload = {
+    const payload = withMarketProductNames({
       ...form,
       price: form.price_lojista ?? 0, // mantém a coluna legada coerente com o preço lojista
       optional_ids: filteredOptionalIds,
@@ -1047,18 +1048,11 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       set_items: isConjunto ? [] : (form.set_items ?? []),
       components: isConjunto ? (form.components ?? []) : [],
       profundidade: form.is_circular ? 0 : form.profundidade,
-    }
+    }, isEurope)
     try {
       if (editing) {
         const updatePayload = isEurope
-          ? {
-              ...payload,
-              // EU usa o mesmo formulário e os mesmos dados operacionais do BR,
-              // mas a atualização continua restrita ao produto EU no backend.
-              description: form.description?.trim() || undefined,
-              description_pt_pt: undefined,
-              description_en: isEurope ? (form.description_en?.trim() || undefined) : undefined,
-            }
+          ? payload
           : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
