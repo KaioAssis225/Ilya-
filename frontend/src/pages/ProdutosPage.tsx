@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown } from 'lucide-react'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
@@ -13,6 +14,7 @@ import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
 import type { PageResult, Product } from '../types'
 import { formatDimensions } from '../lib/measurements'
+import { applicationName, productApplications } from '../lib/optionalApplications'
 
 const PAGE_SIZE = 24
 const FULL_IMAGE_WARMUP_COUNT = 4
@@ -340,7 +342,11 @@ function dimLabel(p: Product, locale: 'pt-PT' | 'en-GB' = 'pt-PT') {
   return formatDimensions(p, p.market_code === 'EU' ? 'EU' : 'BR', locale)
 }
 
-function addToCart(product: Product, userId: string, market: 'BR' | 'EU') {
+function addToCart(product: Product, userId: string, market: 'BR' | 'EU', configure: (code: string) => void) {
+  if (productApplications(product).length > 0) {
+    configure(product.product_code)
+    return
+  }
   const storageKey = cartStorageKey(userId, market)
   const raw = localStorage.getItem(storageKey)
   const cart = raw ? JSON.parse(raw) : []
@@ -434,6 +440,7 @@ function ProductFullView({
   onClose,
 }: { product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void }) {
   const [added, setAdded] = useState(false)
+  const navigate = useNavigate()
   const { locale } = useLocale()
   const english = locale === 'en-GB'
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
@@ -462,7 +469,7 @@ function ProductFullView({
   }, [])
 
   function handleAdd() {
-    addToCart(product, userId, market)
+    addToCart(product, userId, market, code => navigate(`/orcamento?configure=${encodeURIComponent(code)}`))
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
@@ -629,6 +636,13 @@ function ProductFullView({
               </div>
             ) : null}
 
+            {productApplications(product).length > 0 && <div className="border-t border-line-soft pt-4">
+              <p className="type-label mb-2">{english ? 'Optional applications' : 'Aplicações do opcional'}</p>
+              {productApplications(product).map(({ application, componentName }) => <p key={application.id} className="text-xs text-ink-2 mt-1">
+                {componentName ? `${componentName} — ` : ''}{applicationName(application, english)}{application.required ? ' *' : ''}
+              </p>)}
+            </div>}
+
             <button
               onClick={handleAdd}
               style={{ touchAction: 'manipulation' }}
@@ -655,6 +669,7 @@ function ProductFullView({
 }
 
 export default function ProdutosPage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { locale, t } = useLocale()
   const queryClient = useQueryClient()
@@ -1124,7 +1139,7 @@ export default function ProdutosPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => user && addToCart(product, user.id, user.active_market)}
+                  onClick={() => user && addToCart(product, user.id, user.active_market, code => navigate(`/orcamento?configure=${encodeURIComponent(code)}`))}
                   aria-label={locale === 'en-GB' ? `Add ${product.description} to quote` : `Adicionar ${product.description} ao orçamento`}
                   style={{ touchAction: 'manipulation' }}
                   className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15

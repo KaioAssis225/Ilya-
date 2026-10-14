@@ -4,6 +4,7 @@ import { formatDimensions } from './measurements'
 import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
 import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
+import { orderOptionalSlots } from './optionalApplications'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const GOLD: [number, number, number] = [139, 105, 20]
@@ -274,10 +275,7 @@ export async function generateOrderPDF(
     // O conjunto é apenas o agregador. Suas dimensões pertencem aos componentes,
     // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
     const hasDims = !isSetProduct && (item.largura !== 0 || item.altura !== 0)
-    const optSlots = Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
-      label: catLabel(cat),
-      value,
-    }))
+    const optSlots = orderOptionalSlots(item, locale === 'en-GB', catLabel)
     // Bloco 82: quebra de linha (80mm) para textos longos de opcionais, observação
     // e componentes — o rowH soma as linhas físicas reais para não colidir com a
     // próxima linha da tabela nem com as colunas numéricas (QTD/VALOR/IPI/TOTAL).

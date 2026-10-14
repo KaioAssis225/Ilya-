@@ -8,6 +8,32 @@ from app.schemas.optional import OptionalColorRead
 from app.schemas.catalog import CatalogRead
 
 
+class OptionalApplicationWrite(BaseModel):
+    id: Optional[uuid.UUID] = None
+    category_id: uuid.UUID
+    name: str = Field(..., min_length=1, max_length=120)
+    name_en: Optional[str] = Field(None, max_length=120)
+    required: bool = False
+    display_order: int = Field(0, ge=0)
+    allow_all: bool = False
+    allow_repeat: bool = True
+    allowed_optional_ids: List[uuid.UUID] = Field(default_factory=list, max_length=500)
+
+
+class OptionalApplicationRead(BaseModel):
+    id: uuid.UUID
+    category_id: uuid.UUID
+    category_code: str
+    category_name: str
+    name: str
+    name_en: Optional[str] = None
+    required: bool
+    display_order: int
+    allow_all: bool
+    allow_repeat: bool
+    allowed_optionals: List[OptionalColorRead] = Field(default_factory=list)
+
+
 def _strip_product_type(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -28,6 +54,7 @@ class ProductSetItemRead(BaseModel):
 
 
 class ProductSetComponentCreate(BaseModel):
+    id: Optional[uuid.UUID] = None
     description: str = Field(..., min_length=1, max_length=20_000)
     is_circular: bool = False
     altura: Decimal = Field(..., ge=0, decimal_places=2)
@@ -35,6 +62,7 @@ class ProductSetComponentCreate(BaseModel):
     profundidade: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
     qty: int = Field(1, ge=1, le=100_000)
     optional_ids: List[uuid.UUID] = Field(default_factory=list, max_length=100)
+    optional_applications: Optional[List[OptionalApplicationWrite]] = Field(None, max_length=100)
 
 
 class ProductSetComponentRead(BaseModel):
@@ -46,6 +74,7 @@ class ProductSetComponentRead(BaseModel):
     profundidade: Decimal
     qty: int
     optionals: List[OptionalColorRead] = []
+    optional_applications: List[OptionalApplicationRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -98,6 +127,7 @@ class ProductCreate(ProductBase):
     description_pt_pt: Optional[str] = Field(None, min_length=1, max_length=20_000)
     description_en: Optional[str] = Field(None, min_length=1, max_length=20_000)
     optional_ids: List[uuid.UUID] = Field(default_factory=list, max_length=500)
+    optional_applications: List[OptionalApplicationWrite] = Field(default_factory=list, max_length=100)
     set_items: List[ProductSetItemCreate] = Field(default_factory=list, max_length=500)
     components: List[ProductSetComponentCreate] = Field(default_factory=list, max_length=500)
 
@@ -125,6 +155,7 @@ class ProductUpdate(BaseModel):
     observacao: Optional[str] = Field(None, max_length=20_000)
     all_optionals_categories: Optional[str] = Field(None, max_length=2_000)
     optional_ids: Optional[List[uuid.UUID]] = Field(None, max_length=500)
+    optional_applications: Optional[List[OptionalApplicationWrite]] = Field(None, max_length=100)
     set_items: Optional[List[ProductSetItemCreate]] = Field(None, max_length=500)
     components: Optional[List[ProductSetComponentCreate]] = Field(None, max_length=500)
 
@@ -172,6 +203,7 @@ class ProductRead(ProductBase):
     thumbnail_url: Optional[str] = None
     catalog: Optional[CatalogRead] = None
     optionals: List[OptionalColorRead] = []
+    optional_applications: List[OptionalApplicationRead] = Field(default_factory=list)
     set_items: List[ProductSetItemRead] = []
     components: List[ProductSetComponentRead] = []
     created_at: datetime

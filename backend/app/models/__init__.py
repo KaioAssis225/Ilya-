@@ -7,6 +7,7 @@ from app.models.product_type import ProductType
 from app.models.product_type_fiscal_audit_event import ProductTypeFiscalAuditEvent
 from app.models.product_fiscal_assignment_event import ProductFiscalAssignmentEvent
 from app.models.optional_category import OptionalCategory
+from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.order import Order, OrderItem
@@ -36,6 +37,7 @@ __all__ = [
     "ProductType",
     "ProductTypeFiscalAuditEvent",
     "OptionalCategory",
+    "ProductOptionalApplication", "OrderItemOptionalChoice",
     "Client",
     "Representative",
     "Order",

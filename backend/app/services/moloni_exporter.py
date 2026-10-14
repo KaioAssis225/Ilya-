@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.moloni_crypto import decrypt_token, encrypt_token
 from app.models.client import Client
 from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExportJob, MoloniProductLink, MoloniTaxMapping
-from app.models.order import Order
+from app.models.order import Order, OrderItem
 from app.models.product import Product
 
 class MoloniError(RuntimeError): pass
@@ -215,6 +215,15 @@ def _tax_for_rate(rate: str, mappings: dict[str, int]) -> dict:
         raise MoloniError("Artigo com IVA zero precisa de motivo de isenção validado antes do envio ao Moloni.")
     return {"tax_id": mappings[rate], "value": float(value), "order": 1, "cumulative": 0}
 
+
+def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> str:
+    choice_lines = [
+        f"{(choice.component_name + ' — ') if choice.component_name else ''}{(choice.application_name_en if locale == 'en-GB' and choice.application_name_en else choice.application_name)}: {choice.optional_name}"
+        for choice in sorted(item.optional_choices, key=lambda row: (row.display_order, str(row.id)))
+    ]
+    legacy_lines = [f"{category}: {value}" for category, value in item.opt_categories.items()]
+    return "\n".join(part for part in [product_summary or "", *legacy_lines, *choice_lines] if part)
+
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
@@ -273,7 +282,8 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
             }
             created = _record(await api.post("products/insert", article), "products/insert")
             pid = _entity_id(created, "product_id", "productId", "id", endpoint="products/insert"); db.add(MoloniProductLink(connection_id=connection.id, product_id=product.id, moloni_product_id=pid))
-        products.append({"product_id": pid, "name": item.description, "summary": product.summary or "", "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [tax]})
+        line_summary = _line_summary(product.summary, item, order.locale)
+        products.append({"product_id": pid, "name": item.description, "summary": line_summary, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [tax]})
     try:
         estimate = {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}
         response = _record(await api.post("estimates/insert", estimate), "estimates/insert")

@@ -24,6 +24,50 @@ export interface OptionalColorCreate {
 
 export interface OptionalColorUpdate extends Partial<OptionalColorCreate> {}
 
+export interface OptionalApplication {
+  id: string
+  category_id: string
+  category_code: string
+  category_name: string
+  name: string
+  name_en: string | null
+  required: boolean
+  display_order: number
+  allow_all: boolean
+  allow_repeat: boolean
+  allowed_optionals: OptionalColor[]
+}
+
+export interface OptionalApplicationInput {
+  id?: string
+  category_id: string
+  name: string
+  name_en?: string | null
+  required: boolean
+  display_order: number
+  allow_all: boolean
+  allow_repeat: boolean
+  allowed_optional_ids: string[]
+}
+
+export interface OptionalChoice {
+  id: string
+  application_id: string | null
+  optional_id: string | null
+  application_name: string
+  application_name_en: string | null
+  category_code: string
+  category_name: string
+  optional_name: string
+  component_name: string | null
+  display_order: number
+}
+
+export interface OptionalChoiceInput {
+  application_id: string
+  optional_id: string
+}
+
 export interface ProductSetItem {
   product_code: string
   qty: number
@@ -46,9 +90,11 @@ export interface ProductSetComponent {
   profundidade: number
   qty: number
   optionals: OptionalColor[]
+  optional_applications?: OptionalApplication[]
 }
 
 export interface ProductSetComponentCreate {
+  id?: string
   description: string
   is_circular: boolean
   altura: number
@@ -56,6 +102,7 @@ export interface ProductSetComponentCreate {
   profundidade: number
   qty: number
   optional_ids: string[]
+  optional_applications?: OptionalApplicationInput[]
 }
 
 export interface Product {
@@ -86,6 +133,7 @@ export interface Product {
   observacao: string | null
   all_optionals_categories: string | null
   optionals: OptionalColor[]
+  optional_applications?: OptionalApplication[]
   set_items: ProductSetItem[]
   components: ProductSetComponent[]
   photo_url: string | null
@@ -117,6 +165,7 @@ export interface ProductCreate {
   observacao?: string | null
   all_optionals_categories?: string | null
   optional_ids?: string[]
+  optional_applications?: OptionalApplicationInput[]
   set_items?: ProductSetItemCreate[]
   components?: ProductSetComponentCreate[]
 }
@@ -185,6 +234,9 @@ export interface OrderItemCreate {
   qty: number
   discount?: number
   opt_categories?: Record<string, string>
+  optional_choices?: OptionalChoiceInput[]
+  source_order_item_id?: string
+  preserve_optional_choices?: boolean
 }
 
 export interface OrderCreate {
@@ -211,6 +263,7 @@ export interface OrderItem {
   largura: number
   profundidade: number
   opt_categories: Record<string, string>
+  optional_choices?: OptionalChoice[]
   qty: number
   unit_price: number
   discount: number
@@ -230,6 +283,7 @@ export interface OrderHistory {
   user: { id: string; full_name: string } | null
   action: string
   details: string | null
+  items_snapshot?: { product_code: string; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; component_name: string | null }[] }[] | null
   created_at: string
 }
 

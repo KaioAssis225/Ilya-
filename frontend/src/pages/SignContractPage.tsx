@@ -26,6 +26,7 @@ interface OrderInfo {
       ipi_rate: string
       tax_label: string
       optionals: Record<string, string>
+      application_choices?: Array<{ application_name: string; application_name_en: string | null; optional_name: string; component_name: string | null }>
     }>
   }
 }
@@ -200,6 +201,9 @@ export default function SignContractPage() {
                   <p>Dimensões: {item.altura} × {item.largura} × {item.profundidade}</p>
                   {item.observacao && <p>Observação do item: {item.observacao}</p>}
                   {Object.entries(item.optionals).length > 0 && <p>Opcionais: {Object.entries(item.optionals).map(([key, value]) => `${key}: ${value}`).join(', ')}</p>}
+                  {item.application_choices?.map((choice, choiceIndex) => <p key={choiceIndex}>
+                    {choice.component_name ? `${choice.component_name} — ` : ''}{choice.application_name}: {choice.optional_name}
+                  </p>)}
                 </div>
               ))}
               {orderInfo.document.notes && <p>Observações: {orderInfo.document.notes}</p>}

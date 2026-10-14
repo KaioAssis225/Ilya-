@@ -188,3 +188,18 @@ def test_moloni_tax_payload_requires_explicit_nonzero_rate():
     }
     with pytest.raises(MoloniError, match="motivo de isenção"):
         _tax_for_rate("0.00", {"0.00": 8})
+
+
+def test_moloni_line_summary_keeps_every_application_choice():
+    from app.services.moloni_exporter import _line_summary
+
+    first = SimpleNamespace(id=uuid.uuid4(), display_order=0, component_name="Assento",
+                            application_name="Couro do assento", application_name_en="Seat leather",
+                            optional_name="Caramelo")
+    second = SimpleNamespace(id=uuid.uuid4(), display_order=1, component_name=None,
+                             application_name="Pintura dos pés", application_name_en="Leg paint",
+                             optional_name="Taupe")
+    item = SimpleNamespace(opt_categories={"CORDA": "Natural"}, optional_choices=[second, first])
+    assert _line_summary("Resumo", item, "en-GB") == (
+        "Resumo\nCORDA: Natural\nAssento — Seat leather: Caramelo\nLeg paint: Taupe"
+    )
