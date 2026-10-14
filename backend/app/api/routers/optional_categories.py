@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import get_current_principal, get_db_session, require_platform_capability, require_roles
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.models.optional_category import OptionalCategory
+from app.models.optional_application import ProductOptionalApplication
 from app.models.optional_color import OptionalColor
 from app.models.product import Product
 from app.models.user import User, UserRole
@@ -156,5 +157,10 @@ async def delete_optional_category(
     ))).scalar_one_or_none()
     if not cat:
         raise HTTPException(status_code=404, detail="Categoria não encontrada.")
+    in_use = (await db.execute(select(ProductOptionalApplication.id).where(
+        ProductOptionalApplication.category_id == cat.id,
+    ).limit(1))).scalar_one_or_none()
+    if in_use:
+        raise HTTPException(status_code=409, detail="Categoria usada em aplicações de produtos.")
     await db.delete(cat)
     await db.commit()

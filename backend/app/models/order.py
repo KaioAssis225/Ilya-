@@ -179,6 +179,9 @@ class OrderItem(Base, TimestampMixin):
     # Substitui as antigas colunas fixas opt_aluminio/madeira/tecido/couro/corda,
     # que só suportavam os 8 códigos originais de teste (V-Bloco65-cats).
     opt_categories: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    optional_choices: Mapped[list["OrderItemOptionalChoice"]] = relationship(
+        "OrderItemOptionalChoice", cascade="all, delete-orphan", lazy="selectin",
+    )
 
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

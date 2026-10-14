@@ -21,6 +21,7 @@ import type { ClientVerificationMethod, UserCreateResponse } from '../hooks/useU
 import { useAuth } from '../hooks/useAuth'
 import { useCadastroText } from '../hooks/useCadastroText'
 import { NumberField } from '../components/NumberField'
+import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
@@ -381,11 +382,11 @@ const EMPTY_PRODUCT: ProductCreate = {
   type: 'Outro', catalog_id: null, is_circular: false,
   is_set: false, set_items: [], components: [],
   altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, price_arquiteto: 0, observacao: null,
-  all_optionals_categories: null, optional_ids: [],
+  all_optionals_categories: null, optional_ids: [], optional_applications: [],
 }
 
 const EMPTY_COMP: ProductSetComponentCreate = {
-  description: '', is_circular: false, altura: 0, largura: 0, profundidade: 0, qty: 1, optional_ids: [],
+  description: '', is_circular: false, altura: 0, largura: 0, profundidade: 0, qty: 1, optional_ids: [], optional_applications: [],
 }
 
 /** Agrupa opcionais pelo código de categoria (exato, sem normalização) — o
@@ -941,6 +942,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     const cats = isConjunto ? [] : Array.from(new Set([
       ...p.optionals.map((o) => o.category),
       ...allCats,
+      ...(p.optional_applications ?? []).map(app => app.category_code),
     ]))
     setActiveCategories(cats); setAllOptCats(allCats)
     setForm({
@@ -965,8 +967,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       price_arquiteto: p.market_prices?.arquiteto ?? 0,
       observacao: p.observacao ?? null,
       optional_ids: isConjunto ? [] : p.optionals.map((o) => o.id),
+      optional_applications: (p.optional_applications ?? []).map(app => ({
+        id: app.id, category_id: app.category_id, name: app.name, name_en: app.name_en,
+        required: app.required, display_order: app.display_order,
+        allow_all: app.allow_all, allow_repeat: app.allow_repeat,
+        allowed_optional_ids: app.allowed_optionals.map(option => option.id),
+      })),
       set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
       components: p.components.map(comp => ({
+        id: comp.id,
         description: comp.description,
         is_circular: comp.is_circular,
         altura: comp.altura,
@@ -974,6 +983,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         profundidade: comp.profundidade,
         qty: comp.qty,
         optional_ids: comp.optionals.map(o => o.id),
+        optional_applications: (comp.optional_applications ?? []).map(app => ({
+          id: app.id, category_id: app.category_id, name: app.name, name_en: app.name_en,
+          required: app.required, display_order: app.display_order,
+          allow_all: app.allow_all, allow_repeat: app.allow_repeat,
+          allowed_optional_ids: app.allowed_optionals.map(option => option.id),
+        })),
       })),
     })
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
@@ -1130,8 +1145,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       {isEurope && <span className="block text-[10px] text-muted">Arquiteto <strong className="text-gold">{money(marketPrice(p, 'arquiteto'))}</strong></span>}
                     </span>
                   </div>
-                  {(p.optionals.length > 0 || p.all_optionals_categories) && (
-                    <p className="text-[10px] text-muted mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ', tx('Todos'))}</p>
+                  {(p.optionals.length > 0 || p.all_optionals_categories || (p.optional_applications?.length ?? 0) > 0 || p.components.some(component => (component.optional_applications?.length ?? 0) > 0)) && (
+                    <p className="text-[10px] text-muted mt-0.5 truncate">{[getProductOptionalsLabel(p, catLabel, ' · ', tx('Todos')), ...(p.optional_applications ?? []).map(app => app.name), ...p.components.flatMap(component => (component.optional_applications ?? []).map(app => `${component.description}: ${app.name}`))].filter(Boolean).join(' · ')}</p>
                   )}
                 </div>
               </div>
@@ -1216,9 +1231,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'pvp'))}</td>}
                     {isEurope && <td data-product-col="price_arquiteto" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'arquiteto'))}</td>}
                     <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
-                      {p.optionals.length > 0 || p.all_optionals_categories
-                        ? getProductOptionalsLabel(p, catLabel, ', ', tx('Todos'))
-                        : '—'}
+                      {[getProductOptionalsLabel(p, catLabel, ', ', tx('Todos')), ...(p.optional_applications ?? []).map(app => app.name), ...p.components.flatMap(component => (component.optional_applications ?? []).map(app => `${component.description}: ${app.name}`))].filter(Boolean).join(', ') || '—'}
                     </td>
                     <td data-product-col="photo" className="px-2 py-3 border-r border-line align-top">
                       {p.photo_url
@@ -1450,8 +1463,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                             onClick={() => {
                               setCompForm(comp)
                               setCompActiveCategories(Array.from(new Set(
-                                comp.optional_ids
-                                  .map(id => allOptionals.find(o => o.id === id)?.category)
+                                [...comp.optional_ids.map(id => allOptionals.find(o => o.id === id)?.category),
+                                  ...(comp.optional_applications ?? []).map(app => optCategories.find(cat => cat.id === app.category_id)?.code)]
                                   .filter((c): c is string => !!c)
                               )))
                               setEditingCompIndex(idx)
@@ -1539,7 +1552,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                 } else {
                                   setCompActiveCategories(prev => prev.filter(c => c !== value))
                                   const catIds = allOptionals.filter(o => o.category === value).map(o => o.id)
-                                  setCompForm(f => ({ ...f, optional_ids: f.optional_ids.filter(id => !catIds.includes(id)) }))
+                                   setCompForm(f => ({ ...f, optional_ids: f.optional_ids.filter(id => !catIds.includes(id)), optional_applications: (f.optional_applications ?? []).filter(app => app.category_id !== optCategories.find(group => group.code === value)?.id) }))
                                 }
                               }}
                               className="w-3.5 h-3.5" />
@@ -1556,7 +1569,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         {compActiveCategories.map((cat) => (
                           <div key={cat} className="border border-line rounded-lg p-2.5 bg-white">
                             <span className="text-[11px] font-semibold block mb-1.5" style={{ color }}>{catLabel(cat).toUpperCase()}</span>
-                            <div className="flex flex-wrap gap-1.5">
+                            {!compForm.optional_applications?.some(app => app.category_id === optCategories.find(group => group.code === cat)?.id) && <div className="flex flex-wrap gap-1.5">
                               {allOptionals.filter(o => o.category === cat).map(opt => {
                                 const isSel = compForm.optional_ids.includes(opt.id)
                                 return (
@@ -1573,7 +1586,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                   </button>
                                 )
                               })}
-                            </div>
+                            </div>}
+                            {optCategories.find(group => group.code === cat) && <OptionalApplicationGroup
+                              category={optCategories.find(group => group.code === cat)!}
+                              optionals={allOptionals.filter(option => option.category === cat)}
+                              applications={compForm.optional_applications ?? []}
+                              onChange={applications => setCompForm(previous => ({ ...previous, optional_applications: applications }))}
+                              onFirstAdd={() => setCompForm(previous => ({ ...previous, optional_ids: previous.optional_ids.filter(id => allOptionals.find(option => option.id === id)?.category !== cat) }))}
+                              initialAllowedIds={compForm.optional_ids.filter(id => allOptionals.find(option => option.id === id)?.category === cat)}
+                              initialAllowAll={false}
+                            />}
                           </div>
                         ))}
                       </div>
@@ -1685,7 +1707,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               const catOptionalIds = allOptionals.filter(o => o.category === value).map(o => o.id)
                               setForm(prev => ({
                                 ...prev,
-                                optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id))
+                                 optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id)),
+                                 optional_applications: (prev.optional_applications ?? []).filter(app => app.category_id !== optCategories.find(group => group.code === value)?.id),
                               }))
                             }
                           }}
@@ -1709,7 +1732,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       const isAllowed = allOptCats.has(catValue)
                       const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
-                        <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-white shadow-sm">
+                          <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-white shadow-sm">
                           <div className="flex items-center justify-between pb-1 border-b border-line-soft">
                             <span className="text-xs font-semibold" style={{ color }}>{catValueLabel.toUpperCase()}</span>
                             <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -1736,7 +1759,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               <span className="text-[11px] text-ink-3">{tx('Permitir todos')}</span>
                             </label>
                           </div>
-                          {isAllowed ? (
+                            {(form.optional_applications ?? []).some(app => app.category_id === optCategories.find(group => group.code === catValue)?.id) ? null : isAllowed ? (
                             <p className="text-[11px] text-muted italic">
                               {tx('Todos os opcionais desta categoria estarão disponíveis no carrinho.')}
                             </p>
@@ -1760,7 +1783,19 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                     <option key={opt.id} value={opt.id}>{opt.color_name}</option>
                                   ))}
                                 </select>
-                              )}
+                            )}
+                            {optCategories.find(group => group.code === catValue) && <OptionalApplicationGroup
+                              category={optCategories.find(group => group.code === catValue)!}
+                              optionals={catItems}
+                              applications={form.optional_applications ?? []}
+                              onChange={applications => setForm(previous => ({ ...previous, optional_applications: applications }))}
+                              onFirstAdd={() => {
+                                setAllOptCats(previous => { const next = new Set(previous); next.delete(catValue); return next })
+                                setForm(previous => ({ ...previous, optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== catValue) }))
+                              }}
+                              initialAllowedIds={selectedIds}
+                              initialAllowAll={isAllowed}
+                            />}
                               <p className="text-[10px] text-muted mt-1">{tx('Ctrl+clique para selecionar múltiplas cores.')}</p>
                             </div>
                           )}

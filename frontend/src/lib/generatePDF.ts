@@ -274,10 +274,13 @@ export async function generateOrderPDF(
     // O conjunto é apenas o agregador. Suas dimensões pertencem aos componentes,
     // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
     const hasDims = !isSetProduct && (item.largura !== 0 || item.altura !== 0)
-    const optSlots = Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
+    const optSlots = [...Object.entries(item.opt_categories ?? {}).map(([cat, value]) => ({
       label: catLabel(cat),
       value,
-    }))
+    })), ...(item.optional_choices ?? []).map(choice => ({
+      label: `${choice.component_name ? `${choice.component_name} — ` : ''}${locale === 'en-GB' && choice.application_name_en ? choice.application_name_en : choice.application_name}`,
+      value: choice.optional_name,
+    }))]
     // Bloco 82: quebra de linha (80mm) para textos longos de opcionais, observação
     // e componentes — o rowH soma as linhas físicas reais para não colidir com a
     // próxima linha da tabela nem com as colunas numéricas (QTD/VALOR/IPI/TOTAL).

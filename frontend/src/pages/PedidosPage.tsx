@@ -84,6 +84,13 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
               <span className="text-[11px] text-muted-3 ml-auto whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
             </div>
             {h.details && <p className="text-xs text-ink-3 mt-0.5 break-words">{h.details}</p>}
+            {h.items_snapshot?.map((item, itemIndex) => <div key={itemIndex} className="text-xs text-ink-3 mt-1">
+              <strong>{item.product_code}</strong>
+              {Object.entries(item.legacy_optionals).map(([category, value]) => <span key={category} className="block">{category}: {value}</span>)}
+              {item.applications.map((choice, choiceIndex) => <span key={choiceIndex} className="block">
+                {choice.component_name ? `${choice.component_name} — ` : ''}{choice.application_name}: {choice.optional_name}
+              </span>)}
+            </div>)}
           </div>
         </div>
       ))}
@@ -529,8 +536,11 @@ function OrderDetailModal({
                         <td className="px-3 py-2 text-ink-3 text-xs">
                           {(() => {
                             const parsed = parseOptCategories(item.opt_categories)
-                            if (parsed.length === 0) return '—'
-                            return parsed.map((p, i) => <span key={p.label}>{i > 0 && <span className="mx-1 text-faint">·</span>}<OptionalWithPreview label={p.label} swatch={p.swatch} /></span>)
+                            const choices = item.optional_choices ?? []
+                            if (parsed.length === 0 && choices.length === 0) return '—'
+                            return <>{parsed.map((p, i) => <span key={p.label}>{i > 0 && <span className="mx-1 text-faint">·</span>}<OptionalWithPreview label={p.label} swatch={p.swatch} /></span>)}
+                              {choices.map(choice => <span key={choice.id} className="block text-xs">{choice.component_name ? `${choice.component_name} — ` : ''}{isEuOrder && choice.application_name_en ? choice.application_name_en : choice.application_name}: {choice.optional_name}</span>)}
+                            </>
                           })()}
                         </td>
                         <td className="px-3 py-2 text-center text-ink">{item.qty}</td>

@@ -16,9 +16,10 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
+import { allowedForApplication, applicationName, formatChoice, productApplications, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
-import type { Product, Client, Representative, ClientCreate, OptionalColor } from '../types'
+import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice } from '../types'
 import { formatDimensions } from '../lib/measurements'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -364,10 +365,15 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
 // ── Carrinho ──────────────────────────────────────────────────────────────────
 
 interface CartItem {
+  line_id: string
   product_code: string
   qty: number
   discount: number
   opt_categories: Partial<Record<string, string>>
+  optional_choices: { application_id: string; optional_id: string }[]
+  source_order_item_id?: string
+  preserve_optional_choices?: boolean
+  saved_choices?: OptionalChoice[]
   _product: Product
 }
 
@@ -386,7 +392,7 @@ function readPersistedCart(userId?: string, market: 'BR' | 'EU' = 'BR'): Persist
       && typeof item.product_code === 'string'
       && Number.isFinite(Number(item.qty))
       && typeof item.opt_categories === 'object'
-    )
+    ).map(item => ({ ...item, line_id: item.line_id || crypto.randomUUID(), optional_choices: Array.isArray(item.optional_choices) ? item.optional_choices : [] }))
   } catch {
     return []
   }
@@ -461,6 +467,44 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
   )
 }
 
+function ApplicationSelectors({ product, choices, allOptionals, onChange, english }: {
+  product: Product
+  choices: CartItem['optional_choices']
+  allOptionals: OptionalColor[]
+  onChange: (applicationId: string, optionalId: string | null) => void
+  english: boolean
+}) {
+  const entries = productApplications(product)
+  if (!entries.length) return null
+  const required = entries.filter(entry => entry.application.required)
+  const filled = required.filter(entry => choices.some(choice => choice.application_id === entry.application.id)).length
+  const errors = validateApplicationChoices(product, choices, allOptionals)
+  const grouped = Array.from(new Set(entries.map(entry => entry.application.category_code)))
+  return <section className="mt-2 space-y-2" aria-label={english ? 'Optional applications' : 'Aplicações do opcional'}>
+    {required.length > 0 && <p className="text-xs font-medium text-ink-2" aria-live="polite">
+      {english ? `Choose options — ${filled} of ${required.length} required applications filled` : `Escolha os opcionais — ${filled} de ${required.length} aplicações preenchidas`}
+    </p>}
+    {grouped.map(category => <div key={category} className="border border-line rounded-lg p-2">
+      <strong className="text-xs text-gold">{entries.find(entry => entry.application.category_code === category)?.application.category_name ?? category}</strong>
+      <div className="grid gap-2 mt-1">
+        {entries.filter(entry => entry.application.category_code === category).map(({ application, componentName }) => {
+          const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
+          const missing = application.required && !value
+          return <label key={application.id} className="text-xs text-ink-2 flex flex-col gap-1">
+            <span>{componentName ? `${componentName} — ` : ''}{applicationName(application, english)} {application.required && <span className="text-danger" aria-label={english ? 'Required' : 'Obrigatória'}>*</span>}</span>
+            <select className={`input max-w-xs ${missing ? 'border-danger' : ''}`} value={value} onChange={event => onChange(application.id, event.target.value || null)} aria-invalid={missing}>
+              <option value="">{english ? 'Choose an option' : 'Escolha uma opção'}</option>
+              {allowedForApplication(application, allOptionals).map(option => <option key={option.id} value={option.id}>{option.color_name}</option>)}
+            </select>
+            {missing && <span className="text-danger">{english ? `Select ${applicationName(application, true)}` : `Preencha ${application.name}`}</span>}
+          </label>
+        })}
+      </div>
+    </div>)}
+    {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
+  </section>
+}
+
 // ── Lightbox de foto ──────────────────────────────────────────────────────────
 
 function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
@@ -507,7 +551,7 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onDiscountChange, maxDiscount, onRemove, onPhotoClick, allOptionals, onOptChange, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onDiscountChange, maxDiscount, onRemove, onPhotoClick, allOptionals, onOptChange, onApplicationChange, onEditApplications, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -517,6 +561,8 @@ function MobileCartCard({
   onPhotoClick: (url: string) => void
   allOptionals: OptionalColor[]
   onOptChange: (cat: string, value: string | null) => void
+  onApplicationChange: (applicationId: string, optionalId: string | null) => void
+  onEditApplications: () => void
   priceProfile: string
   catLabel: (code: string) => string
   currency: string
@@ -562,7 +608,7 @@ function MobileCartCard({
               )}
             </div>
             <button
-              onClick={() => onRemove(item.product_code)}
+              onClick={() => onRemove(item.line_id)}
               className="text-muted active:text-danger transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
               style={{ touchAction: 'manipulation' }}
               aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}
@@ -571,6 +617,10 @@ function MobileCartCard({
             </button>
           </div>
           <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} catLabel={catLabel} />
+          {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
+            {(item.saved_choices ?? []).map(choice => <p key={choice.id}>{formatChoice(choice, isEnglish)}</p>)}
+            <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
+          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} english={isEnglish} />}
         </div>
       </div>
 
@@ -581,7 +631,7 @@ function MobileCartCard({
         {/* Qty stepper */}
         <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
           <button
-            onClick={() => onQtyChange(item.product_code, Math.max(1, item.qty - 1))}
+            onClick={() => onQtyChange(item.line_id, Math.max(1, item.qty - 1))}
             className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
             aria-label={isEnglish ? `Decrease quantity of ${item._product.description}` : `Diminuir quantidade de ${item._product.description}`}
@@ -590,7 +640,7 @@ function MobileCartCard({
           </button>
           <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
           <button
-            onClick={() => onQtyChange(item.product_code, item.qty + 1)}
+            onClick={() => onQtyChange(item.line_id, item.qty + 1)}
             className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
             style={{ touchAction: 'manipulation' }}
             aria-label={isEnglish ? `Increase quantity of ${item._product.description}` : `Aumentar quantidade de ${item._product.description}`}
@@ -601,11 +651,11 @@ function MobileCartCard({
 
         {/* Desconto percentual */}
         <div className="flex items-center gap-1.5">
-          <label htmlFor={`mobile-disc-${item.product_code}`} className="type-label">
+          <label htmlFor={`mobile-disc-${item.line_id}`} className="type-label">
             {isEnglish ? 'Disc. %' : 'Desc. %'}
           </label>
           <NumberField
-            id={`mobile-disc-${item.product_code}`}
+            id={`mobile-disc-${item.line_id}`}
             min={0}
             max={maxDiscount}
             step="any"
@@ -614,7 +664,7 @@ function MobileCartCard({
             disabled={maxDiscount <= 0}
             aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
             className="input w-16 text-center text-sm px-1.5 py-1.5 disabled:opacity-50"
-            onValueChange={(v) => onDiscountChange(item.product_code, Math.min(maxDiscount, Math.max(0, v)))}
+            onValueChange={(v) => onDiscountChange(item.line_id, Math.min(maxDiscount, Math.max(0, v)))}
           />
         </div>
 
@@ -852,11 +902,13 @@ export default function OrcamentoPage() {
     () => localStorage.getItem(repStorageKey),
   )
   const [cartHydrated, setCartHydrated] = useState(false)
-  const [productQuery, setProductQuery] = useState('')
+  const [configureCode, setConfigureCode] = useState(searchParams.get('configure'))
+  const [productQuery, setProductQuery] = useState(searchParams.get('configure') ?? '')
   const [clientQuery, setClientQuery] = useState('')
   const [repQuery, setRepQuery] = useState('')
   const [productOpen, setProductOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [selectedChoices, setSelectedChoices] = useState<CartItem['optional_choices']>([])
   const [cartFilter, setCartFilter] = useState('')
   const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
   const [quickModal, setQuickModal] = useState<'client' | 'rep' | null>(null)
@@ -880,6 +932,16 @@ export default function OrcamentoPage() {
     sort_dir: 'asc',
   })
   const products = productSearch.data?.items ?? EMPTY_PRODUCTS
+  useEffect(() => {
+    if (!configureCode) return
+    const product = products.find(item => item.product_code === configureCode)
+    if (!product) return
+    setSelectedProduct(product)
+    setSelectedChoices([])
+    setProductQuery('')
+    setConfigureCode(null)
+    setSearchParams({}, { replace: true })
+  }, [configureCode, products, setSearchParams])
   const clientSearch = useClientsPage({
     skip: 0,
     limit: 15,
@@ -911,12 +973,15 @@ export default function OrcamentoPage() {
   const resolvedProducts = resolvedProductQuery.data ?? EMPTY_PRODUCTS
 
   const freeOptionalCategories = Array.from(new Set(
-    cart.flatMap((item) =>
+    [...cart, ...(selectedProduct ? [{ _product: selectedProduct }] : [])].flatMap((item) => [
+      ...productApplications(item._product).filter(entry => entry.application.allow_all).map(entry => entry.application.category_code),
+      ...(
       (item._product.all_optionals_categories ?? '')
         .split(',')
         .map((category) => category.trim())
         .filter(Boolean)
-    ),
+      ),
+    ]),
   ))
   const { data: allOptionals = [] } = useOptionalsForCategories(
     freeOptionalCategories,
@@ -1017,6 +1082,8 @@ export default function OrcamentoPage() {
         .filter((item) => productMap.has(item.product_code))
         .map((item) => ({
           ...item,
+          line_id: item.line_id || crypto.randomUUID(),
+          optional_choices: item.optional_choices ?? [],
           _product: productMap.get(item.product_code)!,
         })),
     )
@@ -1078,9 +1145,14 @@ export default function OrcamentoPage() {
         if (!product) return null
         return {
           product_code: item.product_code,
+          line_id: item.id,
           qty: item.qty,
           discount: Number(item.discount),
           opt_categories: item.opt_categories,
+          optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && choice.optional_id).map(choice => ({ application_id: choice.application_id!, optional_id: choice.optional_id! })),
+          source_order_item_id: item.id,
+          preserve_optional_choices: true,
+          saved_choices: item.optional_choices ?? [],
           _product: product,
         }
       })
@@ -1110,18 +1182,35 @@ export default function OrcamentoPage() {
     `${p.product_code} ${p.description}`.toLowerCase().includes(productQuery.toLowerCase())
   )
 
-  function updateOptCategory(code: string, cat: string, value: string | null) {
+  function updateOptCategory(lineId: string, cat: string, value: string | null) {
     setCart(prev => prev.map(i => {
-      if (i.product_code !== code) return i
+      if (i.line_id !== lineId) return i
       const updated = { ...i.opt_categories }
       if (!value) delete updated[cat]
       else updated[cat] = value
-      return { ...i, opt_categories: updated }
+      return { ...i, opt_categories: updated, preserve_optional_choices: false }
     }))
+  }
+
+  function updateApplicationChoice(lineId: string, applicationId: string, optionalId: string | null) {
+    setCart(previous => previous.map(item => item.line_id !== lineId ? item : {
+      ...item,
+      preserve_optional_choices: false,
+      optional_choices: [
+        ...item.optional_choices.filter(choice => choice.application_id !== applicationId),
+        ...(optionalId ? [{ application_id: applicationId, optional_id: optionalId }] : []),
+      ],
+    }))
+  }
+
+  function editApplications(lineId: string) {
+    setCart(previous => previous.map(item => item.line_id === lineId ? { ...item, preserve_optional_choices: false } : item))
   }
 
   function handleAddProductToCart() {
     if (!cartHydrated || !selectedProduct) return
+    const errors = validateApplicationChoices(selectedProduct, selectedChoices, allOptionals)
+    if (errors.length) { setToast({ message: errors[0], variant: 'error' }); return }
     const freeCats = new Set((selectedProduct.all_optionals_categories ?? '').split(',').filter(Boolean))
     const auto_categories: Partial<Record<string, string>> = {}
     for (const opt of selectedProduct.optionals) {
@@ -1131,35 +1220,40 @@ export default function OrcamentoPage() {
       }
     }
     setCart((prev) => {
-      const existing = prev.find((i) => i.product_code === selectedProduct.product_code)
+      const signature = JSON.stringify({ legacy: auto_categories, choices: [...selectedChoices].sort((a, b) => a.application_id.localeCompare(b.application_id)) })
+      const existing = prev.find((i) => i.product_code === selectedProduct.product_code && i.discount === 0 &&
+        JSON.stringify({ legacy: i.opt_categories, choices: [...i.optional_choices].sort((a, b) => a.application_id.localeCompare(b.application_id)) }) === signature)
       if (existing) {
-        return prev.map((i) => i.product_code === selectedProduct.product_code ? { ...i, qty: i.qty + 1 } : i)
+        return prev.map((i) => i.line_id === existing.line_id ? { ...i, qty: i.qty + 1 } : i)
       }
       return [...prev, {
+        line_id: crypto.randomUUID(),
         product_code: selectedProduct.product_code,
         qty: 1,
         discount: 0,
         opt_categories: auto_categories,
+        optional_choices: selectedChoices,
         _product: selectedProduct,
       }]
     })
     setSelectedProduct(null)
+    setSelectedChoices([])
     setProductQuery('')
   }
 
-  function updateQty(code: string, qty: number) {
+  function updateQty(lineId: string, qty: number) {
     if (qty < 1) return
-    setCart((prev) => prev.map((i) => i.product_code === code ? { ...i, qty } : i))
+    setCart((prev) => prev.map((i) => i.line_id === lineId ? { ...i, qty } : i))
   }
 
   // Desconto por item — mesmo caminho para tabela desktop e cartão mobile. O
   // chamador já limita ao teto do usuário; o servidor revalida no envio.
-  function updateDiscount(code: string, discount: number) {
-    setCart((prev) => prev.map((i) => i.product_code === code ? { ...i, discount } : i))
+  function updateDiscount(lineId: string, discount: number) {
+    setCart((prev) => prev.map((i) => i.line_id === lineId ? { ...i, discount } : i))
   }
 
-  function removeItem(code: string) {
-    setCart((prev) => prev.filter((i) => i.product_code !== code))
+  function removeItem(lineId: string) {
+    setCart((prev) => prev.filter((i) => i.line_id !== lineId))
   }
 
   const filteredCart = cart.filter((item) =>
@@ -1185,11 +1279,14 @@ export default function OrcamentoPage() {
   // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
   const budgetCode = isEnglish ? 'Assigned on save' : 'Gerado ao salvar'
 
-  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories }) => ({
+  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices }) => ({
     product_code,
     qty,
     discount: discount || 0,
     opt_categories: opt_categories as Record<string, string>,
+    optional_choices,
+    source_order_item_id,
+    preserve_optional_choices,
   }))
   const repIdForSubmit = editId
     ? selectedRep?.id ?? null
@@ -1197,6 +1294,8 @@ export default function OrcamentoPage() {
 
   async function handleSubmit() {
     if (!cartHydrated || !selectedClient || cart.length === 0) return
+    const error = cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals))[0]
+    if (error) { setToast({ message: error, variant: 'error' }); return }
     setIsGenerating(true)
     try {
       if (editId) {
@@ -1318,7 +1417,7 @@ export default function OrcamentoPage() {
               <li
                 key={p.id}
                 className="min-h-11 lg:min-h-0 px-3 py-2 text-xs hover:bg-bg cursor-pointer flex items-center gap-2 transition-colors border-b border-surface-2"
-                onMouseDown={() => { setSelectedProduct(p); setProductQuery(''); setProductOpen(false) }}
+                onMouseDown={() => { setSelectedProduct(p); setSelectedChoices([]); setProductQuery(''); setProductOpen(false) }}
               >
                 {p.photo_url
                   ? <img src={p.photo_url} alt="" className="w-8 h-8 rounded object-cover border border-line flex-shrink-0" />
@@ -1357,6 +1456,13 @@ export default function OrcamentoPage() {
           </div>
         </div>
       )}
+      {selectedProduct && <ApplicationSelectors
+        product={selectedProduct} choices={selectedChoices} allOptionals={allOptionals} english={isEnglish}
+        onChange={(applicationId, optionalId) => setSelectedChoices(previous => [
+          ...previous.filter(choice => choice.application_id !== applicationId),
+          ...(optionalId ? [{ application_id: applicationId, optional_id: optionalId }] : []),
+        ])}
+      />}
       <button
         type="button"
         onClick={handleAddProductToCart}
@@ -1469,7 +1575,7 @@ export default function OrcamentoPage() {
                 <div className="flex flex-col gap-3 p-3 lg:hidden">
                   {filteredCart.map((item) => (
                     <MobileCartCard
-                      key={item.product_code}
+                      key={item.line_id}
                       item={item}
                       onQtyChange={updateQty}
                       onDiscountChange={updateDiscount}
@@ -1477,7 +1583,9 @@ export default function OrcamentoPage() {
                       onRemove={removeItem}
                       onPhotoClick={setActivePhotoModal}
                       allOptionals={allOptionals}
-                      onOptChange={(cat, val) => updateOptCategory(item.product_code, cat, val)}
+                      onOptChange={(cat, val) => updateOptCategory(item.line_id, cat, val)}
+                      onApplicationChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)}
+                      onEditApplications={() => editApplications(item.line_id)}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
                       currency={currency}
@@ -1506,7 +1614,7 @@ export default function OrcamentoPage() {
                       const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                       const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
                       return (
-                        <tr key={item.product_code} className="hover:bg-surface-2 align-top transition-colors">
+                        <tr key={item.line_id} className="hover:bg-surface-2 align-top transition-colors">
                           <td className="px-4 py-3.5">
                             <div className="flex gap-3">
                               {item._product.photo_url
@@ -1539,7 +1647,11 @@ export default function OrcamentoPage() {
                                 {dimLabel(item._product, market, locale) && (
                                   <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
                                 )}
-                                <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.product_code, cat, val)} catLabel={catLabel} />
+                                <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} catLabel={catLabel} />
+                                {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
+                                  {(item.saved_choices ?? []).map(choice => <p key={choice.id}>{formatChoice(choice, isEnglish)}</p>)}
+                                  <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
+                                </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} english={isEnglish} />}
                               </div>
                             </div>
                           </td>
@@ -1548,7 +1660,7 @@ export default function OrcamentoPage() {
                               type="number" min={1}
                               className="input w-16 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
                               value={item.qty}
-                              onChange={(e) => updateQty(item.product_code, Number(e.target.value))}
+                              onChange={(e) => updateQty(item.line_id, Number(e.target.value))}
                             />
                           </td>
                           <td className="px-4 py-3.5 text-ink-2 text-xs font-semibold whitespace-nowrap align-middle">
@@ -1560,7 +1672,7 @@ export default function OrcamentoPage() {
                               className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
                               value={item.discount}
                               placeholder="0"
-                              onValueChange={(v) => updateDiscount(item.product_code, Math.min(user?.max_discount ?? 0, Math.max(0, v)))}
+                              onValueChange={(v) => updateDiscount(item.line_id, Math.min(user?.max_discount ?? 0, Math.max(0, v)))}
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
@@ -1578,7 +1690,7 @@ export default function OrcamentoPage() {
                             <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
                           </td>
                           <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.product_code)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
+                            <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </td>

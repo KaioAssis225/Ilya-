@@ -9,6 +9,7 @@ from app.api.deps import get_current_principal, get_db_session, require_platform
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.models.optional_color import OptionalColor
 from app.models.optional_category import OptionalCategory
+from app.models.optional_application import optional_application_allowed
 from app.models.user import User, UserRole
 from app.schemas.optional import OptionalColorCreate, OptionalColorUpdate, OptionalColorRead
 from app.core.config import settings
@@ -144,6 +145,12 @@ async def update_optional(
     if not opt:
         raise HTTPException(status_code=404, detail="Opcional não encontrado.")
     if payload.category is not None:
+        if payload.category != opt.category:
+            application_id = (await db.execute(select(optional_application_allowed.c.application_id).where(
+                optional_application_allowed.c.optional_id == opt.id,
+            ).limit(1))).scalar_one_or_none()
+            if application_id:
+                raise HTTPException(status_code=409, detail="Remova o opcional das aplicações antes de mudar sua categoria.")
         category_exists = (await db.execute(select(OptionalCategory.id).where(
             OptionalCategory.market_code == principal.code,
             OptionalCategory.code == payload.category,
@@ -171,6 +178,11 @@ async def delete_optional(
     opt = result.scalar_one_or_none()
     if not opt:
         raise HTTPException(status_code=404, detail="Opcional não encontrado.")
+    application_id = (await db.execute(select(optional_application_allowed.c.application_id).where(
+        optional_application_allowed.c.optional_id == opt.id,
+    ).limit(1))).scalar_one_or_none()
+    if application_id:
+        raise HTTPException(status_code=409, detail="Opcional usado por aplicação de produto.")
     old_photo_path = opt.photo_path
     await db.delete(opt)
     await db.commit()
