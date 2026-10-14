@@ -153,14 +153,13 @@ function FullProductImage({ product }: { product: Product }) {
 // só o preço do próprio perfil de faturamento — por isso aqui não há guard de
 // role, só o que veio do servidor.
 //
-// Quem recebe as DUAS tabelas escolhe qual fica na tela: o representante em
-// visita não pode deixar as duas visíveis ao mesmo tempo na frente do cliente.
-// "Ambos" continua existindo para comparativo interno, mas é opt-in explícito.
+// Quem recebe mais de uma tabela escolhe qual fica na tela: o representante em
+// visita nunca deixa vários preços visíveis ao mesmo tempo na frente do cliente.
 // A escolha é só de EXIBIÇÃO — o valor aplicado no orçamento segue resolvido no
 // servidor pelo perfil do cliente, nunca por esse seletor.
 
 type PriceKey = 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
-type PriceTable = PriceKey | 'todos'
+type PriceTable = PriceKey
 
 const PRICE_TABLE_KEY = 'catalogo_tabela_preco'
 const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
@@ -168,15 +167,12 @@ const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
   { value: 'arquiteto', label: 'Arquiteto' },
   { value: 'corporativo', label: 'Corporativo' },
   { value: 'pvp', label: 'PVP' },
-  { value: 'todos', label: 'Todos' },
 ]
 
-// Padrão é uma tabela só: sem escolha salva, o catálogo nunca nasce expondo as
-// duas de uma vez.
+// Sem escolha salva ou com um valor legado inválido, usa Lojista.
 function readPriceTable(): PriceTable {
   const saved = localStorage.getItem(PRICE_TABLE_KEY)
-  if (saved === 'corporativo' || saved === 'pvp' || saved === 'arquiteto' || saved === 'todos') return saved
-  if (saved === 'ambos') return 'todos'
+  if (saved === 'corporativo' || saved === 'pvp' || saved === 'arquiteto') return saved
   return 'lojista'
 }
 
@@ -188,11 +184,9 @@ function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
     ...(product.price_corporativo != null ? { corporativo: product.price_corporativo } : {}),
   }
   const prices: VisiblePrice[] = PRICE_TABLE_OPTIONS
-    .filter((option): option is { value: PriceKey; label: string } => option.value !== 'todos')
     .flatMap(option => source[option.value] != null
       ? [{ key: option.value, label: option.label, value: Number(source[option.value]) }]
       : [])
-  if (table === 'todos') return prices
 
   // Uma tabela selecionada nunca pode exibir o valor de outra. Isso também
   // permite mostrar Arquiteto antes de todos os produtos receberem esse preço:
@@ -202,7 +196,7 @@ function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
 
 function PriceTableToggle({ value, onChange, available }: { value: PriceTable; onChange: (next: PriceTable) => void; available: PriceKey[] }) {
   const { locale } = useLocale()
-  const options = PRICE_TABLE_OPTIONS.filter(option => option.value === 'todos' || available.includes(option.value as PriceKey))
+  const options = PRICE_TABLE_OPTIONS.filter(option => available.includes(option.value))
   return (
     <div
       role="group"
@@ -222,7 +216,7 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            {locale === 'en-GB' && option === 'todos' ? 'All' : label}
+            {label}
           </button>
         )
       })}
@@ -729,7 +723,7 @@ export default function ProdutosPage() {
   }, [products, user?.active_market, user?.role])
 
   useEffect(() => {
-    if (availablePriceTables.length === 0 || priceTable === 'todos') return
+    if (availablePriceTables.length === 0) return
     if (!availablePriceTables.includes(priceTable)) setPriceTable(availablePriceTables[0])
   }, [availablePriceTables, priceTable])
 
