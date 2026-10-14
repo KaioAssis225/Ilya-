@@ -31,6 +31,10 @@ export function privateScopeKey(userId: string, market: 'BR' | 'EU'): string {
   return `${userId}:${market}`
 }
 
+export function configureProductPath(productCode: string): string {
+  return `/orcamentos?configure=${encodeURIComponent(productCode)}`
+}
+
 /** Remove o formato antigo, que era compartilhado entre todas as contas. */
 export function removeUnsafeLegacyCart(): void {
   localStorage.removeItem(CART_KEY_PREFIX)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { cartStorageKey, countCartUnits, privateScopeKey } from './cart.ts'
+import { cartStorageKey, configureProductPath, countCartUnits, privateScopeKey } from './cart.ts'
 
 test('separa o carrinho por identidade e mercado', () => {
   assert.equal(cartStorageKey('user-1', 'BR'), 'carrinho_orcamento:user-1:BR')
@@ -29,4 +29,9 @@ test('a chave do carrinho acompanha a fronteira privada', () => {
   for (const market of ['BR', 'EU'] as const) {
     assert.ok(cartStorageKey('user-1', market).endsWith(privateScopeKey('user-1', market)))
   }
+})
+
+test('produto com aplicações abre a configuração na rota real do orçamento', () => {
+  assert.equal(configureProductPath('Teste'), '/orcamentos?configure=Teste')
+  assert.equal(configureProductPath('SKU 1/2'), '/orcamentos?configure=SKU%201%2F2')
 })

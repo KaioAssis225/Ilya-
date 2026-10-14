@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown } from 'lucide-react'
-import { cartStorageKey, notifyCartChanged } from '../lib/cart'
+import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
@@ -469,7 +469,7 @@ function ProductFullView({
   }, [])
 
   function handleAdd() {
-    addToCart(product, userId, market, code => navigate(`/orcamento?configure=${encodeURIComponent(code)}`))
+    addToCart(product, userId, market, code => navigate(configureProductPath(code)))
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
@@ -1139,7 +1139,7 @@ export default function ProdutosPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => user && addToCart(product, user.id, user.active_market, code => navigate(`/orcamento?configure=${encodeURIComponent(code)}`))}
+                  onClick={() => user && addToCart(product, user.id, user.active_market, code => navigate(configureProductPath(code)))}
                   aria-label={locale === 'en-GB' ? `Add ${product.description} to quote` : `Adicionar ${product.description} ao orçamento`}
                   style={{ touchAction: 'manipulation' }}
                   className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15
