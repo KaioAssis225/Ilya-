@@ -933,10 +933,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   }
   function openEdit(p: Product) {
     const isConjunto = isConjuntoType(p.type)
-    const cats = isConjunto ? [] : Array.from(new Set(p.optionals.map((o) => o.category)))
     const allCats = isConjunto ? new Set<string>() : new Set<string>(
       (p.all_optionals_categories ?? '').split(',').filter(Boolean)
     )
+    // Uma categoria liberada por inteiro não possui opcionais individuais no
+    // produto. Ela ainda precisa entrar na grade marcada ao abrir a edição.
+    const cats = isConjunto ? [] : Array.from(new Set([
+      ...p.optionals.map((o) => o.category),
+      ...allCats,
+    ]))
     setActiveCategories(cats); setAllOptCats(allCats)
     setForm({
       product_code: p.product_code,
