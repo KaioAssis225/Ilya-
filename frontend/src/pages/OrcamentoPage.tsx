@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useId } from 'react'
+import { Fragment, useState, useRef, useEffect, useId } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, Check } from 'lucide-react'
@@ -478,12 +478,13 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
   )
 }
 
-function ApplicationSelectors({ product, choices, allOptionals, onChange, english }: {
+function ApplicationSelectors({ product, choices, allOptionals, onChange, english, wide = false }: {
   product: Product
   choices: CartItem['optional_choices']
   allOptionals: OptionalColor[]
   onChange: (applicationId: string, optionalId: string | null) => void
   english: boolean
+  wide?: boolean
 }) {
   const entries = productApplications(product)
   if (!entries.length) return null
@@ -510,7 +511,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
     </div>}
     {grouped.map(category => <div key={category} className="border border-line rounded-xl p-3">
       <strong className="text-xs uppercase tracking-wide text-gold">{entries.find(entry => entry.application.category_code === category)?.application.category_name ?? category}</strong>
-      <div className="grid gap-3 mt-2.5">
+      <div className={`grid gap-4 mt-2.5 ${wide ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {entries.filter(entry => entry.application.category_code === category).map(({ application, componentName }) => {
           const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
           const missing = application.required && !value
@@ -521,7 +522,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
               <span>{label}</span>
               {application.required && <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">{english ? 'Required' : 'Obrigatório'}</span>}
             </legend>
-            <div className="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1" role="radiogroup" aria-label={label} aria-invalid={missing}>
+            <div className={`grid max-h-56 gap-2 overflow-y-auto pr-1 ${wide ? 'grid-cols-2' : 'grid-cols-1'}`} role="radiogroup" aria-label={label} aria-invalid={missing}>
               {options.map(option => {
                 const selected = value === option.id
                 const preview = option.thumbnail_url ?? option.photo_url
@@ -531,12 +532,12 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
                   role="radio"
                   aria-checked={selected}
                   onClick={() => onChange(application.id, option.id)}
-                  className={`group relative flex min-h-14 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/45 active:scale-[0.98] ${selected ? 'border-gold bg-gold/10' : 'border-line bg-white hover:border-gold/50 hover:bg-surface-2'}`}
+                  className={`group relative flex min-h-16 min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/45 active:scale-[0.98] ${selected ? 'border-gold bg-gold/10' : 'border-line bg-white hover:border-gold/50 hover:bg-surface-2'}`}
                 >
                   {preview
-                    ? <img src={preview} alt="" loading="lazy" decoding="async" className="h-10 w-10 flex-shrink-0 rounded-md border border-line object-cover" />
-                    : <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-bg-2" aria-hidden="true"><ImageIcon className="h-4 w-4 text-faint" /></span>}
-                  <span className="min-w-0 flex-1 break-words text-[11px] font-medium leading-tight text-ink">{option.color_name}</span>
+                    ? <img src={preview} alt="" loading="lazy" decoding="async" className="h-12 w-12 flex-shrink-0 rounded-md border border-line object-cover" />
+                    : <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-md bg-bg-2" aria-hidden="true"><ImageIcon className="h-4 w-4 text-faint" /></span>}
+                  <span className="min-w-0 flex-1 break-words text-xs font-medium leading-snug text-ink">{option.color_name}</span>
                   {selected && <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gold text-white" aria-hidden="true"><Check className="h-2.5 w-2.5" /></span>}
                 </button>
               })}
@@ -1685,14 +1686,16 @@ export default function OrcamentoPage() {
                       <th className="px-4 py-3 w-8"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-line">
+                  <tbody>
                     {filteredCart.map((item) => {
                       const pt = productTypes.find(t => t.name === item._product.type)
                       const ipiRate = Number(pt?.group?.ipi ?? 0)
                       const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                       const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
+                      const hasEditableApplications = !item.preserve_optional_choices && productApplications(item._product).length > 0
                       return (
-                        <tr key={item.line_id} className="hover:bg-surface-2 align-top transition-colors">
+                        <Fragment key={item.line_id}>
+                        <tr className="border-t border-line hover:bg-surface-2 align-top transition-colors">
                           <td className="px-4 py-3.5">
                             <div className="flex gap-3">
                               {item._product.photo_url
@@ -1727,10 +1730,10 @@ export default function OrcamentoPage() {
                                   <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
                                 )}
                                 <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} catLabel={catLabel} />
-                                {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
+                                {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">
                                   {(item.saved_choices ?? []).map(choice => <p key={choice.id}>{formatChoice(choice, isEnglish)}</p>)}
                                   <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
-                                </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} english={isEnglish} />}
+                                </div>}
                               </div>
                             </div>
                           </td>
@@ -1774,6 +1777,21 @@ export default function OrcamentoPage() {
                             </button>
                           </td>
                         </tr>
+                        {hasEditableApplications && <tr className="bg-surface-2/55">
+                          <td colSpan={7} className="px-4 pb-5 pt-1">
+                            <div className="rounded-xl border border-line bg-white px-4 pb-4 pt-1 shadow-sm">
+                              <ApplicationSelectors
+                                product={item._product}
+                                choices={item.optional_choices}
+                                allOptionals={allOptionals}
+                                onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)}
+                                english={isEnglish}
+                                wide
+                              />
+                            </div>
+                          </td>
+                        </tr>}
+                        </Fragment>
                       )
                     })}
                   </tbody>
