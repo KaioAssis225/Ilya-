@@ -24,17 +24,11 @@ from app.api.deps import (
     is_internal_operator,
 )
 from app.api.routers.orders import (
-    CancelPayload,
-    FinalizePayload,
     _can_create_order,
     _can_operate_order,
-    cancel_order,
     create_order,
-    finalize_order,
-    update_order,
 )
 from app.models.user import UserRole
-from app.schemas.order import OrderUpdate
 
 
 def _user(role: UserRole, linked_id=None, rep_id=None) -> SimpleNamespace:
@@ -191,14 +185,14 @@ class TestOperacaoDoCicloDoPedido:
 
     @pytest.mark.parametrize(
         "user",
-        [ADMIN, VENDEDOR_INTERNO, REPRESENTANTE],
+        [ADMIN, VENDEDOR_INTERNO, REPRESENTANTE, PRODUTOS],
     )
     def test_papeis_operadores_permitidos(self, user):
         assert _can_operate_order(user) is True
 
     @pytest.mark.parametrize(
         "user",
-        [CLIENTE_NOVO, CLIENTE_LEGADO, CADASTROS, PRODUTOS, EXECUTIVO],
+        [CLIENTE_NOVO, CLIENTE_LEGADO, CADASTROS, EXECUTIVO],
     )
     def test_papeis_nao_operadores_bloqueados(self, user):
         assert _can_operate_order(user) is False
@@ -222,8 +216,8 @@ class TestCriacaoDePedido:
         assert _can_create_order(user) is False
 
 
-class TestProdutosNaoMutaPedidos:
-    """Prova o 403 nos quatro handlers, antes de qualquer acesso ao banco."""
+class TestProdutosNaoCriaPedidos:
+    """Produtos opera pedidos existentes, mas não inicia uma venda."""
 
     @staticmethod
     def _assert_forbidden(operation):
@@ -238,36 +232,5 @@ class TestProdutosNaoMutaPedidos:
             db=db,
             current_user=PRODUTOS,
             principal=SimpleNamespace(),
-        ))
-        db.execute.assert_not_awaited()
-
-    def test_produtos_nao_edita_pedido(self):
-        db = AsyncMock()
-        self._assert_forbidden(update_order(
-            order_id=uuid.uuid4(),
-            payload=OrderUpdate(notes="não permitido"),
-            db=db,
-            current_user=PRODUTOS,
-            principal=SimpleNamespace(),
-        ))
-        db.execute.assert_not_awaited()
-
-    def test_produtos_nao_finaliza_pedido(self):
-        db = AsyncMock()
-        self._assert_forbidden(finalize_order(
-            order_id=uuid.uuid4(),
-            payload=FinalizePayload(),
-            db=db,
-            current_user=PRODUTOS,
-        ))
-        db.execute.assert_not_awaited()
-
-    def test_produtos_nao_cancela_pedido(self):
-        db = AsyncMock()
-        self._assert_forbidden(cancel_order(
-            order_id=uuid.uuid4(),
-            payload=CancelPayload(),
-            db=db,
-            current_user=PRODUTOS,
         ))
         db.execute.assert_not_awaited()

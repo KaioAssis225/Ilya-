@@ -95,14 +95,13 @@ def _ensure_total_capacity(*values: Decimal) -> None:
 def _can_operate_order(current_user: User) -> bool:
     """Papéis que operam o ciclo de vida do pedido (editar/finalizar/cancelar).
 
-    Operador interno de vendas, representante e admin. Conta de catálogo
-    (`produtos`) mantém leitura, mas não altera o ciclo comercial. Conta de
+    Operador interno de vendas, representante, produtos e admin. A conta de
     portal do cliente-final nunca opera pedido (SEC-02) — `is_internal_operator`
     já exclui o legado `vendedor`+`linked_id`. Exclusão segue exclusiva do admin.
     """
     return (
         current_user.role
-        in {UserRole.admin, UserRole.representante}
+        in {UserRole.admin, UserRole.representante, UserRole.produtos}
         or is_internal_operator(current_user)
     )
 
