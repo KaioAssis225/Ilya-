@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
+    "lint": "oxlint --max-warnings=46",
     "test": "tsc -p tsconfig.test.json && node --test src/lib/cadastroText.test.ts src/lib/cart.test.ts src/lib/measurements.test.ts src/lib/orderPresentation.test.ts src/lib/personForm.test.ts src/lib/optionalApplications.test.ts src/lib/productPayload.test.ts",
     "preview": "vite preview"
   },

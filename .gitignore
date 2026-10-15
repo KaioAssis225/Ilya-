@@ -19,6 +19,8 @@ pip-delete-this-directory.txt
 .cache
 nosetests.xml
 coverage.xml
+test-results/
+htmlcov/
 *,cover
 .hypothesis/
 .pytest_cache/
