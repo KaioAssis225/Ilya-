@@ -25,6 +25,12 @@ def test_openapi_exposes_platform_preparation_and_access_management():
     assert "/api/v1/users/{user_id}/platform-permissions" in schema["paths"]
 
 
+def test_openapi_exposes_product_photo_removal():
+    schema = app.openapi()
+
+    assert "delete" in schema["paths"]["/api/v1/products/{product_id}/photo"]
+
+
 def test_openapi_http_endpoint_is_disabled_outside_debug_mode():
     if not settings.DEBUG:
         assert app.openapi_url is None

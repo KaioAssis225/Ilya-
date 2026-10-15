@@ -1103,6 +1103,52 @@ async def upload_photo(
     ))[0]
 
 
+@router.delete("/{product_id}/photo", response_model=ProductRead)
+async def delete_photo(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Remove a foto do produto no mercado ativo.
+
+    Produtos europeus ainda podem apontar para uma imagem herdada do Brasil.
+    Nesse caso a referência EU é limpa, mas o arquivo pertencente ao bucket BR
+    é preservado por ``delete_upload(..., market=...)``.
+    """
+    result = await db.execute(select(Product).where(
+        Product.id == product_id,
+        Product.market_code == principal.code,
+        Product.is_active.is_(True),
+        exists().where(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == principal.code,
+            ProductMarket.is_available.is_(True),
+        ),
+    ))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    old_photo_path = product.photo_path
+    product.photo_path = None
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    await delete_upload(old_photo_path, market=product.market_code)
+    await db.refresh(product)
+    if principal.code == "BR":
+        return _to_read(product)
+    return (await _to_market_reads(
+        db,
+        [product],
+        principal,
+        await _visible_price_profile(db, current_user),
+    ))[0]
+
+
 @router.post("/platform/EU/{product_id}/upload-photo", response_model=ProductRead)
 async def upload_europe_photo_before_activation(
     product_id: uuid.UUID,

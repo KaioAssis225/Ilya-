@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from app.api.routers.products import (
     create_product,
+    delete_photo,
     delete_product,
     get_product,
     get_products_batch,
@@ -159,6 +160,41 @@ def test_delete_product_desativa_em_vez_de_excluir():
             db.commit.assert_awaited_once()
             # Produto desativado pode ser reativado: a foto não é apagada.
             mock_delete_upload.assert_not_called()
+
+    asyncio.run(run_test())
+
+
+def test_delete_photo_clears_reference_and_deletes_only_from_active_market():
+    async def run_test():
+        product = SimpleNamespace(
+            id=uuid.uuid4(),
+            photo_path="object://products/cadeira.jpg",
+            market_code="BR",
+        )
+        db = AsyncMock()
+        db.execute.return_value = _ScalarResult(product)
+        returned = SimpleNamespace(id=product.id, photo_url=None)
+
+        with (
+            patch(
+                "app.api.routers.products.delete_upload", new_callable=AsyncMock
+            ) as mock_delete_upload,
+            patch("app.api.routers.products._to_read", return_value=returned),
+        ):
+            result = await delete_photo(
+                product.id,
+                db=db,
+                current_user=ADMIN,
+                principal=BR_PRINCIPAL,
+            )
+
+        assert result is returned
+        assert product.photo_path is None
+        db.commit.assert_awaited_once()
+        db.refresh.assert_awaited_once_with(product)
+        mock_delete_upload.assert_awaited_once_with(
+            "object://products/cadeira.jpg", market="BR"
+        )
 
     asyncio.run(run_test())
 
