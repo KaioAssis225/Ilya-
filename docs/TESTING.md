@@ -2,7 +2,8 @@
 
 **Baseline medido em:** commit `f4d15385` (origin/main, 15/10/2026)
 
-**Ambiente local medido:** Windows 11 Pro, Python 3.12.10, pytest 9.1.1, pytest-cov 6.2.1, pytest-asyncio 1.4.0, Node.js v26.3.1 (drive mapeado W:)  
+**Ambiente local medido:** Windows 11 Pro, Python 3.12.10, pytest 9.1.1, pytest-cov 6.2.1, pytest-asyncio 1.4.0, Node.js v26.3.1 (drive mapeado W:)
+
 **Ambiente CI de referência:** Python 3.12, Node.js 22, Ubuntu (GitHub Actions)
 
 ---
@@ -103,10 +104,10 @@ Os marcadores são aplicados automaticamente via `backend/tests/conftest.py` —
 
 `pytest.ini` usa `filterwarnings = error`, convertendo **qualquer** warning não filtrado em falha de teste. Apenas dois filtros de supressão estão ativos, ambos dívida técnica conhecida **ainda não corrigida**:
 
-1. **`ignore:Using httpx with starlette.testclient is deprecated:`**  
+1. **`ignore:Using httpx with starlette.testclient is deprecated:`**
    Emitido pela própria dependência Starlette/httpx ao usar `TestClient`. Não é código nosso; exige atualização/migração de dependência em PR próprio futuro.
 
-2. **`ignore:The noload\(\) option is deprecated:sqlalchemy.exc.SADeprecationWarning`**  
+2. **`ignore:The noload\(\) option is deprecated:sqlalchemy.exc.SADeprecationWarning`**
    Emitido por código da aplicação (`app/`) que ainda usa `noload()` do SQLAlchemy. Será substituído pela API atual em refatoração futura.
 
 Qualquer outro warning — de código nosso ou de novas dependências — **falhará o teste automaticamente**.
