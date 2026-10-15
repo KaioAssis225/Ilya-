@@ -489,6 +489,15 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
   if (!entries.length) return null
   const progress = requiredApplicationProgress(product, choices, allOptionals)
   const errors = validateApplicationChoices(product, choices, allOptionals)
+  const groups = new Map<string, { categoryName: string; entries: typeof entries }>()
+  for (const entry of entries) {
+    const existing = groups.get(entry.application.category_code)
+    if (existing) existing.entries.push(entry)
+    else groups.set(entry.application.category_code, {
+      categoryName: entry.application.category_name,
+      entries: [entry],
+    })
+  }
   return <section className="mt-2 space-y-1.5" aria-label={english ? 'Optional applications' : 'Aplicações do opcional'}>
     {progress.total > 0 && <div className="flex items-center justify-between gap-3 text-[11px]" aria-live="polite">
         <span className={`inline-flex items-center gap-1.5 font-semibold ${progress.missing > 0 ? 'text-warning' : 'text-success'}`}>
@@ -499,33 +508,35 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
         </span>
         <span className="tabular-nums text-ink-3">{progress.filled}/{progress.total}</span>
     </div>}
-    {entries.map(({ application, componentName }) => {
-      const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
-      const missing = application.required && !value
-      const options = allowedForApplication(application, allOptionals)
-      const selected = options.find(option => option.id === value)
-      const preview = selected?.thumbnail_url ?? selected?.photo_url
-      const label = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
-      const repeatedCategory = entries.filter(entry => entry.application.category_code === application.category_code).length > 1
-      const displayLabel = repeatedCategory ? `${application.category_name} · ${label}` : application.category_name
-      return <label key={application.id} className={`flex min-h-8 min-w-0 items-center rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 ${missing ? 'border-warning/60' : 'border-line'}`}>
-        <span title={`${application.category_name}: ${label}`} className="w-[42%] min-w-0 truncate px-2 text-[10px] font-semibold uppercase tracking-wide text-gold">
-          {displayLabel}{application.required && <span className="ml-0.5 text-warning" aria-hidden="true">•</span>}
-        </span>
-        <span className="h-4 w-px flex-shrink-0 bg-line" aria-hidden="true" />
-        {preview && <img src={preview} alt="" loading="lazy" decoding="async" className="ml-2 h-5 w-5 flex-shrink-0 rounded object-cover" />}
-        <select
-          value={value}
-          onChange={event => onChange(application.id, event.target.value || null)}
-          aria-label={`${application.category_name}: ${label}`}
-          aria-invalid={missing}
-          className={`min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-2 py-1 text-[11px] font-medium focus:outline-none ${value ? 'text-ink' : 'text-warning'}`}
-        >
-          <option value="">{english ? 'Choose an option' : 'Escolha uma opção'}</option>
-          {options.map(option => <option key={option.id} value={option.id}>{option.color_name}</option>)}
-        </select>
-      </label>
-    })}
+    {Array.from(groups.entries()).map(([categoryCode, group]) => <div key={categoryCode} className="space-y-1">
+      <h3 className="px-1 text-[10px] font-semibold uppercase tracking-wide text-gold">{group.categoryName}</h3>
+      {group.entries.map(({ application, componentName }) => {
+        const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
+        const missing = application.required && !value
+        const options = allowedForApplication(application, allOptionals)
+        const selected = options.find(option => option.id === value)
+        const preview = selected?.thumbnail_url ?? selected?.photo_url
+        const areaName = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
+        return <label key={application.id} className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
+          <span className="flex min-w-0 items-center border-r border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
+            <span className="break-words leading-snug">{areaName}{application.required && <span className="ml-0.5 text-warning" aria-label={english ? 'Required' : 'Obrigatório'}>•</span>}</span>
+          </span>
+          <span className="flex min-w-0 items-center">
+            {preview && <img src={preview} alt="" loading="lazy" decoding="async" className="ml-2 h-5 w-5 flex-shrink-0 rounded object-cover" />}
+            <select
+              value={value}
+              onChange={event => onChange(application.id, event.target.value || null)}
+              aria-label={`${group.categoryName}: ${areaName}`}
+              aria-invalid={missing}
+              className={`min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-2 py-1 text-[11px] font-medium focus:outline-none ${value ? 'text-ink' : 'text-warning'}`}
+            >
+              <option value="">{english ? 'Choose an option' : 'Escolha uma opção'}</option>
+              {options.map(option => <option key={option.id} value={option.id}>{option.color_name}</option>)}
+            </select>
+          </span>
+        </label>
+      })}
+    </div>)}
     {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
   </section>
 }
