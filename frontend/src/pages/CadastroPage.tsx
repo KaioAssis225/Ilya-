@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
-import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
+import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto, useDeleteProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
@@ -833,6 +833,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const updateM = useUpdateProduct()
   const deleteM = useDeleteProduct()
   const uploadM = useUploadProductPhoto()
+  const deletePhotoM = useDeleteProductPhoto()
   const createTypeM = useCreateProductType()
 
   // Categorias de opcionais sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
@@ -849,6 +850,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [allOptCats, setAllOptCats] = useState<Set<string>>(new Set())
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [photoRemoved, setPhotoRemoved] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [addItemCode, setAddItemCode] = useState('')
@@ -864,6 +866,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     column => isEurope || (column !== 'price_pvp' && column !== 'price_arquiteto')
   )
   const tableContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const preview = photoPreview
+    return () => {
+      if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+    }
+  }, [photoPreview])
 
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
     const width = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[column], Math.min(requestedWidth, 1600))
@@ -931,7 +940,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
     setFocusOptionals(false)
-    setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null)
+    setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null); setPhotoRemoved(false)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setShowForm(true)
@@ -995,7 +1004,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         })),
       })),
     })
-    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
+    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setPhotoRemoved(false); setEditing(p)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setFocusOptionals(showOptionals)
@@ -1056,6 +1065,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
           : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
+        else if (photoRemoved) await deletePhotoM.mutateAsync(updated.id)
       } else {
         const created = await createM.mutateAsync(payload)
         if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
@@ -1867,25 +1877,45 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             <div>
               <span className="text-xs text-muted block mb-1">{tx('Foto')}</span>
               <div
-                className="border-2 border-dashed border-line rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
+                className="relative border-2 border-dashed border-line rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
                 onClick={() => fileRef.current?.click()}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = color)}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
               >
-                {photoPreview ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" /> : <Upload className="w-8 h-8 text-faint" />}
+                {photoPreview ? (
+                  <>
+                    <img src={photoPreview} alt={form.description || tx('Foto')} className="w-24 h-24 object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      aria-label={tx('Remover foto')}
+                      title={tx('Remover foto')}
+                      className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-line bg-white text-muted shadow-sm transition-[color,background-color,border-color,transform] hover:border-danger/30 hover:bg-red-50 hover:text-danger active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setPhotoPreview(null)
+                        setPendingFile(null)
+                        setPhotoRemoved(Boolean(editing?.photo_url))
+                        if (fileRef.current) fileRef.current.value = ''
+                      }}
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </>
+                ) : <Upload className="w-8 h-8 text-faint" />}
                 <span className="text-xs text-muted">{tx(photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB')}</span>
+                {photoRemoved && <span className="text-xs font-medium text-danger" role="status">{tx('A foto será removida ao salvar.')}</span>}
               </div>
               <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]; if (!file) return
-                  setPendingFile(file); setPhotoPreview(URL.createObjectURL(file))
+                  setPendingFile(file); setPhotoRemoved(false); setPhotoPreview(URL.createObjectURL(file))
                 }} />
             </div>
 
             <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
               <button type="submit" className="btn-primary" style={{ backgroundColor: color }}
-                disabled={createM.isPending || updateM.isPending || uploadM.isPending}>
+                disabled={createM.isPending || updateM.isPending || uploadM.isPending || deletePhotoM.isPending}>
                 {tx(editing ? 'Salvar' : 'Criar')}
               </button>
             </div>

@@ -115,3 +115,11 @@ export function useUploadProductPhoto() {
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
   })
 }
+
+export function useDeleteProductPhoto() {
+  const qc = useQueryClient()
+  return useMutation<Product, Error, string>({
+    mutationFn: (id) => api.delete<Product>(`/products/${id}/photo`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
