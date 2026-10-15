@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, LogOut, Bell } from 'lucide-react'
+import { LayoutGrid, ShoppingCart, ClipboardList, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -25,6 +25,7 @@ const PedidosPage = lazy(() => import('./pages/PedidosPage'))
 const ProdutosPage = lazy(() => import('./pages/ProdutosPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
 
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
@@ -45,6 +46,10 @@ function canSeeCadastros(user: AuthUser) {
 // só acessa a aba Dashboard.
 function canSeeDashboard(user: AuthUser) {
   return user.role === 'admin' || user.role === 'executivo' || user.can_view_dashboard
+}
+
+function canSeeAdmin(user: AuthUser) {
+  return user.role === 'admin'
 }
 
 function defaultRoute(user: AuthUser) {
@@ -134,6 +139,12 @@ function BottomNav() {
           <span className="text-[11px] font-semibold uppercase tracking-wider">{t('registrations')}</span>
         </NavLink>
       )}
+      {canSeeAdmin(user) && (
+        <NavLink to="/admin" className={itemClass('/admin')} aria-label={t('admin')}>
+          <ShieldCheck className="w-5 h-5" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{t('admin')}</span>
+        </NavLink>
+      )}
       <button
         type="button"
         // Fica na zona do polegar: um toque acidental derrubava a sessão.
@@ -184,6 +195,7 @@ function Nav() {
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
+              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
@@ -336,6 +348,14 @@ export default function PrivateApp() {
                     element={
                       <RoleGuard allowed={canSeeDashboard}>
                         <DashboardPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      <RoleGuard allowed={canSeeAdmin}>
+                        <AdminPage />
                       </RoleGuard>
                     }
                   />
