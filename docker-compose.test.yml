@@ -26,6 +26,59 @@ services:
       timeout: 3s
       retries: 12
 
+  # P06: object storage S3-compatível só para testes. Credenciais abaixo são
+  # sintéticas e locais (nunca reutilizar fora deste compose).
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ilya-test-root
+      MINIO_ROOT_PASSWORD: ilya-test-root-secret
+    ports:
+      - "9000:9000"
+    healthcheck:
+      # Probe local, sem alias do mc (o alias só existe no minio-init).
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # Sem volume persistente: objetos descartados ao remover o container.
+    tmpfs:
+      - /data
+
+  # Init idempotente: pode rodar de novo sobre o mesmo MinIO sem erro.
+  # Buckets BR/EU distintos, cada um com usuário e política próprios — a
+  # credencial BR não alcança o bucket EU e vice-versa, como em produção.
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set local http://minio:9000 ilya-test-root ilya-test-root-secret
+        for market in br eu; do
+          bucket="ilya-$${market}-test"
+          user="ilya-$${market}-test-app"
+          policy="ilya-$${market}-test-rw"
+          mc mb --ignore-existing "local/$${bucket}"
+          mc anonymous set none "local/$${bucket}"
+          printf '%s' "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::$${bucket}\"]},{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:PutObject\",\"s3:DeleteObject\"],\"Resource\":[\"arn:aws:s3:::$${bucket}/*\"]}]}" > "/tmp/$${policy}.json"
+          # Cria política/usuário só se ausentes; nada é apagado.
+          if ! mc admin policy info local "$${policy}" >/dev/null 2>&1; then
+            mc admin policy create local "$${policy}" "/tmp/$${policy}.json"
+          fi
+          if ! mc admin user info local "$${user}" >/dev/null 2>&1; then
+            mc admin user add local "$${user}" "$${user}-secret"
+          fi
+          # Attach já feito numa execução anterior não é erro.
+          mc admin policy attach local "$${policy}" --user "$${user}" \
+            || mc admin user info local "$${user}" | grep -q "$${policy}"
+        done
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -39,8 +92,20 @@ services:
       BACKEND_CORS_ORIGINS: http://localhost,http://localhost:3000,http://testserver
       DEBUG: "true"
       RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
+      # P06: lidas só por tests/integration/test_media_storage.py, que aponta
+      # settings.OBJECT_STORAGE_* para o MinIO por teste. OBJECT_STORAGE_* não
+      # é definido aqui de propósito: os demais testes seguem em disco local.
+      TEST_OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      TEST_OBJECT_STORAGE_BR_BUCKET: ilya-br-test
+      TEST_OBJECT_STORAGE_BR_ACCESS_KEY_ID: ilya-br-test-app
+      TEST_OBJECT_STORAGE_BR_SECRET_ACCESS_KEY: ilya-br-test-app-secret
+      TEST_OBJECT_STORAGE_EU_BUCKET: ilya-eu-test
+      TEST_OBJECT_STORAGE_EU_ACCESS_KEY_ID: ilya-eu-test-app
+      TEST_OBJECT_STORAGE_EU_SECRET_ACCESS_KEY: ilya-eu-test-app-secret
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
