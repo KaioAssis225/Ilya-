@@ -226,7 +226,7 @@ Caminhos de artefatos coerentes com `pytest.ini` (`--junitxml=test-results/pytes
 
 6. **Sem threshold de cobertura no P01:** conforme o plano (§7 ponto 1), nenhum `fail_under` está configurado. O primeiro threshold entrará após P02/P03 com tolerância de 0,5 pp de não-regressão.
 
-7. **Benchmark e arquivos de diagnóstico ausentes:** `ops/benchmark_production_api.py` e arquivos relacionados não existem em `origin/main`. Serão tratados no P04 com revisão de proveniência.
+7. **Benchmark e arquivos de diagnóstico no baseline P01:** no commit de baseline `f4d15385`, `ops/benchmark_production_api.py` e arquivos relacionados ainda não faziam parte da suíte; foram revisados e incorporados no P04 (ver seção 7).
 
 ---
 
@@ -240,8 +240,107 @@ Caminhos de artefatos coerentes com `pytest.ini` (`--junitxml=test-results/pytes
 
 ---
 
-## 7. Próximos passos
+## 7. Ferramenta de diagnóstico e benchmark (P04 v2)
 
-- **P02:** ✓ harness HTTP com PostgreSQL real, transações por teste, factories BR/EU (branch `codex/testes-p02-postgres-http`)
-- **P03:** testes de componentes React com Vitest/Testing Library/MSW
+`ops/benchmark_production_api.py` (v2.0.0) é a ferramenta de diagnóstico reproduzível.
+
+### Modos
+
+| Modo | Amostras por origem | Warmup por origem | p95/p99 |
+|---|---:|---:|---|
+| `smoke` | 3 | 0 | INCONCLUSIVO |
+| `baseline` | 30 válidas (2xx) | 5 | Conclusivos |
+| `load` | configurável | 5 | Conclusivos se >=30 válidas |
+
+Estatísticas são produzidas **separadamente por origem** (railway / vercel). `valid_count` e percentis contam apenas respostas **2xx**; 401/403/4xx/5xx são excluídos.
+
+### Execução básica
+
+```bash
+# Dry-run (sem requisição real; não expõe URLs nem token)
+python ops/benchmark_production_api.py --dry-run
+
+# Smoke sem credencial
+python ops/benchmark_production_api.py \
+  --mode smoke \
+  --target-url https://staging.example.com
+
+# Baseline autenticado (credencial SOMENTE via env var)
+export BENCHMARK_API_TOKEN="<token somente leitura>"
+python ops/benchmark_production_api.py \
+  --mode baseline \
+  --target-url "$BENCHMARK_TARGET_URL" \
+  --vercel-url "$BENCHMARK_VERCEL_URL" \
+  --environment homologacao \
+  --output /tmp/baseline-$(date +%Y%m%d).json
+```
+
+### Wrapper PowerShell
+
+```powershell
+# Smoke
+.\ops\benchmark-production-api.ps1 -TargetUrl https://staging.example.com
+
+# Baseline com saida em arquivo
+$env:BENCHMARK_API_TOKEN = (Get-Content .benchmark-token -Raw).Trim()
+.\ops\benchmark-production-api.ps1 -Mode baseline -TargetUrl https://staging.example.com -Output report.json
+```
+
+O wrapper restaura env vars ao final (sem poluir a sessão PS). `-Seed` só define `BENCHMARK_SEED` se fornecido explicitamente.
+
+### Código de saída
+
+| Código | Significado |
+|---|---|
+| 0 | Sucesso real (>=1 amostra válida 2xx, sem 5xx) |
+| 1 | Falha funcional (5xx), falha total de rede/timeout, ou sem válidas (não por auth) |
+| 2 | Configuração inválida ou modo load não autorizado |
+
+### Segurança do modo load (política positiva/default-deny)
+
+O modo `load` exige **todas** as condições:
+1. `BENCHMARK_ENVIRONMENT` = `staging` ou `homologacao`
+2. `BENCHMARK_STAGING_ALLOWLIST` configurado (hosts separados por vírgula)
+3. `target-url` (e `vercel-url`) presentes na allowlist
+4. Nenhuma URL usa `*.up.railway.app` (sempre bloqueado)
+
+### Políticas de segurança gerais
+
+- `Authorization`, `X-Api-Key`, `Cookie`, `Set-Cookie` redactados para `***REDACTED***`
+- `--api-token` não existe; token somente via `BENCHMARK_API_TOKEN`
+- Dry-run exibe `has_token: bool`, nunca o valor do token
+- 401/403 → `auth_failure_count`; nunca contam como operação válida
+- Erros de rede e timeout → contadores separados, fora da distribuição
+
+### Parâmetros do modo load
+
+| Parâmetro | Padrão | Máximo |
+|---|---:|---:|
+| `--load-workers` | 4 | 50 |
+| `--load-stages` | 3 | 10 |
+| `--load-requests` | 10 | 100 |
+
+### Arquivos adicionados/atualizados no P04
+
+| Arquivo | Propósito |
+|---|---|
+| `ops/benchmark_production_api.py` | Ferramenta principal v2: stats por origem, política load, valid_count 2xx |
+| `ops/benchmark-production-api.ps1` | Wrapper PowerShell: sem ForceStaging, restaura env, não expõe URLs |
+| `backend/tests/test_production_diagnostics.py` | 129 testes unitários (6 critérios + 12 regressões) |
+| `docs/RELATORIO_BENCHMARK_PRODUCAO.md` | Exemplo sanitizado do formato JSON v2 e limitações |
+
+### Limitações (P04 v2)
+
+- Execução real requer credencial provisionada para cenários autenticados
+- Modo load depende de ambiente de homologação com allowlist configurada
+- p95/p99 com 30 amostras válidas são o mínimo estatístico; não declarar SLO sem >=100
+- Ver `docs/RELATORIO_BENCHMARK_PRODUCAO.md` para análise completa
+
+---
+
+## 8. Próximos passos
+
+- **P02:** ✓ harness HTTP com PostgreSQL real, transações por teste, factories BR/EU
+- **P03:** ✓ testes de componentes React com Vitest/Testing Library/MSW
+- **P04:** ✓ ferramenta de diagnóstico e benchmark reproduzível
 - **P18–P20:** redução progressiva do lint 46 → 30 → 15 → 0
