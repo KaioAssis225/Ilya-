@@ -8,6 +8,7 @@ from .products import (
     make_product_market,
     make_product_price,
 )
+from .optionals import make_optional_category, make_optional, make_application
 
 __all__ = [
     # Defaults e helpers de mercado
@@ -28,4 +29,8 @@ __all__ = [
     "make_product",
     "make_product_market",
     "make_product_price",
+    # Opcionais e aplicações independentes
+    "make_optional_category",
+    "make_optional",
+    "make_application",
 ]
