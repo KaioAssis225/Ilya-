@@ -344,3 +344,30 @@ O modo `load` exige **todas** as condições:
 - **P03:** ✓ testes de componentes React com Vitest/Testing Library/MSW
 - **P04:** ✓ ferramenta de diagnóstico e benchmark reproduzível
 - **P18–P20:** redução progressiva do lint 46 → 30 → 15 → 0
+
+
+---
+
+## 9. Camadas adicionais implementadas (P06–P17)
+
+| Bloco | Camada / Ferramenta | cwd | Comando de verificação |
+|---|---|---|---|
+| P06 | Integração PG + MinIO (buckets BR/EU) | `backend/` | `python -m pytest tests/integration/test_media_storage.py -m integration -q --tb=short` |
+| P07 | Opcionais independentes e perfis fiscais | `backend/` | `python -m pytest tests/integration/test_optional_applications_flow.py tests/integration/test_price_profiles.py -m integration -q --tb=short` |
+| P08a/b | Ciclo de pedido, snapshot PDF e outbox Moloni | `backend/` | `python -m pytest tests/integration/test_order_lifecycle.py tests/integration/test_order_pdf_outbox.py -m integration -q --tb=short` |
+| P09 | E2E Playwright Chromium (sem retry) | `frontend/` | `npm run test:e2e` (ver `frontend/e2e/README.md`) |
+| P10 | Observabilidade Prometheus e logs correlacionados | `backend/` | `python -m pytest tests/test_observability.py -q` |
+| P11 | Identidade técnica `benchmark_readonly` e canários | raiz / `backend/` | `python -m pytest ops/test_benchmark_canary.py` / `python -m pytest tests/test_benchmark_readonly.py` |
+| P13 | Gerador de carga e orçamento de conexões | raiz | `python -m pytest ops/load/test_load_generator.py -q` e `python ops/load/load_generator.py --dry-run` |
+| P14a–d | Controles de escalabilidade e parecer condicional | `backend/` | `python -m pytest tests/test_scalability_controls.py -q` |
+| P15 | Monitor sintético autenticado e recuperação 2× | raiz | `python -m pytest ops/test_synthetic_monitor.py -q` |
+| P16 | Startup (`all`, `migrate`, `serve`) e deploy | `backend/` | `python -m pytest tests/test_startup.py -q` |
+| P17 | Restore sintético e verificador de integridade | raiz | `python -m pytest ops/test_restore_integrity.py -q` e `python ops/test_restore.py ops/fixtures/synthetic_restore_pg16.sql` |
+
+### Restore sintético e alinhamento de versão PostgreSQL (P17)
+
+- `ops/test_restore.py` valida obrigatoriamente o arquivo `.sha256` adjacente ao dump, detecta a versão principal do PostgreSQL no cabeçalho do dump (`-- Dumped from database version 16.4` → `postgres:16-alpine`; dumps PG18 → `postgres:18-alpine`; ou sobrescrita explícita por `--postgres-image` / `RESTORE_POSTGRES_IMAGE`) e executa `verify_restored_integrity`:
+  1. Presença de todas as tabelas essenciais (`markets`, `users`, `user_markets`, `catalogs`, `products`, `product_markets`, `clients`, `orders`, `order_items`) no schema `public`.
+  2. Contagem mínima de linhas por tabela conhecida do dataset sintético (`ops/fixtures/synthetic_restore_pg16.sql`).
+  3. Verificação de 11 consultas de integridade referencial (zero órfãos em FKs) e ausência de mistura cruzada de mercado (`BR`/`EU`) entre pedidos e clientes.
+- **Regra de segurança:** nunca versionar nem baixar dumps reais de produção em runners de CI; utilizar exclusivamente `ops/fixtures/synthetic_restore_pg16.sql` (com `.sha256`).

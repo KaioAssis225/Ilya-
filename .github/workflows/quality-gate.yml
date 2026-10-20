@@ -379,3 +379,49 @@ jobs:
 
           echo "A API não ficou pronta dentro do limite esperado."
           exit 1
+
+
+  quality-gate:
+    name: Quality Gate — agregador obrigatório
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - frontend
+      - frontend-audit
+      - backend-tests
+      - backend-integration
+      - backend-audit
+      - production-boot
+    steps:
+      - name: Verificar aprovação de todas as camadas obrigatórias
+        shell: bash
+        env:
+          RESULT_FRONTEND: ${{ needs.frontend.result }}
+          RESULT_FRONTEND_AUDIT: ${{ needs.frontend-audit.result }}
+          RESULT_BACKEND_TESTS: ${{ needs.backend-tests.result }}
+          RESULT_BACKEND_INTEGRATION: ${{ needs.backend-integration.result }}
+          RESULT_BACKEND_AUDIT: ${{ needs.backend-audit.result }}
+          RESULT_PRODUCTION_BOOT: ${{ needs.production-boot.result }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for pair in \
+            "frontend:${RESULT_FRONTEND}" \
+            "frontend-audit:${RESULT_FRONTEND_AUDIT}" \
+            "backend-tests:${RESULT_BACKEND_TESTS}" \
+            "backend-integration:${RESULT_BACKEND_INTEGRATION}" \
+            "backend-audit:${RESULT_BACKEND_AUDIT}" \
+            "production-boot:${RESULT_PRODUCTION_BOOT}"; do
+            job="${pair%%:*}"
+            res="${pair#*:}"
+            echo "Job ${job}: ${res}"
+            if [ "${res}" != "success" ]; then
+              failed=1
+            fi
+          done
+          if [ "${failed}" -ne 0 ]; then
+            echo "Quality Gate bloqueado: uma ou mais camadas obrigatórias não obtiveram 'success'."
+            exit 1
+          fi
+          echo "Quality Gate aprovado: todas as camadas obrigatórias concluíram com sucesso."

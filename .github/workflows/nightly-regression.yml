@@ -1,0 +1,235 @@
+name: Nightly Regression
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-regression-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  alembic-and-isolation:
+    name: Backend — head única Alembic, matriz RBAC e isolamento (ISO-*)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ilya_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ilya_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ilya_test
+      SECRET_KEY: ci-secret-key-with-at-least-32-characters
+      PASSWORD_PEPPER: ci-password-pepper-not-used-in-production
+      BACKEND_CORS_ORIGINS: '["http://testserver","http://localhost:5173"]'
+      RATE_LIMIT_STORAGE_URI: redis://localhost:6379/0
+      DEBUG: "true"
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Preparar Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Instalar dependências
+        run: pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Verificar única head Alembic
+        shell: bash
+        run: |
+          set -euo pipefail
+          heads=$(alembic heads | wc -l)
+          test "$heads" -eq 1 || { echo "Alembic deve possuir exatamente 1 head; encontrado: $heads"; exit 1; }
+
+      - name: Aplicar migrations Alembic
+        run: alembic upgrade head
+
+      - name: Executar suíte de integração completa (matriz RBAC BR/EU e ISO-*)
+        run: |
+          mkdir -p test-results
+          python -m pytest -m integration -q --tb=short --junitxml=test-results/nightly-integration.xml
+
+      - name: Publicar artefatos de integração noturna
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-backend-integration
+          path: backend/test-results/nightly-integration.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  e2e-matrix:
+    name: E2E — ${{ matrix.browser_profile }} (3x sem retry)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser_profile: [chromium-desktop, chromium-mobile, webkit]
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Preparar Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Subir infraestrutura descartável (Postgres, Redis, MinIO)
+        run: |
+          docker compose -p ilya-nightly-${{ matrix.browser_profile }} -f docker-compose.test.yml -f docker-compose.e2e.yml up -d --wait postgres redis minio
+          docker compose -p ilya-nightly-${{ matrix.browser_profile }} -f docker-compose.test.yml -f docker-compose.e2e.yml run --rm minio-init
+
+      - name: Instalar dependências backend, migrar e semear banco E2E
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ilya_test
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_test
+          SECRET_KEY: ci-secret-key-with-at-least-32-characters
+          PASSWORD_PEPPER: ci-password-pepper-not-used-in-production
+          E2E_SEED_PASSWORD: NightlySynthetic#2026!
+        run: |
+          pip install --disable-pip-version-check -r requirements-dev.txt
+          alembic upgrade head
+          python -m tests.e2e_support.seed_e2e
+
+      - name: Instalar dependências frontend e navegador Playwright
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps ${{ matrix.browser_profile == 'webkit' && 'webkit' || 'chromium' }}
+
+      - name: Executar jornadas E2E (3 repetições consecutivas sem retry)
+        working-directory: frontend
+        env:
+          E2E_PASSWORD: NightlySynthetic#2026!
+          PLAYWRIGHT_BROWSER_PROFILE: ${{ matrix.browser_profile }}
+        run: npx playwright test --repeat-each=3 --retries=0
+
+      - name: Publicar relatório, screenshots, vídeos e traces E2E
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-playwright-${{ matrix.browser_profile }}
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Encerrar infraestrutura descartável
+        if: always()
+        run: docker compose -p ilya-nightly-${{ matrix.browser_profile }} -f docker-compose.test.yml -f docker-compose.e2e.yml down -v
+
+  synthetic-restore:
+    name: Restore — dump sintético e verificação de integridade
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Preparar Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validar testes unitários de integridade do restore
+        run: python -m unittest ops/test_restore_integrity.py
+
+      - name: Executar restore isolado de dump sintético em PostgreSQL descartável
+        run: python ops/test_restore.py ops/fixtures/synthetic_restore_pg16.sql
+
+  nightly-alert:
+    name: Alerta — regressão noturna
+    runs-on: ubuntu-latest
+    needs: [alembic-and-isolation, e2e-matrix, synthetic-restore]
+    if: always() && (needs.alembic-and-isolation.result != 'success' || needs.e2e-matrix.result != 'success' || needs.synthetic-restore.result != 'success')
+    steps:
+      - name: Abrir ou atualizar issue de falha noturna
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const title = "[ALERTA] Regressão noturna Ilya falhou";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const nowUtc = new Date().toISOString();
+            const sanitize = (v) => String(v ?? "unknown").replace(/[^a-zA-Z0-9_.:/-]/g, "_");
+            const body = [
+              "## Regressão noturna detectou falha",
+              "",
+              `- **Horário (UTC):** \`${sanitize(nowUtc)}\``,
+              `- **Commit:** \`${sanitize(context.sha)}\``,
+              `- **Execução:** ${runUrl}`,
+              "",
+              "### Resultado por job",
+              `- \`alembic-and-isolation\`: \`${sanitize("${{ needs.alembic-and-isolation.result }}")}\``,
+              `- \`e2e-matrix\`: \`${sanitize("${{ needs.e2e-matrix.result }}")}\``,
+              `- \`synthetic-restore\`: \`${sanitize("${{ needs.synthetic-restore.result }}")}\``,
+            ].join("\n");
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existing = issues.find(
+              (issue) => !issue.pull_request && issue.title === title,
+            );
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+            core.setFailed("Um ou mais jobs da regressão noturna falharam.");
