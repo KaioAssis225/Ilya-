@@ -67,7 +67,7 @@ jobs:
         with:
           script: |
             const fs = require("fs");
-            const title = "[ALERTA] API Ilya de produção indisponível";
+            let configError = false;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const nowUtc = new Date().toISOString();
             const nowSp = new Date().toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).replace(" ", "T") + "-03:00";
@@ -77,6 +77,7 @@ jobs:
             if (fs.existsSync(resultPath)) {
               try {
                 const parsed = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+                configError = Array.isArray(parsed?.failures) && parsed.failures.some((failure) => failure?.status === "config_error");
                 if (parsed && typeof parsed.alert_body === "string" && parsed.alert_body.trim()) {
                   body = parsed.alert_body;
                 }
@@ -84,6 +85,10 @@ jobs:
                 core.warning(`Não foi possível ler ${resultPath}: ${err.message}`);
               }
             }
+
+            const title = configError
+              ? "[ALERTA] Monitor sintético Ilya com configuração inválida"
+              : "[ALERTA] API Ilya de produção indisponível";
 
             if (!body) {
               body = [
@@ -134,7 +139,10 @@ jobs:
           script: |
             const fs = require("fs");
             const { execFileSync } = require("child_process");
-            const title = "[ALERTA] API Ilya de produção indisponível";
+            const titles = new Set([
+              "[ALERTA] API Ilya de produção indisponível",
+              "[ALERTA] Monitor sintético Ilya com configuração inválida",
+            ]);
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -142,7 +150,7 @@ jobs:
               per_page: 100,
             });
             const alerts = issues.filter(
-              (issue) => !issue.pull_request && issue.title === title,
+              (issue) => !issue.pull_request && titles.has(issue.title),
             );
             for (const issue of alerts) {
               const comments = await github.paginate(github.rest.issues.listComments, {

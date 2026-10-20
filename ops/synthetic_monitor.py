@@ -5,6 +5,8 @@ Executa:
     qualquer URL da Vercel como sinal de saúde do backend).
   * Sondas comerciais canário somente leitura para os mercados BR e EU, inertes
     por padrão (`SYNTHETIC_COMMERCIAL_ENABLED=true` + credenciais por mercado).
+    Habilitadas, exigem origem HTTPS sem userinfo/caminho/query e credenciais
+    completas; caso contrário viram `config_error` (saída 2), nunca `skipped_inactive`.
   * Formatação de corpo de alerta sanitizado (sem tokens, cookies, senhas ou PII),
     com horários em UTC e America/Sao_Paulo (-03:00), X-Request-ID e versão.
   * Máquina de estados determinística de recuperação em duas execuções saudáveis
@@ -98,8 +100,45 @@ def _validate_base_url(base_url: str) -> str:
             f"Recusado usar {FORBIDDEN_HEALTH_SIGNAL_HOST} como sinal de saúde do backend."
         )
     if parsed.scheme not in ("https", "http") or not host:
-        raise ValueError(f"base_url inválida: {base_url}")
+        raise ValueError("base_url inválida: use http(s) com host")
+    if "@" in parsed.netloc:
+        raise ValueError("base_url não pode conter credenciais (userinfo)")
     return base_url.rstrip("/")
+
+
+_HOSTNAME_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$"
+)
+
+
+def _validate_commercial_base_url(base_url: str) -> str:
+    """Valida a origem credenciada antes de qualquer envio de senha.
+
+    Exige HTTPS e origem pura (host e porta opcional), sem userinfo, caminho,
+    query ou fragmento. As mensagens de erro nunca repetem a URL recebida.
+    """
+    if any(
+        ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F or ch == "\\"
+        for ch in base_url or ""
+    ):
+        raise ValueError("URL comercial contém caracteres inválidos")
+    base_url = _validate_base_url(base_url)
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.scheme != "https":
+        raise ValueError("URL comercial deve usar HTTPS")
+    if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+        raise ValueError(
+            "URL comercial deve ser apenas a origem, sem caminho, query ou fragmento"
+        )
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ValueError("URL comercial com porta inválida") from None
+    expected_netloc = host if port is None else f"{host}:{port}"
+    if not _HOSTNAME_RE.match(host) or parsed.netloc.lower() != expected_netloc:
+        raise ValueError("URL comercial com host inválido")
+    return f"https://{parsed.netloc}"
 
 
 def _request(
@@ -222,12 +261,29 @@ def _market_credentials(market: str) -> Optional[Dict[str, str]]:
     return {"identifier": username, "password": password}
 
 
+def _missing_credential_vars(market: str) -> List[str]:
+    market = market.upper()
+    names = (f"ILYA_CANARY_{market}_USERNAME", f"ILYA_CANARY_{market}_PASSWORD")
+    return [name for name in names if not os.environ.get(name, "").strip()]
+
+
 def _skipped(market: str, reason: str) -> CheckResult:
     market = market.upper()
     return CheckResult(
         name=f"commercial/{market.lower()}",
         ok=True,
         status="skipped_inactive",
+        detail=reason,
+        market=market,
+    )
+
+
+def _config_error(market: str, reason: str) -> CheckResult:
+    market = market.upper()
+    return CheckResult(
+        name=f"commercial/{market.lower()}",
+        ok=False,
+        status="config_error",
         detail=reason,
         market=market,
     )
@@ -246,7 +302,12 @@ def run_commercial_canary_probe(
     if not _commercial_enabled():
         return _skipped(market, "SYNTHETIC_COMMERCIAL_ENABLED is not true")
     if not identifier or not password:
-        return _skipped(market, f"missing canary credentials for {market}")
+        return _config_error(
+            market,
+            f"SYNTHETIC_COMMERCIAL_ENABLED=true sem credenciais completas para {market}",
+        )
+    # Levanta ValueError antes de qualquer _request se a origem não for HTTPS íntegra.
+    base_url = _validate_commercial_base_url(base_url)
 
     token: Optional[str] = None
     try:
@@ -403,15 +464,25 @@ def run_commercial_canary_probe(
 
 def run_commercial_canary_probes(base_url: str = DEFAULT_BASE_URL) -> List[CheckResult]:
     base_url = _validate_base_url(base_url)
+    markets = ("BR", "EU")
+    if not _commercial_enabled():
+        return [
+            _skipped(market, "SYNTHETIC_COMMERCIAL_ENABLED is not true")
+            for market in markets
+        ]
+    try:
+        base_url = _validate_commercial_base_url(base_url)
+    except ValueError as exc:
+        return [_config_error(market, str(exc)) for market in markets]
+
     results: List[CheckResult] = []
-    enabled = _commercial_enabled()
-    for market in ("BR", "EU"):
-        if not enabled:
-            results.append(_skipped(market, "SYNTHETIC_COMMERCIAL_ENABLED is not true"))
-            continue
+    for market in markets:
         creds = _market_credentials(market)
         if creds is None:
-            results.append(_skipped(market, f"missing canary credentials for {market}"))
+            missing = ", ".join(_missing_credential_vars(market)) or f"credenciais {market}"
+            results.append(
+                _config_error(market, f"SYNTHETIC_COMMERCIAL_ENABLED=true sem {missing}")
+            )
             continue
         results.append(
             run_commercial_canary_probe(
@@ -428,7 +499,26 @@ _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _CPF_RE = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 _BEARER_RE = re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-+/=]+")
 _AUTH_HEADER_RE = re.compile(r"(?i)(authorization\s*[:=]\s*)([^\s,;]+)")
-_COOKIE_RE = re.compile(r"(?i)((?:set-)?cookie\s*[:=]\s*)([^\n\r]+)")
+# Um item de cookie: `Expires=<data HTTP>` (contém vírgula e espaços) ou um token
+# sem espaço/separador. O valor redigido cobre itens unidos por `;`/`,` e pares
+# `nome=valor` separados só por espaço, parando no primeiro texto livre seguinte
+# para que e-mail/CPF na mesma linha continuem com sua própria sanitização.
+_COOKIE_PAIR = r'(?:[^\s;,=]+="(?:\\.|[^"\\\r\n])*(?:"|$)|[^\s;,=]+=[^\s;,]*)'
+_COOKIE_ITEM = (
+    r"(?:expires=[A-Za-z]{3},[ \t]*\d{1,2}[ \t-][A-Za-z]{3}[ \t-]\d{2,4}[ \t]+"
+    r"\d{2}:\d{2}:\d{2}[ \t]*GMT|"
+    + _COOKIE_PAIR
+    + r"|[^\s;,]+)"
+)
+_COOKIE_RE = re.compile(
+    r"(?i)(\b(?:set-)?cookie\s*[:=]\s*)("
+    + _COOKIE_ITEM
+    + r"(?:[ \t]*[;,][ \t]*"
+    + _COOKIE_ITEM
+    + r"|[ \t]+"
+    + _COOKIE_PAIR
+    + r")*)"
+)
 _TOKEN_KV_RE = re.compile(
     r"(?i)\b(access_token|refresh_token|token|password|senha)\b\s*[:=]\s*\"?[^\s\",;}]+\"?"
 )
@@ -666,6 +756,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     _write_output(args.output, payload)
+    if any(r.status == "config_error" for r in failures):
+        return 2
     return 0 if not failures else 1
 
 
