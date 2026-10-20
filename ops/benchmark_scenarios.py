@@ -36,7 +36,8 @@ AUTH_SCENARIOS = (
 )
 
 COMMERCIAL_SCENARIOS = (
-    BenchmarkScenario("products_list", "GET /products", "/api/v1/products?limit=20&include_total=false"),
+    BenchmarkScenario("products_list_no_total", "GET /products", "/api/v1/products?limit=20&include_total=false"),
+    BenchmarkScenario("products_list_with_total", "GET /products", "/api/v1/products?limit=20&include_total=true"),
     BenchmarkScenario("orders_list", "GET /orders", "/api/v1/orders?limit=20"),
     BenchmarkScenario("dashboard_overview", "GET /dashboard/overview", "/api/v1/dashboard/overview?ranking_limit=5"),
 )
