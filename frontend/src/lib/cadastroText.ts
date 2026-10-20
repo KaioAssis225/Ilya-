@@ -166,6 +166,8 @@ const EN: Record<string, string> = {
   'Ctrl+clique para selecionar múltiplas cores.': 'Ctrl+click to select several colours.',
   'Clique para trocar': 'Click to change',
   'JPG, PNG, WEBP — máx. 5MB': 'JPG, PNG, WEBP — max. 5MB',
+  'Remover foto': 'Remove photo',
+  'A foto será removida ao salvar.': 'The photo will be removed when you save.',
   '{name} do catálogo Portugal': '{name} from the Portugal catalogue',
 
   // clientes e representantes

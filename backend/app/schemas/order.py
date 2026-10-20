@@ -6,11 +6,34 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class OptionalChoiceCreate(BaseModel):
+    application_id: uuid.UUID
+    optional_id: uuid.UUID
+
+
+class OptionalChoiceRead(BaseModel):
+    id: uuid.UUID
+    application_id: Optional[uuid.UUID] = None
+    optional_id: Optional[uuid.UUID] = None
+    application_name: str
+    application_name_en: Optional[str] = None
+    category_code: str
+    category_name: str
+    optional_name: str
+    component_name: Optional[str] = None
+    display_order: int
+
+    model_config = {"from_attributes": True}
+
+
 class OrderItemCreate(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
     qty: int = Field(..., ge=1, le=1_000_000)
     discount: Decimal = Field(Decimal("0"), ge=0, le=100, decimal_places=2)
     opt_categories: Dict[str, str] = Field(default_factory=dict, max_length=50)
+    optional_choices: List[OptionalChoiceCreate] = Field(default_factory=list, max_length=100)
+    source_order_item_id: Optional[uuid.UUID] = None
+    preserve_optional_choices: bool = False
 
     @field_validator("opt_categories")
     @classmethod
@@ -55,6 +78,7 @@ class OrderItemRead(BaseModel):
     largura: Decimal
     profundidade: Decimal
     opt_categories: Dict[str, str] = Field(default_factory=dict)
+    optional_choices: List[OptionalChoiceRead] = Field(default_factory=list)
     qty: int
     unit_price: Decimal
     discount: Decimal = Decimal("0")
@@ -83,6 +107,7 @@ class OrderHistoryRead(BaseModel):
     user: Optional[HistoryUserRead] = None
     action: str
     details: Optional[str] = None
+    items_snapshot: Optional[list] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

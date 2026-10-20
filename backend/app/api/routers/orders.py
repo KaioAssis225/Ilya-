@@ -34,6 +34,9 @@ from app.services.moloni_jobs import enqueue_finalized_eu_order
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.product import Product
+from app.models.product import ProductSetComponent
+from app.models.optional_color import OptionalColor, product_optionals
+from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
 from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.notification import Notification
@@ -92,14 +95,13 @@ def _ensure_total_capacity(*values: Decimal) -> None:
 def _can_operate_order(current_user: User) -> bool:
     """Papéis que operam o ciclo de vida do pedido (editar/finalizar/cancelar).
 
-    Operador interno de vendas, representante e admin. Conta de catálogo
-    (`produtos`) mantém leitura, mas não altera o ciclo comercial. Conta de
+    Operador interno de vendas, representante, produtos e admin. A conta de
     portal do cliente-final nunca opera pedido (SEC-02) — `is_internal_operator`
     já exclui o legado `vendedor`+`linked_id`. Exclusão segue exclusiva do admin.
     """
     return (
         current_user.role
-        in {UserRole.admin, UserRole.representante}
+        in {UserRole.admin, UserRole.representante, UserRole.produtos}
         or is_internal_operator(current_user)
     )
 
@@ -174,7 +176,7 @@ def _order_document_content(order: Order) -> dict:
         "total_with_ipi": str(order.total_with_ipi),
         "notes": order.notes,
         "items": [
-            {
+            ({
                 "product_code": item.product_code,
                 "description": item.description,
                 "is_circular": item.is_circular,
@@ -190,10 +192,100 @@ def _order_document_content(order: Order) -> dict:
                 "currency": item.currency,
                 "observacao": item.observacao,
                 "optionals": item.opt_categories,
-            }
+            } | ({"application_choices": _choice_snapshot(item)} if getattr(item, "optional_choices", []) else {}))
             for item in sorted(order.items, key=lambda current: str(current.id))
         ],
     }
+
+
+def _choice_snapshot(item: OrderItem) -> list[dict]:
+    return [
+        {
+            "application_name": choice.application_name,
+            "application_name_en": choice.application_name_en,
+            "category_code": choice.category_code,
+            "category_name": choice.category_name,
+            "optional_name": choice.optional_name,
+            "component_name": choice.component_name,
+            "display_order": choice.display_order,
+        }
+        for choice in sorted(getattr(item, "optional_choices", []), key=lambda row: (row.display_order, str(row.id)))
+    ]
+
+
+def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
+    return [
+        {"product_code": item.product_code, "legacy_optionals": item.opt_categories,
+         "applications": _choice_snapshot(item)} for item in items
+    ]
+
+
+async def _resolve_item_choices(
+    db: AsyncSession, product: Product, market_code: str, item_in: OrderItemCreate,
+    source: OrderItem | None = None,
+) -> list[OrderItemOptionalChoice]:
+    # An unchanged historical line is copied as a snapshot, even if the master
+    # application or optional was removed after the original order.
+    if source is not None and source.product_code == item_in.product_code and source.opt_categories == item_in.opt_categories:
+        old_pairs = {(row.application_id, row.optional_id) for row in source.optional_choices}
+        new_pairs = {(row.application_id, row.optional_id) for row in item_in.optional_choices}
+        if item_in.preserve_optional_choices or "optional_choices" not in item_in.model_fields_set or new_pairs == old_pairs:
+            return [OrderItemOptionalChoice(
+                id=uuid.uuid4(), application_id=row.application_id,
+                optional_id=row.optional_id, application_name=row.application_name,
+                application_name_en=row.application_name_en,
+                category_code=row.category_code, category_name=row.category_name,
+                optional_name=row.optional_name, component_name=row.component_name,
+                display_order=row.display_order,
+            ) for row in source.optional_choices]
+
+    applications = (await db.execute(select(ProductOptionalApplication).where(
+        ProductOptionalApplication.product_id == product.id,
+    ))).scalars().all()
+    application_map = {row.id: row for row in applications}
+    category_codes = {row.category.code for row in applications}
+    if category_codes.intersection(item_in.opt_categories):
+        raise HTTPException(status_code=422, detail="Categoria convertida deve usar aplicações, não o seletor antigo.")
+    chosen = {row.application_id: row.optional_id for row in item_in.optional_choices}
+    if len(chosen) != len(item_in.optional_choices) or any(app_id not in application_map for app_id in chosen):
+        raise HTTPException(status_code=422, detail="Aplicação inválida ou repetida neste produto.")
+    missing = [row.name for row in applications if row.required and row.id not in chosen]
+    if missing:
+        raise HTTPException(status_code=422, detail="Preencha as aplicações obrigatórias: " + ", ".join(missing))
+    option_ids = set(chosen.values())
+    optionals = (await db.execute(select(OptionalColor).where(
+        OptionalColor.id.in_(option_ids), OptionalColor.market_code == market_code,
+    ))).scalars().all() if option_ids else []
+    option_map = {row.id: row for row in optionals}
+    if len(option_map) != len(option_ids):
+        raise HTTPException(status_code=422, detail="Opcional não existe neste mercado.")
+    component_ids = {row.component_id for row in applications if row.component_id is not None}
+    components = (await db.execute(select(ProductSetComponent).where(
+        ProductSetComponent.id.in_(component_ids), ProductSetComponent.set_id == product.id,
+    ))).scalars().all() if component_ids else []
+    component_map = {row.id: row for row in components}
+    if len(component_map) != len(component_ids):
+        raise HTTPException(status_code=422, detail="Componente inválido na aplicação.")
+    used: dict[tuple[str, uuid.UUID], ProductOptionalApplication] = {}
+    result = []
+    for app_id, optional_id in chosen.items():
+        app = application_map[app_id]
+        optional = option_map[optional_id]
+        if optional.category != app.category.code or (not app.allow_all and optional_id not in {row.id for row in app.allowed_optionals}):
+            raise HTTPException(status_code=422, detail=f"Opção não autorizada em '{app.name}'.")
+        key = (app.category.code, optional_id)
+        if key in used and (not app.allow_repeat or not used[key].allow_repeat):
+            raise HTTPException(status_code=422, detail=f"Opção repetida na categoria '{app.category.name}'.")
+        used[key] = app
+        result.append(OrderItemOptionalChoice(
+            id=uuid.uuid4(), application_id=app.id, optional_id=optional.id,
+            application_name=app.name, application_name_en=app.name_en,
+            category_code=app.category.code, category_name=app.category.name,
+            optional_name=optional.color_name,
+            component_name=component_map[app.component_id].description if app.component_id else None,
+            display_order=app.display_order,
+        ))
+    return result
 
 
 def _order_document_hash(order: Order) -> str:
@@ -635,6 +727,7 @@ async def create_order(
     total = _ZERO
     total_ipi = _ZERO
     order_items: list[OrderItem] = []
+    source_items = {item.id: item for item in source_order.items} if source_order else {}
     for item_in in payload.items:
         product = product_map.get(item_in.product_code)
         if not product:
@@ -643,6 +736,12 @@ async def create_order(
             raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
         if product.id not in price_map:
             raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
+        if item_in.source_order_item_id and item_in.source_order_item_id not in source_items:
+            raise HTTPException(status_code=422, detail="Item de origem inválido para esta revisão.")
+        optional_choices = await _resolve_item_choices(
+            db, product, market_code, item_in,
+            source_items.get(item_in.source_order_item_id),
+        )
         product_type = type_map.get(product.type)
         if market_code == "EU":
             vat_rate, vat_status = product_vat.get(product.id, (None, None))
@@ -675,6 +774,7 @@ async def create_order(
             largura=product.largura,
             profundidade=product.profundidade,
             opt_categories=item_in.opt_categories,
+            optional_choices=optional_choices,
             qty=item_in.qty,
             unit_price=unit_price,
             discount=discount,
@@ -710,6 +810,10 @@ async def create_order(
         revision_number=(source_order.revision_number + 1) if source_order else 1,
         items=order_items,
     )
+    db.add(OrderHistory(
+        id=uuid.uuid4(), order_id=order.id, user_id=current_user.id,
+        action="created", items_snapshot=_items_history_snapshot(order_items),
+    ))
     try:
         db.add(order)
         await touch_client_activity(db, client.id)
@@ -750,6 +854,7 @@ async def create_order_revision(
         items=[OrderItemCreate(
             product_code=item.product_code, qty=item.qty,
             discount=item.discount, opt_categories=item.opt_categories,
+            source_order_item_id=item.id,
         ) for item in source.items],
     )
     # O fluxo normal recalcula preços e impostos atuais e cria novo número;
@@ -1035,6 +1140,7 @@ async def update_order(
             changes.append("representante alterado")
 
     if payload.items is not None:
+        old_item_map = {item.id: item for item in order.items}
         old_codes = {i.product_code for i in order.items}
         new_codes = {i.product_code for i in payload.items}
         removed = old_codes - new_codes
@@ -1114,6 +1220,12 @@ async def update_order(
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
             if product.id not in price_map:
                 raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
+            if item_in.source_order_item_id and item_in.source_order_item_id not in old_item_map:
+                raise HTTPException(status_code=422, detail="Item não pertence ao pedido editado.")
+            optional_choices = await _resolve_item_choices(
+                db, product, principal.code, item_in,
+                old_item_map.get(item_in.source_order_item_id),
+            )
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
                 vat_rate, vat_status = product_vat.get(product.id, (None, None))
@@ -1147,6 +1259,7 @@ async def update_order(
                 largura=product.largura,
                 profundidade=product.profundidade,
                 opt_categories=item_in.opt_categories,
+                optional_choices=optional_choices,
                 qty=item_in.qty,
                 unit_price=unit_price,
                 discount=discount,
@@ -1182,6 +1295,7 @@ async def update_order(
         user_id=current_user.id,
         action="edited",
         details=detail,
+        items_snapshot=_items_history_snapshot(new_items if payload.items is not None else order.items),
     ))
     await db.execute(update(SignatureInvitation).where(
         SignatureInvitation.order_id == order.id,

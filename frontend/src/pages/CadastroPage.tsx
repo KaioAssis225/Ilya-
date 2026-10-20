@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
-import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto } from '../hooks/useProducts'
+import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto, useDeleteProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
@@ -21,9 +21,12 @@ import type { ClientVerificationMethod, UserCreateResponse } from '../hooks/useU
 import { useAuth } from '../hooks/useAuth'
 import { useCadastroText } from '../hooks/useCadastroText'
 import { NumberField } from '../components/NumberField'
+import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
+import { withMarketProductNames } from '../lib/productPayload'
+import { shouldCloseModal } from '../lib/modalDismissal'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao'
@@ -343,17 +346,20 @@ function AddressFields({ form, setForm, market }: { form: ClientCreate; setForm:
 
 // ── Modal wrapper ─────────────────────────────────────────────────────────────
 
-function Modal({ title, onClose, children, accentColor }: {
-  title: string; onClose: () => void; children: React.ReactNode; accentColor?: string
+function Modal({ title, onClose, children, accentColor, closeOnlyByButton = false }: {
+  title: string; onClose: () => void; children: React.ReactNode; accentColor?: string; closeOnlyByButton?: boolean
 }) {
   const tx = useCadastroText()
+  const closeFrom = (reason: 'backdrop' | 'escape' | 'close-button') => {
+    if (shouldCloseModal(reason, closeOnlyByButton)) onClose()
+  }
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <DialogPanel onClose={onClose} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
+    <div className="modal-overlay" onClick={() => closeFrom('backdrop')}>
+      <DialogPanel onClose={() => closeFrom('escape')} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-line"
           style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
           <h3 className="text-base font-semibold text-ink">{title}</h3>
-          <button type="button" onClick={onClose} className="btn-icon -mr-2" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
+          <button type="button" onClick={() => closeFrom('close-button')} className="btn-icon -mr-2" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
       </DialogPanel>
@@ -381,11 +387,11 @@ const EMPTY_PRODUCT: ProductCreate = {
   type: 'Outro', catalog_id: null, is_circular: false,
   is_set: false, set_items: [], components: [],
   altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, price_arquiteto: 0, observacao: null,
-  all_optionals_categories: null, optional_ids: [],
+  all_optionals_categories: null, optional_ids: [], optional_applications: [],
 }
 
 const EMPTY_COMP: ProductSetComponentCreate = {
-  description: '', is_circular: false, altura: 0, largura: 0, profundidade: 0, qty: 1, optional_ids: [],
+  description: '', is_circular: false, altura: 0, largura: 0, profundidade: 0, qty: 1, optional_ids: [], optional_applications: [],
 }
 
 /** Agrupa opcionais pelo código de categoria (exato, sem normalização) — o
@@ -831,6 +837,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const updateM = useUpdateProduct()
   const deleteM = useDeleteProduct()
   const uploadM = useUploadProductPhoto()
+  const deletePhotoM = useDeleteProductPhoto()
   const createTypeM = useCreateProductType()
 
   // Categorias de opcionais sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
@@ -838,6 +845,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   const pageItems = products
   const [showForm, setShowForm] = useState(false)
+  const [focusOptionals, setFocusOptionals] = useState(false)
+  const optionalSectionRef = useRef<HTMLDivElement>(null)
   const [editing, setEditing] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
   const [form, setForm] = useState<ProductCreate>(EMPTY_PRODUCT)
@@ -845,6 +854,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [allOptCats, setAllOptCats] = useState<Set<string>>(new Set())
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [photoRemoved, setPhotoRemoved] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [addItemCode, setAddItemCode] = useState('')
@@ -860,6 +870,21 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     column => isEurope || (column !== 'price_pvp' && column !== 'price_arquiteto')
   )
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  // Um produto pode já ter um tipo salvo enquanto a lista de tipos ainda
+  // carrega, ou depois de uma importação anterior ao cadastro do tipo no
+  // mercado. Mantê-lo entre as opções evita que o navegador caia visualmente
+  // no primeiro item, "Sem tipo", e permite corrigir o vínculo sem apagá-lo.
+  const formTypeNames = Array.from(new Set([
+    ...allTypes.map(({ name }) => name),
+    ...(form.type && form.type !== 'Outro' ? [form.type] : []),
+  ])).sort((left, right) => left.localeCompare(right, locale))
+
+  useEffect(() => {
+    const preview = photoPreview
+    return () => {
+      if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+    }
+  }, [photoPreview])
 
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
     const width = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[column], Math.min(requestedWidth, 1600))
@@ -926,12 +951,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
-    setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null)
+    setFocusOptionals(false)
+    setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null); setPhotoRemoved(false)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setShowForm(true)
   }
-  function openEdit(p: Product) {
+  function openEdit(p: Product, showOptionals = false) {
     const isConjunto = isConjuntoType(p.type)
     const allCats = isConjunto ? new Set<string>() : new Set<string>(
       (p.all_optionals_categories ?? '').split(',').filter(Boolean)
@@ -941,6 +967,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     const cats = isConjunto ? [] : Array.from(new Set([
       ...p.optionals.map((o) => o.category),
       ...allCats,
+      ...(p.optional_applications ?? []).map(app => app.category_code),
     ]))
     setActiveCategories(cats); setAllOptCats(allCats)
     setForm({
@@ -965,8 +992,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       price_arquiteto: p.market_prices?.arquiteto ?? 0,
       observacao: p.observacao ?? null,
       optional_ids: isConjunto ? [] : p.optionals.map((o) => o.id),
+      optional_applications: (p.optional_applications ?? []).map(app => ({
+        id: app.id, category_id: app.category_id, name: app.name, name_en: app.name_en,
+        required: app.required, display_order: app.display_order,
+        allow_all: app.allow_all, allow_repeat: app.allow_repeat,
+        allowed_optional_ids: app.allowed_optionals.map(option => option.id),
+      })),
       set_items: p.set_items.map(si => ({ product_code: si.product_code, qty: si.qty })),
       components: p.components.map(comp => ({
+        id: comp.id,
         description: comp.description,
         is_circular: comp.is_circular,
         altura: comp.altura,
@@ -974,13 +1008,28 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         profundidade: comp.profundidade,
         qty: comp.qty,
         optional_ids: comp.optionals.map(o => o.id),
+        optional_applications: (comp.optional_applications ?? []).map(app => ({
+          id: app.id, category_id: app.category_id, name: app.name, name_en: app.name_en,
+          required: app.required, display_order: app.display_order,
+          allow_all: app.allow_all, allow_repeat: app.allow_repeat,
+          allowed_optional_ids: app.allowed_optionals.map(option => option.id),
+        })),
       })),
     })
-    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setEditing(p)
+    setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setPhotoRemoved(false); setEditing(p)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
+    setFocusOptionals(showOptionals)
     setShowForm(true)
   }
+  useEffect(() => {
+    if (!showForm || !focusOptionals) return
+    const frame = requestAnimationFrame(() => {
+      optionalSectionRef.current?.scrollIntoView({ block: 'start' })
+      setFocusOptionals(false)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [showForm, focusOptionals])
 
   function addSetItem() {
     const code = addItemCode.trim().toUpperCase()
@@ -1012,7 +1061,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       return opt ? (activeCatsSet.has(opt.category) && !allOptCats.has(opt.category)) : false
     })
 
-    const payload = {
+    const payload = withMarketProductNames({
       ...form,
       price: form.price_lojista ?? 0, // mantém a coluna legada coerente com o preço lojista
       optional_ids: filteredOptionalIds,
@@ -1020,21 +1069,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       set_items: isConjunto ? [] : (form.set_items ?? []),
       components: isConjunto ? (form.components ?? []) : [],
       profundidade: form.is_circular ? 0 : form.profundidade,
-    }
+    }, isEurope)
     try {
       if (editing) {
         const updatePayload = isEurope
-          ? {
-              ...payload,
-              // EU usa o mesmo formulário e os mesmos dados operacionais do BR,
-              // mas a atualização continua restrita ao produto EU no backend.
-              description: form.description?.trim() || undefined,
-              description_pt_pt: undefined,
-              description_en: isEurope ? (form.description_en?.trim() || undefined) : undefined,
-            }
+          ? payload
           : (canClassifyBr ? payload : { ...payload, type: undefined })
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
+        else if (photoRemoved) await deletePhotoM.mutateAsync(updated.id)
       } else {
         const created = await createM.mutateAsync(payload)
         if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
@@ -1114,6 +1157,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="w-11 h-11 flex items-center justify-center text-muted active:opacity-60 transition-opacity" style={{ touchAction: 'manipulation' }}>
                         <Pencil className="w-4 h-4" />
                       </button>
+                      <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="px-2 h-11 text-xs font-medium text-gold active:opacity-60" style={{ touchAction: 'manipulation' }}>
+                        Aplicações
+                      </button>
                       <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="w-11 h-11 flex items-center justify-center text-muted active:text-danger transition-colors" style={{ touchAction: 'manipulation' }}>
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1130,8 +1176,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       {isEurope && <span className="block text-[10px] text-muted">Arquiteto <strong className="text-gold">{money(marketPrice(p, 'arquiteto'))}</strong></span>}
                     </span>
                   </div>
-                  {(p.optionals.length > 0 || p.all_optionals_categories) && (
-                    <p className="text-[10px] text-muted mt-0.5 truncate">{getProductOptionalsLabel(p, catLabel, ' · ', tx('Todos'))}</p>
+                  {(p.optionals.length > 0 || p.all_optionals_categories || (p.optional_applications?.length ?? 0) > 0 || p.components.some(component => (component.optional_applications?.length ?? 0) > 0)) && (
+                    <p className="text-[10px] text-muted mt-0.5 truncate">{[getProductOptionalsLabel(p, catLabel, ' · ', tx('Todos')), ...(p.optional_applications ?? []).map(app => app.name), ...p.components.flatMap(component => (component.optional_applications ?? []).map(app => `${component.description}: ${app.name}`))].filter(Boolean).join(' · ')}</p>
                   )}
                 </div>
               </div>
@@ -1216,9 +1262,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'pvp'))}</td>}
                     {isEurope && <td data-product-col="price_arquiteto" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'arquiteto'))}</td>}
                     <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
-                      {p.optionals.length > 0 || p.all_optionals_categories
-                        ? getProductOptionalsLabel(p, catLabel, ', ', tx('Todos'))
-                        : '—'}
+                      {[getProductOptionalsLabel(p, catLabel, ', ', tx('Todos')), ...(p.optional_applications ?? []).map(app => app.name), ...p.components.flatMap(component => (component.optional_applications ?? []).map(app => `${component.description}: ${app.name}`))].filter(Boolean).join(', ') || '—'}
                     </td>
                     <td data-product-col="photo" className="px-2 py-3 border-r border-line align-top">
                       {p.photo_url
@@ -1228,6 +1272,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <td data-product-col="actions" className="px-2 py-3 align-top">
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
+                        <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="text-xs font-medium text-gold hover:underline">Aplicações</button>
                         <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -1272,7 +1317,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       )}
 
       {showForm && (
-        <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color}>
+        <Modal title={tx(editing ? 'Editar Produto' : (isEurope ? 'Novo Produto em Portugal' : 'Novo Produto'))} onClose={() => { setFormError(null); setShowForm(false) }} accentColor={color} closeOnlyByButton>
           <form onSubmit={handleSubmit} className="space-y-4">
             {formError && (
               <div className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2">
@@ -1354,10 +1399,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 }}>
                   {/* Tipo é opcional: "Outro" é o "sem tipo" aceito em qualquer mercado. */}
                   <option value="Outro">{tx('Sem tipo')}</option>
-                  {(allTypes.length > 0 ? allTypes.map(t => t.name) : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
-                    .filter(t => t !== 'Outro')
-                    .map(t => (
-                      <option key={t} value={t}>{t}</option>
+                  {(formTypeNames.length > 0 ? formTypeNames : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
+                    .filter(typeName => typeName !== 'Outro')
+                    .map(typeName => (
+                      <option key={typeName} value={typeName}>{typeName}</option>
                     ))}
                   {(isEurope || canClassifyBr) && <option value="__new__">{tx('+ Adicionar Novo...')}</option>}
                 </select>
@@ -1429,8 +1474,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
 
             {isConjuntoType(form.type) ? (
-              <div>
+              <div ref={optionalSectionRef}>
                 <span className="text-xs text-muted block mb-2 font-medium">{tx('Componentes do Conjunto')}</span>
+                <p className="text-xs text-muted mb-2">Edite um componente para configurar suas aplicações do opcional.</p>
                 {(form.components ?? []).length > 0 && (
                   <div className="space-y-1.5 mb-3">
                     {(form.components ?? []).map((comp, idx) => (
@@ -1450,8 +1496,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                             onClick={() => {
                               setCompForm(comp)
                               setCompActiveCategories(Array.from(new Set(
-                                comp.optional_ids
-                                  .map(id => allOptionals.find(o => o.id === id)?.category)
+                                [...comp.optional_ids.map(id => allOptionals.find(o => o.id === id)?.category),
+                                  ...(comp.optional_applications ?? []).map(app => optCategories.find(cat => cat.id === app.category_id)?.code)]
                                   .filter((c): c is string => !!c)
                               )))
                               setEditingCompIndex(idx)
@@ -1539,7 +1585,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                 } else {
                                   setCompActiveCategories(prev => prev.filter(c => c !== value))
                                   const catIds = allOptionals.filter(o => o.category === value).map(o => o.id)
-                                  setCompForm(f => ({ ...f, optional_ids: f.optional_ids.filter(id => !catIds.includes(id)) }))
+                                   setCompForm(f => ({ ...f, optional_ids: f.optional_ids.filter(id => !catIds.includes(id)), optional_applications: (f.optional_applications ?? []).filter(app => app.category_id !== optCategories.find(group => group.code === value)?.id) }))
                                 }
                               }}
                               className="w-3.5 h-3.5" />
@@ -1556,7 +1602,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         {compActiveCategories.map((cat) => (
                           <div key={cat} className="border border-line rounded-lg p-2.5 bg-white">
                             <span className="text-[11px] font-semibold block mb-1.5" style={{ color }}>{catLabel(cat).toUpperCase()}</span>
-                            <div className="flex flex-wrap gap-1.5">
+                            {!compForm.optional_applications?.some(app => app.category_id === optCategories.find(group => group.code === cat)?.id) && <div className="flex flex-wrap gap-1.5">
                               {allOptionals.filter(o => o.category === cat).map(opt => {
                                 const isSel = compForm.optional_ids.includes(opt.id)
                                 return (
@@ -1573,7 +1619,16 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                   </button>
                                 )
                               })}
-                            </div>
+                            </div>}
+                            {optCategories.find(group => group.code === cat) && <OptionalApplicationGroup
+                              category={optCategories.find(group => group.code === cat)!}
+                              optionals={allOptionals.filter(option => option.category === cat)}
+                              applications={compForm.optional_applications ?? []}
+                              onChange={applications => setCompForm(previous => ({ ...previous, optional_applications: applications }))}
+                              onFirstAdd={() => setCompForm(previous => ({ ...previous, optional_ids: previous.optional_ids.filter(id => allOptionals.find(option => option.id === id)?.category !== cat) }))}
+                              initialAllowedIds={compForm.optional_ids.filter(id => allOptionals.find(option => option.id === id)?.category === cat)}
+                              initialAllowAll={false}
+                            />}
                           </div>
                         ))}
                       </div>
@@ -1664,10 +1719,50 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </button>
                 </div>
                 <p className="text-[10px] text-muted mt-1.5">{tx('Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.')}</p>
+                <div ref={optionalSectionRef} className="border-t border-line mt-5 pt-4 space-y-3">
+                  <span className="text-xs text-muted block font-medium">Aplicações do opcional</span>
+                  <p className="text-xs text-muted">Selecione uma categoria para configurar escolhas independentes para este conjunto.</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {optCategories.map(category => <label key={category.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-line cursor-pointer">
+                      <input type="checkbox" checked={activeCategories.includes(category.code)} onChange={event => {
+                        if (event.target.checked) {
+                          setActiveCategories(previous => [...previous, category.code])
+                        } else {
+                          setActiveCategories(previous => previous.filter(code => code !== category.code))
+                          setAllOptCats(previous => { const next = new Set(previous); next.delete(category.code); return next })
+                          setForm(previous => ({
+                            ...previous,
+                            optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== category.code),
+                            optional_applications: (previous.optional_applications ?? []).filter(app => app.category_id !== category.id),
+                          }))
+                        }
+                      }} />
+                      <span className="text-xs text-ink-2">{category.name}</span>
+                    </label>)}
+                  </div>
+                  {activeCategories.map(code => {
+                    const category = optCategories.find(candidate => candidate.code === code)
+                    if (!category) return null
+                    const categoryOptionals = allOptionals.filter(option => option.category === code)
+                    return <OptionalApplicationGroup key={category.id}
+                      category={category}
+                      optionals={categoryOptionals}
+                      applications={form.optional_applications ?? []}
+                      onChange={applications => setForm(previous => ({ ...previous, optional_applications: applications }))}
+                      onFirstAdd={() => {
+                        setAllOptCats(previous => { const next = new Set(previous); next.delete(code); return next })
+                        setForm(previous => ({ ...previous, optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== code) }))
+                      }}
+                      initialAllowedIds={(form.optional_ids ?? []).filter(id => categoryOptionals.some(option => option.id === id))}
+                      initialAllowAll={allOptCats.has(code)}
+                    />
+                  })}
+                </div>
               </div>
             ) : (
-              <div>
+              <div ref={optionalSectionRef}>
                 <span className="text-xs text-muted block mb-2 font-medium">{tx('Categorias de Opcionais Disponíveis')}</span>
+                <p className="text-xs text-muted mb-2">Selecione uma categoria para configurar as aplicações do opcional deste produto.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {optCategories.map(({ code: value, name: label }) => {
                     const isActive = activeCategories.includes(value)
@@ -1685,7 +1780,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               const catOptionalIds = allOptionals.filter(o => o.category === value).map(o => o.id)
                               setForm(prev => ({
                                 ...prev,
-                                optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id))
+                                 optional_ids: (prev.optional_ids ?? []).filter(id => !catOptionalIds.includes(id)),
+                                 optional_applications: (prev.optional_applications ?? []).filter(app => app.category_id !== optCategories.find(group => group.code === value)?.id),
                               }))
                             }
                           }}
@@ -1702,20 +1798,24 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
-                    <span className="text-xs text-muted block font-medium">{tx('Cores e Permissões por Categoria')}</span>
+                    <span className="text-xs text-muted block font-medium">Opcionais e aplicações por categoria</span>
+                    <p className="text-xs text-muted">Em cada categoria, use “Adicionar outra aplicação” para criar escolhas independentes para partes do produto.</p>
                     {activeCategories.map((catValue) => {
                       const catValueLabel = catLabel(catValue)
                       const catItems = allOptionals.filter(o => o.category === catValue)
                       const isAllowed = allOptCats.has(catValue)
+                      const category = optCategories.find(group => group.code === catValue)
+                      const hasApplications = (form.optional_applications ?? []).some(app => app.category_id === category?.id)
                       const selectedIds = (form.optional_ids ?? []).filter(id => catItems.some(o => o.id === id))
                       return (
-                        <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-white shadow-sm">
+                          <div key={catValue} className="border border-line rounded-xl p-3.5 space-y-2.5 bg-white shadow-sm">
                           <div className="flex items-center justify-between pb-1 border-b border-line-soft">
                             <span className="text-xs font-semibold" style={{ color }}>{catValueLabel.toUpperCase()}</span>
                             <label className="flex items-center gap-1.5 cursor-pointer select-none">
                               <input
                                 type="checkbox"
                                 checked={isAllowed}
+                                disabled={hasApplications}
                                 style={{ accentColor: color }}
                                 onChange={(e) => {
                                   setAllOptCats(prev => {
@@ -1736,7 +1836,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               <span className="text-[11px] text-ink-3">{tx('Permitir todos')}</span>
                             </label>
                           </div>
-                          {isAllowed ? (
+                            {hasApplications ? (
+                            <p className="text-[11px] text-muted italic">Esta categoria usa aplicações independentes.</p>
+                          ) : isAllowed ? (
                             <p className="text-[11px] text-muted italic">
                               {tx('Todos os opcionais desta categoria estarão disponíveis no carrinho.')}
                             </p>
@@ -1760,10 +1862,22 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                     <option key={opt.id} value={opt.id}>{opt.color_name}</option>
                                   ))}
                                 </select>
-                              )}
+                            )}
                               <p className="text-[10px] text-muted mt-1">{tx('Ctrl+clique para selecionar múltiplas cores.')}</p>
                             </div>
                           )}
+                          {category && <OptionalApplicationGroup
+                            category={category}
+                            optionals={catItems}
+                            applications={form.optional_applications ?? []}
+                            onChange={applications => setForm(previous => ({ ...previous, optional_applications: applications }))}
+                            onFirstAdd={() => {
+                              setAllOptCats(previous => { const next = new Set(previous); next.delete(catValue); return next })
+                              setForm(previous => ({ ...previous, optional_ids: (previous.optional_ids ?? []).filter(id => allOptionals.find(option => option.id === id)?.category !== catValue) }))
+                            }}
+                            initialAllowedIds={selectedIds}
+                            initialAllowAll={isAllowed}
+                          />}
                         </div>
                       )
                     })}
@@ -1775,25 +1889,45 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             <div>
               <span className="text-xs text-muted block mb-1">{tx('Foto')}</span>
               <div
-                className="border-2 border-dashed border-line rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
+                className="relative border-2 border-dashed border-line rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer transition-colors"
                 onClick={() => fileRef.current?.click()}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = color)}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
               >
-                {photoPreview ? <img src={photoPreview} alt="" className="w-24 h-24 object-cover rounded-lg" /> : <Upload className="w-8 h-8 text-faint" />}
+                {photoPreview ? (
+                  <>
+                    <img src={photoPreview} alt={form.description || tx('Foto')} className="w-24 h-24 object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      aria-label={tx('Remover foto')}
+                      title={tx('Remover foto')}
+                      className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-line bg-white text-muted shadow-sm transition-[color,background-color,border-color,transform] hover:border-danger/30 hover:bg-red-50 hover:text-danger active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setPhotoPreview(null)
+                        setPendingFile(null)
+                        setPhotoRemoved(Boolean(editing?.photo_url))
+                        if (fileRef.current) fileRef.current.value = ''
+                      }}
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </>
+                ) : <Upload className="w-8 h-8 text-faint" />}
                 <span className="text-xs text-muted">{tx(photoPreview ? 'Clique para trocar' : 'JPG, PNG, WEBP — máx. 5MB')}</span>
+                {photoRemoved && <span className="text-xs font-medium text-danger" role="status">{tx('A foto será removida ao salvar.')}</span>}
               </div>
               <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]; if (!file) return
-                  setPendingFile(file); setPhotoPreview(URL.createObjectURL(file))
+                  setPendingFile(file); setPhotoRemoved(false); setPhotoPreview(URL.createObjectURL(file))
                 }} />
             </div>
 
             <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>
               <button type="submit" className="btn-primary" style={{ backgroundColor: color }}
-                disabled={createM.isPending || updateM.isPending || uploadM.isPending}>
+                disabled={createM.isPending || updateM.isPending || uploadM.isPending || deletePhotoM.isPending}>
                 {tx(editing ? 'Salvar' : 'Criar')}
               </button>
             </div>

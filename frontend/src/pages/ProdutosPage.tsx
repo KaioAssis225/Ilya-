@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown } from 'lucide-react'
-import { cartStorageKey, notifyCartChanged } from '../lib/cart'
+import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
@@ -13,6 +14,7 @@ import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
 import type { PageResult, Product } from '../types'
 import { formatDimensions } from '../lib/measurements'
+import { applicationName, productApplications } from '../lib/optionalApplications'
 
 const PAGE_SIZE = 24
 const FULL_IMAGE_WARMUP_COUNT = 4
@@ -340,7 +342,11 @@ function dimLabel(p: Product, locale: 'pt-PT' | 'en-GB' = 'pt-PT') {
   return formatDimensions(p, p.market_code === 'EU' ? 'EU' : 'BR', locale)
 }
 
-function addToCart(product: Product, userId: string, market: 'BR' | 'EU') {
+function addToCart(product: Product, userId: string, market: 'BR' | 'EU', configure: (code: string) => void) {
+  if (productApplications(product).length > 0) {
+    configure(product.product_code)
+    return
+  }
   const storageKey = cartStorageKey(userId, market)
   const raw = localStorage.getItem(storageKey)
   const cart = raw ? JSON.parse(raw) : []
@@ -434,6 +440,7 @@ function ProductFullView({
   onClose,
 }: { product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void }) {
   const [added, setAdded] = useState(false)
+  const navigate = useNavigate()
   const { locale } = useLocale()
   const english = locale === 'en-GB'
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
@@ -462,7 +469,7 @@ function ProductFullView({
   }, [])
 
   function handleAdd() {
-    addToCart(product, userId, market)
+    addToCart(product, userId, market, code => navigate(configureProductPath(code)))
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
@@ -629,6 +636,13 @@ function ProductFullView({
               </div>
             ) : null}
 
+            {productApplications(product).length > 0 && <div className="border-t border-line-soft pt-4">
+              <p className="type-label mb-2">{english ? 'Optional applications' : 'Aplicações do opcional'}</p>
+              {productApplications(product).map(({ application, componentName }) => <p key={application.id} className="text-xs text-ink-2 mt-1">
+                {componentName ? `${componentName} — ` : ''}{applicationName(application, english)}{application.required ? ' *' : ''}
+              </p>)}
+            </div>}
+
             <button
               onClick={handleAdd}
               style={{ touchAction: 'manipulation' }}
@@ -655,6 +669,7 @@ function ProductFullView({
 }
 
 export default function ProdutosPage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { locale, t } = useLocale()
   const queryClient = useQueryClient()
@@ -794,10 +809,31 @@ export default function ProdutosPage() {
     setPage(1)
   }
 
-  // Types shown in subgroup dropdown cascade from selected group
-  const availableTypes = selectedGroupId
-    ? productTypes.filter(t => t.group_id === selectedGroupId)
-    : productTypes
+  const availableGroups = useMemo(() =>
+    [...productGroups].sort((a, b) =>
+      localizeFurnitureTerm(a.name, locale).localeCompare(
+        localizeFurnitureTerm(b.name, locale),
+        locale === 'en-GB' ? 'en' : 'pt-BR',
+        { sensitivity: 'base' },
+      ),
+    ),
+  [locale, productGroups])
+
+  // Types shown in subgroup dropdown cascade from selected group. Sort after
+  // every data refresh so types created later also follow the displayed locale.
+  const availableTypes = useMemo(() => {
+    const types = selectedGroupId
+      ? productTypes.filter(t => t.group_id === selectedGroupId)
+      : productTypes
+
+    return [...types].sort((a, b) =>
+      localizeFurnitureTerm(a.name, locale).localeCompare(
+        localizeFurnitureTerm(b.name, locale),
+        locale === 'en-GB' ? 'en' : 'pt-BR',
+        { sensitivity: 'base' },
+      ),
+    )
+  }, [locale, productTypes, selectedGroupId])
 
   const hasFilters = searchTerm || selectedCatalogId || selectedGroupId || selectedTypeName
 
@@ -878,9 +914,9 @@ export default function ProdutosPage() {
             onChange={(e) => handleGroupChange(e.target.value)}
             className="w-full min-h-11 lg:min-h-0 md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
           >
-            <option value="">{t('allGroups')}</option>
-            {productGroups.map(g => (
-              <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale)}</option>
+            <option value="">{t('allGroups').toLocaleUpperCase(locale)}</option>
+            {availableGroups.map(g => (
+              <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale).toLocaleUpperCase(locale)}</option>
             ))}
           </select>
 
@@ -894,9 +930,9 @@ export default function ProdutosPage() {
             className="w-full min-h-11 lg:min-h-0 md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
             disabled={availableTypes.length === 0}
           >
-            <option value="">{t('allSubgroups')}</option>
+            <option value="">{t('allSubgroups').toLocaleUpperCase(locale)}</option>
             {availableTypes.map(t => (
-              <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale)}</option>
+              <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale).toLocaleUpperCase(locale)}</option>
             ))}
           </select>
 
@@ -1124,7 +1160,7 @@ export default function ProdutosPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => user && addToCart(product, user.id, user.active_market)}
+                  onClick={() => user && addToCart(product, user.id, user.active_market, code => navigate(configureProductPath(code)))}
                   aria-label={locale === 'en-GB' ? `Add ${product.description} to quote` : `Adicionar ${product.description} ao orçamento`}
                   style={{ touchAction: 'manipulation' }}
                   className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15

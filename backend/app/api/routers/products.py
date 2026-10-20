@@ -13,6 +13,7 @@ from app.models.product import Product, ProductSetItem, ProductSetComponent
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
 from app.models.optional_category import OptionalCategory
+from app.models.optional_application import ProductOptionalApplication
 from app.models.catalog import Catalog
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket
@@ -20,8 +21,9 @@ from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
-    ProductBatchRequest,
+    ProductBatchRequest, OptionalApplicationWrite, OptionalApplicationRead,
 )
+from app.schemas.optional import OptionalColorRead
 from app.core.config import settings
 from app.core.search import literal_contains_pattern
 from app.core.uploads import build_photo_url, build_thumbnail_url, delete_upload, persist_upload, sanitize_image_upload
@@ -137,6 +139,12 @@ async def _to_market_reads(
     market = principal.code
     context = principal.market
     ids = [product.id for product in products]
+    application_rows = (await db.execute(select(ProductOptionalApplication).where(
+        ProductOptionalApplication.product_id.in_(ids),
+    ))).scalars().all() if ids else []
+    applications_by_product: dict[uuid.UUID, list[ProductOptionalApplication]] = {}
+    for application in application_rows:
+        applications_by_product.setdefault(application.product_id, []).append(application)
     rows = (await db.execute(
         select(ProductPrice.product_id, PriceList.code, ProductPrice.amount)
         .join(PriceList, PriceList.id == ProductPrice.price_list_id)
@@ -165,6 +173,27 @@ async def _to_market_reads(
     result = []
     for product in products:
         item = _to_read(product, visible_profile if market == "BR" else None)
+        for application in sorted(applications_by_product.get(product.id, []), key=lambda a: (a.display_order, str(a.id))):
+            allowed = []
+            for optional in application.allowed_optionals:
+                read = OptionalColorRead.model_validate(optional)
+                read.photo_url = _build_photo_url(optional.photo_path)
+                read.thumbnail_url = build_thumbnail_url(optional.photo_path)
+                allowed.append(read)
+            read = OptionalApplicationRead(
+                id=application.id, category_id=application.category_id,
+                category_code=application.category.code, category_name=application.category.name,
+                name=application.name, name_en=application.name_en,
+                required=application.required, display_order=application.display_order,
+                allow_all=application.allow_all, allow_repeat=application.allow_repeat,
+                allowed_optionals=allowed,
+            )
+            if application.component_id is None:
+                item.optional_applications.append(read)
+            else:
+                component = next((c for c in item.components if c.id == application.component_id), None)
+                if component is not None:
+                    component.optional_applications.append(read)
         item.market_code = market
         item.currency = context.currency
         item.market_prices = prices.get(product.id, {})
@@ -225,7 +254,8 @@ async def _resolve_set_items(
 
 
 async def _resolve_components(
-    db: AsyncSession, items: list[ProductSetComponentCreate], market_code: str
+    db: AsyncSession, items: list[ProductSetComponentCreate], market_code: str,
+    existing: list[ProductSetComponent] | None = None,
 ) -> list[ProductSetComponent]:
     optional_ids = {
         optional_id
@@ -242,22 +272,103 @@ async def _resolve_components(
     ).scalars().all() if optional_ids else []
     optional_map = {optional.id: optional for optional in optionals}
     result = []
+    existing_map = {component.id: component for component in existing or []}
+    if len([item.id for item in items if item.id is not None]) != len(set(item.id for item in items if item.id is not None)):
+        raise HTTPException(status_code=422, detail="Componente repetido.")
     for item in items:
         missing = [optional_id for optional_id in item.optional_ids if optional_id not in optional_map]
         if missing:
             raise HTTPException(status_code=400, detail="Um ou mais opcionais não foram encontrados.")
-        comp = ProductSetComponent(
-            id=uuid.uuid4(),
-            description=item.description,
-            is_circular=item.is_circular,
-            altura=item.altura,
-            largura=item.largura,
-            profundidade=item.profundidade,
-            qty=item.qty,
-        )
+        if item.id is not None and item.id not in existing_map:
+            raise HTTPException(status_code=422, detail="Componente não pertence ao produto.")
+        comp = existing_map[item.id] if item.id else ProductSetComponent(id=uuid.uuid4())
+        comp.description = item.description
+        comp.is_circular = item.is_circular
+        comp.altura = item.altura
+        comp.largura = item.largura
+        comp.profundidade = item.profundidade
+        comp.qty = item.qty
         comp.optionals = [optional_map[optional_id] for optional_id in item.optional_ids]
         result.append(comp)
     return result
+
+
+async def _replace_applications(
+    db: AsyncSession, product: Product, items: list[OptionalApplicationWrite],
+    market_code: str, component_id: uuid.UUID | None = None,
+) -> set[str]:
+    existing = (await db.execute(select(ProductOptionalApplication).where(
+        ProductOptionalApplication.product_id == product.id,
+        ProductOptionalApplication.component_id == component_id if component_id else ProductOptionalApplication.component_id.is_(None),
+    ))).scalars().all()
+    existing_map = {row.id: row for row in existing}
+    if len([item.id for item in items if item.id]) != len(set(item.id for item in items if item.id)):
+        raise HTTPException(status_code=422, detail="Aplicação repetida.")
+    category_ids = {item.category_id for item in items}
+    categories = (await db.execute(select(OptionalCategory).where(
+        OptionalCategory.id.in_(category_ids), OptionalCategory.market_code == market_code,
+    ))).scalars().all() if category_ids else []
+    category_map = {row.id: row for row in categories}
+    if len(category_map) != len(category_ids):
+        raise HTTPException(status_code=422, detail="Categoria de aplicação inválida para o mercado.")
+    optional_ids = {optional_id for item in items for optional_id in item.allowed_optional_ids}
+    optionals = await _resolve_optionals(db, list(optional_ids), market_code)
+    optional_map = {row.id: row for row in optionals}
+    all_codes = {category_map[item.category_id].code for item in items if item.allow_all}
+    available_codes = set((await db.execute(select(OptionalColor.category).where(
+        OptionalColor.market_code == market_code, OptionalColor.category.in_(all_codes),
+    ))).scalars().all()) if all_codes else set()
+    kept: set[uuid.UUID] = set()
+    for item in items:
+        if item.id is not None and item.id not in existing_map:
+            raise HTTPException(status_code=422, detail="Aplicação não pertence ao produto ou componente.")
+        category = category_map[item.category_id]
+        if not item.name.strip() or (not item.allow_all and not item.allowed_optional_ids):
+            raise HTTPException(status_code=422, detail="Aplicação precisa de nome e opções permitidas.")
+        if item.allow_all and category.code not in available_codes:
+            raise HTTPException(status_code=422, detail="Categoria sem opções para esta aplicação.")
+        if any(optional_map[oid].category != category.code for oid in item.allowed_optional_ids):
+            raise HTTPException(status_code=422, detail="Opcional não pertence à categoria da aplicação.")
+        row = existing_map[item.id] if item.id else ProductOptionalApplication(id=uuid.uuid4())
+        row.product_id = product.id
+        row.component_id = component_id
+        row.category_id = category.id
+        row.name = item.name.strip()
+        row.name_en = item.name_en.strip() or None if item.name_en else None
+        row.required = item.required
+        row.display_order = item.display_order
+        row.allow_all = item.allow_all
+        row.allow_repeat = item.allow_repeat
+        row.allowed_optionals = [] if item.allow_all else [optional_map[oid] for oid in item.allowed_optional_ids]
+        db.add(row)
+        kept.add(row.id)
+    for row in existing:
+        if row.id not in kept:
+            await db.delete(row)
+    return {category_map[item.category_id].code for item in items}
+
+
+async def _apply_applications(
+    db: AsyncSession, product: Product, market_code: str,
+    product_items: list[OptionalApplicationWrite] | None,
+    component_items: list[ProductSetComponentCreate] | None,
+) -> None:
+    if product_items is not None:
+        codes = await _replace_applications(db, product, product_items, market_code)
+        if codes:
+            product.optionals = [option for option in product.optionals if option.category not in codes]
+            product.all_optionals_categories = ",".join(
+                code for code in (product.all_optionals_categories or "").split(",") if code and code not in codes
+            ) or None
+    if component_items is not None:
+        for component, item in zip(product.components, component_items):
+            if item.optional_applications is None:
+                continue
+            codes = await _replace_applications(
+                db, product, item.optional_applications, market_code, component.id,
+            )
+            if codes:
+                component.optionals = [option for option in component.optionals if option.category not in codes]
 
 
 async def _resolve_optionals(
@@ -524,6 +635,7 @@ async def _create_product_for_market(
 
     product_data = payload.model_dump(exclude={
         "optional_ids",
+        "optional_applications",
         "set_items",
         "components",
         "price_pvp",
@@ -541,6 +653,8 @@ async def _create_product_for_market(
         product.components = await _resolve_components(db, payload.components, market_code)
     db.add(product)
     await db.flush()
+    if payload.optional_applications or any(component.optional_applications for component in payload.components or []):
+        await _apply_applications(db, product, market_code, payload.optional_applications, payload.components if _is_conjunto_type(payload.type) else None)
     if market_code == "BR":
         if fiscal_actor_user_id is None:
             raise RuntimeError("Cadastro BR sem autorização fiscal.")
@@ -624,8 +738,6 @@ async def create_product(
     product = await _create_product_for_market(
         payload, db, principal.code, fiscal_actor_user_id
     )
-    if principal.code == "BR":
-        return _to_read(product)
     return (await _to_market_reads(
         db,
         [product],
@@ -717,7 +829,7 @@ async def update_product(
         product_changes = payload.model_dump(
             exclude_unset=True,
             exclude={
-                "optional_ids", "set_items", "components", "price_pvp",
+                "optional_ids", "optional_applications", "set_items", "components", "price_pvp",
                 "price_arquiteto",
                 "description_pt_pt", "description_en",
             },
@@ -734,7 +846,7 @@ async def update_product(
         }
         relationship_change = any(
             name in payload.model_fields_set
-            for name in ("optional_ids", "set_items", "components")
+            for name in ("optional_ids", "optional_applications", "set_items", "components")
         )
         await _validate_product_dimensions(
             db,
@@ -800,9 +912,10 @@ async def update_product(
             )
         if payload.components is not None:
             product.components = (
-                await _resolve_components(db, payload.components, principal.code)
+                await _resolve_components(db, payload.components, principal.code, product.components)
                 if _is_conjunto_type(product.type) else []
             )
+        await _apply_applications(db, product, principal.code, payload.optional_applications, payload.components)
         if any(value is not None for value in translation_changes.values()):
             localized = (await db.execute(select(ProductMarket).where(
                 ProductMarket.product_id == product.id,
@@ -820,7 +933,7 @@ async def update_product(
             await _visible_price_profile(db, current_user),
         ))[0]
 
-    data = payload.model_dump(exclude_unset=True, exclude={"optional_ids", "set_items", "components"})
+    data = payload.model_dump(exclude_unset=True, exclude={"optional_ids", "optional_applications", "set_items", "components"})
     data.pop("price_pvp", None)
     data.pop("price_arquiteto", None)
     data.pop("description_pt_pt", None)
@@ -853,9 +966,10 @@ async def update_product(
             product.set_items = []
     if components_in is not None:
         if _is_conjunto_type(product.type):
-            product.components = await _resolve_components(db, components_in, principal.code)
+            product.components = await _resolve_components(db, components_in, principal.code, product.components)
         else:
             product.components = []
+    await _apply_applications(db, product, principal.code, payload.optional_applications, components_in)
     lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
     price_changes = {"lojista": data.get("price_lojista"), "corporativo": data.get("price_corporativo")}
     for price_list in lists:
@@ -870,7 +984,7 @@ async def update_product(
                 db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=price_changes[price_list.code]))
     await db.commit()
     await db.refresh(product)
-    return _to_read(product)
+    return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user)))[0]
 
 
 @router.patch("/platform/EU/{product_id}", response_model=ProductRead)
@@ -977,6 +1091,52 @@ async def upload_photo(
         raise
     # A foto antiga pode ser a do produto BR de origem, ainda não copiada para
     # o bucket europeu. `market` impede apagar arquivo de outro mercado.
+    await delete_upload(old_photo_path, market=product.market_code)
+    await db.refresh(product)
+    if principal.code == "BR":
+        return _to_read(product)
+    return (await _to_market_reads(
+        db,
+        [product],
+        principal,
+        await _visible_price_profile(db, current_user),
+    ))[0]
+
+
+@router.delete("/{product_id}/photo", response_model=ProductRead)
+async def delete_photo(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Remove a foto do produto no mercado ativo.
+
+    Produtos europeus ainda podem apontar para uma imagem herdada do Brasil.
+    Nesse caso a referência EU é limpa, mas o arquivo pertencente ao bucket BR
+    é preservado por ``delete_upload(..., market=...)``.
+    """
+    result = await db.execute(select(Product).where(
+        Product.id == product_id,
+        Product.market_code == principal.code,
+        Product.is_active.is_(True),
+        exists().where(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == principal.code,
+            ProductMarket.is_available.is_(True),
+        ),
+    ))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    old_photo_path = product.photo_path
+    product.photo_path = None
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     await delete_upload(old_photo_path, market=product.market_code)
     await db.refresh(product)
     if principal.code == "BR":

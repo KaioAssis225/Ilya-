@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional, TYPE_CHECKING
-from sqlalchemy import String, Text, ForeignKey, Index
+from sqlalchemy import String, Text, ForeignKey, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -21,6 +21,7 @@ class OrderHistory(Base, TimestampMixin):
     )
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    items_snapshot: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     order: Mapped["Order"] = relationship("Order", back_populates="history")
     user: Mapped[Optional["User"]] = relationship("User", lazy="selectin")

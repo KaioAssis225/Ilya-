@@ -174,6 +174,24 @@ async def activate_europe(
                     WHERE component.set_id = p.id AND o.market_code <> 'EU'
                 )
                 OR EXISTS (
+                    SELECT 1 FROM product_optional_applications application
+                    JOIN optional_categories category ON category.id = application.category_id
+                    WHERE application.product_id = p.id
+                      AND (
+                        category.market_code <> 'EU'
+                        OR (application.component_id IS NOT NULL AND NOT EXISTS (
+                            SELECT 1 FROM product_set_components component
+                            WHERE component.id = application.component_id AND component.set_id = p.id
+                        ))
+                        OR EXISTS (
+                            SELECT 1 FROM optional_application_allowed allowed
+                            JOIN optionals optional ON optional.id = allowed.optional_id
+                            WHERE allowed.application_id = application.id
+                              AND (optional.market_code <> 'EU' OR optional.category <> category.code)
+                        )
+                      )
+                )
+                OR EXISTS (
                     SELECT 1
                     FROM regexp_split_to_table(
                         coalesce(p.all_optionals_categories, ''), '\\s*,\\s*'
