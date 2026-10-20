@@ -129,7 +129,9 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ilya_test
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_test
           SECRET_KEY: ci-secret-key-with-at-least-32-characters
-          PASSWORD_PEPPER: ci-password-pepper-not-used-in-production
+          # Mesmo pepper do backend do docker-compose.test.yml: os usuários semeados aqui
+          # fazem login nesse backend, e o hash da senha inclui o pepper.
+          PASSWORD_PEPPER: peppervalue1234567890
           E2E_SEED_PASSWORD: NightlySynthetic#2026!
         run: |
           pip install --disable-pip-version-check -r requirements-dev.txt
