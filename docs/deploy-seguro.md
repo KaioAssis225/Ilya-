@@ -95,3 +95,54 @@ concretas são cadastrados e revisados manualmente; a migration não cria itens 
 - Backend: voltar ao último commit compatível com o estado atual do banco.
 - Banco: não reverter migrations destrutivamente durante uma emergência; interromper gravações e restaurar o backup quando necessário.
 - Após a reversão, registrar o motivo e reproduzir a falha em homologação antes de tentar novamente.
+
+
+## Separação entre Migration de Pré-Deploy e Processo Web — P16
+
+O Bloco P16 separa explicitamente a execução de migrations do start do processo web, eliminando a reexecução de Alembic e de `seed_admin.py` em restarts e réplicas horizontais.
+
+### Estado de preparação no repositório (concluído localmente na branch)
+
+- `backend/railway.json` mantém:
+  - `"preDeployCommand": ["runuser -u ilya -- python startup.py migrate"]`
+  - `"healthcheckPath": "/health/ready"`
+- `backend/Dockerfile.prod` passa a definir:
+  - `CMD ["python", "startup.py", "serve"]`
+
+Com isso, o `preDeployCommand` é o **único** ponto que executa migrations no deploy, e o container web (incluindo restarts de worker e réplicas horizontais) apenas inicia o Uvicorn via `serve`, sem rodar Alembic nem `seed_admin.py`.
+
+### Aceite operacional na Railway (pendente de conferência humana)
+
+O estado acima está **preparado no repositório**, mas o aceite operacional na Railway **ainda está pendente** e exige conferência humana no painel, cobrindo no mínimo:
+
+- **Start Command efetivo** do serviço web (se o painel sobrescrever o `CMD` do `Dockerfile.prod`, deve refletir `python startup.py serve`, não `all`).
+- **Janela de mudança** acordada para a publicação.
+- **Responsável de rollback** nomeado e disponível durante a janela.
+
+Sem esse aceite registrado, o deploy em produção não deve ser liberado.
+
+### Roteiro de Homologação (5 ensaios obrigatórios antes de produção)
+
+1. **Ensaio 1 — Deploy sem migration nova**
+   Verificar que o `preDeployCommand` roda **uma única vez** e que o container web sobe em modo `serve`.
+
+2. **Ensaio 2 — Deploy com migration aditiva compatível**
+   Medir e registrar o tempo entre o início do deploy e `/health/ready` retornando 200.
+
+3. **Ensaio 3 — Reinício do processo web**
+   Confirmar nos logs que **nenhuma migration é executada** no restart do worker.
+
+4. **Ensaio 4 — Duas réplicas iniciando próximas**
+   Confirmar ausência de **lock contention de DDL** no boot web (as réplicas apenas sobem `serve`).
+
+5. **Ensaio 5 — Falha simulada de migration no pre-deploy e rollback**
+   Confirmar que a falha no `preDeployCommand` **aborta a publicação da nova versão** e **preserva a versão anterior saudável**; em seguida, executar rollback para a imagem anterior compatível.
+
+### Procedimento de Rollback de P16
+
+- **No painel/serviço (Railway):**
+  - Restaurar a imagem/deployment anterior; **ou**
+  - Definir temporariamente o Start Command explícito `python startup.py all`, caso o `preDeployCommand` esteja desabilitado no ambiente.
+- **No repositório:**
+  - Reverter `CMD ["python", "startup.py", "serve"]` para `CMD ["python", "startup.py"]` em `backend/Dockerfile.prod`.
+- **Nunca** executar `alembic downgrade` automático em produção.
