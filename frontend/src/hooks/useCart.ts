@@ -9,22 +9,23 @@ import { CART_EVENT, readCartQuantities } from '../lib/cart'
  * que dispararia loop infinito sem uma camada de cache que não vale o custo aqui.
  */
 export function useCartQuantities(userId?: string | null, market: 'BR' | 'EU' = 'BR'): Record<string, number> {
-  const [quantities, setQuantities] = useState<Record<string, number>>(
-    () => readCartQuantities(userId, market),
+  const scopeKey = `${userId ?? 'anon'}:${market}`
+  const [snapshot, setSnapshot] = useState<{ scopeKey: string; quantities: Record<string, number> }>(
+    () => ({ scopeKey, quantities: readCartQuantities(userId, market) }),
   )
 
   useEffect(() => {
-    const sync = () => setQuantities(readCartQuantities(userId, market))
+    const sync = () => setSnapshot({ scopeKey, quantities: readCartQuantities(userId, market) })
     // Reconcilia no mount: o carrinho pode ter mudado entre o estado inicial e
     // a montagem (ex.: outra rota escreveu durante o lazy-load desta página).
-    sync()
+
     window.addEventListener(CART_EVENT, sync)
     window.addEventListener('storage', sync)
     return () => {
       window.removeEventListener(CART_EVENT, sync)
       window.removeEventListener('storage', sync)
     }
-  }, [userId, market])
+  }, [userId, market, scopeKey])
 
-  return quantities
+  return snapshot.scopeKey === scopeKey ? snapshot.quantities : readCartQuantities(userId, market)
 }

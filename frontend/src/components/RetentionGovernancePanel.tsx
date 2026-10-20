@@ -92,6 +92,14 @@ const CATEGORY_LABEL: Record<string, string> = {
   privacy_events: 'Eventos de privacidade',
 }
 
+function currentDateTimeLocalMax(): string {
+  return new Date().toISOString().slice(0, 16)
+}
+
+function toIsoTimestamp(value: string): string {
+  return new Date(value).toISOString()
+}
+
 function formatDate(value: string | null) {
   if (!value) return '—'
   return new Intl.DateTimeFormat('pt-BR', {
@@ -134,6 +142,7 @@ export default function RetentionGovernancePanel() {
   const [releaseReason, setReleaseReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [endRelationship, setEndRelationship] = useState(false)
+  const [maxEndedAt, setMaxEndedAt] = useState(currentDateTimeLocalMax)
   const [representativeId, setRepresentativeId] = useState('')
   const [relationshipEndedAt, setRelationshipEndedAt] = useState('')
   const [relationshipReason, setRelationshipReason] = useState('')
@@ -209,7 +218,7 @@ export default function RetentionGovernancePanel() {
         ...holdModal,
         reason: holdReason,
         expires_at: holdExpiresAt
-          ? new Date(holdExpiresAt).toISOString()
+          ? toIsoTimestamp(holdExpiresAt)
           : null,
       })
       setHoldModal(null)
@@ -273,7 +282,7 @@ export default function RetentionGovernancePanel() {
       const response = await api.post<{
         deactivated_users: number
       }>(`/privacy/representatives/${representativeId}/relationship-end`, {
-        ended_at: new Date(relationshipEndedAt).toISOString(),
+        ended_at: toIsoTimestamp(relationshipEndedAt),
         reason: relationshipReason,
         password,
       })
@@ -309,6 +318,7 @@ export default function RetentionGovernancePanel() {
           <button
             type="button"
             onClick={() => {
+              setMaxEndedAt(currentDateTimeLocalMax())
               setEndRelationship(true)
               setPassword('')
               setError(null)
@@ -566,7 +576,7 @@ export default function RetentionGovernancePanel() {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Data e hora do encerramento</span>
-              <input className="input" type="datetime-local" max={new Date().toISOString().slice(0, 16)} value={relationshipEndedAt} onChange={(event) => setRelationshipEndedAt(event.target.value)} required />
+              <input className="input" type="datetime-local" max={maxEndedAt} value={relationshipEndedAt} onChange={(event) => setRelationshipEndedAt(event.target.value)} required />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Justificativa</span>

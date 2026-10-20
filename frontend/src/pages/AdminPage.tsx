@@ -75,6 +75,7 @@ export default function AdminPage() {
   const totalUserPages = usersPage
     ? Math.max(1, Math.ceil(totalUsers / USERS_PER_PAGE))
     : Math.max(1, userPage)
+  const safeUserPage = usersPage ? Math.min(Math.max(1, userPage), totalUserPages) : userPage
   const createM = useCreateUser()
   const updateM = useUpdateUser()
   const resetPwM = useResetUserPassword()
@@ -115,7 +116,7 @@ export default function AdminPage() {
   ]
 
   useEffect(() => {
-    if (usersPage && userPage > totalUserPages) setUserPage(totalUserPages)
+    void safeUserPage
   }, [usersPage, totalUserPages, userPage])
 
   function showToast(msg: string) {
@@ -309,14 +310,14 @@ export default function AdminPage() {
           </div>
           <div className="flex items-center justify-between border-t border-line px-5 py-3">
             <span className="text-xs text-muted">
-              Página {userPage} de {totalUserPages}
+              Página {safeUserPage} de {totalUserPages}
             </span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 aria-label="Página anterior"
-                disabled={userPage <= 1 || isFetching}
-                onClick={() => setUserPage((page) => Math.max(1, page - 1))}
+                disabled={safeUserPage <= 1 || isFetching}
+                onClick={() => setUserPage(Math.max(1, safeUserPage - 1))}
                 className="btn-secondary flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center p-0 disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -324,8 +325,8 @@ export default function AdminPage() {
               <button
                 type="button"
                 aria-label="Próxima página"
-                disabled={userPage >= totalUserPages || isFetching}
-                onClick={() => setUserPage((page) => Math.min(totalUserPages, page + 1))}
+                disabled={safeUserPage >= totalUserPages || isFetching}
+                onClick={() => setUserPage(Math.min(totalUserPages, safeUserPage + 1))}
                 className="btn-secondary flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center p-0 disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />

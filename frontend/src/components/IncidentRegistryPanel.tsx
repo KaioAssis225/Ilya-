@@ -42,6 +42,14 @@ const EMPTY_FORM = {
   non_notification_reason: '',
 }
 
+function currentDateTimeLocalMax(): string {
+  return new Date().toISOString().slice(0, 16)
+}
+
+function toIsoTimestamp(value: string): string {
+  return new Date(value).toISOString()
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'short',
@@ -61,6 +69,7 @@ export default function IncidentRegistryPanel() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [maxKnownAt, setMaxKnownAt] = useState(currentDateTimeLocalMax)
   const [form, setForm] = useState(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -96,7 +105,7 @@ export default function IncidentRegistryPanel() {
     try {
       await api.post('/privacy/incidents', {
         ...form,
-        known_at: new Date(form.known_at).toISOString(),
+        known_at: toIsoTimestamp(form.known_at),
         data_categories: form.data_categories
           .split(',')
           .map((item) => item.trim())
@@ -172,6 +181,7 @@ export default function IncidentRegistryPanel() {
           onClick={() => {
             setForm(EMPTY_FORM)
             setError(null)
+            setMaxKnownAt(currentDateTimeLocalMax())
             setShowForm(true)
           }}
           className="btn-primary flex items-center gap-2"
@@ -245,7 +255,7 @@ export default function IncidentRegistryPanel() {
           <form onSubmit={createIncident} className="space-y-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Data e hora da ciência *</span>
-              <input className="input" type="datetime-local" max={new Date().toISOString().slice(0, 16)} value={form.known_at} onChange={(event) => setForm({ ...form, known_at: event.target.value })} required />
+              <input className="input" type="datetime-local" max={maxKnownAt} value={form.known_at} onChange={(event) => setForm({ ...form, known_at: event.target.value })} required />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Descrição geral das circunstâncias *</span>

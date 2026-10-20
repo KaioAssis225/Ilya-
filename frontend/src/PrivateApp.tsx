@@ -29,6 +29,10 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
+function formatNotificationDate(value: string, locale: string) {
+  return new Date(value).toLocaleString(locale)
+}
+
 function isCliente(user: AuthUser) {
   // SEC-01: role própria `cliente`; mantém o legado `vendedor`+linked_id até a migração propagar.
   return user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
@@ -247,7 +251,7 @@ function Nav() {
                         >
                           <span className="block text-xs text-ink">{n.message}</span>
                           <span className="block text-[10px] text-muted-3 mt-0.5">
-                            {new Date(n.created_at).toLocaleString(user.active_market === 'EU' ? locale : 'pt-BR')}
+                            {formatNotificationDate(n.created_at, user.active_market === 'EU' ? locale : 'pt-BR')}
                           </span>
                         </button>
                       </li>

@@ -6,6 +6,8 @@ import { MarketFlag, type MarketCode } from '../components/MarketFlag'
 import { MarketTransition } from '../components/MarketTransition'
 import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 
+const CURRENT_YEAR = new Date().getFullYear()
+
 export default function LoginPage() {
   const { login, user, switchMarket } = useAuth()
   const navigate = useNavigate()
@@ -161,7 +163,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-muted mt-6">
-          © {new Date().getFullYear()} Ilya — Uso interno
+          © {CURRENT_YEAR} Ilya — Uso interno
         </p>
       </div>
 

@@ -1,10 +1,11 @@
-import { createContext, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import axios from 'axios'
 import { authApi, bindAuthHandlers, rotatePrivateApiSession } from '../lib/api'
 import { removeUnsafeLegacyCart } from '../lib/cart'
 import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 import { DEMO_MODE, DEMO_USER } from '../lib/demo'
+import { AuthContext } from '../hooks/useAuth'
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
 
@@ -32,7 +33,7 @@ interface AuthState {
   accessToken: string | null
 }
 
-interface AuthContextValue extends AuthState {
+export interface AuthContextValue extends AuthState {
   login: (identifier: string, password: string) => Promise<AuthUser>
   logout: () => Promise<void>
   refreshSession: () => Promise<string | null>
@@ -41,7 +42,7 @@ interface AuthContextValue extends AuthState {
   isLoading: boolean
 }
 
-export const AuthContext = createContext<AuthContextValue | null>(null)
+
 
 // O refresh token agora vive em Cookie HttpOnly — o frontend nunca o lê diretamente.
 // O browser o envia automaticamente nas requisições para /api/v1/auth/*.
@@ -128,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     removeLegacySignatureStorage()
     if (DEMO_MODE) return
     refreshSession().finally(() => setIsLoading(false))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refreshSession])
 
   const refreshMe = useCallback(async () => {
     const token = state.accessToken

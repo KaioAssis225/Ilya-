@@ -32,7 +32,8 @@ export default function DashboardFab({
   currentPath?: string
 }) {
   const navigate = useNavigate()
-  const [entering, setEntering] = useState(false)
+  const [enteringMode, setEnteringMode] = useState<'enter' | 'exit' | null>(null)
+  const entering = enteringMode === mode
   const [returnPhase, setReturnPhase] = useState<ReturnPhase>('idle')
 
   // O componente permanece montado ao trocar de rota (mesmo lugar na árvore),
@@ -40,13 +41,13 @@ export default function DashboardFab({
   // volta (returnPhase) é gerido pelo próprio fluxo abaixo — de propósito não é
   // resetado aqui, senão sumiria no instante em que Pedidos monta.
   useEffect(() => {
-    setEntering(false)
+    void mode
   }, [mode])
 
   function handleClick() {
     if (mode === 'enter') {
       if (entering) return
-      setEntering(true)
+      setEnteringMode(mode)
       if (currentPath) sessionStorage.setItem(RETURN_KEY, currentPath)
       setTimeout(() => navigate('/dashboard'), REDUCED ? 0 : ENTER_VEIL_MS)
       return
@@ -67,7 +68,7 @@ export default function DashboardFab({
       }, RETURN_HOLD_MS)
     } else {
       // Demais destinos usam o mesmo véu creme discreto da entrada.
-      setEntering(true)
+      setEnteringMode(mode)
       setTimeout(() => navigate(back), REDUCED ? 0 : ENTER_VEIL_MS)
     }
   }

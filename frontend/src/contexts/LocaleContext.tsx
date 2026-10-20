@@ -1,5 +1,6 @@
-import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { LocaleContext } from '../hooks/useLocale'
 
 export type AppLocale = 'pt-PT' | 'en-GB'
 
@@ -30,13 +31,13 @@ const messages = {
 
 export type MessageKey = keyof typeof messages['pt-PT']
 
-interface LocaleValue {
+export interface LocaleValue {
   locale: AppLocale
   setLocale: (locale: AppLocale) => void
   t: (key: MessageKey) => string
 }
 
-export const LocaleContext = createContext<LocaleValue | null>(null)
+
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()

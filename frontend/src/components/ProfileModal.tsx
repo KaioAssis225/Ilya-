@@ -22,9 +22,9 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const userId = user?.id ?? ''
 
   const isCliente = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user.linked_id)
-  const [sigData, setSigData] = useState<string | null>(() => (
-    userId ? getProfileSignature(userId) : null
-  ))
+  const [sigOverride, setSigOverride] = useState<{ userId: string; data: string | null } | null>(null)
+  const sigData = sigOverride?.userId === userId ? sigOverride.data : (userId ? getProfileSignature(userId) : null)
+
   const [sigModalOpen, setSigModalOpen] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -218,15 +218,15 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
   }, [sigModalOpen])
 
   useEffect(() => {
-    setSigData(userId ? getProfileSignature(userId) : null)
+    void userId
   }, [userId])
 
   if (!user) return null
 
-  function confirmSig() {
+  function handleConfirmSig() {
     const data = canvasRef.current!.toDataURL('image/png')
     setProfileSignature(userId, data)
-    setSigData(data)
+    setSigOverride({ userId, data })
     setSigModalOpen(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -609,7 +609,7 @@ export default function ProfileModal({ onClose }: { onClose: () => void }) {
                 Cancelar
               </button>
               <button
-                onClick={confirmSig}
+                onClick={handleConfirmSig}
                 className="flex-1 py-2 bg-gold text-white rounded-lg text-sm font-medium hover:bg-gold-600 transition-colors"
               >
                 Confirmar

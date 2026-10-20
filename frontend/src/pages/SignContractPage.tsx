@@ -39,9 +39,9 @@ export default function SignContractPage() {
     return window.location.hash.slice(1)
   })
 
-  const [stage, setStage] = useState<Stage>('loading')
+  const [stage, setStage] = useState<Stage>(() => (token ? 'loading' : 'error'))
   const [orderInfo, setOrderInfo] = useState<OrderInfo | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState(() => (token ? '' : 'Token não fornecido.'))
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawingRef = useRef(false)
@@ -52,8 +52,8 @@ export default function SignContractPage() {
 
   useEffect(() => {
     if (!token) {
-      setErrorMsg('Token não fornecido.')
-      setStage('error')
+      // Estado inicial já reflete ausência de token
+
       return
     }
     // POST com token no body: querystring vazaria o token nos access logs (V-04b)
@@ -134,7 +134,7 @@ export default function SignContractPage() {
     }
   }, [stage])
 
-  function clearCanvas() {
+  function handleClearCanvas() {
     const canvas = canvasRef.current!
     canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
   }
@@ -154,6 +154,7 @@ export default function SignContractPage() {
           : 'Erro ao enviar assinatura. Tente novamente.'
       setErrorMsg(msg)
       setStage('error')
+
     }
   }
 
@@ -232,7 +233,7 @@ export default function SignContractPage() {
               </p>
               <button
                 type="button"
-                onClick={clearCanvas}
+                onClick={handleClearCanvas}
                 className="mt-1 min-h-11 lg:min-h-0 text-xs text-muted hover:text-gold underline transition-colors"
               >
                 Limpar
