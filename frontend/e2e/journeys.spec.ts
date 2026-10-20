@@ -7,6 +7,10 @@ if (!password) throw new Error('Defina E2E_PASSWORD com a mesma senha usada em E
 const email = (role: string) => `e2e-${role}@ilya-test.example`
 const photo = fileURLToPath(new URL('../../backend/tests/fixtures/images/valid-small.png', import.meta.url))
 
+function isCompact(page: Page, breakpoint = 1024) {
+  return (page.viewportSize()?.width ?? 1280) < breakpoint
+}
+
 async function login(page: Page, role = 'admin', market: 'BR' | 'EU' = 'BR') {
   await page.goto('/login')
   await page.getByLabel('E-mail ou Usuário').fill(email(role))
@@ -36,17 +40,31 @@ async function addProduct(page: Page, code: 'BR' | 'EU') {
 
 async function createOrder(page: Page, code: 'BR' | 'EU') {
   await addProduct(page, code)
-  const client = page.getByPlaceholder('Buscar cliente...').last()
+
+  let client = page.getByPlaceholder('Buscar cliente...').last()
+  let finalize = page.getByRole('button', { name: 'Finalizar Orçamento' })
+  if (isCompact(page)) {
+    await page.getByRole('button', { name: /Ver Resumo/ }).click()
+    const drawer = page.getByRole('dialog')
+    await expect(drawer).toBeVisible()
+    client = drawer.getByPlaceholder('Buscar cliente...').last()
+    finalize = drawer.getByRole('button', { name: 'Finalizar Orçamento' })
+  }
+
   await client.fill(`Cliente E2E ${code}`)
   await page.getByRole('option', { name: new RegExp(`Cliente E2E ${code}`) }).click()
   const responsePromise = page.waitForResponse(response => response.url().includes('/api/v1/orders') && response.request().method() === 'POST')
-  await page.getByRole('button', { name: 'Finalizar Orçamento' }).click()
+  await finalize.click()
   const response = await responsePromise
   expect(response.ok()).toBeTruthy()
   const created = await response.json() as { code: string }
   await expect(page.getByText('Orçamento finalizado com sucesso!')).toBeVisible()
+
   await page.goto('/pedidos')
-  await expect(page.getByRole('row').filter({ hasText: created.code })).toBeVisible()
+  const orderLocator = isCompact(page, 768)
+    ? page.locator('[class*="md:hidden"] > *').filter({ hasText: created.code }).first()
+    : page.getByRole('row').filter({ hasText: created.code })
+  await expect(orderLocator).toBeVisible()
 }
 
 test('E2E-01: login e troca de mercado BR/EU', async ({ page }) => {
@@ -62,16 +80,25 @@ test('E2E-02: catálogo e fotos ficam no mercado correto', async ({ page }) => {
     if (code === 'EU') await switchMarket(page, 'BR', 'EU')
     await page.goto('/cadastros')
     await page.getByRole('textbox', { name: 'Buscar produtos por código ou descrição' }).fill(`E2E-${code}-001`)
-    const row = page.getByRole('row').filter({ hasText: `E2E-${code}-001` })
-    await expect(row).toBeVisible()
-    await row.getByRole('button', { name: 'Editar' }).click()
+    const compact = isCompact(page)
+    const item = compact
+      ? page.locator('[class*="lg:hidden"] > *').filter({ hasText: `E2E-${code}-001` }).first()
+      : page.getByRole('row').filter({ hasText: `E2E-${code}-001` })
+    await expect(item).toBeVisible()
+    await item.getByRole('button', { name: 'Editar' }).click()
     await expect(page.getByRole('heading', { name: 'Editar Produto' })).toBeVisible()
     await page.locator('.modal-overlay input[type=file]').setInputFiles(photo)
     await page.getByRole('button', { name: 'Salvar' }).click()
-    const image = row.locator('[data-product-col="photo"] img')
+    const image = compact
+      ? item.locator('img')
+      : item.locator('[data-product-col="photo"] img')
     await expect(image).toBeVisible()
     await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
-    await expect(page.getByRole('row').filter({ hasText: `E2E-${code === 'BR' ? 'EU' : 'BR'}-001` })).toHaveCount(0)
+    if (compact) {
+      await expect(page.locator('[class*="lg:hidden"] > *').filter({ hasText: `E2E-${code === 'BR' ? 'EU' : 'BR'}-001` })).toHaveCount(0)
+    } else {
+      await expect(page.getByRole('row').filter({ hasText: `E2E-${code === 'BR' ? 'EU' : 'BR'}-001` })).toHaveCount(0)
+    }
   }
 })
 
