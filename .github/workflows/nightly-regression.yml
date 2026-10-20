@@ -136,6 +136,13 @@ jobs:
           alembic upgrade head
           python -m tests.e2e_support.seed_e2e
 
+      # Precisa rodar antes do compose frontend: o bind-mount ./frontend:/app (+ volume /app/node_modules) cria frontend/node_modules como root e faz o npm ci falhar com EACCES no runner.
+      - name: Instalar dependências frontend e navegador Playwright
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps ${{ matrix.browser_profile == 'webkit' && 'webkit' || 'chromium' }}
+
       - name: Iniciar API e frontend E2E
         run: |
           docker compose -p ilya-nightly-${{ matrix.browser_profile }} -f docker-compose.test.yml -f docker-compose.e2e.yml --profile e2e up -d --wait backend frontend
@@ -147,12 +154,6 @@ jobs:
           done
           echo "Frontend E2E não ficou pronto em 5 minutos." >&2
           exit 1
-
-      - name: Instalar dependências frontend e navegador Playwright
-        working-directory: frontend
-        run: |
-          npm ci
-          npx playwright install --with-deps ${{ matrix.browser_profile == 'webkit' && 'webkit' || 'chromium' }}
 
       - name: Executar jornadas E2E (3 repetições consecutivas sem retry)
         working-directory: frontend
