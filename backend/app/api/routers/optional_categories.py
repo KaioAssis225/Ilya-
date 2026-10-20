@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_current_principal, get_db_session, require_platform_capability, require_roles
@@ -162,5 +162,29 @@ async def delete_optional_category(
     ).limit(1))).scalar_one_or_none()
     if in_use:
         raise HTTPException(status_code=409, detail="Categoria usada em aplicações de produtos.")
+    # `optionals.category` é um código textual para manter o catálogo por
+    # mercado. Remover apenas a categoria deixava os itens órfãos, que depois
+    # apareciam na interface como "group not registered". Limpe os itens e os
+    # códigos liberados em produtos na mesma transação.
+    await db.execute(delete(OptionalColor).where(
+        OptionalColor.market_code == principal.code,
+        OptionalColor.category == cat.code,
+    ))
+    product_rows = (await db.execute(select(
+        Product.id,
+        Product.all_optionals_categories,
+    ).where(
+        Product.market_code == principal.code,
+        Product.all_optionals_categories.is_not(None),
+    ))).all()
+    for product_id, raw_categories in product_rows:
+        codes = [code.strip() for code in raw_categories.split(",") if code.strip()]
+        if cat.code not in codes:
+            continue
+        await db.execute(
+            update(Product)
+            .where(Product.id == product_id, Product.market_code == principal.code)
+            .values(all_optionals_categories=",".join(code for code in codes if code != cat.code) or None)
+        )
     await db.delete(cat)
     await db.commit()
