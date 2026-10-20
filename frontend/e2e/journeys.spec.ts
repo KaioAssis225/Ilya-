@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url'
 const password = process.env.E2E_PASSWORD
 if (!password) throw new Error('Defina E2E_PASSWORD com a mesma senha usada em E2E_SEED_PASSWORD')
 
-const email = (role: string) => `e2e-${role}@ilya-test.invalid`
+const email = (role: string) => `e2e-${role}@ilya-test.example`
 const photo = fileURLToPath(new URL('../../backend/tests/fixtures/images/valid-small.png', import.meta.url))
 
 async function login(page: Page, role = 'admin', market: 'BR' | 'EU' = 'BR') {
   await page.goto('/login')
   await page.getByLabel('E-mail ou Usuário').fill(email(role))
-  await page.getByLabel('Senha').fill(password!)
+  await page.getByLabel('Senha', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Entrar' }).click()
   if (role === 'admin') {
     await page.getByRole('heading', { name: 'Escolha o ambiente' }).waitFor()

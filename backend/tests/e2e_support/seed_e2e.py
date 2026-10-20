@@ -21,7 +21,7 @@ from app.models import (
     ProductPrice, ProductType, User, UserMarket, UserRole,
 )
 
-DOMAIN = "ilya-test.invalid"
+DOMAIN = "ilya-test.example"
 PRODUCTS = {"BR": ("E2E-BR-001", "Produto E2E BR"), "EU": ("E2E-EU-001", "Produto E2E EU")}
 
 
@@ -108,16 +108,25 @@ async def seed() -> None:
                     db.add(listing)
                 listing.is_available = True
                 if code == "EU":
+                    listing.description_pt_pt = description
+                    listing.description_en = "E2E product EU"
                     listing.vat_rate = Decimal("23")
                     listing.vat_status = "approved"
                     listing.approved_by_user_id = users["admin"].id
                     listing.approved_at = datetime.now(timezone.utc)
-                price = await db.get(ProductPrice, (product.id, price_list.id))
-                if price is None:
-                    price = ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=Decimal("100"))
-                    db.add(price)
-                else:
-                    price.amount = Decimal("100")
+                profiles = ("lojista", "corporativo", "pvp", "arquiteto") if code == "EU" else ("lojista",)
+                for profile in profiles:
+                    profile_list = price_list if profile == "lojista" else await one(
+                        db, select(PriceList).where(PriceList.market_code == code, PriceList.code == profile)
+                    )
+                    if profile_list is None:
+                        raise RuntimeError(f"Tabela {profile} {code} ausente; execute as migrations")
+                    price = await db.get(ProductPrice, (product.id, profile_list.id))
+                    if price is None:
+                        price = ProductPrice(product_id=product.id, price_list_id=profile_list.id, amount=Decimal("100"))
+                        db.add(price)
+                    else:
+                        price.amount = Decimal("100")
 
             for role, user in users.items():
                 for code in (("BR", "EU") if role == "admin" else ("BR",)):

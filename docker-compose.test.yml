@@ -97,7 +97,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ilya_test
       SECRET_KEY: supersecretkey1234567890abcdefghij
       PASSWORD_PEPPER: peppervalue1234567890
-      BACKEND_CORS_ORIGINS: http://localhost,http://localhost:3000,http://testserver
+      BACKEND_CORS_ORIGINS: http://localhost,http://localhost:3000,http://localhost:5173,http://testserver
       DEBUG: "true"
       RATE_LIMIT_STORAGE_URI: redis://redis:6379/0
       # P06: lidas só por tests/integration/test_media_storage.py, que aponta

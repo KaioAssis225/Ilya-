@@ -1,6 +1,6 @@
-# P09 — jornadas Chromium
+# P09/P17 — jornadas de navegador
 
-Seis cenários em `journeys.spec.ts`: login e troca BR/EU, catálogo e foto em cada mercado, pedido BR, pedido EU, acesso por papel e isolamento de carrinho/resposta antiga após troca de identidade. O seed é uma CLI privada e idempotente em `backend/tests/e2e_support/seed_e2e.py`; não há endpoint de reset. Todas as contas e produtos usam o domínio/SKUs sintéticos `ilya-test.invalid` e `E2E-*`.
+Seis cenários em `journeys.spec.ts`: login e troca BR/EU, catálogo e foto em cada mercado, pedido BR, pedido EU, acesso por papel e isolamento de carrinho/resposta antiga após troca de identidade. O seed é uma CLI privada e idempotente em `backend/tests/e2e_support/seed_e2e.py`; não há endpoint de reset. As contas usam o domínio reservado `ilya-test.example`, aceito pelo validador de e-mail da API; os SKUs sintéticos usam `E2E-*`.
 
 ## Preparar no checkpoint de validação
 
