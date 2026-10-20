@@ -42,6 +42,8 @@ _SPEC = importlib.util.spec_from_file_location(
 )
 bpa = importlib.util.module_from_spec(_SPEC)
 sys.modules.setdefault("benchmark_production_api", bpa)
+if str(_OPS_DIR) not in sys.path:
+    sys.path.insert(0, str(_OPS_DIR))
 _SPEC.loader.exec_module(bpa)
 
 pytestmark = pytest.mark.unit

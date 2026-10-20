@@ -598,6 +598,16 @@ async def _get_order(
     return order
 
 
+async def _reload_order_for_response(db, order_id) -> Order:
+    result = await db.execute(
+        select(Order)
+        .where(Order.id == order_id)
+        .options(selectinload(Order.items).selectinload(OrderItem.optional_choices))
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one()
+
+
 @router.post("", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 async def create_order(
     payload: OrderCreate,
@@ -825,7 +835,7 @@ async def create_order(
             code, payload.client_id, current_user.id, exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Falha ao criar o pedido. Tente novamente.")
-    await db.refresh(order)
+    order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido criado: code=%s orc=%s total=%.2f user_id=%s", code, orc_id, order.total_value, current_user.id)
     return order
 
@@ -1309,7 +1319,7 @@ async def update_order(
         await db.rollback()
         logger.error("Falha ao editar pedido: id=%s user=%s", order_id, current_user.id, exc_info=True)
         raise HTTPException(status_code=500, detail="Falha ao salvar as alterações do pedido. Tente novamente.")
-    await db.refresh(order)
+    order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido editado: id=%s user=%s changes=%s", order_id, current_user.id, detail)
     return order
 
@@ -1365,7 +1375,7 @@ async def finalize_order(
     if order.market_code == "EU":
         await enqueue_finalized_eu_order(db, order.id)
     await db.commit()
-    await db.refresh(order)
+    order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
     return order
 
@@ -1417,7 +1427,7 @@ async def cancel_order(
     ))
     await touch_client_activity(db, order.client_id, terminal_at)
     await db.commit()
-    await db.refresh(order)
+    order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido cancelado: id=%s user=%s", order_id, current_user.id)
     return order
 
