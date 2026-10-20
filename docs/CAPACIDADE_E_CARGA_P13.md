@@ -25,6 +25,19 @@ Este documento define o orçamento de conexões PostgreSQL, os patamares de ramp
 - `BENCHMARK_TARGET_URL` deve apontar para host **explicitamente listado** em `BENCHMARK_STAGING_ALLOWLIST` (hostname simples, sem esquema: `app-homolog.ilya.internal`, por exemplo).
 - Esquema **HTTPS obrigatório**.
 - Bloqueio absoluto de `*.up.railway.app` (qualquer rewriter/redirect) e de qualquer URL identificada como produção.
+- **Limite de latência obrigatório (R01):** fora de `--dry-run`, a CLI sai com código 2 **antes de qualquer requisição** se não receber `--baseline-p95-ms` (p95 do P12) ou `--max-p95-ms` (teto absoluto aprovado no ticket da janela). Valores zero, negativos, `nan` ou `inf` também bloqueiam. Com ambos, vale o mais restritivo.
+- **Probe autenticado de pool (R02):** a carga exige `ILYA_BENCHMARK_METRICS_TOKEN` (mesmo valor de `OBSERVABILITY_METRICS_TOKEN` do alvo) e um primeiro scrape válido de `/internal/metrics` no **mesmo host** do alvo, sem seguir redirect. Credencial ausente, scrape com erro/404, série obrigatória ausente ou topologia não coberta recusam a carga com código 2.
+
+### 1.1 Fonte de pressão do banco e limitação por processo
+
+`/internal/metrics` de P10 mantém métricas **por processo** e não identifica o worker que respondeu; um scrape pelo balanceador cai num processo arbitrário. Escolha mínima adotada:
+
+- **Topologia coberta:** somente `1 réplica × WEB_CONCURRENCY=1`. Nela um scrape cobre a API inteira. O probe confere `ilya_app_info{workers="1"}`; `--replicas` é declaração do operador (o endpoint não expõe réplicas).
+- **Demais topologias (1×2, 2×2, …):** carga **recusada** até existir coletor agregado por worker/réplica ou sinal do PostgreSQL (`pg_stat_activity` com papel restrito). O orçamento da seção 2 continua calculado, mas não autoriza carga nessas topologias.
+- **Séries usadas:** `ilya_db_pool_connections{state="in_use"}` (obrigatória, prova que os hooks de pool estão instalados), `ilya_db_pool_timeouts_total{pool="primary"}` (criada sob demanda pelo registry; ausente com o gauge presente = nenhum timeout no processo) e `ilya_process_start_time_seconds`.
+- **Durante a carga:** um scrape a cada `--metrics-interval-seconds` (padrão 5 s, timeout `--metrics-timeout-seconds`, padrão 5 s). Timeouts são contados como delta desde o scrape inicial; regressão do contador ou mudança do instante de início do processo indicam troca de processo e abortam. O instante de início é exportado com precisão suficiente para distinguir reinícios próximos. Qualquer falha de scrape aborta o patamar (`metrics_probe_failed`) — nunca vira zero.
+- **Teto de conexões:** compara as conexões **em uso no pool desse processo** com o teto seguro; não é o total do PostgreSQL (reserva, migrations e outros clientes não aparecem). Em 1×1 o pool (5+5) não alcança o teto de 85, então o sinal efetivo é `pool_timeout`.
+- O JSON registra só o pico de conexões em uso e os timeouts desde o início por patamar; nem a credencial nem o texto do scrape são gravados.
 
 ---
 
@@ -110,14 +123,16 @@ Distribuição padrão (soma 100%):
 
 O gerador aborta a execução (marca stage como `ABORTED`) ao detectar qualquer condição abaixo. O aborto interrompe novas requisições e preserva os dados coletados até o instante.
 
-1. **Taxa de erro sustentada:** `error_rate > 5%` por **120 segundos contínuos** (janela deslizante de 2 min).
-2. **Degradação de latência:** `p95_stage > 5 × baseline_p95_ms` — só avaliado quando `--baseline-p95-ms` é informado (derivado de `docs/BASELINE_AUTENTICADO_P12.md`).
+1. **Taxa de erro em janela deslizante:** cada amostra guarda o instante de conclusão no relógio **monotônico** do gerador. Depois de 120 s sustentados pós-aquecimento, a regra calcula erros/amostras concluídas nos **últimos 120 s** e aborta se passar de 5%. Amostras de aquecimento nunca entram na janela; falhas antigas saem dela, e a média histórica do patamar não é usada.
+   - **Tráfego insuficiente:** com menos de 20 amostras na janela (`min_error_window_samples`), a regra é inconclusiva e não aborta sozinha; as regras de indisponibilidade (10 falhas severas consecutivas ou nenhuma 2xx) continuam ativas.
+2. **Degradação de latência:** `p95_stage > 5 × baseline_p95_ms` (`p95_degradation`) e/ou `p95_stage > max_p95_ms` (`p95_absolute_ceiling`), com no mínimo 20 respostas válidas. Pelo menos um dos dois limites é obrigatório (seção 1).
 3. **Sinais de indisponibilidade:**
    - Falhas **5xx** ou **de rede** consecutivas acima do limiar do perfil; **ou**
    - Ausência de respostas **2xx válidas** em janela avaliada com falhas.
-4. **Banco próximo do limite seguro de conexões** (via `/internal/metrics`):
-   - `observed_db_connections >= safe_connection_ceiling` (85% de `max_connections`), ou
-   - `pool_timeouts > 0` no intervalo de scrape.
+4. **Banco próximo do limite seguro de conexões** (via probe de `/internal/metrics`, seção 1.1):
+   - conexões em uso no pool `>= safe_connection_ceiling` (85% de `max_connections`), ou
+   - `pool_timeouts > 0` desde o início da execução;
+   - falha do probe (`metrics_probe_failed`), checada também antes de cada patamar.
 
 Ao disparar circuit breaker, o gerador interrompe a progressão para os patamares seguintes e retorna código de saída não-zero.
 
@@ -131,7 +146,7 @@ Ao disparar circuit breaker, o gerador interrompe a progressão para os patamare
 python ops/load/load_generator.py --dry-run
 ```
 
-Valida: parsing de argumentos, cálculo de orçamento, ponderação da mistura, checagens de allowlist (offline) e os critérios de aborto. **Não** realiza chamadas HTTP nem conecta ao banco.
+Valida: parsing de argumentos, cálculo de orçamento, ponderação da mistura e os critérios de aborto. Com `--target-url` informado, valida também a allowlist offline e retorna erro para alvo bloqueado; sem URL, registra `allowlist_status: unverified`. **Não** realiza chamadas HTTP nem conecta ao banco. Funciona sem baseline, mas **não autoriza carga**: `load_preconditions` mostra o limite de latência, a cobertura de métricas e o estado da allowlist (`dry_run_authorizes_load` é sempre `false`); pendências saem no stderr.
 
 **Execução em homologação.** Variáveis passadas **somente por nome** — nunca com valores secretos em documentação, commits ou logs:
 
@@ -143,6 +158,7 @@ Valida: parsing de argumentos, cálculo de orçamento, ponderação da mistura, 
 | `ILYA_BENCHMARK_USERNAME` | Usuário técnico `benchmark_readonly` | **sim** |
 | `ILYA_BENCHMARK_PASSWORD` | Senha do usuário técnico | **sim** |
 | `ILYA_BENCHMARK_MARKET` | Mercado alvo (`BR` ou `EU`) | não |
+| `ILYA_BENCHMARK_METRICS_TOKEN` | Bearer de `/internal/metrics` (= `OBSERVABILITY_METRICS_TOKEN` do alvo) | **sim** |
 
 Exemplo de invocação (variáveis já exportadas no shell/secret manager da janela):
 
@@ -151,10 +167,12 @@ python ops/load/load_generator.py \
   --baseline-p95-ms <p95-do-P12> \
   --postal-mode simulated \
   --output <artefato-privado>.json
+# Sem baseline P12, somente com teto absoluto aprovado no ticket da janela:
+python ops/load/load_generator.py --max-p95-ms <teto-aprovado> --output <artefato-privado>.json
 # Patamar E, somente após D estável e folga de conexões confirmada:
 python ops/load/load_generator.py --include-stage-40 --baseline-p95-ms <p95-do-P12>
 # Diretórios, somente com decisão formal de acesso sintético:
-python ops/load/load_generator.py --include-directories
+python ops/load/load_generator.py --include-directories --baseline-p95-ms <p95-do-P12>
 ```
 
 ---
@@ -200,4 +218,5 @@ limitações registradas:  <ex.: diretórios omitidos; CEP simulado>
 - `docs/BASELINE_AUTENTICADO_P12.md` — baseline autenticado obrigatório (P12).
 - `backend/app/core/config.py`, `backend/startup.py` — defaults de pool e guarda de `WEB_CONCURRENCY`.
 - `ops/load/load_generator.py` — gerador, mistura, orçamento e circuit breaker.
+- `ops/load/pool_metrics_probe.py` — probe autenticado de pool sobre `/internal/metrics` (P10).
 - Gate P11 — identidades `benchmark_readonly` BR/EU.

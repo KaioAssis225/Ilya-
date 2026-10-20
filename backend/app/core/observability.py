@@ -298,7 +298,7 @@ def _process_lines() -> list[str]:
         "# TYPE ilya_process_resident_memory_bytes gauge",
         f"ilya_process_resident_memory_bytes {_rss_bytes()}",
         "# TYPE ilya_process_start_time_seconds gauge",
-        f"ilya_process_start_time_seconds {_PROCESS_STARTED:g}",
+        f"ilya_process_start_time_seconds {_PROCESS_STARTED:.17g}",
         "# TYPE ilya_app_info gauge",
         f'ilya_app_info{{version="{_escape(settings.APP_VERSION)}",workers="{workers}"}} 1',
     ]
