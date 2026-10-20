@@ -1062,7 +1062,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       if (editing) {
         const updatePayload = isEurope
           ? payload
-          : (canClassifyBr ? payload : { ...payload, type: undefined })
+          : {
+              ...payload,
+              description_pt_pt: undefined,
+              description_en: undefined,
+              ...(!canClassifyBr ? { type: undefined } : {}),
+            }
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
         else if (photoRemoved) await deletePhotoM.mutateAsync(updated.id)
