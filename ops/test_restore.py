@@ -327,9 +327,12 @@ def main(argv: list[str] | None = None) -> int:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+            # Via TCP: durante o init a imagem oficial sobe um servidor temporário só
+            # no socket Unix e o reinicia em seguida; checar pelo socket deixava o
+            # createdb cair nessa janela.
             for _ in range(30):
                 ready = subprocess.run(
-                    ["docker", "exec", name, "pg_isready", "-U", "postgres"],
+                    ["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
