@@ -1,7 +1,8 @@
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from app.core.http_client import external_http_client
+from app.core.http_client import external_http_client, external_request
+from app.core.observability import external_fallback, external_invalid
 from app.core.limiter import limiter
 
 router = APIRouter(prefix="/api/v1/utils", tags=["utils"])
@@ -21,9 +22,12 @@ async def lookup_cep(request: Request, response: Response, cep: str):
     if len(clean) != 8:
         raise HTTPException(status_code=422, detail="CEP deve ter 8 dígitos.")
     try:
-        r = await external_http_client.get(_VIACEP_URL.format(cep=clean))
+        r = await external_request("GET", _VIACEP_URL.format(cep=clean), dependency="viacep", client=external_http_client)
         r.raise_for_status()
         data = r.json()
+    except ValueError:
+        external_invalid("viacep")
+        raise HTTPException(status_code=502, detail="Serviço de CEP indisponível.")
     except httpx.HTTPError:
         raise HTTPException(status_code=502, detail="Serviço de CEP indisponível.")
     if data.get("erro"):
@@ -65,7 +69,7 @@ async def lookup_portugal_address(formatted: str) -> dict:
     """GeoAPI.pt primeiro (traz a rua); zippopotam como reserva (só localidade)."""
     not_found = False
     try:
-        r = await external_http_client.get(_PORTUGAL_GEOAPI_URL.format(postal_code=formatted))
+        r = await external_request("GET", _PORTUGAL_GEOAPI_URL.format(postal_code=formatted), dependency="geoapi", client=external_http_client)
         if r.status_code == 404:
             not_found = True
         else:
@@ -73,18 +77,24 @@ async def lookup_portugal_address(formatted: str) -> dict:
             address = portugal_address_from_geoapi(r.json())
             if address["localidade"]:
                 return address
-    except (httpx.HTTPError, ValueError):
-        pass  # indisponível ou resposta inválida: tenta a reserva
+    except ValueError:
+        external_invalid("geoapi")
+    except httpx.HTTPError:
+        pass
+    external_fallback("geoapi")
 
     try:
-        r = await external_http_client.get(_PORTUGAL_POSTAL_URL.format(postal_code=formatted))
+        r = await external_request("GET", _PORTUGAL_POSTAL_URL.format(postal_code=formatted), dependency="zippopotam", client=external_http_client)
         r.raise_for_status()
         data = r.json()
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404 or not_found:
             raise HTTPException(status_code=404, detail="Código postal não encontrado.")
         raise HTTPException(status_code=502, detail="Serviço de código postal indisponível.")
-    except (httpx.HTTPError, ValueError):
+    except ValueError:
+        external_invalid("zippopotam")
+        raise HTTPException(status_code=502, detail="Serviço de código postal indisponível.")
+    except httpx.HTTPError:
         raise HTTPException(status_code=502, detail="Serviço de código postal indisponível.")
     place = (data.get("places") or [{}])[0]
     return {

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from contextlib import suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from slowapi import _rate_limit_exceeded_handler
@@ -23,6 +24,17 @@ from app.core.http_client import close_http_clients
 from app.core.limiter import limiter
 from app.core.login_protection import cleanup_login_attempt_states
 from app.core.request_size import RequestSizeLimitMiddleware
+from app.core.observability import (
+    ENABLED as OBSERVABILITY_ENABLED,
+    begin_request as begin_observed_request,
+    end_request as end_observed_request,
+    http_finished,
+    http_started,
+    registry as observability_registry,
+    request_totals as observed_request_totals,
+    safe_market,
+    safe_route,
+)
 from app.db.session import AsyncSessionLocal, engine
 from app.models.refresh_token import cleanup_expired_tokens
 from app.api.routers import products_router, clients_router, reps_router, orders_router, optionals_router, product_types_router, product_groups_router, catalogs_router, optional_categories_router, users_router, notifications_router, utils_router, import_router, dashboard_router, media_router, integrations_router, privacy_router, markets_router, moloni_router
@@ -239,23 +251,49 @@ async def add_request_id(request: Request, call_next):
     request.state.request_id = request_id
     started = time.perf_counter()
     status_code = 500
+    response_bytes: int | None = None
+    cancelled = False
+    observation_token = None
+    if OBSERVABILITY_ENABLED:
+        observation_token = begin_observed_request()
+        http_started(request.method)
     try:
         response = await call_next(request)
         status_code = response.status_code
+        content_length = response.headers.get("content-length", "")
+        response_bytes = int(content_length) if content_length.isdigit() else None
         response.headers["X-Request-ID"] = request_id
         return response
+    except asyncio.CancelledError:
+        status_code = 499
+        cancelled = True
+        raise
     except Exception:
         logger.exception(
-            "request_id=%s method=%s path=%s status=500",
+            "request_id=%s method=%s route=%s status=500 version=%s",
             request_id,
             request.method,
-            request.url.path,
+            safe_route(request.scope),
+            settings.APP_VERSION,
         )
         raise
     finally:
         duration_ms = (time.perf_counter() - started) * 1000
-        route = request.scope.get("route")
-        route_path = getattr(route, "path", request.url.path)
+        route_path = safe_route(request.scope)
+        market = safe_market(getattr(request.state, "market_code", None))
+        totals = observed_request_totals() if OBSERVABILITY_ENABLED else {}
+        if observation_token is not None:
+            end_observed_request(observation_token)
+        if OBSERVABILITY_ENABLED:
+            http_finished(
+                method=request.method,
+                route=route_path,
+                status=status_code,
+                market=market,
+                duration=duration_ms / 1000,
+                response_bytes=response_bytes,
+                cancelled=cancelled,
+            )
         if route_path.startswith("/health") and status_code < 500:
             log = logger.debug
         else:
@@ -265,12 +303,20 @@ async def add_request_id(request: Request, call_next):
                 else logger.info
             )
         log(
-            "request_id=%s method=%s route=%s status=%s duration_ms=%.1f",
+            "request_id=%s method=%s route=%s status=%s duration_ms=%.1f market=%s version=%s sql_count=%s sql_ms=%.1f db_acquire_count=%s db_acquire_ms=%.1f external_count=%s external_ms=%.1f",
             request_id,
             request.method,
             route_path,
             status_code,
             duration_ms,
+            market,
+            settings.APP_VERSION,
+            int(totals.get("sql_count", 0)),
+            totals.get("sql_seconds", 0) * 1000,
+            int(totals.get("acquire_count", 0)),
+            totals.get("acquire_seconds", 0) * 1000,
+            int(totals.get("external_count", 0)),
+            totals.get("external_seconds", 0) * 1000,
         )
 
 
@@ -295,6 +341,20 @@ app.include_router(integrations_router)
 app.include_router(moloni_router)
 app.include_router(privacy_router)
 app.include_router(markets_router)
+
+
+@app.get(settings.OBSERVABILITY_METRICS_PATH, include_in_schema=False)
+@limiter.exempt
+async def observability_metrics(request: Request):
+    expected = settings.OBSERVABILITY_METRICS_TOKEN
+    supplied = request.headers.get("Authorization", "")
+    authorized = bool(expected) and secrets.compare_digest(supplied, f"Bearer {expected}")
+    if not OBSERVABILITY_ENABLED or not authorized:
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return PlainTextResponse(
+        observability_registry.render(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @app.get("/health", tags=["health"])

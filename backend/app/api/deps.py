@@ -1,6 +1,6 @@
 import uuid
 from typing import AsyncGenerator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -56,7 +56,8 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def get_market_principal(
     token: str = Depends(reusable_oauth2),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    request: Request = None,
 ) -> MarketPrincipal:
     """Valida identidade e mercado e devolve o principal imutável da requisição."""
     credentials_exception = HTTPException(
@@ -78,7 +79,10 @@ async def get_market_principal(
     if not isinstance(token_market, str):
         raise credentials_exception
     try:
-        return await build_market_principal(db, user, token_market)
+        principal = await build_market_principal(db, user, token_market)
+        if request is not None:
+            request.state.market_code = principal.code
+        return principal
     except HTTPException:
         # Retirada de acesso invalida imediatamente o access token existente.
         raise credentials_exception
@@ -87,6 +91,7 @@ async def get_market_principal(
 async def get_authenticated_user(
     token: str = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db_session),
+    request: Request = None,
 ) -> User:
     """Identidade para operações da própria conta em ambos os escopos."""
     credentials_exception = HTTPException(
@@ -103,6 +108,8 @@ async def get_authenticated_user(
             raise credentials_exception
         try:
             await build_market_principal(db, user, market)
+            if request is not None:
+                request.state.market_code = market
         except HTTPException:
             raise credentials_exception
     elif scope == "platform":
