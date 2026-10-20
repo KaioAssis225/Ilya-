@@ -828,10 +828,31 @@ export default function ProdutosPage() {
     setPage(1)
   }
 
-  // Types shown in subgroup dropdown cascade from selected group
-  const availableTypes = selectedGroupId
-    ? productTypes.filter(t => t.group_id === selectedGroupId)
-    : productTypes
+  const availableGroups = useMemo(() =>
+    [...productGroups].sort((a, b) =>
+      localizeFurnitureTerm(a.name, locale).localeCompare(
+        localizeFurnitureTerm(b.name, locale),
+        locale === 'en-GB' ? 'en' : 'pt-BR',
+        { sensitivity: 'base' },
+      ),
+    ),
+  [locale, productGroups])
+
+  // Types shown in subgroup dropdown cascade from selected group. Sort after
+  // every data refresh so types created later also follow the displayed locale.
+  const availableTypes = useMemo(() => {
+    const types = selectedGroupId
+      ? productTypes.filter(t => t.group_id === selectedGroupId)
+      : productTypes
+
+    return [...types].sort((a, b) =>
+      localizeFurnitureTerm(a.name, locale).localeCompare(
+        localizeFurnitureTerm(b.name, locale),
+        locale === 'en-GB' ? 'en' : 'pt-BR',
+        { sensitivity: 'base' },
+      ),
+    )
+  }, [locale, productTypes, selectedGroupId])
 
   const hasFilters = searchTerm || selectedCatalogId || selectedGroupId || selectedTypeName
 
@@ -912,9 +933,9 @@ export default function ProdutosPage() {
             onChange={(e) => handleGroupChange(e.target.value)}
             className="w-full min-h-11 lg:min-h-0 md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
           >
-            <option value="">{t('allGroups')}</option>
-            {productGroups.map(g => (
-              <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale)}</option>
+            <option value="">{t('allGroups').toLocaleUpperCase(locale)}</option>
+            {availableGroups.map(g => (
+              <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale).toLocaleUpperCase(locale)}</option>
             ))}
           </select>
 
@@ -928,9 +949,9 @@ export default function ProdutosPage() {
             className="w-full min-h-11 lg:min-h-0 md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
             disabled={availableTypes.length === 0}
           >
-            <option value="">{t('allSubgroups')}</option>
+            <option value="">{t('allSubgroups').toLocaleUpperCase(locale)}</option>
             {availableTypes.map(t => (
-              <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale)}</option>
+              <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale).toLocaleUpperCase(locale)}</option>
             ))}
           </select>
 
