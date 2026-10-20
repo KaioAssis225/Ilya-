@@ -1,7 +1,8 @@
 # Plano de correção após a revisão P01–P20
 
-**Estado:** planejado; nenhuma correção deste plano foi aplicada. Base da revisão:
-`26da1b6d`. Este documento reúne os achados verificados no checkout, a triagem
+**Estado em 20/10/2026:** R01–R11 implementados e validados localmente; aceite
+empírico de P12/P13/P14 ainda pendente. Base da revisão: `26da1b6d`.
+Este documento reúne os achados verificados no checkout, a triagem
 do DeepSeek Flash (low) e a revisão independente do Claude Opus (high). O Codex
 orquestra, confere os diffs e registra os resultados; Fable não participa.
 
@@ -91,3 +92,49 @@ arquivos. Fazer commits separados por frente para facilitar revisão e reversão
   passarem, o checkpoint combinado estiver verde e o workflow não prometer
   cobertura que não executa. A **campanha P01–P20** só terá aceite global após
   os gates externos de P12/P13 e as decisões condicionais de P14 documentadas.
+
+## 6. Execução local e evidências (20/10/2026)
+
+- **P13, R01–R05:** limite p95 obrigatório fora do dry-run; probe autenticado de
+  `/internal/metrics` que falha fechado; somente 1 réplica × 1 worker até existir
+  coleta agregada; janela deslizante de 120 s; estatísticas por identidade do
+  cenário; dry-run valida a allowlist quando recebe URL. A série de início do
+  processo passou a preservar precisão suficiente para detectar reinício.
+  Commit `82c4a003`. Os 74 testes focados passaram; dry-run sem URL retornou
+  `allowlist_status: unverified` sem rede.
+- **P15, R06–R08:** origem comercial exige HTTPS e validação antes do login;
+  credenciais BR/EU ausentes com sonda habilitada produzem `config_error` e
+  saída 2; cookies, inclusive valores entre aspas e atributos, são redigidos
+  sem engolir texto/PII posterior. O scheduler usa título próprio para erro de
+  configuração e considera ambos os títulos na recuperação. Commit `f187256e`.
+  Os 20 testes focados e 24 subcasos passaram.
+- **P17, R09–R10:** nightly inicia backend/frontend após migrations e seed,
+  aguarda disponibilidade e seleciona os projetos Chromium desktop, Chromium
+  mobile e WebKit por `--project`. Commit `eef4510d`. A listagem mostrou 18
+  casos, seis por projeto, e o YAML/Compose foram validados.
+- **P20, R11:** lint exige zero aviso; carregamento inicial e refresh dos
+  componentes afetados foram ajustados. Commit `c69f8793`. Lint e build
+  passaram.
+- **Checkpoint combinado:** 105 testes operacionais e 26 subcasos passaram;
+  backend sem integração: 713 passaram; Vitest: 86 passaram; lint com zero
+  aviso e build passaram. Integrações PostgreSQL/Redis/MinIO passaram em banco
+  descartável separado do seed E2E. As seis jornadas Chromium passaram juntas,
+  sem retry, após correções adicionais de CORS, seletor da senha, domínio de
+  e-mail aceito pela API, traduções e preços obrigatórios no seed EU. O seed
+  Após o ajuste final do formulário, seus quatro testes específicos, lint e
+  build passaram novamente. O seed atualizado passou duas execuções idempotentes e uma primeira execução em
+  banco novo; o banco novo continha zero e-mails `.invalid`, quatro preços EU
+  e descrição inglesa.
+- **Limites do checkpoint:** neste checkout Windows em unidade de rede, o
+  bind mount do frontend no Docker não expôs `package-lock.json`; o smoke usou
+  Vite local com API, Postgres, Redis e MinIO em contêineres descartáveis. A
+  imagem de testes do backend não contém `ops/`, então o teste de diagnóstico
+  fora da marca de integração foi ignorado apenas na coleta dentro da imagem;
+  a suíte de integração marcada passou. Chromium mobile e WebKit foram
+  listados, sem executar navegadores reais nesta rodada. Nenhuma carga real,
+  sonda comercial credenciada, deploy ou push foi feita.
+- **Aceite externo:** ainda exige ambiente de homologação, contas técnicas,
+  coletor/topologia coberta, teto de latência aprovado ou baseline P12 e janela
+  autorizada. P12 requer sete horários válidos; P13 requer rampa real com
+  abortos observáveis; P14 permanece condicional às medições. Esses itens não
+  são comprovados pelos testes locais acima.
