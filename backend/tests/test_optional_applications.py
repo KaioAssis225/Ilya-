@@ -84,7 +84,7 @@ def test_product_without_optionals_and_single_optional_application():
 def test_required_and_optional_applications():
     product, required, optional = fixture()
     another = SimpleNamespace(**{**required.__dict__, "id": uuid.uuid4(), "name": "Pintura do encosto", "required": False})
-    with pytest.raises(HTTPException, match="") as error:
+    with pytest.raises(HTTPException) as error:
         resolve(product, [required, another], [optional])
     assert "Pintura dos pés" in error.value.detail
     assert len(resolve(product, [required, another], [optional], [(required.id, optional.id)])) == 1

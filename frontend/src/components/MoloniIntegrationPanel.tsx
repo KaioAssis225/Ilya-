@@ -34,7 +34,20 @@ export default function MoloniIntegrationPanel() {
     }
   }
 
-  useEffect(() => { load().catch(() => setError('Não foi possível carregar a integração Moloni.')) }, [])
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await platformApi.get<MoloniStatus>('/integrations/moloni/status')
+        setStatus(response.data)
+        if (response.data.company_id) setCompanyId(String(response.data.company_id))
+        if (response.data.tax_mappings.length) {
+          setMappings(response.data.tax_mappings.map(item => ({ vat_rate: item.vat_rate, moloni_tax_id: String(item.moloni_tax_id) })))
+        }
+      } catch {
+        setError('Não foi possível carregar a integração Moloni.')
+      }
+    })()
+  }, [])
 
   async function connect() {
     setBusy(true); setError(null); setNotice(null)

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'vitest'
 
 import { formatChoice, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
 import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'

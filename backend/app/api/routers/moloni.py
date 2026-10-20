@@ -15,6 +15,7 @@ from app.api.deps import get_db_session, require_platform_capability
 from app.core.config import settings
 from app.core.markets import PlatformPrincipal
 from app.core.moloni_crypto import encrypt_token
+from app.core.observability import external_exception, external_invalid, httpx_event_hooks
 from app.models.moloni import MoloniConnection, MoloniOAuthState, MoloniExportJob, MoloniTaxMapping
 from app.models.order import Order
 from app.services.moloni_jobs import enqueue_finalized_eu_order
@@ -57,11 +58,15 @@ async def callback(code: str = Query(min_length=1), state: str = Query(min_lengt
         raise HTTPException(400, "Autorização Moloni inválida ou expirada.")
     _require_oauth_settings()
     try:
-        async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS) as client:
-            response = await client.get(settings.MOLONI_API_BASE_URL.rstrip("/") + "/grant/", params={"grant_type": "authorization_code", "client_id": settings.MOLONI_CLIENT_ID, "client_secret": settings.MOLONI_CLIENT_SECRET, "redirect_uri": settings.MOLONI_REDIRECT_URI, "code": code})
+        async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS, event_hooks=httpx_event_hooks()) as client:
+            response = await client.get(settings.MOLONI_API_BASE_URL.rstrip("/") + "/grant/", params={"grant_type": "authorization_code", "client_id": settings.MOLONI_CLIENT_ID, "client_secret": settings.MOLONI_CLIENT_SECRET, "redirect_uri": settings.MOLONI_REDIRECT_URI, "code": code}, extensions={"ilya_dependency": "moloni"})
         response.raise_for_status(); token = response.json()
         access, refresh = token["access_token"], token["refresh_token"]
-    except (httpx.HTTPError, KeyError, TypeError):
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, httpx.HTTPError):
+            external_exception(exc)
+        else:
+            external_invalid("moloni")
         raise HTTPException(502, "Moloni recusou a autorização. Tente conectar novamente.")
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.company_id == row.company_id).with_for_update())).scalar_one_or_none()
     expiry = now + timedelta(seconds=int(token.get("expires_in", 0) or 0))

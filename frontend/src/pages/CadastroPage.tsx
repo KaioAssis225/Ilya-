@@ -1074,7 +1074,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       if (editing) {
         const updatePayload = isEurope
           ? payload
-          : (canClassifyBr ? payload : { ...payload, type: undefined })
+          : {
+              ...payload,
+              description_pt_pt: undefined,
+              description_en: undefined,
+              ...(!canClassifyBr ? { type: undefined } : {}),
+            }
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
         else if (photoRemoved) await deletePhotoM.mutateAsync(updated.id)
@@ -3410,7 +3415,7 @@ export default function CadastroPage() {
 
   // Bloco 77: restaura aba e paginação da última visita, com TTL de 5 minutos —
   // depois disso, volta silenciosamente aos valores padrão.
-  const persisted = useRef(loadPersistedCadastroState()).current
+  const [persisted] = useState(loadPersistedCadastroState)
   const allowedTabs = new Set(visibleTabs.map(t => t.key))
   const initialTab = persisted?.tab && allowedTabs.has(persisted.tab) ? persisted.tab : defaultTab
   const [tab, setTab] = useState<Tab>(initialTab)

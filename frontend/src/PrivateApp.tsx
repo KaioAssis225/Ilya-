@@ -29,6 +29,10 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
+function formatNotificationDate(value: string, locale: string) {
+  return new Date(value).toLocaleString(locale)
+}
+
 function isCliente(user: AuthUser) {
   // SEC-01: role própria `cliente`; mantém o legado `vendedor`+linked_id até a migração propagar.
   return user.role === 'cliente' || (user.role === 'vendedor' && !!user.linked_id)
@@ -186,11 +190,11 @@ function Nav() {
   return (
     <>
       <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label={t('mainNavigation')}>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 min-w-0">
           <div
-            className="mr-3 whitespace-nowrap font-display text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
+            className="mr-3 min-w-0 truncate whitespace-nowrap font-display text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
           >
-            {brandName} <span className="text-xs font-semibold tracking-[0.08em] text-gold sm:text-sm">— {marketName}</span>
+            {brandName} <span className="hidden text-xs font-semibold tracking-[0.08em] text-gold sm:inline sm:text-sm">— {marketName}</span>
           </div>
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
@@ -211,7 +215,7 @@ function Nav() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3 md:gap-4 text-xs">
+        <div className="flex items-center gap-1 sm:gap-3 md:gap-4 text-xs shrink-0">
           <LanguageSwitcher />
           <MarketSwitcher />
           <div className="relative">
@@ -247,7 +251,7 @@ function Nav() {
                         >
                           <span className="block text-xs text-ink">{n.message}</span>
                           <span className="block text-[10px] text-muted-3 mt-0.5">
-                            {new Date(n.created_at).toLocaleString(user.active_market === 'EU' ? locale : 'pt-BR')}
+                            {formatNotificationDate(n.created_at, user.active_market === 'EU' ? locale : 'pt-BR')}
                           </span>
                         </button>
                       </li>
@@ -262,7 +266,7 @@ function Nav() {
             className="min-h-11 px-1 text-right hover:opacity-70 transition-opacity cursor-pointer"
             aria-label={`Abrir perfil de ${user.full_name}`}
           >
-            <span className="block font-medium text-ink max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
+            <span className="block font-medium text-ink max-w-[72px] sm:max-w-[120px] md:max-w-none truncate">{user.full_name}</span>
             <span className="hidden sm:block text-[10px] uppercase tracking-wider text-gold/80">{user.role}</span>
           </button>
           <button

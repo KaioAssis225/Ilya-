@@ -2,14 +2,15 @@
   "compilerOptions": {
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
+    "jsx": "react-jsx",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src/**/*.test.ts"]
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/setup.ts"]
 }

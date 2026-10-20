@@ -14,6 +14,7 @@ class UserRole(str, enum.Enum):
     produtos = "produtos"
     cliente = "cliente"            # conta de portal do cliente-final (linked_id = client_id)
     executivo = "executivo"        # acesso exclusivo ao Dashboard BI (Bloco 95)
+    benchmark_readonly = "benchmark_readonly"  # identidade técnica por mercado (P11)
 
 
 class User(Base, TimestampMixin):

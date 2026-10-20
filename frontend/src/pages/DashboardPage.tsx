@@ -27,6 +27,10 @@ function fmtAxis(key: string, granularity: string, locale: string) {
   return new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit' }).format(d)
 }
 
+function fmtIsoDate(iso: string, locale: string) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString(locale)
+}
+
 function todayISO(offsetDays = 0) {
   const d = new Date()
   d.setDate(d.getDate() + offsetDays)
@@ -113,8 +117,8 @@ export default function DashboardPage() {
   const currencyCode = user?.active_market === 'EU' ? 'EUR' : 'BRL'
   const currency = useMemo(() => new Intl.NumberFormat(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 }), [locale, currencyCode])
   const integer = useMemo(() => new Intl.NumberFormat(locale), [locale])
-  const [startDate, setStartDate] = useState(todayISO(-29))
-  const [endDate, setEndDate] = useState(todayISO())
+  const [startDate, setStartDate] = useState(() => todayISO(-29))
+  const [endDate, setEndDate] = useState(() => todayISO())
   const [repId, setRepId] = useState('')
   const [repQuery, setRepQuery] = useState('')
   const [region, setRegion] = useState('')
@@ -248,7 +252,7 @@ export default function DashboardPage() {
         </div>
         {data && (
           <p className="text-right text-xs text-muted mb-4">
-            {new Date(data.start_date + 'T12:00:00').toLocaleDateString(locale)} a {new Date(data.end_date + 'T12:00:00').toLocaleDateString(locale)}
+            {fmtIsoDate(data.start_date, locale)} a {fmtIsoDate(data.end_date, locale)}
             {region && ` · ${region}`}
             {repId && ` · ${selectedRep?.name ?? reps.find(r => r.id === repId)?.name ?? ''}`}
           </p>

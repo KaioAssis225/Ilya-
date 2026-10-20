@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -28,6 +29,7 @@ from sqlalchemy import select
 
 from app.core import webhook_signature as ws
 from app.core.config import settings
+from app.core.observability import external_observe
 from app.db.session import AsyncSessionLocal
 from app.models.integration_outbox import IntegrationOutbox
 from app.services.integration_events import serialize_envelope
@@ -135,6 +137,7 @@ async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None
     body = serialize_envelope(row.payload)
     headers = ws.build_headers(settings.WEBHOOK_SECRET, str(row.event_id), body)
     row.attempts = (row.attempts or 0) + 1
+    external_started = time.perf_counter()
 
     try:
         async with client.stream(
@@ -144,6 +147,12 @@ async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None
             headers=headers,
             timeout=settings.WEBHOOK_TIMEOUT_SECONDS,
         ) as response:
+            external_observe(
+                "webhook",
+                status=response.status_code,
+                outcome="http",
+                duration=time.perf_counter() - external_started,
+            )
             outcome = classify_response(response.status_code)
 
             if outcome == DELIVERED:
@@ -179,6 +188,16 @@ async def deliver_one(client: httpx.AsyncClient, row: IntegrationOutbox) -> None
                 override_delay=_retry_after_seconds(response),
             )
     except httpx.HTTPError as exc:
+        external_observe(
+            "webhook",
+            status=None,
+            outcome=(
+                "timeout" if isinstance(exc, httpx.TimeoutException)
+                else "connect_error" if isinstance(exc, httpx.ConnectError)
+                else "error"
+            ),
+            duration=time.perf_counter() - external_started,
+        )
         # Rede fora, DNS, timeout: sempre retentável.
         _schedule_retry(row, _truncate_error(f"{type(exc).__name__}: {exc}"))
         return

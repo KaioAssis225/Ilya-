@@ -15,4 +15,4 @@ RUN mkdir -p app/static/uploads && \
 USER ilya
 
 EXPOSE 8000
-CMD ["python", "startup.py"]
+CMD ["python", "startup.py", "serve"]

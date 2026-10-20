@@ -78,7 +78,7 @@ class UserMarket(Base, TimestampMixin):
         CheckConstraint(
             "role IS NULL OR role IN "
             "('admin', 'vendedor', 'representante', 'cadastros', "
-            "'produtos', 'cliente', 'executivo')",
+            "'produtos', 'cliente', 'executivo', 'benchmark_readonly')",
             name="ck_user_markets_role",
         ),
         CheckConstraint(
@@ -89,7 +89,7 @@ class UserMarket(Base, TimestampMixin):
             "(role IS NULL AND linked_client_id IS NULL AND rep_id IS NULL) OR "
             "(role = 'cliente' AND linked_client_id IS NOT NULL AND rep_id IS NULL) OR "
             "(role = 'representante' AND rep_id IS NOT NULL AND linked_client_id IS NULL) OR "
-            "(role IN ('admin', 'vendedor', 'cadastros', 'produtos', 'executivo') "
+            "(role IN ('admin', 'vendedor', 'cadastros', 'produtos', 'executivo', 'benchmark_readonly') "
             "AND linked_client_id IS NULL AND rep_id IS NULL)",
             name="ck_user_markets_role_links",
         ),

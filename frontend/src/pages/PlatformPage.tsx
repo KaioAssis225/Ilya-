@@ -66,22 +66,38 @@ export default function PlatformPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const load = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     const marketResponse = await platformApi.get<MarketRead[]>('/markets')
-    setMarkets(marketResponse.data)
+    let userRows: UserRead[] | null = null
     if (platformUser?.capabilities.includes('platform_admin')) {
       const userResponse = await platformApi.get<UserRead[]>('/users', { params: { limit: 200, include_total: false } })
-      setUsers(userResponse.data)
+      userRows = userResponse.data
     }
+    let outboxStatus: OutboxStatus | null = null
     if (platformUser?.capabilities.includes('read_outbox') || platformUser?.capabilities.includes('platform_admin')) {
       const response = await platformApi.get<OutboxStatus>('/integrations/outbox/status')
-      setOutbox(response.data)
+      outboxStatus = response.data
     }
+    return { marketRows: marketResponse.data, userRows, outboxStatus }
   }, [platformUser])
 
+  const applyData = useCallback((data: Awaited<ReturnType<typeof fetchData>>) => {
+    setMarkets(data.marketRows)
+    if (data.userRows !== null) setUsers(data.userRows)
+    if (data.outboxStatus !== null) setOutbox(data.outboxStatus)
+  }, [])
+
+  const load = useCallback(async () => {
+    applyData(await fetchData())
+  }, [fetchData, applyData])
+
   useEffect(() => {
-    load().catch(() => setError('Não foi possível carregar os dados da plataforma.'))
-  }, [load])
+    let active = true
+    void fetchData()
+      .then((data) => { if (active) applyData(data) })
+      .catch(() => { if (active) setError('Não foi possível carregar os dados da plataforma.') })
+    return () => { active = false }
+  }, [fetchData, applyData])
 
   async function toggleEurope(enabled: boolean) {
     setBusy(true)

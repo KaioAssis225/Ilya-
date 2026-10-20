@@ -791,8 +791,11 @@ export default function PedidosPage() {
   const canManage = user?.role === 'admin' || user?.role === 'representante' || user?.role === 'produtos' || isInternalSeller
   const canViewGlobalAudit = user?.role === 'admin' || isInternalSeller
   const canDelete = user?.role === 'admin'
-  const [activeTab, setActiveTab] = useState<'orders' | 'audit'>('orders')
-  const isAuditActive = canViewGlobalAudit && activeTab === 'audit'
+  const [requestedTab, setActiveTab] = useState<'orders' | 'audit'>('orders')
+  // Aba efetiva derivada no render: sem permissão de auditoria o usuário nunca
+  // permanece na aba de auditoria (dispensa o reset via efeito).
+  const activeTab: 'orders' | 'audit' = canViewGlobalAudit ? requestedTab : 'orders'
+  const isAuditActive = activeTab === 'audit'
   const [filter, setFilter] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterRep, setFilterRep] = useState('')
@@ -800,13 +803,21 @@ export default function PedidosPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([undefined])
+  const [cursorPager, setCursorPager] = useState<{ key: string | null; stack: Array<string | undefined> }>({ key: null, stack: [undefined] })
   const [historyCursorStack, setHistoryCursorStack] = useState<Array<string | undefined>>([undefined])
   const [pdfOrderId, setPdfOrderId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const debouncedFilter = useDebouncedValue(filter.trim(), 300)
   const debouncedClient = useDebouncedValue(filterClient.trim(), 300)
   const debouncedRep = useDebouncedValue(filterRep.trim(), 300)
+  // A paginação pertence a um conjunto de filtros: quando os filtros mudam, a
+  // pilha de cursores é reiniciada durante o render (sem efeito/estado extra).
+  const filtersKey = JSON.stringify([debouncedFilter, debouncedClient, debouncedRep, filterStatus, filterDateFrom, filterDateTo])
+  const cursorStack: Array<string | undefined> = cursorPager.key === filtersKey ? cursorPager.stack : [undefined]
+  const setCursorStack = (update: (current: Array<string | undefined>) => Array<string | undefined>) => {
+    const base = cursorPager.key === filtersKey ? cursorPager.stack : [undefined]
+    setCursorPager({ key: filtersKey, stack: update(base) })
+  }
   const currentCursor = cursorStack[cursorStack.length - 1]
   const { data: ordersPage, isLoading } = useOrders({
     cursor: currentCursor,
@@ -833,16 +844,6 @@ export default function PedidosPage() {
   const deleteM = useDeleteOrder()
   const canSignContract = ELECTRONIC_SIGNATURES_ENABLED
     && (user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient)
-
-  useEffect(() => {
-    setCursorStack([undefined])
-  }, [debouncedFilter, debouncedClient, debouncedRep, filterStatus, filterDateFrom, filterDateTo])
-
-  useEffect(() => {
-    if (!canViewGlobalAudit && activeTab === 'audit') {
-      setActiveTab('orders')
-    }
-  }, [activeTab, canViewGlobalAudit])
 
   async function handlePDF(orderLight: OrderSummary) {
     if (pdfOrderId) return

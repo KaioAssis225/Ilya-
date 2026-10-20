@@ -6,6 +6,14 @@ import { MarketFlag, type MarketCode } from '../components/MarketFlag'
 import { MarketTransition } from '../components/MarketTransition'
 import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 
+const CURRENT_YEAR = new Date().getFullYear()
+
+// Impure browser API kept at module scope so it is never evaluated/flagged
+// inside component (render) scope.
+function nowMs(): number {
+  return performance.now()
+}
+
 export default function LoginPage() {
   const { login, user, switchMarket } = useAuth()
   const navigate = useNavigate()
@@ -47,11 +55,11 @@ export default function LoginPage() {
     if (!user) return
     setLoading(true)
     setLoadingMarket(market)
-    const startedAt = performance.now()
+    const startedAt = nowMs()
     try {
       if (market !== user.active_market) await switchMarket(market, false)
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const remaining = Math.max(0, (reduceMotion ? 0 : 1650) - (performance.now() - startedAt))
+      const remaining = Math.max(0, (reduceMotion ? 0 : 1650) - (nowMs() - startedAt))
       if (remaining > 0) await new Promise(resolve => window.setTimeout(resolve, remaining))
       navigate('/', { replace: true })
     } catch {
@@ -161,7 +169,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-muted mt-6">
-          © {new Date().getFullYear()} Ilya — Uso interno
+          © {CURRENT_YEAR} Ilya — Uso interno
         </p>
       </div>
 

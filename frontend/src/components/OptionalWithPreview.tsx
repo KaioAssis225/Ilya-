@@ -12,27 +12,27 @@ export function OptionalWithPreview({ label, swatch }: Props) {
   const [pos, setPos] = useState<{ x: number; y: number; below: boolean } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  function open() {
+  function handleOpen() {
     const rect = triggerRef.current?.getBoundingClientRect()
     if (!rect) return
     const below = rect.top < 160
     setPos({ x: rect.left + rect.width / 2, y: below ? rect.bottom + 8 : rect.top - 8, below })
   }
-  const close = () => setPos(null)
+  const handleClose = () => setPos(null)
 
   useEffect(() => {
     if (!pos) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose() }
     const onPointer = (e: PointerEvent) => {
-      if (!triggerRef.current?.contains(e.target as Node)) close()
+      if (!triggerRef.current?.contains(e.target as Node)) handleClose()
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('pointerdown', onPointer)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('scroll', handleClose, true)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('pointerdown', onPointer)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('scroll', handleClose, true)
     }
   }, [pos])
 
@@ -50,12 +50,12 @@ export function OptionalWithPreview({ label, swatch }: Props) {
         className="inline-flex items-center gap-1 cursor-help rounded-sm text-left"
         aria-expanded={pos !== null}
         aria-label={`Ver acabamento ${label}`}
-        onMouseEnter={open}
-        onMouseLeave={close}
-        onBlur={close}
+        onMouseEnter={handleOpen}
+        onMouseLeave={handleClose}
+        onBlur={handleClose}
         // Toque emula mouseenter antes do click: abrir (e não alternar) evita
         // que o popup feche no mesmo toque. Fecha por Escape, blur ou toque fora.
-        onClick={open}
+        onClick={handleOpen}
       >
         <img src={swatch} alt="" className="w-4 h-4 rounded object-cover border border-line flex-shrink-0" />
         {text}
