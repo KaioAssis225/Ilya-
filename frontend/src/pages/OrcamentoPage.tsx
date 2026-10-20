@@ -973,7 +973,12 @@ export default function OrcamentoPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const productRef = useRef<HTMLDivElement>(null)
   const itemsSectionRef = useRef<HTMLElement>(null)
-  const handledConfigureCodeRef = useRef<string | null>(null)
+  // Último `?configure=` já processado. O ajuste de estado correspondente roda
+  // durante o render (padrão do React para reagir a dados que chegam depois),
+  // não dentro de um efeito — evita renders em cascata.
+  const [handledConfigureCode, setHandledConfigureCode] = useState<string | null>(null)
+  const setSearchParamsRef = useRef(setSearchParams)
+  useEffect(() => { setSearchParamsRef.current = setSearchParams })
 
   const debouncedProductQuery = useDebouncedValue(productQuery.trim(), 300)
   const debouncedClientQuery = useDebouncedValue(clientQuery.trim(), 300)
@@ -990,31 +995,39 @@ export default function OrcamentoPage() {
     sort_dir: 'asc',
   })
   const products = productSearch.data?.items ?? EMPTY_PRODUCTS
+  // `?configure=CODE` (link vindo de outra página) adiciona o produto uma única
+  // vez. O ajuste de estado acontece durante o render — e não dentro de um
+  // efeito, que dispararia renders em cascata.
+  if (configureCode && cartHydrated && handledConfigureCode !== configureCode) {
+    const configureProduct = products.find(item => item.product_code === configureCode)
+    if (configureProduct) {
+      setHandledConfigureCode(configureCode)
+      setCart(previous => [...previous, {
+        line_id: crypto.randomUUID(),
+        product_code: configureProduct.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: initialLegacyOptionCategories(configureProduct),
+        optional_choices: [],
+        _product: configureProduct,
+      }])
+      setSelectedProduct(null)
+      setSelectedChoices([])
+      setCartFilter('')
+      setProductQuery('')
+      setConfigureCode(null)
+    }
+  }
+
   useEffect(() => {
-    if (!configureCode || !cartHydrated || handledConfigureCodeRef.current === configureCode) return
-    const product = products.find(item => item.product_code === configureCode)
-    if (!product) return
-    handledConfigureCodeRef.current = configureCode
-    setCart(previous => [...previous, {
-      line_id: crypto.randomUUID(),
-      product_code: product.product_code,
-      qty: 1,
-      discount: 0,
-      opt_categories: initialLegacyOptionCategories(product),
-      optional_choices: [],
-      _product: product,
-    }])
-    setSelectedProduct(null)
-    setSelectedChoices([])
-    setCartFilter('')
-    setProductQuery('')
-    setConfigureCode(null)
-    setSearchParams({}, { replace: true })
-    window.requestAnimationFrame(() => {
+    if (!handledConfigureCode) return
+    setSearchParamsRef.current({}, { replace: true })
+    const frame = window.requestAnimationFrame(() => {
       itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       itemsSectionRef.current?.focus({ preventScroll: true })
     })
-  }, [cartHydrated, configureCode, products, setSearchParams])
+    return () => window.cancelAnimationFrame(frame)
+  }, [handledConfigureCode])
   const clientSearch = useClientsPage({
     skip: 0,
     limit: 15,

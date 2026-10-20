@@ -76,6 +76,10 @@ export default function AdminPage() {
     ? Math.max(1, Math.ceil(totalUsers / USERS_PER_PAGE))
     : Math.max(1, userPage)
   const safeUserPage = usersPage ? Math.min(Math.max(1, userPage), totalUserPages) : userPage
+  // Ajuste em tempo de render (padrão documentado pelo React): se o total encolheu
+  // (ex.: busca/filtro), a página atual fica fora de faixa e a query buscaria vazio.
+  // Condicional e convergente: re-renderiza uma vez com a página já limitada.
+  if (usersPage && userPage > totalUserPages) setUserPage(totalUserPages)
   const createM = useCreateUser()
   const updateM = useUpdateUser()
   const resetPwM = useResetUserPassword()
@@ -114,10 +118,6 @@ export default function AdminPage() {
     ...(selectedRep ? [selectedRep] : []),
     ...(repsPage?.items ?? []).filter((rep) => rep.id !== selectedRep?.id),
   ]
-
-  useEffect(() => {
-    void safeUserPage
-  }, [usersPage, totalUserPages, userPage])
 
   function showToast(msg: string) {
     setToast(msg)

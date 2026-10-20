@@ -64,6 +64,11 @@ function errorDetail(error: unknown, fallback: string) {
   return typeof detail === 'string' ? detail : fallback
 }
 
+async function fetchIncidents(): Promise<PrivacyIncident[]> {
+  const response = await api.get<PrivacyIncident[]>('/privacy/incidents')
+  return response.data
+}
+
 export default function IncidentRegistryPanel() {
   const [incidents, setIncidents] = useState<PrivacyIncident[]>([])
   const [loading, setLoading] = useState(true)
@@ -80,8 +85,7 @@ export default function IncidentRegistryPanel() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await api.get<PrivacyIncident[]>('/privacy/incidents')
-      setIncidents(response.data)
+      setIncidents(await fetchIncidents())
     } catch (requestError) {
       setError(errorDetail(requestError, 'Não foi possível carregar os incidentes.'))
     } finally {
@@ -90,8 +94,17 @@ export default function IncidentRegistryPanel() {
   }, [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    fetchIncidents()
+      .then((data) => {
+        setIncidents(data)
+      })
+      .catch((requestError: unknown) => {
+        setError(errorDetail(requestError, 'Não foi possível carregar os incidentes.'))
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }, [])
 
   function showNotice(message: string) {
     setNotice(message)

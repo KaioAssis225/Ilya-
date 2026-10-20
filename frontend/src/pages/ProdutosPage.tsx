@@ -101,12 +101,15 @@ function FullProductImage({ product }: { product: Product }) {
   const preview = product.thumbnail_url ?? product.photo_url
   const original = product.photo_url
   const hasDistinctPreview = Boolean(preview && original && preview !== original)
-  const [originalLoaded, setOriginalLoaded] = useState(
-    () => Boolean(original && loadedFullImages.has(original)),
+  // Qual `original` já está carregado (cache do módulo) é derivado no render:
+  // quando a prop muda, a comparação `loadedSource === original` resolve sem
+  // precisar de setState dentro do efeito.
+  const [loadedSource, setLoadedSource] = useState<string | null>(
+    () => (original != null && loadedFullImages.has(original) ? original : null),
   )
+  const originalLoaded = original != null && loadedSource === original
 
   useEffect(() => {
-    setOriginalLoaded(Boolean(original && loadedFullImages.has(original)))
     if (original) {
       void preloadFullImage(original, 'high').catch(() => undefined)
     }
@@ -137,7 +140,7 @@ function FullProductImage({ product }: { product: Product }) {
           fetchPriority="high"
           onLoad={() => {
             loadedFullImages.add(original)
-            setOriginalLoaded(true)
+            setLoadedSource(original)
           }}
           className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-700 ease-out ${
             originalLoaded ? 'opacity-100' : 'opacity-0'
@@ -404,7 +407,9 @@ function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
 function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; label: string; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
   useEffect(() => {
     const returnFocus = document.activeElement as HTMLElement | null
     closeRef.current?.focus()
@@ -447,8 +452,11 @@ function ProductFullView({
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   const mobileOptModalRef = useRef(mobileOptModal)
-  onCloseRef.current = onClose
-  mobileOptModalRef.current = mobileOptModal
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+    mobileOptModalRef.current = mobileOptModal
+  }, [onClose, mobileOptModal])
 
   useEffect(() => {
     const returnFocus = document.activeElement as HTMLElement | null
@@ -687,6 +695,13 @@ export default function ProdutosPage() {
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
   const [availablePriceTables, setAvailablePriceTables] = useState<PriceKey[]>([])
+  // Tabela de preço efetivamente exibida. Se a escolhida não estiver disponível
+  // (ex.: a página atual não trouxe preço corporativo), cai na primeira que
+  // estiver — derivado no render, sem efeito para corrigir o estado.
+  const activePriceTable: PriceTable =
+    availablePriceTables.length === 0 || availablePriceTables.includes(priceTable)
+      ? priceTable
+      : availablePriceTables[0]
   const cartQuantities = useCartQuantities(user?.id, user?.active_market)
   // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
   // virando um mosaico de painéis abertos ao mesmo tempo.
@@ -711,36 +726,44 @@ export default function ProdutosPage() {
   const totalPages = productsPage
     ? Math.max(1, Math.ceil(totalProducts / PAGE_SIZE))
     : Math.max(1, page)
+  // Página fora do intervalo (o total pode encolher entre refetches): corrige
+  // durante o render — estado derivado, sem efeito a disparar renders em
+  // cascata. A condição é idempotente, então o loop termina na primeira troca.
+  if (productsPage && page > totalPages) setPage(totalPages)
 
   useEffect(() => {
-    localStorage.setItem(PRICE_TABLE_KEY, priceTable)
-  }, [priceTable])
+    localStorage.setItem(PRICE_TABLE_KEY, activePriceTable)
+  }, [activePriceTable])
 
-  useEffect(() => {
+  // Operadores podem preparar a nova tabela mesmo enquanto produtos antigos
+  // ainda não possuem valor Arquiteto cadastrado.
+  const operatorOnEU = user?.active_market === 'EU' && user.role !== 'cliente'
+  const priceTableDiscovery = useMemo(() => {
     const discovered = (['lojista', 'corporativo', 'pvp', 'arquiteto'] as PriceKey[]).filter(key =>
       products.some(product => product.market_prices?.[key] != null ||
         (key === 'lojista' && product.price_lojista != null) ||
         (key === 'corporativo' && product.price_corporativo != null))
     )
-    if (user?.active_market === 'EU' && user.role !== 'cliente') {
-      // Operadores podem preparar a nova tabela mesmo enquanto produtos antigos
-      // ainda não possuem valor Arquiteto cadastrado.
-      setAvailablePriceTables(['lojista', 'corporativo', 'pvp', 'arquiteto'])
-      return
-    }
-    const allowed = user?.active_market === 'BR'
-      ? (['lojista', 'corporativo'] as PriceKey[])
-      : discovered
-    setAvailablePriceTables(current => Array.from(new Set([
-      ...current.filter(key => allowed.includes(key)),
-      ...discovered,
-    ])))
-  }, [products, user?.active_market, user?.role])
-
-  useEffect(() => {
-    if (availablePriceTables.length === 0) return
-    if (!availablePriceTables.includes(priceTable)) setPriceTable(availablePriceTables[0])
-  }, [availablePriceTables, priceTable])
+    const allowed: PriceKey[] = operatorOnEU
+      ? ['lojista', 'corporativo', 'pvp', 'arquiteto']
+      : user?.active_market === 'BR'
+        ? ['lojista', 'corporativo']
+        : discovered
+    return { discovered, allowed }
+  }, [products, operatorOnEU, user?.active_market])
+  // Ajuste de estado durante o render (estado derivado, padrão do React — não
+  // um efeito): mantém o caráter sticky do que já foi detectado e combina com
+  // o que esta página trouxe, sem cascata de renders.
+  const [appliedPriceTableDiscovery, setAppliedPriceTableDiscovery] = useState<typeof priceTableDiscovery | null>(null)
+  if (appliedPriceTableDiscovery !== priceTableDiscovery) {
+    setAppliedPriceTableDiscovery(priceTableDiscovery)
+    setAvailablePriceTables(operatorOnEU
+      ? (['lojista', 'corporativo', 'pvp', 'arquiteto'] as PriceKey[])
+      : Array.from(new Set([
+        ...availablePriceTables.filter(key => priceTableDiscovery.allowed.includes(key)),
+        ...priceTableDiscovery.discovered,
+      ])))
+  }
 
   useEffect(() => {
     if (products.length === 0) return
@@ -760,10 +783,6 @@ export default function ProdutosPage() {
 
     return () => window.clearTimeout(timer)
   }, [products])
-
-  useEffect(() => {
-    if (productsPage && page > totalPages) setPage(totalPages)
-  }, [productsPage, page, totalPages])
 
   useEffect(() => {
     if (!productsPage || page >= totalPages) return
@@ -917,7 +936,7 @@ export default function ProdutosPage() {
 
           {/* Seletor de tabela: fica sempre à vista para o representante
               conferir o estado de relance ANTES de virar a tela para o cliente. */}
-          {availablePriceTables.length > 1 && <PriceTableToggle value={priceTable} onChange={setPriceTable} available={availablePriceTables} />}
+          {availablePriceTables.length > 1 && <PriceTableToggle value={activePriceTable} onChange={setPriceTable} available={availablePriceTables} />}
 
           {hasFilters && (
             <button
@@ -1024,7 +1043,7 @@ export default function ProdutosPage() {
                       <span className="type-label whitespace-nowrap">{localizeFurnitureTerm(product.type, locale)}</span>
                     )}
                   </div>
-                  <CardText product={product} priceTable={priceTable} />
+                  <CardText product={product} priceTable={activePriceTable} />
                 </div>
               </button>
 
@@ -1185,7 +1204,7 @@ export default function ProdutosPage() {
       {selected && user && (
         <ProductFullView
           product={selected}
-          priceTable={priceTable}
+          priceTable={activePriceTable}
           userId={user.id}
           market={user.active_market}
           onClose={() => setSelected(null)}
