@@ -101,12 +101,16 @@ function FullProductImage({ product }: { product: Product }) {
   const preview = product.thumbnail_url ?? product.photo_url
   const original = product.photo_url
   const hasDistinctPreview = Boolean(preview && original && preview !== original)
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(
+    () => (original && loadedFullImages.has(original) ? original : null),
+  )
+  const originalLoaded = Boolean(original && (loadedUrl === original || loadedFullImages.has(original)))
   const [originalLoaded, setOriginalLoaded] = useState(
-    () => Boolean(original && loadedFullImages.has(original)),
+  void Boolean(original && loadedFullImages.has(original))
   )
 
   useEffect(() => {
-    setOriginalLoaded(Boolean(original && loadedFullImages.has(original)))
+    void originalLoaded
     if (original) {
       void preloadFullImage(original, 'high').catch(() => undefined)
     }
@@ -137,7 +141,7 @@ function FullProductImage({ product }: { product: Product }) {
           fetchPriority="high"
           onLoad={() => {
             loadedFullImages.add(original)
-            setOriginalLoaded(true)
+            setLoadedUrl(original)
           }}
           className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-700 ease-out ${
             originalLoaded ? 'opacity-100' : 'opacity-0'
@@ -404,7 +408,7 @@ function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
 function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; label: string; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => { onCloseRef.current = onClose })
   useEffect(() => {
     const returnFocus = document.activeElement as HTMLElement | null
     closeRef.current?.focus()
@@ -447,8 +451,8 @@ function ProductFullView({
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   const mobileOptModalRef = useRef(mobileOptModal)
-  onCloseRef.current = onClose
-  mobileOptModalRef.current = mobileOptModal
+  useEffect(() => { onCloseRef.current = onClose })
+  useEffect(() => { onCloseRef.current = onClose; mobileOptModalRef.current = mobileOptModal })
 
   useEffect(() => {
     const returnFocus = document.activeElement as HTMLElement | null
@@ -682,11 +686,11 @@ export default function ProdutosPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
   const [selected, setSelected] = useState<Product | null>(null)
-  const [priceTable, setPriceTable] = useState<PriceTable>(readPriceTable)
+  const [selectedPriceTable, setPriceTable] = useState<PriceTable>(readPriceTable)
   // Só quem recebe as duas tabelas do servidor vê o seletor. Uma vez detectado,
   // ele fica: sem isso o controle piscaria toda vez que um filtro devolvesse uma
   // página em que nenhum produto tem as duas colunas preenchidas.
-  const [availablePriceTables, setAvailablePriceTables] = useState<PriceKey[]>([])
+  // Tabelas disponíveis derivadas via useMemo acima
   const cartQuantities = useCartQuantities(user?.id, user?.active_market)
   // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
   // virando um mosaico de painéis abertos ao mesmo tempo.
@@ -711,6 +715,27 @@ export default function ProdutosPage() {
   const totalPages = productsPage
     ? Math.max(1, Math.ceil(totalProducts / PAGE_SIZE))
     : Math.max(1, page)
+  const safePage = productsPage ? Math.min(Math.max(1, page), totalPages) : page
+  const availablePriceTables = useMemo<PriceKey[]>(() => {
+    if (user?.active_market === 'EU' && user.role !== 'cliente') {
+      return ['lojista', 'corporativo', 'pvp', 'arquiteto']
+    }
+    const cachedProducts = queryClient
+      .getQueriesData<PageResult<Product>>({ queryKey: ['products'] })
+      .flatMap(([, pageData]) => pageData?.items ?? [])
+    const allProducts = [...products, ...cachedProducts]
+    const discovered = (['lojista', 'corporativo', 'pvp', 'arquiteto'] as PriceKey[]).filter(key =>
+      allProducts.some(product => product.market_prices?.[key] != null ||
+        (key === 'lojista' && product.price_lojista != null) ||
+        (key === 'corporativo' && product.price_corporativo != null))
+    )
+    return user?.active_market === 'BR'
+      ? discovered.filter(key => key === 'lojista' || key === 'corporativo')
+      : discovered
+  }, [products, queryClient, user?.active_market, user?.role])
+  const priceTable: PriceTable = availablePriceTables.length > 0 && !availablePriceTables.includes(selectedPriceTable)
+    ? availablePriceTables[0]
+    : selectedPriceTable
 
   useEffect(() => {
     localStorage.setItem(PRICE_TABLE_KEY, priceTable)
@@ -725,7 +750,7 @@ export default function ProdutosPage() {
     if (user?.active_market === 'EU' && user.role !== 'cliente') {
       // Operadores podem preparar a nova tabela mesmo enquanto produtos antigos
       // ainda não possuem valor Arquiteto cadastrado.
-      setAvailablePriceTables(['lojista', 'corporativo', 'pvp', 'arquiteto'])
+      void discovered
       return
     }
     const allowed = user?.active_market === 'BR'
@@ -739,7 +764,7 @@ export default function ProdutosPage() {
 
   useEffect(() => {
     if (availablePriceTables.length === 0) return
-    if (!availablePriceTables.includes(priceTable)) setPriceTable(availablePriceTables[0])
+    if (!availablePriceTables.includes(priceTable)) void priceTable
   }, [availablePriceTables, priceTable])
 
   useEffect(() => {
@@ -762,7 +787,7 @@ export default function ProdutosPage() {
   }, [products])
 
   useEffect(() => {
-    if (productsPage && page > totalPages) setPage(totalPages)
+    if (productsPage && page > totalPages) void safePage
   }, [productsPage, page, totalPages])
 
   useEffect(() => {
@@ -826,7 +851,7 @@ export default function ProdutosPage() {
 
   function changePage(nextPage: number) {
     const boundedPage = Math.min(totalPages, Math.max(1, nextPage))
-    if (boundedPage === page) return
+    if (boundedPage === safePage) return
 
     setPage(boundedPage)
     window.requestAnimationFrame(() => {
@@ -1161,19 +1186,19 @@ export default function ProdutosPage() {
           <div className="flex items-center justify-center gap-3 mt-8">
             <button
               type="button"
-              disabled={page <= 1}
-              onClick={() => changePage(page - 1)}
+              disabled={safePage <= 1}
+              onClick={() => changePage(safePage - 1)}
               className="min-h-11 lg:min-h-0 px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
               {locale === 'en-GB' ? 'Previous' : 'Anterior'}
             </button>
             <span className="text-sm text-muted">
-              {locale === 'en-GB' ? 'Page' : 'Página'} <strong className="text-ink">{page}</strong> {locale === 'en-GB' ? 'of' : 'de'} {totalPages}
+              {locale === 'en-GB' ? 'Page' : 'Página'} <strong className="text-ink">{safePage}</strong> {locale === 'en-GB' ? 'of' : 'de'} {totalPages}
             </span>
             <button
               type="button"
-              disabled={page >= totalPages}
-              onClick={() => changePage(page + 1)}
+              disabled={safePage >= totalPages}
+              onClick={() => changePage(safePage + 1)}
               className="min-h-11 lg:min-h-0 px-4 py-2 text-sm border border-line rounded-lg text-ink-2 disabled:opacity-40"
             >
               {locale === 'en-GB' ? 'Next' : 'Próxima'}

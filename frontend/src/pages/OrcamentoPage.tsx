@@ -197,7 +197,7 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
   const isEnglish = useLocale().locale === 'en-GB'
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => { onCloseRef.current = onClose })
   const [form, setForm] = useState<ClientCreate>(() => emptyPerson(market))
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -566,7 +566,7 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   const isEnglish = useLocale().locale === 'en-GB'
   const closeRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => { onCloseRef.current = onClose })
   useEffect(() => {
     const returnFocus = document.activeElement as HTMLElement | null
     closeRef.current?.focus()
@@ -875,7 +875,7 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
   const isEnglish = useLocale().locale === 'en-GB'
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => { onCloseRef.current = onClose })
   useEffect(() => {
     if (!open) return
     const returnFocus = document.activeElement as HTMLElement | null
@@ -1140,34 +1140,26 @@ export default function OrcamentoPage() {
   }
 
   // O carrinho salvo resolve somente os SKUs necessários, sem baixar o catálogo.
-  useEffect(() => {
-    if (cartHydrated || editId) return
+  if (!cartHydrated && !editId) {
     if (persistedCart.length === 0) {
       setCartHydrated(true)
-      return
+    } else if (resolvedProductQuery.isSuccess) {
+      const productMap = new Map(
+        resolvedProducts.map((product) => [product.product_code, product]),
+      )
+      setCart(
+        persistedCart
+          .filter((item) => productMap.has(item.product_code))
+          .map((item) => ({
+            ...item,
+            line_id: item.line_id || crypto.randomUUID(),
+            optional_choices: item.optional_choices ?? [],
+            _product: productMap.get(item.product_code)!,
+          })),
+      )
+      setCartHydrated(true)
     }
-    if (!resolvedProductQuery.isSuccess) return
-    const productMap = new Map(
-      resolvedProducts.map((product) => [product.product_code, product]),
-    )
-    setCart(
-      persistedCart
-        .filter((item) => productMap.has(item.product_code))
-        .map((item) => ({
-          ...item,
-          line_id: item.line_id || crypto.randomUUID(),
-          optional_choices: item.optional_choices ?? [],
-          _product: productMap.get(item.product_code)!,
-        })),
-    )
-    setCartHydrated(true)
-  }, [
-    cartHydrated,
-    editId,
-    persistedCart,
-    resolvedProductQuery.isSuccess,
-    resolvedProducts,
-  ])
+  }
 
   useEffect(() => {
     if (editId || !cartHydrated) return
@@ -1177,71 +1169,67 @@ export default function OrcamentoPage() {
   }, [cart, cartHydrated, cartKey, editId])
 
   // Sincroniza _product com dados frescos da API (garante observacao e preço atualizados)
-  useEffect(() => {
-    if (resolvedProducts.length === 0) return
-    const productMap = new Map(
-      resolvedProducts.map((product) => [product.product_code, product]),
-    )
-    setCart(prev => prev.map(item => ({
-      ...item,
-      _product: productMap.get(item.product_code) ?? item._product,
-    })))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedProducts])
+  const [prevResolvedProducts, setPrevResolvedProducts] = useState<typeof resolvedProducts | null>(null)
+  if (prevResolvedProducts !== resolvedProducts) {
+    setPrevResolvedProducts(resolvedProducts)
+    if (resolvedProducts.length > 0) {
+      const productMap = new Map(
+        resolvedProducts.map((product) => [product.product_code, product]),
+      )
+      setCart(prev => prev.map(item => ({
+        ...item,
+        _product: productMap.get(item.product_code) ?? item._product,
+      })))
+    }
+  }
 
   // Pré-preenche contas vinculadas e restaura seleções por ID.
-  useEffect(() => {
-    if (!editId && resolvedClient && !selectedClient) {
-      setSelectedClient(resolvedClient)
-    }
-    if (!editId && resolvedRep && !selectedRep) {
-      setSelectedRep(resolvedRep)
-    }
-  }, [editId, resolvedClient, resolvedRep, selectedClient, selectedRep])
+  if (!editId && resolvedClient && !selectedClient) {
+    setSelectedClient(resolvedClient)
+  }
+  if (!editId && resolvedRep && !selectedRep) {
+    setSelectedRep(resolvedRep)
+  }
 
   // Pre-populate cart + client + rep when editing an existing order.
   // BUG-02 (Bloco 88): refetches em background do React Query trocam a identidade
   // de editOrder e re-disparavam este efeito, sobrescrevendo edições em andamento
-  // do carrinho — o ref garante que cada pedido só popule o formulário uma vez.
-  const editOrderLoadedRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (!editOrder || !resolvedProductQuery.isSuccess || !resolvedClient) return
-    if (editOrder.rep_id && !resolvedRep) return
-    if (editOrderLoadedRef.current === editOrder.id) return
-    editOrderLoadedRef.current = editOrder.id
-    const productMap = new Map(
-      resolvedProducts.map((product) => [product.product_code, product]),
-    )
-    const cartItems: CartItem[] = editOrder.items
-      .map(item => {
-        const product = productMap.get(item.product_code)
-        if (!product) return null
-        return {
-          product_code: item.product_code,
-          line_id: item.id,
-          qty: item.qty,
-          discount: Number(item.discount),
-          opt_categories: item.opt_categories,
-          optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && choice.optional_id).map(choice => ({ application_id: choice.application_id!, optional_id: choice.optional_id! })),
-          source_order_item_id: item.id,
-          preserve_optional_choices: true,
-          saved_choices: item.optional_choices ?? [],
-          _product: product,
-        }
-      })
-      .filter(Boolean) as CartItem[]
-    setCart(cartItems)
-    setSelectedClient(resolvedClient)
-    setSelectedRep(editOrder.rep_id ? resolvedRep ?? null : null)
-    setNotes(editOrder.notes ?? '')
-    setCartHydrated(true)
-  }, [
-    editOrder,
-    resolvedClient,
-    resolvedProductQuery.isSuccess,
-    resolvedProducts,
-    resolvedRep,
-  ])
+  // do carrinho — o estado garante que cada pedido só popule o formulário uma vez.
+  const [loadedEditOrderId, setLoadedEditOrderId] = useState<string | null>(null)
+  if (!editId && loadedEditOrderId !== null) setLoadedEditOrderId(null)
+  if (editOrder && resolvedProductQuery.isSuccess && resolvedClient) {
+    if (!editOrder.rep_id || resolvedRep) {
+      if (loadedEditOrderId !== editOrder.id) {
+        setLoadedEditOrderId(editOrder.id)
+        const productMap = new Map(
+          resolvedProducts.map((product) => [product.product_code, product]),
+        )
+        const cartItems: CartItem[] = editOrder.items
+          .map(item => {
+            const product = productMap.get(item.product_code)
+            if (!product) return null
+            return {
+              product_code: item.product_code,
+              line_id: item.id,
+              qty: item.qty,
+              discount: Number(item.discount),
+              opt_categories: item.opt_categories,
+              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && choice.optional_id).map(choice => ({ application_id: choice.application_id!, optional_id: choice.optional_id! })),
+              source_order_item_id: item.id,
+              preserve_optional_choices: true,
+              saved_choices: item.optional_choices ?? [],
+              _product: product,
+            }
+          })
+          .filter(Boolean) as CartItem[]
+        setCart(cartItems)
+        setSelectedClient(resolvedClient)
+        setSelectedRep(editOrder.rep_id ? resolvedRep ?? null : null)
+        setNotes(editOrder.notes ?? '')
+        setCartHydrated(true)
+      }
+    }
+  }
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -1395,7 +1383,6 @@ export default function OrcamentoPage() {
       localStorage.removeItem(cartKey)
       notifyCartChanged()
       resetSavedSelections()
-      editOrderLoadedRef.current = null
       setNotes('')
       setDrawerOpen(false)
     } catch (err: unknown) {
@@ -1555,7 +1542,6 @@ export default function OrcamentoPage() {
               setSearchParams({})
               setCart([])
               setCartHydrated(true)
-              editOrderLoadedRef.current = null
               resetSavedSelections()
               setNotes('')
               localStorage.removeItem(cartKey)

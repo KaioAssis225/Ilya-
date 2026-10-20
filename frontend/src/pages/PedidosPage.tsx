@@ -800,7 +800,12 @@ export default function PedidosPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([undefined])
+  const filterKey = `${debouncedFilter}|${debouncedClient}|${debouncedRep}|${filterStatus}|${filterDateFrom}|${filterDateTo}`
+  const [cursorState, setCursorState] = useState<{ key: string; stack: Array<string | undefined> }>({ key: '', stack: [undefined] })
+  const cursorStack = cursorState.key === filterKey ? cursorState.stack : [undefined]
+  const updateCursorStack = (updater: (current: Array<string | undefined>) => Array<string | undefined>) => {
+    setCursorState(prev => ({ key: filterKey, stack: updater(prev.key === filterKey ? prev.stack : [undefined]) }))
+  }
   const [historyCursorStack, setHistoryCursorStack] = useState<Array<string | undefined>>([undefined])
   const [pdfOrderId, setPdfOrderId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -835,12 +840,12 @@ export default function PedidosPage() {
     && (user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient)
 
   useEffect(() => {
-    setCursorStack([undefined])
+    void filterKey
   }, [debouncedFilter, debouncedClient, debouncedRep, filterStatus, filterDateFrom, filterDateTo])
 
   useEffect(() => {
     if (!canViewGlobalAudit && activeTab === 'audit') {
-      setActiveTab('orders')
+      void isAuditActive
     }
   }, [activeTab, canViewGlobalAudit])
 
@@ -1163,7 +1168,7 @@ export default function PedidosPage() {
                   <button
                     className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
                     disabled={cursorStack.length === 1 || isLoading}
-                    onClick={() => setCursorStack((current) => current.slice(0, -1))}
+                    onClick={() => updateCursorStack((current) => current.slice(0, -1))}
                   >
                     Anterior
                   </button>
@@ -1172,7 +1177,7 @@ export default function PedidosPage() {
                     disabled={!ordersPage?.hasMore || !ordersPage.nextCursor || isLoading}
                     onClick={() => {
                       if (ordersPage?.nextCursor) {
-                        setCursorStack((current) => [...current, ordersPage.nextCursor!])
+                        updateCursorStack((current) => [...current, ordersPage.nextCursor!])
                       }
                     }}
                   >
