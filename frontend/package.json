@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint --max-warnings=46",
+    "lint": "oxlint --max-warnings=0",
     "test": "tsc -p tsconfig.test.json && vitest run",
     "test:coverage": "tsc -p tsconfig.test.json && vitest run --coverage",
     "test:e2e": "playwright test --project=chromium-desktop",

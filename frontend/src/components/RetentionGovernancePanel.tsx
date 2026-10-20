@@ -147,31 +147,46 @@ export default function RetentionGovernancePanel() {
   const [relationshipEndedAt, setRelationshipEndedAt] = useState('')
   const [relationshipReason, setRelationshipReason] = useState('')
 
+  const fetchData = useCallback(async () => {
+    const [reviewResponse, holdResponse] = await Promise.all([
+      api.get<RetentionReview[]>('/privacy/retention-reviews?limit=20'),
+      api.get<LegalHold[]>('/privacy/legal-holds?active_only=true&limit=100'),
+    ])
+    return { reviewRows: reviewResponse.data, holdRows: holdResponse.data }
+  }, [])
+
+  const applyData = useCallback((data: Awaited<ReturnType<typeof fetchData>>) => {
+    setReviews(data.reviewRows)
+    setHolds(data.holdRows)
+    setSelectedId((current) => (
+      current && data.reviewRows.some((item) => item.id === current)
+        ? current
+        : data.reviewRows[0]?.id ?? null
+    ))
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [reviewResponse, holdResponse] = await Promise.all([
-        api.get<RetentionReview[]>('/privacy/retention-reviews?limit=20'),
-        api.get<LegalHold[]>('/privacy/legal-holds?active_only=true&limit=100'),
-      ])
-      setReviews(reviewResponse.data)
-      setHolds(holdResponse.data)
-      setSelectedId((current) => (
-        current && reviewResponse.data.some((item) => item.id === current)
-          ? current
-          : reviewResponse.data[0]?.id ?? null
-      ))
+      applyData(await fetchData())
     } catch (requestError) {
       setError(errorDetail(requestError, 'Não foi possível carregar a governança de retenção.'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchData, applyData])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    let active = true
+    void fetchData()
+      .then((data) => { if (active) applyData(data) })
+      .catch((requestError) => {
+        if (active) setError(errorDetail(requestError, 'Não foi possível carregar a governança de retenção.'))
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [fetchData, applyData])
 
   const selected = useMemo(
     () => reviews.find((item) => item.id === selectedId) ?? null,
