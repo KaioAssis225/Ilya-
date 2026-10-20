@@ -12,7 +12,7 @@
     "lint": "oxlint --max-warnings=46",
     "test": "tsc -p tsconfig.test.json && vitest run",
     "test:coverage": "tsc -p tsconfig.test.json && vitest run --coverage",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=chromium-desktop",
     "preview": "vite preview"
   },
   "dependencies": {

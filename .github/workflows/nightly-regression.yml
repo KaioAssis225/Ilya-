@@ -134,6 +134,18 @@ jobs:
           alembic upgrade head
           python -m tests.e2e_support.seed_e2e
 
+      - name: Iniciar API e frontend E2E
+        run: |
+          docker compose -p ilya-nightly-${{ matrix.browser_profile }} -f docker-compose.test.yml -f docker-compose.e2e.yml --profile e2e up -d --wait backend frontend
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://localhost:5173/; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Frontend E2E não ficou pronto em 5 minutos." >&2
+          exit 1
+
       - name: Instalar dependências frontend e navegador Playwright
         working-directory: frontend
         run: |
@@ -144,8 +156,7 @@ jobs:
         working-directory: frontend
         env:
           E2E_PASSWORD: NightlySynthetic#2026!
-          PLAYWRIGHT_BROWSER_PROFILE: ${{ matrix.browser_profile }}
-        run: npx playwright test --repeat-each=3 --retries=0
+        run: npx playwright test --project=${{ matrix.browser_profile }} --repeat-each=3 --retries=0
 
       - name: Publicar relatório, screenshots, vídeos e traces E2E
         if: always()
