@@ -385,14 +385,25 @@ def _decode_order_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 
 async def _load_products_and_types(
-    db: AsyncSession, codes: list[str], market_code: str
+    db: AsyncSession,
+    codes: list[str],
+    market_code: str,
+    *,
+    allow_inactive_codes: set[str] | None = None,
 ) -> tuple[dict[str, Product], dict[str, ProductType]]:
     """Carrega produtos e seus tipos em 2 queries (evita N+1 por item — V-B1)."""
+    activity_filter = Product.is_active.is_(True)
+    if allow_inactive_codes:
+        activity_filter = or_(
+            activity_filter,
+            Product.product_code.in_(allow_inactive_codes),
+        )
     products = (await db.execute(
         select(Product)
         .where(
             Product.market_code == market_code,
             Product.product_code.in_(codes),
+            activity_filter,
         )
         .options(
             load_only(
@@ -443,9 +454,10 @@ def _resolve_max_discount(
     """Bloco 69: teto dinamico por Cliente/Representante em vez de limite fixo por role."""
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO
-    # cliente-final e operador interno de vendas respeitam o teto do cliente
-    if is_client_account(current_user) or current_user.role == UserRole.vendedor:
+    if is_client_account(current_user):
         return _decimal(client.max_discount)
+    if current_user.role == UserRole.vendedor:
+        return _decimal(rep.max_discount) if rep else _decimal(client.max_discount)
     if current_user.role == UserRole.admin:
         return _HUNDRED
     # Papéis sem autorização comercial recebem zero por padrão. Isso evita que
@@ -1163,7 +1175,10 @@ async def update_order(
         # Valida e calcula TODOS os itens novos ANTES de deletar os antigos (V-B2).
         # Batch-fetch de produtos/tipos elimina N+1 (V-B1).
         product_map, type_map = await _load_products_and_types(
-            db, [i.product_code for i in payload.items], principal.code
+            db,
+            [i.product_code for i in payload.items],
+            principal.code,
+            allow_inactive_codes=old_codes,
         )
         client = (await db.execute(select(Client).where(
             Client.id == order.client_id,
@@ -1226,7 +1241,7 @@ async def update_order(
             product = product_map.get(item_in.product_code)
             if not product:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-            if product.id not in available_ids:
+            if product.id not in available_ids and product.product_code not in old_codes:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
             if product.id not in price_map:
                 raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
