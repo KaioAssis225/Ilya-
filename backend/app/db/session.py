@@ -1,6 +1,8 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from app.db.url import resolve_async_database_url
 from app.db import market_scope as _market_scope  # noqa: F401 - registra evento ORM
+from app.core.observability import ENABLED as OBSERVABILITY_ENABLED, begin_db_acquire, end_db_acquire, install_sqlalchemy
 
 try:
     from app.core.config import settings
@@ -42,9 +44,27 @@ engine = create_async_engine(
     },
 )
 
+install_sqlalchemy(engine)
+
+
+class ObservedAsyncSession(AsyncSession):
+    """Mede a aquisição real antes da primeira operação, somente com a flag ativa."""
+
+    async def execute(self, *args, **kwargs):
+        if OBSERVABILITY_ENABLED:
+            token = begin_db_acquire()
+            try:
+                await self.connection()
+            except SQLAlchemyTimeoutError:
+                end_db_acquire(token, timed_out=True)
+                raise
+            else:
+                end_db_acquire(token)
+        return await super().execute(*args, **kwargs)
+
 AsyncSessionLocal = async_sessionmaker(
     engine,
-    class_=AsyncSession,
+    class_=ObservedAsyncSession,
     expire_on_commit=False,
 )
 

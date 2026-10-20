@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend — lint e build
+    name: Frontend — lint, testes e build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -34,7 +34,7 @@ jobs:
       - name: Preparar Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 22.22.x
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -45,7 +45,19 @@ jobs:
         run: npm run lint
 
       - name: Executar testes
-        run: npm test
+        run: npm run test:coverage
+
+      - name: Publicar resultados Vitest (JUnit e cobertura)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-test-results
+          path: |
+            frontend/test-results/junit.xml
+            frontend/coverage/cobertura-coverage.xml
+            frontend/coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Gerar build de produção
         run: npm run build
@@ -100,8 +112,140 @@ jobs:
       - name: Instalar dependências (produção + teste)
         run: pip install --disable-pip-version-check -r requirements-dev.txt
 
-      - name: Executar testes
-        run: python -m pytest -q
+      - name: Executar testes (excluindo integração)
+        run: python -m pytest -q -m "not integration" --cov=app --cov-report=xml --cov-report=term-missing
+
+      - name: Publicar resultados de testes (JUnit)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-test-results
+          path: backend/test-results/pytest.xml
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publicar cobertura
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  backend-integration:
+    name: Backend — testes de integração (PostgreSQL real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ilya_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ilya_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ilya_test
+      SECRET_KEY: ci-secret-key-with-at-least-32-characters
+      PASSWORD_PEPPER: ci-password-pepper-not-used-in-production
+      BACKEND_CORS_ORIGINS: '["http://testserver","http://localhost:5173"]'
+      RATE_LIMIT_STORAGE_URI: redis://localhost:6379/0
+      DEBUG: "true"
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Preparar Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Instalar dependências (produção + teste)
+        run: pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Verificar conectividade com PostgreSQL
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          pg_isready -h localhost -U postgres -d ilya_test 2>&1 | tee -a test-results/integration.log || {
+            echo "PostgreSQL indisponível — job de integração não pode continuar." | tee -a test-results/integration.log
+            exit 1
+          }
+
+      - name: Executar migrations Alembic
+        shell: bash
+        run: |
+          set -o pipefail
+          alembic upgrade head 2>&1 | tee -a test-results/integration.log
+
+      - name: Baseline de cobertura unit+contract (para append)
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -m "not integration" -q \
+            --cov=app --cov-report= \
+            2>&1 | tee -a test-results/integration.log
+
+      - name: Executar testes de integração (cobertura combinada)
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -m integration -q --tb=short \
+            --junitxml=test-results/integration-results.xml \
+            --cov=app --cov-append \
+            --cov-report=xml:test-results/integration-coverage.xml \
+            --cov-report=term-missing \
+            2>&1 | tee -a test-results/integration.log
+
+      - name: Publicar resultados JUnit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-integration-results
+          path: backend/test-results/integration-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publicar cobertura de integração
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-integration-coverage
+          path: backend/test-results/integration-coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publicar log de integração
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-integration-log
+          path: backend/test-results/integration.log
+          if-no-files-found: warn
+          retention-days: 7
 
   backend-audit:
     name: Backend — auditoria de dependências
@@ -235,3 +379,49 @@ jobs:
 
           echo "A API não ficou pronta dentro do limite esperado."
           exit 1
+
+
+  quality-gate:
+    name: Quality Gate — agregador obrigatório
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - frontend
+      - frontend-audit
+      - backend-tests
+      - backend-integration
+      - backend-audit
+      - production-boot
+    steps:
+      - name: Verificar aprovação de todas as camadas obrigatórias
+        shell: bash
+        env:
+          RESULT_FRONTEND: ${{ needs.frontend.result }}
+          RESULT_FRONTEND_AUDIT: ${{ needs.frontend-audit.result }}
+          RESULT_BACKEND_TESTS: ${{ needs.backend-tests.result }}
+          RESULT_BACKEND_INTEGRATION: ${{ needs.backend-integration.result }}
+          RESULT_BACKEND_AUDIT: ${{ needs.backend-audit.result }}
+          RESULT_PRODUCTION_BOOT: ${{ needs.production-boot.result }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for pair in \
+            "frontend:${RESULT_FRONTEND}" \
+            "frontend-audit:${RESULT_FRONTEND_AUDIT}" \
+            "backend-tests:${RESULT_BACKEND_TESTS}" \
+            "backend-integration:${RESULT_BACKEND_INTEGRATION}" \
+            "backend-audit:${RESULT_BACKEND_AUDIT}" \
+            "production-boot:${RESULT_PRODUCTION_BOOT}"; do
+            job="${pair%%:*}"
+            res="${pair#*:}"
+            echo "Job ${job}: ${res}"
+            if [ "${res}" != "success" ]; then
+              failed=1
+            fi
+          done
+          if [ "${failed}" -ne 0 ]; then
+            echo "Quality Gate bloqueado: uma ou mais camadas obrigatórias não obtiveram 'success'."
+            exit 1
+          fi
+          echo "Quality Gate aprovado: todas as camadas obrigatórias concluíram com sucesso."

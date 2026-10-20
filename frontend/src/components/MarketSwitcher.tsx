@@ -7,6 +7,10 @@ import { useLocale } from '../hooks/useLocale'
 
 const LABELS: Record<MarketCode, string> = { BR: 'Brasil', EU: 'Portugal' }
 
+function nowMs(): number {
+  return performance.now()
+}
+
 export function MarketSwitcher() {
   const { user, switchMarket } = useAuth()
   const { locale } = useLocale()
@@ -36,19 +40,19 @@ export function MarketSwitcher() {
     : LABELS
   const canSwitch = user.allowed_markets.length > 1
 
-  async function choose(market: MarketCode) {
+  async function handleChoose(market: MarketCode) {
     if (market === user?.active_market) {
       setOpen(false)
       return
     }
     setOpen(false)
     setSwitching(market)
-    const startedAt = performance.now()
+    const startedAt = nowMs()
     try {
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       await switchMarket(market, false)
       const minimumDuration = reduceMotion ? 0 : 1650
-      const remaining = Math.max(0, minimumDuration - (performance.now() - startedAt))
+      const remaining = Math.max(0, minimumDuration - (nowMs() - startedAt))
       if (remaining > 0) await new Promise(resolve => window.setTimeout(resolve, remaining))
     } finally {
       setSwitching(null)
@@ -89,7 +93,7 @@ export function MarketSwitcher() {
               role="menuitemradio"
               aria-checked={market === user.active_market}
               disabled={switching !== null}
-              onClick={() => void choose(market)}
+              onClick={() => void handleChoose(market)}
               className="flex min-h-11 w-full items-center gap-3 px-3.5 text-left text-sm text-ink hover:bg-bg-2 focus-visible:bg-bg-2 focus-visible:outline-none disabled:opacity-60"
             >
               <MarketFlag market={market} className="h-4 w-6 shadow-sm" />

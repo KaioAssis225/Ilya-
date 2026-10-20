@@ -306,12 +306,7 @@ export async function generateOrderPDF(
     // Nome do produto: também quebrado em WRAP_WIDTH (o espaço real até a coluna
     // QTD é ~85mm a partir de x=40) — antes usava 95mm e a 1ª linha invadia o
     // valor unitário em nomes longos. Agora todas as linhas são impressas.
-    // Documento EU é em inglês: usa a designação inglesa do produto quando
-    // cadastrada; sem ela, mantém o texto gravado no pedido.
-    const itemDescription = order.market_code === 'EU' && product?.description_en?.trim()
-      ? product.description_en.trim()
-      : item.description
-    const descLines: string[] = doc.splitTextToSize(itemDescription, WRAP_WIDTH)
+    const descLines: string[] = doc.splitTextToSize(item.description, WRAP_WIDTH)
     const titleExtraLines = Math.max(0, descLines.length - 1)
 
     const extraLines = titleExtraLines + dimLines.length + obsLines.length + optLines.length + compLinesTotal

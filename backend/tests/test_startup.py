@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -105,6 +107,12 @@ def test_default_mode_preserves_current_deploy_behavior(monkeypatch):
     assert calls == [("migrate", True), "serve"]
 
 
+@pytest.mark.parametrize("arguments", [["invalid"], ["serve", "extra"], ["migrate", "serve"]])
+def test_main_rejects_invalid_mode_or_extra_arguments(arguments):
+    with pytest.raises(RuntimeError, match="Modo inválido. Use: all, migrate ou serve."):
+        startup.main(arguments)
+
+
 @pytest.mark.parametrize("value", ["*", "0.0.0.0/0", "::/0", "invalid-host"])
 def test_proxy_trust_rejects_unsafe_values(value):
     with pytest.raises(RuntimeError, match="FORWARDED_ALLOW_IPS|internet|inválido"):
@@ -121,3 +129,17 @@ def test_multiple_workers_require_shared_rate_limit_storage():
     with pytest.raises(RuntimeError, match="Redis"):
         startup._validate_rate_limit_workers(2, "memory://")
     startup._validate_rate_limit_workers(2, "redis://redis.internal:6379/0")
+
+
+def test_dockerfile_prod_uses_serve_and_railway_json_preserves_predeploy_migrate():
+    backend_dir = Path(__file__).resolve().parents[1]
+
+    dockerfile_content = (backend_dir / "Dockerfile.prod").read_text(encoding="utf-8")
+    assert 'CMD ["python", "startup.py", "serve"]' in dockerfile_content
+
+    railway_data = json.loads((backend_dir / "railway.json").read_text(encoding="utf-8"))
+    deploy = railway_data.get("deploy", railway_data)
+    pre_deploy = deploy.get("preDeployCommand", [])
+    pre_deploy_str = " ".join(pre_deploy) if isinstance(pre_deploy, list) else str(pre_deploy)
+    assert "python startup.py migrate" in pre_deploy_str
+    assert deploy.get("healthcheckPath") == "/health/ready"

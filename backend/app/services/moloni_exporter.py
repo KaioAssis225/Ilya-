@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.moloni_crypto import decrypt_token, encrypt_token
+from app.core.observability import external_exception, external_invalid, httpx_event_hooks
 from app.models.client import Client
 from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExportJob, MoloniProductLink, MoloniTaxMapping
 from app.models.order import Order, OrderItem
@@ -46,7 +47,7 @@ class MoloniApi:
         if expires_at and expires_at > datetime.now(timezone.utc) + timedelta(minutes=2):
             return
         try:
-            async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS) as client:
+            async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS, event_hooks=httpx_event_hooks()) as client:
                 response = await client.get(
                     settings.MOLONI_API_BASE_URL.rstrip("/") + "/grant/",
                     params={
@@ -55,6 +56,7 @@ class MoloniApi:
                         "client_secret": settings.MOLONI_CLIENT_SECRET,
                         "refresh_token": decrypt_token(self.connection.refresh_token_ciphertext),
                     },
+                    extensions={"ilya_dependency": "moloni"},
                 )
             response.raise_for_status()
             token = response.json()
@@ -64,6 +66,10 @@ class MoloniApi:
             if expires_in <= 0:
                 raise ValueError("resposta sem validade do token")
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            if isinstance(exc, httpx.HTTPError):
+                external_exception(exc)
+            else:
+                external_invalid("moloni")
             raise MoloniError("Não foi possível renovar a conexão Moloni. Reconecte a integração.") from exc
         self.token = access
         self.connection.access_token_ciphertext = encrypt_token(access)
@@ -74,16 +80,24 @@ class MoloniApi:
     async def post(self, endpoint, data):
         await self._refresh_if_needed()
         url = settings.MOLONI_API_BASE_URL.rstrip("/") + "/" + endpoint.lstrip("/") + "/"
-        async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS) as client:
-            response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data)
-            if response.status_code in (401, 403):
-                # Moloni can revoke a token before its locally stored expiry.
-                # Force one refresh and retry the same idempotent lookup/write once.
-                self.connection.token_expires_at = None
-                await self._refresh_if_needed()
-                response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data)
+        try:
+            async with httpx.AsyncClient(timeout=settings.MOLONI_TIMEOUT_SECONDS, event_hooks=httpx_event_hooks()) as client:
+                response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data, extensions={"ilya_dependency": "moloni"})
+                if response.status_code in (401, 403):
+                    # Moloni can revoke a token before its locally stored expiry.
+                    # Force one refresh and retry the same idempotent lookup/write once.
+                    self.connection.token_expires_at = None
+                    await self._refresh_if_needed()
+                    response = await client.post(url, params={"access_token": self.token, "json": "true", "human_errors": "true"}, json=data, extensions={"ilya_dependency": "moloni"})
+        except httpx.HTTPError as exc:
+            external_exception(exc)
+            raise
         response.raise_for_status()
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            external_invalid("moloni")
+            raise
         # Alguns endpoints de consulta do Moloni devolvem a lista diretamente,
         # enquanto endpoints de escrita devolvem o envelope {valid: true, ...}.
         if isinstance(payload, list):

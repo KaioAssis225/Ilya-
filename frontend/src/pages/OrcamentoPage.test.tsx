@@ -1,0 +1,256 @@
+import { describe, expect, it, beforeEach } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
+import OrcamentoPage from './OrcamentoPage'
+import { cartStorageKey } from '../lib/cart'
+import type { Product, OptionalColor, OptionalApplication } from '../types'
+import {
+  renderProductPage,
+  productFixture,
+  productTestUser,
+} from '../test/productTestUtils'
+import { server } from '../test/setup'
+
+const CATEGORY_CODE = 'acabamento'
+const CATEGORY_ID = 'cat-acabamento'
+
+const OPTIONALS: OptionalColor[] = [
+  { id: 'opt-branco', category: CATEGORY_CODE, color_name: 'Branco', photo_url: null },
+  { id: 'opt-preto', category: CATEGORY_CODE, color_name: 'Preto', photo_url: null },
+]
+
+function buildApplications(): OptionalApplication[] {
+  return [
+    {
+      id: 'app-topo',
+      category_id: CATEGORY_ID,
+      category_code: CATEGORY_CODE,
+      category_name: 'Acabamento',
+      name: 'Tampo',
+      name_en: 'Top',
+      required: false,
+      display_order: 0,
+      allow_all: false,
+      allow_repeat: false,
+      allowed_optionals: OPTIONALS,
+    },
+    {
+      id: 'app-base',
+      category_id: CATEGORY_ID,
+      category_code: CATEGORY_CODE,
+      category_name: 'Acabamento',
+      name: 'Base',
+      name_en: 'Base',
+      required: false,
+      display_order: 1,
+      allow_all: false,
+      allow_repeat: false,
+      allowed_optionals: OPTIONALS,
+    },
+  ]
+}
+
+function buildProduct(market: 'BR' | 'EU'): Product {
+  return {
+    ...productFixture(market),
+    product_code: market === 'BR' ? 'SKU-BR' : 'SKU-EU',
+    optional_applications: buildApplications(),
+  } as Product
+}
+
+function installOrcamentoHandlers(products: Product[]) {
+  server.use(
+    http.get('*/products', () => {
+      return HttpResponse.json(products, {
+        headers: {
+          'X-Total-Count': String(products.length),
+          'X-Has-More': 'false',
+          'X-Page-Size': String(products.length),
+        },
+      })
+    }),
+    http.post('*/products/batch', async ({ request }) => {
+      const payload = (await request.json()) as unknown
+      let codes: string[] = []
+      if (Array.isArray(payload)) codes = payload.map(String)
+      else if (payload && typeof payload === 'object') {
+        const obj = payload as Record<string, unknown>
+        const maybe = obj.product_codes ?? obj.codes ?? obj.items
+        if (Array.isArray(maybe)) codes = maybe.map(String)
+      }
+      const byCode = new Map(products.map((p) => [p.product_code, p]))
+      const result = codes.map((code) => byCode.get(code)).filter(Boolean)
+      return HttpResponse.json(result)
+    }),
+    http.get('*/clients', () => HttpResponse.json([])),
+    http.get('*/representatives', () => HttpResponse.json([])),
+    http.get('*/optional-categories', () =>
+      HttpResponse.json([{ id: CATEGORY_ID, code: CATEGORY_CODE, name: 'Acabamento' }]),
+    ),
+    http.get('*/product-types', () => HttpResponse.json([])),
+    http.get('*/optionals', () => HttpResponse.json([])),
+  )
+}
+
+async function pickProduct(sku: string) {
+  const inputs = await screen.findAllByLabelText(
+    /Buscar produto para adicionar ao orçamento/i,
+  )
+  const input = inputs[0] as HTMLInputElement
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value: sku } })
+  await screen.findAllByText(sku, {}, { timeout: 3000 })
+  const li = await waitFor(() => {
+    const found = screen
+      .getAllByText(sku)
+      .map((el) => el.closest('li'))
+      .find(Boolean)
+    expect(found).toBeTruthy()
+    return found
+  })
+  fireEvent.mouseDown(li as HTMLElement)
+}
+
+function selectChoice(label: string, optionId: string) {
+  const selects = screen.getAllByLabelText(label)
+  const select = selects[0] as HTMLSelectElement
+  fireEvent.change(select, { target: { value: optionId } })
+}
+
+function clickAdd() {
+  const buttons = screen.getAllByRole('button', { name: /ADICIONAR AO ORÇAMENTO/i })
+  fireEvent.click(buttons[0])
+}
+
+describe('OrcamentoPage', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('não funde linhas quando o mesmo SKU é adicionado duas vezes com escolhas diferentes', async () => {
+    const user = productTestUser('admin', 'BR')
+    const product = buildProduct('BR')
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('Acabamento: Tampo').length).toBeGreaterThan(0)
+    })
+    selectChoice('Acabamento: Tampo', 'opt-branco')
+    selectChoice('Acabamento: Base', 'opt-preto')
+    clickAdd()
+
+    await waitFor(() => {
+      const raw = localStorage.getItem(cartStorageKey(user.id, 'BR'))
+      expect(raw).not.toBeNull()
+      const parsed = JSON.parse(raw as string) as Array<{
+        product_code: string
+        qty: number
+        optional_choices: Array<{ application_id: string; optional_id: string }>
+      }>
+      expect(parsed).toHaveLength(1)
+      expect(parsed[0].product_code).toBe('SKU-BR')
+      expect(parsed[0].qty).toBe(1)
+      const choiceMap = Object.fromEntries(
+        parsed[0].optional_choices.map((c) => [c.application_id, c.optional_id]),
+      )
+      expect(choiceMap['app-topo']).toBe('opt-branco')
+      expect(choiceMap['app-base']).toBe('opt-preto')
+    })
+
+    await pickProduct('SKU-BR')
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('Acabamento: Tampo').length).toBeGreaterThan(0)
+    })
+    selectChoice('Acabamento: Tampo', 'opt-preto')
+    selectChoice('Acabamento: Base', 'opt-branco')
+    clickAdd()
+
+    await waitFor(() => {
+      const raw = localStorage.getItem(cartStorageKey(user.id, 'BR'))
+      expect(raw).not.toBeNull()
+      const parsed = JSON.parse(raw as string) as Array<{
+        product_code: string
+        qty: number
+        optional_choices: Array<{ application_id: string; optional_id: string }>
+      }>
+      expect(parsed).toHaveLength(2)
+      expect(parsed.every((item) => item.product_code === 'SKU-BR')).toBe(true)
+      expect(parsed.every((item) => item.qty === 1)).toBe(true)
+
+      const firstChoice = Object.fromEntries(
+        parsed[0].optional_choices.map((c) => [c.application_id, c.optional_id]),
+      )
+      expect(firstChoice['app-topo']).toBe('opt-branco')
+      expect(firstChoice['app-base']).toBe('opt-preto')
+
+      const secondChoice = Object.fromEntries(
+        parsed[1].optional_choices.map((c) => [c.application_id, c.optional_id]),
+      )
+      expect(secondChoice['app-topo']).toBe('opt-preto')
+      expect(secondChoice['app-base']).toBe('opt-branco')
+    })
+  })
+
+  it('carrinho persistido de usuário BR não aparece no mercado EU', async () => {
+    const brUser = productTestUser('admin', 'BR')
+    const euUser = {
+      ...brUser,
+      active_market: 'EU' as const,
+      allowed_markets: ['BR', 'EU'] as Array<'BR' | 'EU'>,
+    }
+    const brProduct = buildProduct('BR')
+    const euProduct = buildProduct('EU')
+
+    localStorage.setItem(
+      cartStorageKey(brUser.id, 'BR'),
+      JSON.stringify([
+        {
+          line_id: 'line-br-1',
+          product_code: brProduct.product_code,
+          qty: 2,
+          discount: 0,
+          opt_categories: {},
+          optional_choices: [],
+        },
+      ]),
+    )
+
+    installOrcamentoHandlers([euProduct, brProduct])
+
+    renderProductPage(<OrcamentoPage />, euUser)
+
+    await waitFor(() => {
+      const inputs = screen.getAllByLabelText(
+        /Buscar produto para adicionar ao orçamento/i,
+      ) as HTMLInputElement[]
+      expect(inputs[0].disabled).toBe(false)
+    })
+
+    await waitFor(() => {
+      expect(screen.queryAllByText('SKU-BR')).toHaveLength(0)
+      expect(screen.queryAllByText('SKU-EU')).toHaveLength(0)
+    })
+
+    const brRaw = localStorage.getItem(cartStorageKey(brUser.id, 'BR'))
+    expect(brRaw).not.toBeNull()
+    const brParsed = JSON.parse(brRaw as string) as Array<{ product_code: string }>
+    expect(brParsed).toHaveLength(1)
+    expect(brParsed[0].product_code).toBe('SKU-BR')
+
+    const euRaw = localStorage.getItem(cartStorageKey(euUser.id, 'EU'))
+    if (euRaw) {
+      const euParsed = JSON.parse(euRaw) as Array<{ product_code: string }>
+      expect(
+        euParsed.some(
+          (item) =>
+            item.product_code === 'SKU-BR' ||
+            item.product_code === 'SKU-EU',
+        ),
+      ).toBe(false)
+    }
+  })
+})

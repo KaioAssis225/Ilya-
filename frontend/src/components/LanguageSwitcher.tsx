@@ -9,7 +9,7 @@ export function LanguageSwitcher() {
 
   return (
     <div className="inline-flex lg:h-9 items-center rounded-lg border border-line bg-white p-0.5" role="group" aria-label={t('language')}>
-      <Languages className="mx-1.5 h-3.5 w-3.5 text-muted" aria-hidden="true" />
+      <Languages className="mx-1.5 hidden h-3.5 w-3.5 text-muted sm:block" aria-hidden="true" />
       {(['pt-PT', 'en-GB'] as const).map(option => (
         <button
           key={option}

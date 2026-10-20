@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.http_client import external_http_client
+from app.core.http_client import external_http_client, external_request
+from app.core.observability import external_invalid
 from app.models.market import UserMarket, UserPlatformPermission
 from app.models.user import User, UserRole
 
@@ -158,8 +159,11 @@ async def send_signature_invitation(recipient: str, order_code: str, token: str)
 
 async def _send_graph(recipient: str, subject: str, body: str) -> None:
     tenant = quote(settings.MICROSOFT_GRAPH_TENANT.strip(), safe="")
-    token_response = await external_http_client.post(
+    token_response = await external_request(
+        "POST",
         f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+        dependency="microsoft_graph",
+        client=external_http_client,
         data={
             "client_id": settings.MICROSOFT_GRAPH_CLIENT_ID,
             "grant_type": "refresh_token",
@@ -170,10 +174,14 @@ async def _send_graph(recipient: str, subject: str, body: str) -> None:
     token_response.raise_for_status()
     access_token = token_response.json().get("access_token")
     if not access_token:
+        external_invalid("microsoft_graph")
         raise httpx.HTTPError("Microsoft token response did not include an access token")
 
-    response = await external_http_client.post(
+    response = await external_request(
+        "POST",
         "https://graph.microsoft.com/v1.0/me/sendMail",
+        dependency="microsoft_graph",
+        client=external_http_client,
         headers={"Authorization": f"Bearer {access_token}"},
         json={
             "message": {

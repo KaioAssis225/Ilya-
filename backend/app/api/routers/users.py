@@ -155,6 +155,9 @@ async def _build_market_links(
     codes = [item.market_code for item in items]
     if len(codes) != len(set(codes)):
         raise HTTPException(422, "Cada mercado pode aparecer apenas uma vez.")
+    if any(item.role == UserRole.benchmark_readonly for item in items):
+        if len(items) != 1 or items[0].can_view_dashboard or items[0].can_approve_tax:
+            raise HTTPException(422, "Identidade técnica exige um mercado e nenhuma capacidade extra.")
     links: list[UserMarket] = []
     for item in items:
         # `role` é nullable no schema porque a R2a deixa vínculos legados em
@@ -170,6 +173,7 @@ async def _build_market_links(
             UserRole.cadastros,
             UserRole.produtos,
             UserRole.executivo,
+            UserRole.benchmark_readonly,
         }
         if item.role == UserRole.cliente:
             if item.linked_client_id is None or item.rep_id is not None:

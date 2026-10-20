@@ -1,0 +1,25 @@
+[run]
+source = app
+branch = true
+parallel = true
+omit =
+    */tests/*
+    */alembic/*
+    */migrations/*
+    */__pycache__/*
+
+[report]
+show_missing = true
+skip_covered = false
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+    @(abc\.)?abstractmethod
+
+[xml]
+output = coverage.xml
+
+[html]
+directory = htmlcov

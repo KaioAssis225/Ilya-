@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     GZIP_MINIMUM_SIZE: int = 1024
     GZIP_COMPRESS_LEVEL: int = 5
     SLOW_REQUEST_THRESHOLD_MS: float = 1000.0
+    # Exportador local e sem fornecedor. Desligado por padrão: enquanto falso,
+    # não instala hooks de SQL/HTTP e /internal/metrics responde 404.
+    OBSERVABILITY_ENABLED: bool = False
+    OBSERVABILITY_METRICS_PATH: str = "/internal/metrics"
+    OBSERVABILITY_METRICS_TOKEN: str = ""
 
     # Integração com o Ilya Estoque (webhooks assinados via Outbox).
     # TODAS com default de propósito: uma variável obrigatória aqui derrubaria

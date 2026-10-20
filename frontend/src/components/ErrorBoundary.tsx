@@ -9,6 +9,7 @@ interface Props {
 
 interface State {
   hasError: boolean
+  prevResetKey?: unknown
 }
 
 /**
@@ -17,9 +18,16 @@ interface State {
  * toda a árvore do app — que deixaria o usuário numa tela branca sem navegação.
  */
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false }
+  state: State = { hasError: false, prevResetKey: this.props.resetKey }
 
-  static getDerivedStateFromError(): State {
+  static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
+    if (props.resetKey !== state.prevResetKey) {
+      return { hasError: false, prevResetKey: props.resetKey }
+    }
+    return null
+  }
+
+  static getDerivedStateFromError(): Partial<State> {
     return { hasError: true }
   }
 
@@ -29,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidUpdate(prevProps: Props) {
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false })
+      void prevProps
     }
   }
 
