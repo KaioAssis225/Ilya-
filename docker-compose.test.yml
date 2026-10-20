@@ -84,6 +84,14 @@ services:
       context: ./backend
       dockerfile: Dockerfile.test
     working_dir: /app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     environment:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/ilya_test
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ilya_test
@@ -109,3 +117,19 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+
+  frontend:
+    profiles: ["e2e"]
+    image: node:26-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    command: ["sh", "-c", "npm ci --ignore-scripts --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy

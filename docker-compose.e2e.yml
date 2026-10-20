@@ -1,0 +1,18 @@
+# Aplicar junto com docker-compose.test.yml apenas nas jornadas Chromium.
+# O backend de integração comum continua com filesystem local para mídia.
+services:
+  backend:
+    environment:
+      E2E_SEED_PASSWORD: ${E2E_SEED_PASSWORD-}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY_ID: ilya-br-test-app
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ilya-br-test-app-secret
+      OBJECT_STORAGE_BUCKET: ilya-br-test
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_ADDRESSING_STYLE: path
+      OBJECT_STORAGE_EU_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_EU_ACCESS_KEY_ID: ilya-eu-test-app
+      OBJECT_STORAGE_EU_SECRET_ACCESS_KEY: ilya-eu-test-app-secret
+      OBJECT_STORAGE_EU_BUCKET: ilya-eu-test
+      OBJECT_STORAGE_EU_REGION: us-east-1
+      OBJECT_STORAGE_EU_ADDRESSING_STYLE: path
