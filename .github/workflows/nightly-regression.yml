@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+  # TEMPORÁRIO: roda a regressão no PR antes do merge. Reverter este commit antes de mesclar.
+  pull_request:
 
 permissions:
   contents: read
@@ -196,7 +198,7 @@ jobs:
     name: Alerta — regressão noturna
     runs-on: ubuntu-latest
     needs: [alembic-and-isolation, e2e-matrix, synthetic-restore]
-    if: always() && (needs.alembic-and-isolation.result != 'success' || needs.e2e-matrix.result != 'success' || needs.synthetic-restore.result != 'success')
+    if: always() && github.event_name != 'pull_request' && (needs.alembic-and-isolation.result != 'success' || needs.e2e-matrix.result != 'success' || needs.synthetic-restore.result != 'success')
     steps:
       - name: Abrir ou atualizar issue de falha noturna
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
