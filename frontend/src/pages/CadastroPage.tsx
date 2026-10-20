@@ -3398,7 +3398,7 @@ export default function CadastroPage() {
 
   // Bloco 77: restaura aba e paginação da última visita, com TTL de 5 minutos —
   // depois disso, volta silenciosamente aos valores padrão.
-  const persisted = useRef(loadPersistedCadastroState()).current
+  const [persisted] = useState(loadPersistedCadastroState)
   const allowedTabs = new Set(visibleTabs.map(t => t.key))
   const initialTab = persisted?.tab && allowedTabs.has(persisted.tab) ? persisted.tab : defaultTab
   const [tab, setTab] = useState<Tab>(initialTab)
