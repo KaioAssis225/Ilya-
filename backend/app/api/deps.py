@@ -20,6 +20,15 @@ reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login"
 )
 
+_CANARY_READ_ROUTES = frozenset({
+    "/api/v1/auth/me",
+    "/api/v1/products",
+    "/api/v1/products/{product_id}",
+    "/api/v1/orders",
+    "/api/v1/orders/{id_or_code}",
+    "/api/v1/dashboard/overview",
+})
+
 
 def _decode_token_payload(
     token: str,
@@ -54,6 +63,25 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def _enforce_readonly_canary(principal: MarketPrincipal, request: Request | None) -> None:
+    """Canário tem um mercado e só pode fazer leitura com token comercial."""
+    actor_is_canary = principal.actor.role == UserRole.benchmark_readonly
+    identity_is_canary = principal.user.role == UserRole.benchmark_readonly
+    if not actor_is_canary and not identity_is_canary:
+        return
+    if not actor_is_canary or not identity_is_canary:
+        raise HTTPException(status_code=403, detail="Vínculo técnico inválido.")
+    links = principal.user.allowed_market_links
+    if (len(links) != 1 or links[0].market_code != principal.code
+            or links[0].can_approve_tax or links[0].linked_client_id or links[0].rep_id):
+        raise HTTPException(status_code=403, detail="Vínculo técnico inválido.")
+    if request is not None:
+        route = request.scope.get("route")
+        template = getattr(route, "path", None)
+        if request.method != "GET" or template not in _CANARY_READ_ROUTES:
+            raise HTTPException(status_code=403, detail="Identidade técnica somente leitura.")
+
+
 async def get_market_principal(
     token: str = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db_session),
@@ -80,12 +108,13 @@ async def get_market_principal(
         raise credentials_exception
     try:
         principal = await build_market_principal(db, user, token_market)
-        if request is not None:
-            request.state.market_code = principal.code
-        return principal
     except HTTPException:
         # Retirada de acesso invalida imediatamente o access token existente.
         raise credentials_exception
+    _enforce_readonly_canary(principal, request)
+    if request is not None:
+        request.state.market_code = principal.code
+    return principal
 
 
 async def get_authenticated_user(
@@ -107,12 +136,15 @@ async def get_authenticated_user(
         if not isinstance(market, str):
             raise credentials_exception
         try:
-            await build_market_principal(db, user, market)
-            if request is not None:
-                request.state.market_code = market
+            principal = await build_market_principal(db, user, market)
         except HTTPException:
             raise credentials_exception
+        _enforce_readonly_canary(principal, request)
+        if request is not None:
+            request.state.market_code = market
     elif scope == "platform":
+        if user.role == UserRole.benchmark_readonly:
+            raise credentials_exception
         capability = (await db.execute(select(UserPlatformPermission.user_id).where(
             UserPlatformPermission.user_id == user.id,
             UserPlatformPermission.is_active.is_(True),
@@ -190,6 +222,8 @@ async def get_platform_principal(
     if payload.get("scope") != "platform" or "market" in payload:
         raise credentials_exception
     user = await _load_token_identity(payload, db, credentials_exception)
+    if user.role == UserRole.benchmark_readonly:
+        raise credentials_exception
     capabilities = frozenset((await db.execute(
         select(UserPlatformPermission.capability).where(
             UserPlatformPermission.user_id == user.id,
@@ -303,6 +337,7 @@ _ORDER_ROLES = frozenset(
         UserRole.representante,
         UserRole.produtos,
         UserRole.cliente,
+        UserRole.benchmark_readonly,
     }
 )
 
@@ -330,6 +365,8 @@ def require_dashboard_access(
     if current_user.role == UserRole.admin:
         return current_user
     if current_user.role == UserRole.executivo or current_user.can_view_dashboard:
+        return current_user
+    if current_user.role == UserRole.benchmark_readonly:
         return current_user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

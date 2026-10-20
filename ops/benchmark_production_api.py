@@ -44,14 +44,21 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
+
+try:
+    from ops.benchmark_scenarios import BenchmarkScenario, FIXTURE_SCENARIOS, select_scenarios
+except ModuleNotFoundError:  # execução direta: python ops/benchmark_production_api.py
+    from benchmark_scenarios import BenchmarkScenario, FIXTURE_SCENARIOS, select_scenarios
 
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
@@ -94,6 +101,7 @@ class SampleResult:
     error_type: Optional[str]  # None | "network" | "timeout"
     sequence: int
     is_warmup: bool = False
+    expected_status: int | None = None
 
     @property
     def is_network_error(self) -> bool:
@@ -108,6 +116,8 @@ class SampleResult:
         """2xx — única categoria que conta como operação comercial válida."""
         if self.is_network_error or self.status_code is None:
             return False
+        if self.expected_status is not None:
+            return self.status_code == self.expected_status
         return 200 <= self.status_code < 300
 
     @property
@@ -146,6 +156,7 @@ class ScenarioStats:
     p95_conclusive: bool
     p99_conclusive: bool
     origins_tested: list[str] = field(default_factory=list)
+    unexpected_status_count: int = 0
 
 
 # ─── Estatística ───────────────────────────────────────────────────────────────
@@ -192,6 +203,11 @@ def compute_stats(
     auth_failures = sum(1 for s in non_warmup if s.is_auth_failure)
     client_errors = sum(1 for s in non_warmup if s.is_client_error)
     functional_failures = sum(1 for s in non_warmup if s.is_functional_failure)
+    unexpected_statuses = sum(
+        1 for s in non_warmup
+        if s.expected_status is not None and s.status_code is not None
+        and s.status_code != s.expected_status
+    )
 
     n_valid = len(valid_latencies)
     is_conclusive = n_valid >= MIN_SAMPLES_FOR_PERCENTILES
@@ -220,6 +236,7 @@ def compute_stats(
         p95_conclusive=is_conclusive,
         p99_conclusive=is_conclusive,
         origins_tested=origins_tested,
+        unexpected_status_count=unexpected_statuses,
     )
 
 
@@ -356,6 +373,18 @@ def alternate_origins(origins: list[str], count: int, seed: int) -> list[str]:
 
 # ─── Rede ──────────────────────────────────────────────────────────────────────
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirect())
+
+
+def _open_no_redirect(request, timeout: float):
+    """Nunca encaminha senha ou bearer token a outro host por redirect."""
+    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)
+
 def make_request(
     url: str,
     headers: dict[str, str],
@@ -368,7 +397,7 @@ def make_request(
     start = time.perf_counter()
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+        with _open_no_redirect(req, timeout_seconds) as resp:
             elapsed = (time.perf_counter() - start) * 1000.0
             return resp.status, elapsed, None
     except urllib.error.HTTPError as exc:
@@ -378,6 +407,106 @@ def make_request(
         return None, None, "timeout"
     except (urllib.error.URLError, OSError):
         return None, None, "network"
+
+
+class CanaryAuth:
+    """Access token técnico mantido só em memória; renova por novo login.
+
+    O cookie de refresh não é armazenado: o fluxo de benchmark não depende
+    de uma origem CORS e nunca envia cookie ao servidor de aplicação.
+    """
+
+    def __init__(self, base_url: str, identifier: str, password: str, market: str):
+        parsed = urllib.parse.urlsplit(base_url)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
+            raise ValueError("Canário exige URL HTTPS sem credenciais embutidas.")
+        if market not in {"BR", "EU"} or not identifier or not password:
+            raise ValueError("Identidade técnica e mercado BR/EU são obrigatórios.")
+        self.base_url = base_url.rstrip("/")
+        self.identifier = identifier
+        self.password = password
+        self.market = market
+        self._token = ""
+        self._lock = threading.Lock()
+
+    def login(self) -> None:
+        body = json.dumps({"identifier": self.identifier, "password": self.password}).encode()
+        request = urllib.request.Request(
+            self.base_url + "/api/v1/auth/login",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with _open_no_redirect(request, DEFAULT_TIMEOUT_SECONDS) as response:
+                token = json.load(response).get("access_token")
+        except (urllib.error.URLError, OSError, ValueError, KeyError):
+            raise RuntimeError("Autenticação técnica falhou; verifique ambiente e credencial.") from None
+        if not isinstance(token, str) or not token:
+            raise RuntimeError("Autenticação técnica não retornou access token.")
+        self._token = token
+
+    def verify_scope(self) -> None:
+        request = urllib.request.Request(
+            self.base_url + "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+        try:
+            with _open_no_redirect(request, DEFAULT_TIMEOUT_SECONDS) as response:
+                identity = json.load(response)
+        except (urllib.error.URLError, OSError, ValueError):
+            raise RuntimeError("Não foi possível verificar o escopo do canário.") from None
+        if (
+            not isinstance(identity, dict)
+            or identity.get("active_market") != self.market
+            or identity.get("allowed_markets") != [self.market]
+            or identity.get("role") != "benchmark_readonly"
+            or identity.get("can_approve_tax") is not False
+        ):
+            raise RuntimeError("Canário sem papel técnico ou vínculo exclusivo do mercado esperado.")
+
+    def get(self, url: str, timeout_seconds: float) -> tuple[Optional[int], Optional[float], Optional[str]]:
+        with self._lock:
+            if not self._token:
+                self.login()
+                self.verify_scope()
+            token = self._token
+        result = make_request(url, {"Authorization": f"Bearer {token}"}, timeout_seconds)
+        if result[0] == 401:
+            with self._lock:
+                if self._token == token:
+                    try:
+                        self.login()
+                        self.verify_scope()
+                    except RuntimeError:
+                        return 401, None, None
+                token = self._token
+            return make_request(url, {"Authorization": f"Bearer {token}"}, timeout_seconds)
+        return result
+
+    def resolve_fixture_id(self, collection_path: str, code_field: str, code: str) -> str:
+        """Descobre UUID pelo código sintético sem expor payload ou ID no relatório."""
+        if not re.fullmatch(r"[A-Za-z0-9._-]{3,80}", code):
+            raise ValueError("Código de fixture inválido.")
+        query = urllib.parse.urlencode({"q": code, "limit": 20})
+        request = urllib.request.Request(
+            self.base_url + collection_path + "?" + query,
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+        try:
+            with _open_no_redirect(request, DEFAULT_TIMEOUT_SECONDS) as response:
+                rows = json.load(response)
+        except (urllib.error.URLError, OSError, ValueError):
+            raise RuntimeError("Falha ao localizar fixture sintética.") from None
+        matches = [row for row in rows if isinstance(row, dict)
+                   and row.get(code_field) == code and row.get("market_code") == self.market] if isinstance(rows, list) else []
+        if len(matches) != 1:
+            raise RuntimeError("Fixture sintética ausente ou ambígua no mercado do canário.")
+        try:
+            return str(uuid.UUID(str(matches[0]["id"])))
+        except (KeyError, TypeError, ValueError):
+            raise RuntimeError("Fixture sintética sem ID válido.") from None
 
 
 # ─── Execução de cenário ───────────────────────────────────────────────────────
@@ -391,6 +520,8 @@ def run_scenario(
     warmup_count: int,
     seed: int,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    request_fn: Callable | None = None,
+    expected_status: int | None = None,
 ) -> list[SampleResult]:
     """Executa cenário coletando amostras com origens alternadas pelo seed.
 
@@ -399,6 +530,7 @@ def run_scenario(
              limitado a MAX_ATTEMPTS_MULTIPLIER * sample_count * n_origens tentativas.
     """
     origins = list(urls.keys())
+    request_fn = request_fn or make_request
     n_origins = len(origins)
     results: list[SampleResult] = []
 
@@ -406,7 +538,7 @@ def run_scenario(
     total_warmups = warmup_count * n_origins
     warmup_seq = alternate_origins(origins, total_warmups, seed)
     for seq_idx, origin in enumerate(warmup_seq):
-        status, latency, error = make_request(urls[origin], headers, timeout_seconds)
+        status, latency, error = request_fn(urls[origin], headers, timeout_seconds)
         results.append(SampleResult(
             route_template=route_template,
             origin=origin,
@@ -415,6 +547,7 @@ def run_scenario(
             error_type=error,
             sequence=seq_idx,
             is_warmup=True,
+            expected_status=expected_status,
         ))
 
     # Medição: coleta sample_count amostras 2xx por origem
@@ -422,7 +555,7 @@ def run_scenario(
     valid_per_origin: dict[str, int] = {o: 0 for o in origins}
     for attempt_idx in range(max_attempts):
         origin = origins[(seed + attempt_idx) % n_origins]
-        status, latency, error = make_request(urls[origin], headers, timeout_seconds)
+        status, latency, error = request_fn(urls[origin], headers, timeout_seconds)
         sample = SampleResult(
             route_template=route_template,
             origin=origin,
@@ -431,6 +564,7 @@ def run_scenario(
             error_type=error,
             sequence=total_warmups + attempt_idx,
             is_warmup=False,
+            expected_status=expected_status,
         )
         results.append(sample)
         if sample.is_valid_success:
@@ -451,6 +585,8 @@ def run_scenario_load(
     warmup_count: int,
     seed: int,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    request_fn: Callable | None = None,
+    expected_status: int | None = None,
 ) -> list[SampleResult]:
     """Executa cenário de carga com rampa de concorrência.
 
@@ -458,6 +594,7 @@ def run_scenario_load(
     Workers aumentam linearmente de 1 até max_workers a cada estágio.
     """
     origins = list(urls.keys())
+    request_fn = request_fn or make_request
     n_origins = len(origins)
     results: list[SampleResult] = []
     seq = 0
@@ -466,7 +603,7 @@ def run_scenario_load(
     total_warmups = warmup_count * n_origins
     warmup_seq = alternate_origins(origins, total_warmups, seed)
     for seq_idx, origin in enumerate(warmup_seq):
-        status, latency, error = make_request(urls[origin], headers, timeout_seconds)
+        status, latency, error = request_fn(urls[origin], headers, timeout_seconds)
         results.append(SampleResult(
             route_template=route_template,
             origin=origin,
@@ -475,6 +612,7 @@ def run_scenario_load(
             error_type=error,
             sequence=seq_idx,
             is_warmup=True,
+            expected_status=expected_status,
         ))
     seq = total_warmups
 
@@ -487,7 +625,7 @@ def run_scenario_load(
         stage_results: list[tuple[SampleResult, int]] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             future_map = {
-                executor.submit(make_request, urls[stage_origins[i]], headers, timeout_seconds): (stage_origins[i], seq + i)
+                executor.submit(request_fn, urls[stage_origins[i]], headers, timeout_seconds): (stage_origins[i], seq + i)
                 for i in range(total_stage)
             }
             for future, (origin, seq_num) in future_map.items():
@@ -501,6 +639,7 @@ def run_scenario_load(
                         error_type=error,
                         sequence=seq_num,
                         is_warmup=False,
+                        expected_status=expected_status,
                     ),
                     seq_num,
                 ))
@@ -534,6 +673,7 @@ def stats_to_dict(stats: ScenarioStats) -> dict:
         "auth_failure_count": stats.auth_failure_count,
         "client_error_count": stats.client_error_count,
         "functional_failure_count": stats.functional_failure_count,
+        "unexpected_status_count": stats.unexpected_status_count,
         "p50_ms": _fmt_ms(stats.p50_ms, True, stats.valid_count),
         "p95_ms": _fmt_ms(stats.p95_ms, stats.p95_conclusive, stats.valid_count),
         "p99_ms": _fmt_ms(stats.p99_ms, stats.p99_conclusive, stats.valid_count),
@@ -559,12 +699,14 @@ def build_report(
     }
 
 
-def determine_exit_code(all_stats: list[ScenarioStats]) -> int:
+def determine_exit_code(all_stats: list[ScenarioStats], *, strict_auth: bool = False) -> int:
     """0 = sucesso; 1 = falha funcional, rede total ou ausência de válidas (não-auth).
 
     Contadores mantidos separados em ScenarioStats para diagnóstico.
     """
     for stats in all_stats:
+        if stats.unexpected_status_count or (strict_auth and stats.auth_failure_count):
+            return 1
         if stats.functional_failure_count > 0:
             return 1
         if stats.sample_count > 0:
@@ -610,6 +752,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
     parser.add_argument("--load-stages", type=int, default=LOAD_DEFAULT_STAGES, metavar="N")
     parser.add_argument("--load-requests", type=int, default=LOAD_DEFAULT_REQUESTS_PER_STAGE, metavar="N")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--commercial", action="store_true", help="Inclui leituras comerciais com identidade técnica P11.")
     args = parser.parse_args(argv)
 
     # Lê configuração (precedência: CLI > env var)
@@ -618,7 +761,18 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
     environment = args.environment or os.environ.get("BENCHMARK_ENVIRONMENT", "unknown")
     seed = args.seed if args.seed is not None else int(os.environ.get("BENCHMARK_SEED", "42"))
     token = os.environ.get("BENCHMARK_API_TOKEN", "")
+    canary_identifier = os.environ.get("ILYA_BENCHMARK_USERNAME", "")
+    canary_password = os.environ.get("ILYA_BENCHMARK_PASSWORD", "")
+    canary_market = os.environ.get("ILYA_BENCHMARK_MARKET", "")
+    has_canary = bool(canary_identifier and canary_password and canary_market)
+    if any((canary_identifier, canary_password, canary_market)) and not has_canary:
+        print("ERRO: identidade técnica P11 está incompleta no ambiente.", file=sys.stderr)
+        return 2
     staging_allowlist = os.environ.get("BENCHMARK_STAGING_ALLOWLIST", "")
+
+    if args.commercial and not has_canary:
+        print("ERRO: cenários comerciais exigem identidade técnica P11 no ambiente.", file=sys.stderr)
+        return 2
 
     if args.mode == "load":
         # Valida limites de segurança
@@ -644,7 +798,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
             "has_vercel_url": bool(vercel_url),
             "environment": environment,
             "seed": seed,
-            "has_token": bool(token),
+            "has_token": bool(token) or has_canary,
+            "commercial": args.commercial,
         }
         print(json.dumps(config, indent=2))
         return 0
@@ -652,6 +807,23 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
     if not target_url:
         print("ERRO: BENCHMARK_TARGET_URL é obrigatório (ou --target-url).", file=sys.stderr)
         return 2
+
+    canary: CanaryAuth | None = None
+    if has_canary:
+        try:
+            if vercel_url:
+                vercel_parts = urllib.parse.urlsplit(vercel_url)
+                if (vercel_parts.scheme != "https" or not vercel_parts.hostname
+                        or vercel_parts.username or vercel_parts.password
+                        or vercel_parts.path not in {"", "/"}
+                        or vercel_parts.query or vercel_parts.fragment):
+                    raise ValueError("Comparação do canário exige origem Vercel HTTPS válida.")
+            canary = CanaryAuth(target_url, canary_identifier, canary_password, canary_market)
+            canary.login()
+            canary.verify_scope()
+        except (ValueError, RuntimeError) as exc:
+            print(f"ERRO: {exc}", file=sys.stderr)
+            return 2
 
     headers: dict[str, str] = {}
     if token:
@@ -661,20 +833,36 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
     if vercel_url:
         origins["vercel"] = vercel_url
 
-    scenarios: list[tuple[str, str, str]] = [
-        ("health_live", "GET /health/live", "/api/v1/health/live"),
-        ("health_ready", "GET /health/ready", "/api/v1/health/ready"),
-    ]
-    if token:
-        scenarios.append(("auth_me", "GET /auth/me", "/api/v1/auth/me"))
+    scenarios = select_scenarios(authenticated=bool(token) or canary is not None, commercial=args.commercial)
+    if args.commercial and canary is not None:
+        details = []
+        for spec in FIXTURE_SCENARIOS:
+            code = os.environ.get(spec.code_env, "")
+            if not code:
+                continue
+            try:
+                fixture_id = canary.resolve_fixture_id(spec.collection_path, spec.code_field, code)
+            except (ValueError, RuntimeError) as exc:
+                print(f"ERRO: {exc}", file=sys.stderr)
+                return 2
+            details.append(BenchmarkScenario(
+                spec.name, spec.route_template,
+                spec.detail_path.format(fixture_id=fixture_id),
+            ))
+        scenarios += tuple(details)
 
     sample_count = SMOKE_SAMPLE_COUNT if args.mode == "smoke" else MIN_SAMPLES_FOR_PERCENTILES
     warmup_count = 0 if args.mode == "smoke" else MIN_WARMUP_BASELINE
 
     all_stats: list[ScenarioStats] = []
 
-    for scenario_name, route_template, path in scenarios:
+    for scenario in scenarios:
+        scenario_name, route_template, path = scenario.name, scenario.route_template, scenario.path
         urls = {origin: base + path for origin, base in origins.items()}
+        request_fn = (
+            (lambda url, _headers, timeout: canary.get(url, timeout))
+            if scenario.requires_auth and canary is not None else make_request
+        )
 
         if args.mode == "load":
             samples = run_scenario_load(
@@ -687,6 +875,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
                 warmup_count=warmup_count,
                 seed=seed,
                 timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+                request_fn=request_fn,
+                expected_status=scenario.expected_status,
             )
         else:
             samples = run_scenario(
@@ -698,6 +888,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
                 warmup_count=warmup_count,
                 seed=seed,
                 timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+                request_fn=request_fn,
+                expected_status=scenario.expected_status,
             )
 
         # Estatísticas separadas por origem
@@ -716,7 +908,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
             f"Modo smoke: {SMOKE_SAMPLE_COUNT} amostras por origem — "
             f"p95/p99 são inconclusivos (necessário >={MIN_SAMPLES_FOR_PERCENTILES})."
         )
-    if not token:
+    if not token and canary is None:
         limitations.append(
             "Sem credencial: apenas rotas públicas testadas. "
             "401 de rotas autenticadas não são operação comercial válida."
@@ -742,7 +934,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
     else:
         print(report_json)
 
-    return determine_exit_code(all_stats)
+    return determine_exit_code(all_stats, strict_auth=args.commercial)
 
 
 if __name__ == "__main__":
