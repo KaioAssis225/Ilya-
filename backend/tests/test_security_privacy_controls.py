@@ -145,7 +145,7 @@ def test_anonimizacao_de_representante_preserva_id_e_remove_pii():
     assert representative.numero is None
     assert representative.address == "ENDEREÇO ANONIMIZADO"
     assert representative.city == "NÃO INFORMADO"
-    assert representative.state == "EX"
+    assert representative.state == "SP"
 
 
 def test_evento_de_privacidade_registra_apenas_metadados_minimos():

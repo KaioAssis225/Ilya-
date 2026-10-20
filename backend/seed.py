@@ -25,7 +25,7 @@ def _slugify(text: str) -> str:
     text = re.sub(r'[^a-z0-9_]+', '_', text)
     return text.strip('_')
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from app.db.session import AsyncSessionLocal
 from app.models.optional_color import OptionalColor
 from app.models.product import Product, ProductSetComponent
@@ -34,6 +34,7 @@ from app.models.optional_category import OptionalCategory
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.order import Order, OrderItem
+from app.models.market import PriceList
 
 
 # ── Catálogo de opcionais ────────────────────────────────────────────────────
@@ -467,9 +468,28 @@ async def seed() -> None:
 
         # ── Clientes ───────────────────────────────────────────────────────
         print("Criando clientes...")
+        default_price_list = (await db.execute(
+            select(PriceList).where(
+                PriceList.market_code == "BR",
+                PriceList.code == "lojista",
+                PriceList.is_active.is_(True),
+            ).limit(1)
+        )).scalar_one_or_none()
+        if default_price_list is None:
+            default_price_list = PriceList(
+                market_code="BR", code="lojista", name="Lojista",
+                currency="BRL", is_active=True,
+            )
+            db.add(default_price_list)
+            await db.flush()
         clients: list[Client] = []
         for data in CLIENTS_DATA:
-            c = Client(**data)
+            c = Client(
+                **data,
+                market_code="BR",
+                country="BR",
+                price_list_id=default_price_list.id,
+            )
             db.add(c)
             clients.append(c)
         await db.flush()
