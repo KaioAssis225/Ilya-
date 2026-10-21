@@ -199,7 +199,6 @@ function Nav() {
           {!user.must_change_password && (
             <div className="hidden md:flex items-center gap-1">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
-              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
@@ -212,6 +211,7 @@ function Nav() {
               </NavLink>
             )}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label={t('orders')}>{t('orders')}</NavLink>}
+              {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
             </div>
           )}
         </div>
