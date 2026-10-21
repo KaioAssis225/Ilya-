@@ -88,7 +88,7 @@ try {
     )
 
     $payload |
-        docker run --rm -i -e PGURL -e PGCLIENTENCODING=UTF8 postgres:18-alpine `
+        docker run --rm -i -e PGURL -e PGSSLMODE=require -e PGCLIENTENCODING=UTF8 postgres:18-alpine `
             sh -c 'base64 -d | psql "$PGURL" -v ON_ERROR_STOP=1 -f -' 2>&1 |
         Tee-Object -FilePath $OutFile
 

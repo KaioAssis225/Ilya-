@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 from datetime import datetime, timedelta
@@ -31,7 +32,12 @@ API = os.environ.get(
 BASE = API.removesuffix("/api/v1")
 ROOT = Path(__file__).resolve().parent
 CREATED_AT = datetime.now()
-BACKUP_DIR = ROOT / "backups" / f"ilya-site-{CREATED_AT.strftime('%Y%m%dT%H%M%S')}"
+OUTPUT_DIR = ROOT / "backups"
+# Os JSON exportados e o ZIP ficam em texto puro ate a criptografia. Eles sao
+# montados numa pasta temporaria local; OUTPUT_DIR (no drive de rede) so recebe
+# o arquivo final.
+STAGING_ROOT = Path(tempfile.gettempdir()) / "ilya-backup-staging"
+BACKUP_DIR = STAGING_ROOT / f"ilya-site-{CREATED_AT.strftime('%Y%m%dT%H%M%S')}"
 # Use o menor limite aceito pelas rotas exportadas. A listagem de pedidos
 # permite no máximo 100 itens; usar 200 fazia a API responder 422 e transformava
 # o backup lógico inteiro em parcial antes da cópia externa.
@@ -279,10 +285,13 @@ def main() -> int:
         damaged = archive.testzip()
         if damaged:
             raise RuntimeError(f"Arquivo corrompido dentro do ZIP: {damaged}")
-    final_path = encrypt_zip(zip_path)
+    staged = encrypt_zip(zip_path)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    final_path = OUTPUT_DIR / staged.name
+    shutil.move(str(staged), final_path)
     write_checksum(final_path)
     shutil.rmtree(BACKUP_DIR)
-    apply_retention(final_path.parent)
+    apply_retention(OUTPUT_DIR)
     print(f"Backup lógico gerado: {final_path}")
     if export_errors or photo_errors:
         raise RuntimeError(
@@ -298,5 +307,6 @@ if __name__ == "__main__":
     except Exception as exc:
         if BACKUP_DIR.exists():
             shutil.rmtree(BACKUP_DIR, ignore_errors=True)
+        BACKUP_DIR.with_suffix(".zip").unlink(missing_ok=True)
         print(f"ERRO: {exc}", file=sys.stderr)
         raise SystemExit(1)

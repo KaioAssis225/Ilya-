@@ -26,6 +26,9 @@ try {
     if ([string]::IsNullOrWhiteSpace($ParsedDatabaseUrl.Host) -or $ParsedDatabaseUrl.Port -le 0) {
         throw "A URL do PostgreSQL precisa conter host e porta validos."
     }
+    if ($DatabaseUrlPlain -match 'sslmode=(disable|allow|prefer)') {
+        throw "A URL nao pode desativar o TLS (sslmode=disable/allow/prefer). Remova o parametro sslmode: os scripts exigem sslmode=require."
+    }
 } finally {
     $DatabaseUrlPlain = $null
     $ParsedDatabaseUrl = $null
