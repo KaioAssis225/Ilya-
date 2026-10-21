@@ -148,8 +148,6 @@ function makeOrder(overrides: Partial<Order> = {}): Order {
     cancelled_at: null,
     external_code: null,
     notes: null,
-    rep_signature: null,
-    client_signature: null,
     items: [makeOrderItem()],
     history: [],
     created_at: NOW,

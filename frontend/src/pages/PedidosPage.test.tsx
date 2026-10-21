@@ -20,8 +20,6 @@ const makeSummary = (overrides: Partial<OrderSummary> = {}): OrderSummary => ({
   total_with_ipi: 100,
   is_finalized: false,
   is_cancelled: false,
-  rep_signed: false,
-  client_signed: false,
   finalized_at: null,
   cancelled_at: null,
   items: [],

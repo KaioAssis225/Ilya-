@@ -1,11 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
-import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, FileSignature, PenLine, Bell, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
-import { useClient } from '../hooks/useClients'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
@@ -13,8 +11,6 @@ import { useAuth } from '../hooks/useAuth'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
 import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
-import { ELECTRONIC_SIGNATURES_ENABLED } from '../lib/features'
-import { getProfileSignature, setProfileSignature } from '../lib/signatureMemory'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
@@ -200,22 +196,20 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
 
 function OrderDetailModal({
   order: orderLight, clientName, repName,
-  userId, userRole, canSignContract,
+  userRole,
   onClose, onEdit, onFinalize, onCancel,
 }: {
   order: OrderSummary; clientName: string; repName: string
-  userId: string; userRole: string; canSignContract: boolean
+  userRole: string
   onClose: () => void; onEdit: () => void; onFinalize: () => void; onCancel: () => void
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  // A listagem não traz os blobs de assinatura (V-M7); busca o detalhe completo.
   const {
     data: orderDetail,
     isError: detailError,
     refetch: retryOrderDetail,
   } = useOrder(orderLight.id)
-  const { data: clientObj } = useClient(orderLight.client_id)
   const order: Order = orderDetail ?? {
     ...orderLight,
     price_list_code: 'lojista',
@@ -223,10 +217,6 @@ function OrderDetailModal({
     total_ipi: 0,
     external_code: null,
     notes: null,
-    rep_signed: false,
-    client_signed: false,
-    rep_signature: null,
-    client_signature: null,
     items: [],
     history: [],
     updated_at: orderLight.created_at,
@@ -253,132 +243,19 @@ function OrderDetailModal({
   )
   const { data: optCategories = [] } = useOptionalCategories()
   const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
-  const isClientUser = userRole === 'cliente' || (userRole === 'vendedor' && canSignContract)
   const [tab, setTab] = useState<'details' | 'history'>('details')
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
-  const [confirmSign, setConfirmSign] = useState(false)
-  const [isSigning, setIsSigning] = useState(false)
-  const [signInviteEmail, setSignInviteEmail] = useState('')
-  const [signInviteMethod, setSignInviteMethod] = useState<'phone_callback' | 'existing_contract' | 'in_person'>('phone_callback')
-  const [signInviteSent, setSignInviteSent] = useState(false)
-  const [signInviteError, setSignInviteError] = useState(false)
   const [revisionError, setRevisionError] = useState(false)
   const [revisionLoading, setRevisionLoading] = useState(false)
-  const [signLinkLoading, setSignLinkLoading] = useState(false)
-  const [clientSigOpen, setClientSigOpen] = useState(false)
-  const [clientSaving, setClientSaving] = useState(false)
-  const [repSigOpen, setRepSigOpen] = useState(false)
-  const [repSaving, setRepSaving] = useState(false)
-  const [sigError, setSigError] = useState(false)
-  const [notifyLoading, setNotifyLoading] = useState(false)
-  const [notifyDone, setNotifyDone] = useState(false)
-  const [notifyError, setNotifyError] = useState(false)
-  const clientCanvasRef = useRef<HTMLCanvasElement>(null)
-  const clientIsDrawingRef = useRef(false)
-  const repCanvasRef = useRef<HTMLCanvasElement>(null)
-  const repIsDrawingRef = useRef(false)
 
   // Representante também edita/finaliza os próprios pedidos (backend valida a posse)
   // O papel legado "vendedor" com vínculo é uma conta de cliente, não um usuário interno.
   const canManage = userRole === 'admin'
     || userRole === 'representante'
     || userRole === 'produtos'
-    || (userRole === 'vendedor' && !canSignContract)
+    || userRole === 'vendedor'
   const canRevise = userRole === 'admin' || userRole === 'representante'
-    || (userRole === 'vendedor' && !canSignContract)
-  const profileSig = getProfileSignature(userId)
-  const isContractSigned = !!(order.rep_signed || order.rep_signature)
-  const isClientSigned = !!(order.client_signed || order.client_signature)
-  const canGenerateSignLink = ELECTRONIC_SIGNATURES_ENABLED && userRole === 'admin'
-  const canSignAsClient = ELECTRONIC_SIGNATURES_ENABLED
-    && isClientUser
-    && !isClientSigned
-  const showNotifyBtn = ELECTRONIC_SIGNATURES_ENABLED
-    && (userRole === 'representante' || userRole === 'admin')
-  const clientHasAccount = !!clientObj?.has_user
-
-  useEffect(() => {
-    if (!clientSigOpen || !clientCanvasRef.current) return
-    const canvas = clientCanvasRef.current
-    const ctx = canvas.getContext('2d')!
-    ctx.clearRect(0, 0, canvas.width, canvas.height) // limpa assinatura anterior ao reabrir (V-M9)
-    ctx.strokeStyle = '#2c2420'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-    function getXY(e: TouchEvent | MouseEvent) {
-      const rect = canvas.getBoundingClientRect()
-      if ('touches' in e) return { x: (e as TouchEvent).touches[0].clientX - rect.left, y: (e as TouchEvent).touches[0].clientY - rect.top }
-      return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
-    }
-    function onStart(e: TouchEvent | MouseEvent) { e.preventDefault(); clientIsDrawingRef.current = true; const { x, y } = getXY(e); ctx.beginPath(); ctx.moveTo(x, y) }
-    function onMove(e: TouchEvent | MouseEvent) { e.preventDefault(); if (!clientIsDrawingRef.current) return; const { x, y } = getXY(e); ctx.lineTo(x, y); ctx.stroke() }
-    function onEnd() { clientIsDrawingRef.current = false }
-    canvas.addEventListener('mousedown', onStart); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('mouseup', onEnd)
-    canvas.addEventListener('touchstart', onStart, { passive: false }); canvas.addEventListener('touchmove', onMove, { passive: false }); canvas.addEventListener('touchend', onEnd)
-    return () => {
-      canvas.removeEventListener('mousedown', onStart); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('mouseup', onEnd)
-      canvas.removeEventListener('touchstart', onStart); canvas.removeEventListener('touchmove', onMove); canvas.removeEventListener('touchend', onEnd)
-    }
-  }, [clientSigOpen])
-
-  // Bloco 81: canvas de assinatura "na hora" para representante sem profileSig configurado
-  useEffect(() => {
-    if (!repSigOpen || !repCanvasRef.current) return
-    const canvas = repCanvasRef.current
-    const ctx = canvas.getContext('2d')!
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.strokeStyle = '#2c2420'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-    function getXY(e: TouchEvent | MouseEvent) {
-      const rect = canvas.getBoundingClientRect()
-      if ('touches' in e) return { x: (e as TouchEvent).touches[0].clientX - rect.left, y: (e as TouchEvent).touches[0].clientY - rect.top }
-      return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
-    }
-    function onStart(e: TouchEvent | MouseEvent) { e.preventDefault(); repIsDrawingRef.current = true; const { x, y } = getXY(e); ctx.beginPath(); ctx.moveTo(x, y) }
-    function onMove(e: TouchEvent | MouseEvent) { e.preventDefault(); if (!repIsDrawingRef.current) return; const { x, y } = getXY(e); ctx.lineTo(x, y); ctx.stroke() }
-    function onEnd() { repIsDrawingRef.current = false }
-    canvas.addEventListener('mousedown', onStart); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('mouseup', onEnd)
-    canvas.addEventListener('touchstart', onStart, { passive: false }); canvas.addEventListener('touchmove', onMove, { passive: false }); canvas.addEventListener('touchend', onEnd)
-    return () => {
-      canvas.removeEventListener('mousedown', onStart); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('mouseup', onEnd)
-      canvas.removeEventListener('touchstart', onStart); canvas.removeEventListener('touchmove', onMove); canvas.removeEventListener('touchend', onEnd)
-    }
-  }, [repSigOpen])
-
-  async function handleSaveClientSig() {
-    if (!clientCanvasRef.current) return
-    const data = clientCanvasRef.current.toDataURL('image/png')
-    setClientSaving(true); setSigError(false)
-    try {
-      await api.post(`/orders/${order.id}/sign-client`, { signature: data })
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      setClientSigOpen(false)
-    } catch {
-      setSigError(true)
-    } finally {
-      setClientSaving(false)
-    }
-  }
-
-  // Mantém a assinatura somente em memória para reuso durante a sessão atual.
-  async function handleSaveRepSig() {
-    if (!repCanvasRef.current) return
-    const data = repCanvasRef.current.toDataURL('image/png')
-    setRepSaving(true); setSigError(false)
-    try {
-      await api.post(`/orders/${order.id}/sign-representative`, { signature: data })
-      setProfileSignature(userId, data)
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      setRepSigOpen(false)
-    } catch {
-      setSigError(true)
-    } finally {
-      setRepSaving(false)
-    }
-  }
-
-  async function handleNotifyClient() {
-    setNotifyLoading(true); setNotifyError(false)
-    try { await api.post(`/orders/${order.id}/notify-client`); setNotifyDone(true) } catch { setNotifyError(true) }
-    setNotifyLoading(false)
-  }
+    || userRole === 'vendedor'
 
   function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null }[] {
     return Object.entries(cats).map(([cat, color]) => ({
@@ -441,7 +318,7 @@ function OrderDetailModal({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
-            {canRevise && (isContractSigned || isClientSigned) && (
+            {canRevise && order.is_finalized && !order.is_cancelled && (
               <button disabled={revisionLoading} onClick={async () => {
                 setRevisionLoading(true); setRevisionError(false)
                 try {
@@ -452,7 +329,7 @@ function OrderDetailModal({
                 } catch { setRevisionError(true) } finally { setRevisionLoading(false) }
               }} className="btn-secondary text-xs disabled:opacity-50">{revisionLoading ? viewText('Criando revisão...', 'Creating revision...') : viewText('Criar revisão', 'Create revision')}</button>
             )}
-            {canManage && !order.is_finalized && !order.is_cancelled && !isContractSigned && !isClientSigned && (
+            {canManage && !order.is_finalized && !order.is_cancelled && (
               <>
                 <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 border border-line text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
                   <PenLine className="w-3.5 h-3.5" /> Editar
@@ -468,7 +345,7 @@ function OrderDetailModal({
           </div>
         </div>
         {revisionError && <p role="alert" className="text-xs font-medium text-danger mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}
-        {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um pedido anterior. Esta versão exige novas assinaturas.</p>}
+        {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um pedido anterior.</p>}
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-line mb-4">
@@ -574,151 +451,7 @@ function OrderDetailModal({
                 </tfoot>
               </table>
             </div>
-
-            {/* Assinaturas — preservadas, mas temporariamente ocultas por feature flag */}
-            {ELECTRONIC_SIGNATURES_ENABLED && <div className="mt-5 pt-4 border-t border-line">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted uppercase tracking-wider font-semibold">Assinaturas</span>
-                  <span className="flex items-center gap-1 text-xs">{isContractSigned ? <CheckCircle className="w-3 h-3 text-success" /> : <Clock className="w-3 h-3 text-warning" />}<span className="text-ink-3">REP {isContractSigned ? 'assinado' : 'pendente'}</span></span>
-                  <span className="flex items-center gap-1 text-xs">{isClientSigned ? <CheckCircle className="w-3 h-3 text-success" /> : <Clock className="w-3 h-3 text-warning" />}<span className="text-ink-3">CLI {isClientSigned ? 'assinado' : 'pendente'}</span></span>
-                </div>
-                {canGenerateSignLink && !isClientSigned && !signInviteSent && <span className="text-xs text-muted">Envio por e-mail confirmado</span>}
-              </div>
-              {canGenerateSignLink && !isClientSigned && (
-                <div className="space-y-2 mt-3">
-                  <p className="text-xs text-muted">Confirme o endereço do titular fora do sistema antes de enviar.</p>
-                  <input className="input" type="email" aria-label="E-mail confirmado do titular" value={signInviteEmail} onChange={event => setSignInviteEmail(event.target.value)} placeholder="E-mail confirmado do titular" autoComplete="off" />
-                  <select className="input" aria-label="Método de verificação" value={signInviteMethod} onChange={event => setSignInviteMethod(event.target.value as typeof signInviteMethod)}>
-                    <option value="phone_callback">Retorno telefônico ao titular</option>
-                    <option value="existing_contract">Contrato existente</option>
-                    <option value="in_person">Verificação presencial</option>
-                  </select>
-                  <button disabled={!signInviteEmail.trim() || signLinkLoading || signInviteSent} onClick={async () => {
-                    setSignLinkLoading(true); setSignInviteError(false)
-                    try {
-                      await api.post(`/orders/${order.id}/generate-sign-token`, { confirmed_email: signInviteEmail.trim(), verification_method: signInviteMethod })
-                      setSignInviteSent(true); setSignInviteEmail('')
-                    } catch { setSignInviteError(true) } finally { setSignLinkLoading(false) }
-                  }} className="btn-primary disabled:opacity-50">{signLinkLoading ? 'Enviando...' : 'Enviar convite de assinatura'}</button>
-                  {signInviteSent && <p role="status" className="text-xs text-success">Convite enviado ao e-mail confirmado.</p>}
-                  {signInviteError && <p role="alert" className="text-xs font-medium text-danger">Não foi possível enviar o convite.</p>}
-                </div>
-              )}
-              {canSignAsClient && (
-                <div className="mt-3">
-                  <button onClick={() => { setSigError(false); setClientSigOpen(true) }} className="flex items-center gap-1.5 px-3 py-1.5 border border-muted text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
-                    <PenLine className="w-3.5 h-3.5" /> Assinar como Cliente
-                  </button>
-                </div>
-              )}
-              {showNotifyBtn && (
-                <div className="mt-2">
-                  {notifyDone
-                    ? <div className="flex items-center gap-1.5 text-xs text-success"><CheckCircle className="w-3.5 h-3.5" /> Notificação enviada ao cliente.</div>
-                    : <>
-                        <button disabled={notifyLoading || !clientHasAccount} onClick={handleNotifyClient} title={!clientHasAccount ? 'Cliente não possui conta no sistema' : undefined} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors ${clientHasAccount ? 'border-gold-soft text-gold hover:bg-gold-wash disabled:opacity-50' : 'border-line text-faint cursor-not-allowed'}`}>
-                          <Bell className="w-3.5 h-3.5" />{notifyLoading ? 'Enviando...' : 'Notificar Cliente'}
-                        </button>
-                        {notifyError && <p className="text-[10px] font-medium text-danger mt-1">Erro ao enviar notificação.</p>}
-                      </>
-                  }
-                </div>
-              )}
-            </div>}
-
-            {ELECTRONIC_SIGNATURES_ENABLED && canSignContract && (isClientUser ? !isClientSigned : !isContractSigned) && (
-              <div className="mt-5 pt-4 border-t border-line">
-                {profileSig
-                  ? <button onClick={() => { setSigError(false); setConfirmSign(true) }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-gold text-white rounded-xl hover:bg-gold-600 transition-colors text-sm font-semibold shadow-sm">
-                      <FileSignature className="w-4 h-4" />{isClientUser ? 'Assinar como Cliente' : 'Assinar como Representante'}
-                    </button>
-                  : !isClientUser
-                    ? <button onClick={() => { setSigError(false); setRepSigOpen(true) }} className="w-full flex items-center justify-center gap-2 py-2.5 bg-gold text-white rounded-xl hover:bg-gold-600 transition-colors text-sm font-semibold shadow-sm">
-                        <FileSignature className="w-4 h-4" />Assinar Agora
-                      </button>
-                    : <p className="text-xs text-center text-muted py-2">Configure sua assinatura em <span className="text-gold font-medium">Minha Conta</span> para assinar contratos.</p>
-                }
-              </div>
-            )}
-
-            {ELECTRONIC_SIGNATURES_ENABLED && (order.rep_signature || order.client_signature) && (
-              <div className="mt-5 pt-4 border-t border-line">
-                <p className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-3">Assinaturas do Contrato</p>
-                <div className="flex gap-4">
-                  <div className="flex-1 text-center">
-                    {order.rep_signature ? <img src={order.rep_signature} alt="Assinatura Representante" className="max-h-16 w-full object-contain pb-1" /> : <div className="h-16" />}
-                    <div className="border-t border-faint pt-1"><p className="text-[10px] text-muted">Representante / Ilya</p></div>
-                  </div>
-                  <div className="flex-1 text-center">
-                    {order.client_signature ? <img src={order.client_signature} alt="Assinatura Cliente" className="max-h-16 w-full object-contain pb-1" /> : <div className="h-16" />}
-                    <div className="border-t border-faint pt-1"><p className="text-[10px] text-muted">Cliente / Contratado</p></div>
-                  </div>
-                </div>
-              </div>
-            )}
           </>
-        )}
-
-        {/* Canvas assinatura cliente */}
-        {ELECTRONIC_SIGNATURES_ENABLED && clientSigOpen && (
-          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Assinatura do Cliente</h4><button onClick={() => setClientSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
-              <p className="text-xs text-muted mb-3">Assine no campo abaixo após revisar os termos do pedido.</p>
-              <canvas ref={clientCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-surface-quiet cursor-crosshair touch-none" />
-              <div className="flex gap-2 mt-4">
-                <button onClick={() => clientCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Limpar</button>
-                <button onClick={handleSaveClientSig} disabled={clientSaving} className="btn-primary flex-1">{clientSaving ? 'Salvando...' : 'Confirmar Assinatura'}</button>
-              </div>
-              {sigError && <p className="text-xs font-medium text-danger mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
-            </div>
-          </div>
-        )}
-
-        {/* Bloco 81: canvas de assinatura "na hora" para representante sem perfil configurado */}
-        {ELECTRONIC_SIGNATURES_ENABLED && repSigOpen && (
-          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-ink">Sua Assinatura</h4><button onClick={() => setRepSigOpen(false)} className="text-muted hover:text-ink"><X className="w-4 h-4" /></button></div>
-              <p className="text-xs text-muted mb-3">Assine no campo abaixo. Sua assinatura será salva para os próximos pedidos.</p>
-              <canvas ref={repCanvasRef} width={420} height={160} className="w-full border border-line rounded-xl bg-surface-quiet cursor-crosshair touch-none" />
-              <div className="flex gap-2 mt-4">
-                <button onClick={() => repCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 420, 160)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Limpar</button>
-                <button onClick={handleSaveRepSig} disabled={repSaving} className="btn-primary flex-1">{repSaving ? 'Salvando...' : 'Confirmar Assinatura'}</button>
-              </div>
-              {sigError && <p className="text-xs font-medium text-danger mt-3">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
-            </div>
-          </div>
-        )}
-
-        {ELECTRONIC_SIGNATURES_ENABLED && confirmSign && (
-          <div className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
-              <h4 className="text-base font-semibold text-ink mb-2">Confirmar Assinatura</h4>
-              <p className="text-sm text-ink-2 mb-5">Deseja aplicar sua assinatura para o Pedido <span className="text-gold font-mono font-semibold">#{order.code}</span>?</p>
-              {sigError && <p className="text-xs font-medium text-danger mb-4">Falha ao salvar a assinatura no servidor. Verifique a conexão e tente novamente.</p>}
-              <div className="flex gap-3">
-                <button onClick={() => setConfirmSign(false)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
-                <button onClick={async () => {
-                  setIsSigning(true); setSigError(false)
-                  try {
-                    await api.post(isClientUser ? `/orders/${order.id}/sign-client` : `/orders/${order.id}/sign-representative`, { signature: profileSig })
-                    queryClient.invalidateQueries({ queryKey: ['orders'] })
-                    setConfirmSign(false)
-                  } catch {
-                    setSigError(true)
-                  } finally {
-                    setIsSigning(false)
-                  }
-                }} className="btn-primary flex-1">Confirmar</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {ELECTRONIC_SIGNATURES_ENABLED && isSigning && (
-          <BrandLoadingOverlay label="Gerando assinatura" />
         )}
 
         {activePhotoModal && (
@@ -786,7 +519,6 @@ export default function PedidosPage() {
   const { locale } = useLocale()
   const isEnglish = locale === 'en-GB'
   const navigate = useNavigate()
-  const isLegacyClient = user?.role === 'vendedor' && !!user.linked_id
   const isInternalSeller = user?.role === 'vendedor' && !user.linked_id
   const canManage = user?.role === 'admin' || user?.role === 'representante' || user?.role === 'produtos' || isInternalSeller
   const canViewGlobalAudit = user?.role === 'admin' || isInternalSeller
@@ -842,8 +574,6 @@ export default function PedidosPage() {
   )
   const globalHistory = globalHistoryPage?.items ?? []
   const deleteM = useDeleteOrder()
-  const canSignContract = ELECTRONIC_SIGNATURES_ENABLED
-    && (user?.role === 'representante' || user?.role === 'cliente' || isLegacyClient)
 
   async function handlePDF(orderLight: OrderSummary) {
     if (pdfOrderId) return
@@ -1071,8 +801,8 @@ export default function PedidosPage() {
                     repName={order.rep_name ?? '—'}
                     onView={() => setViewing(order)}
                     onPDF={() => handlePDF(order)}
-                    onFinalize={canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed ? () => setFinalizing(order) : undefined}
-                    onDelete={canDelete && !order.rep_signed && !order.client_signed ? () => setDeleting(order) : undefined}
+                    onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
+                    onDelete={canDelete ? () => setDeleting(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                   />
                 ))}
@@ -1125,16 +855,16 @@ export default function PedidosPage() {
                           <div className="flex gap-0.5 items-center">
                             <button type="button" title="Ver detalhes" aria-label={`Ver detalhes do pedido ${order.code}`} className="btn-icon" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
                             <button type="button" disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} aria-label={`Gerar PDF do pedido ${order.code}`} className="btn-icon hover:text-mineral" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
-                            {canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed && (
+                            {canManage && !order.is_finalized && !order.is_cancelled && (
                               <button type="button" title="Finalizar pedido" aria-label={`Finalizar pedido ${order.code}`} className="btn-icon hover:text-success" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
                             )}
-                            {canManage && !order.is_finalized && !order.is_cancelled && !order.rep_signed && !order.client_signed && (
+                            {canManage && !order.is_finalized && !order.is_cancelled && (
                               <>
                                 <button type="button" title="Editar" aria-label={`Editar pedido ${order.code}`} className="btn-icon" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
                                 <button type="button" title="Cancelar" aria-label={`Cancelar pedido ${order.code}`} className="btn-icon hover:text-terracotta" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
                               </>
                             )}
-                            {canDelete && !order.rep_signed && !order.client_signed && (
+                            {canDelete && (
                               <button type="button" title="Excluir" aria-label={`Excluir pedido ${order.code}`} className="btn-icon hover:text-danger" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                             )}
                           </div>
@@ -1192,9 +922,7 @@ export default function PedidosPage() {
           order={orders.find(o => o.id === viewing.id) ?? viewing}
           clientName={viewing.client_name}
           repName={viewing.rep_name ?? ''}
-          userId={user?.id ?? ''}
           userRole={user?.role ?? ''}
-          canSignContract={!!canSignContract}
           onClose={() => setViewing(null)}
           onEdit={() => { setViewing(null); navigate(`/orcamentos?edit=${viewing.id}`) }}
           onFinalize={() => { setFinalizing(viewing); setViewing(null) }}
@@ -1220,4 +948,3 @@ export default function PedidosPage() {
     </div>
   )
 }
-
