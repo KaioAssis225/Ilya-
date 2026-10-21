@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_platform_capability
@@ -18,6 +18,7 @@ from app.core.moloni_crypto import encrypt_token
 from app.core.observability import external_exception, external_invalid, httpx_event_hooks
 from app.models.moloni import MoloniConnection, MoloniOAuthState, MoloniExportJob, MoloniTaxMapping
 from app.models.order import Order
+from app.services.moloni_exporter import MoloniError, active_moloni_connection
 from app.services.moloni_jobs import enqueue_finalized_eu_order
 
 router = APIRouter(prefix="/api/v1/integrations/moloni", tags=["moloni"])
@@ -68,6 +69,8 @@ async def callback(code: str = Query(min_length=1), state: str = Query(min_lengt
         else:
             external_invalid("moloni")
         raise HTTPException(502, "Moloni recusou a autorização. Tente conectar novamente.")
+    # Uma empresa Moloni ativa por vez: o exportador recusa escolher entre duas.
+    await db.execute(update(MoloniConnection).where(MoloniConnection.company_id != row.company_id, MoloniConnection.is_active.is_(True)).values(is_active=False))
     connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.company_id == row.company_id).with_for_update())).scalar_one_or_none()
     expiry = now + timedelta(seconds=int(token.get("expires_in", 0) or 0))
     if connection:
@@ -96,7 +99,10 @@ async def status(db: AsyncSession = Depends(get_db_session), _: PlatformPrincipa
 @router.put("/tax-mappings")
 async def save_tax_mappings(payload: TaxMappingsRequest, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):
     """Registra a correspondencia explicita IVA Ilya para imposto Moloni."""
-    connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
+    try:
+        connection = await active_moloni_connection(db)
+    except MoloniError as exc:
+        raise HTTPException(409, str(exc))
     if not connection:
         raise HTTPException(422, "Conecte o Moloni antes de configurar impostos.")
     rates = [item.vat_rate for item in payload.mappings]

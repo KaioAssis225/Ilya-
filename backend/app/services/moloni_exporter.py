@@ -92,7 +92,12 @@ class MoloniApi:
         except httpx.HTTPError as exc:
             external_exception(exc)
             raise
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            # A mensagem do httpx traz a URL, e o Moloni exige o access_token
+            # na query: repassá-la gravaria o token em texto no last_error.
+            raise MoloniError(f"Moloni respondeu HTTP {response.status_code} em {endpoint}.") from None
         try:
             payload = response.json()
         except ValueError:
@@ -238,9 +243,17 @@ def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> 
     legacy_lines = [f"{category}: {value}" for category, value in item.opt_categories.items()]
     return "\n".join(part for part in [product_summary or "", *legacy_lines, *choice_lines] if part)
 
+async def active_moloni_connection(db: AsyncSession) -> MoloniConnection | None:
+    """Conexão ativa única. Com duas ativas o destino dos dados EU seria
+    arbitrário (LIMIT 1 sem ordem), então recusa escolher."""
+    connections = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(2))).scalars().all()
+    if len(connections) > 1:
+        raise MoloniError("Há mais de uma conexão Moloni ativa; reconecte a empresa correta.")
+    return connections[0] if connections else None
+
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
-    connection = (await db.execute(select(MoloniConnection).where(MoloniConnection.is_active.is_(True)).limit(1))).scalar_one_or_none()
+    connection = await active_moloni_connection(db)
     if not connection: raise MoloniError("Nenhuma conexão Moloni ativa.")
     order = (await db.execute(select(Order).where(Order.id == job.order_id).options(selectinload(Order.items)))).scalar_one()
     if order.market_code != "EU" or not order.is_finalized: raise MoloniError("Pedido não é um pedido EU finalizado.")
