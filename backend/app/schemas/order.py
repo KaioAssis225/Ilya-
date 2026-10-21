@@ -135,10 +135,6 @@ class OrderRead(BaseModel):
     revision_number: int = 1
     external_code: Optional[str] = None
     notes: Optional[str]
-    rep_signed: bool = False
-    client_signed: bool = False
-    rep_signature: Optional[str] = None
-    client_signature: Optional[str] = None
     items: List[OrderItemRead]
     history: List[OrderHistoryRead] = Field(default_factory=list)
     created_at: datetime
@@ -172,8 +168,6 @@ class OrderListRead(BaseModel):
     total_with_ipi: Decimal = Decimal("0")
     is_finalized: bool = False
     is_cancelled: bool = False
-    rep_signed: bool = False
-    client_signed: bool = False
     finalized_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
     items: List[OrderListItemRead] = Field(default_factory=list)

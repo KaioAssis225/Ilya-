@@ -1,17 +1,15 @@
 import base64
 import binascii
 import logging
-import hashlib
-import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import false, or_, select, text, tuple_, update
+from sqlalchemy import false, or_, select, text, tuple_
 from sqlalchemy.orm import load_only, noload, selectinload
 
 from app.api.deps import (
@@ -23,10 +21,7 @@ from app.api.deps import (
     is_client_account,
     is_internal_operator,
 )
-from app.core.config import settings
-from app.core.limiter import limiter
 from app.core.lifecycle import touch_client_activity
-from app.core.client_invites import invitation_delivery_ready, send_signature_invitation
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
@@ -39,18 +34,10 @@ from app.models.optional_color import OptionalColor, product_optionals
 from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
 from app.models.product_type import ProductType
 from app.models.user import User, UserRole
-from app.models.notification import Notification
-from app.models.signature_invitation import SignatureInvitation
-from app.models.order_signature_evidence import OrderSignatureEvidence
-from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket, VAT_APPROVED
+from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
 from app.schemas.order import OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
-from app.core.security import (
-    generate_sign_invitation_token,
-    hash_sign_invitation_token,
-    sign_invitation_expiry,
-)
 
 logger = logging.getLogger("ilya.orders")
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -63,17 +50,6 @@ _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
-
-
-def _require_electronic_signatures_enabled() -> None:
-    if not settings.ELECTRONIC_SIGNATURES_ENABLED:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Assinatura eletrônica temporariamente indisponível. "
-                "Utilize os campos de assinatura manual do PDF."
-            ),
-        )
 
 
 def _decimal(value: object) -> Decimal:
@@ -154,48 +130,6 @@ def _order_visibility_filters(current_user: User) -> list:
             else false()
         ]
     return []
-
-
-def _order_document_content(order: Order) -> dict:
-    return {
-        "order_id": str(order.id),
-        "document_version": order.document_version or 1,
-        "market_code": order.market_code,
-        "code": order.code,
-        "orc_id": order.orc_id,
-        "client_id": str(order.client_id),
-        "rep_id": str(order.rep_id) if order.rep_id else None,
-        "price_list_code": order.price_list_code,
-        "currency": order.currency,
-        "locale": order.locale,
-        "is_finalized": order.is_finalized,
-        "is_cancelled": order.is_cancelled,
-        "external_code": order.external_code,
-        "total_value": str(order.total_value),
-        "total_ipi": str(order.total_ipi),
-        "total_with_ipi": str(order.total_with_ipi),
-        "notes": order.notes,
-        "items": [
-            ({
-                "product_code": item.product_code,
-                "description": item.description,
-                "is_circular": item.is_circular,
-                "altura": str(item.altura),
-                "largura": str(item.largura),
-                "profundidade": str(item.profundidade),
-                "qty": item.qty,
-                "unit_price": str(item.unit_price),
-                "discount": str(item.discount),
-                "ipi_rate": str(item.ipi_rate),
-                "ipi_value": str(item.ipi_value),
-                "tax_label": item.tax_label,
-                "currency": item.currency,
-                "observacao": item.observacao,
-                "optionals": item.opt_categories,
-            } | ({"application_choices": _choice_snapshot(item)} if getattr(item, "optional_choices", []) else {}))
-            for item in sorted(order.items, key=lambda current: str(current.id))
-        ],
-    }
 
 
 def _choice_snapshot(item: OrderItem) -> list[dict]:
@@ -286,36 +220,6 @@ async def _resolve_item_choices(
             display_order=app.display_order,
         ))
     return result
-
-
-def _order_document_hash(order: Order) -> str:
-    canonical = json.dumps(_order_document_content(order), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-def _record_signature(
-    db: AsyncSession, order: Order, *, signer_kind: str, signature: str,
-    method: str, submitted_by_user_id: uuid.UUID | None = None,
-    invitation_id: uuid.UUID | None = None,
-) -> None:
-    db.add(OrderSignatureEvidence(
-        id=uuid.uuid4(), order_id=order.id, signer_kind=signer_kind,
-        document_version=order.document_version or 1,
-        document_hash=_order_document_hash(order),
-        signature_hash=hashlib.sha256(signature.encode("utf-8")).hexdigest(),
-        signed_at=datetime.now(timezone.utc), method=method,
-        submitted_by_user_id=submitted_by_user_id,
-        invitation_id=invitation_id, verification_status="captured",
-    ))
-
-
-def _invitation_is_valid(invitation: SignatureInvitation | None) -> bool:
-    if not invitation or invitation.consumed_at or invitation.revoked_at or not invitation.sent_at:
-        return False
-    expires_at = invitation.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return expires_at >= datetime.now(timezone.utc)
 
 
 async def _next_codes(
@@ -636,7 +540,7 @@ async def create_order(
     source_order: Order | None = None
     if payload.supersedes_order_id is not None:
         if not _can_operate_order(current_user):
-            raise HTTPException(status_code=403, detail="Somente operador pode criar revisão de pedido assinado.")
+            raise HTTPException(status_code=403, detail="Somente operador pode criar revisão de pedido finalizado.")
         source_order = (await db.execute(select(Order).where(
             Order.id == payload.supersedes_order_id,
             Order.market_code == principal.code,
@@ -644,8 +548,8 @@ async def create_order(
         ).with_for_update())).scalar_one_or_none()
         if source_order is None or source_order.client_id != payload.client_id:
             raise HTTPException(status_code=404, detail="Pedido de origem não encontrado neste mercado e cliente.")
-        if source_order.rep_signature is None and source_order.client_signature is None:
-            raise HTTPException(status_code=409, detail="Revisão exige pedido de origem assinado.")
+        if not (source_order.is_finalized and not source_order.is_cancelled):
+            raise HTTPException(status_code=409, detail="Revisão exige pedido de origem finalizado.")
         successor = (await db.execute(select(Order.id).where(
             Order.supersedes_order_id == source_order.id,
         ))).scalar_one_or_none()
@@ -867,8 +771,8 @@ async def create_order_revision(
     ))).scalar_one_or_none()
     if source is None:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if source.rep_signature is None and source.client_signature is None:
-        raise HTTPException(status_code=409, detail="Somente pedido assinado exige revisão.")
+    if not (source.is_finalized and not source.is_cancelled):
+        raise HTTPException(status_code=409, detail="Somente pedido finalizado pode receber revisão.")
     payload = OrderCreate(
         client_id=source.client_id, rep_id=source.rep_id, notes=source.notes,
         locale=source.locale if source.market_code == "EU" else None,
@@ -987,8 +891,6 @@ async def list_orders(
             Order.total_with_ipi,
             Order.is_finalized,
             Order.is_cancelled,
-            Order.rep_signature.is_not(None).label("rep_signed"),
-            Order.client_signature.is_not(None).label("client_signed"),
             Order.finalized_at,
             Order.cancelled_at,
             Order.created_at,
@@ -1119,8 +1021,6 @@ async def update_order(
         raise HTTPException(status_code=409, detail="Pedido já finalizado e não pode ser editado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado e não pode ser editado.")
-    if order.rep_signature is not None or order.client_signature is not None:
-        raise HTTPException(status_code=409, detail="Pedido assinado é imutável. Crie uma revisão para corrigir os termos.")
     # Migration/01: toda edição aceita incrementa o frescor para consumidores
     # externos (leitura cross-database do Ilya Estoque).
     order.source_version += 1
@@ -1322,11 +1222,6 @@ async def update_order(
         details=detail,
         items_snapshot=_items_history_snapshot(new_items if payload.items is not None else order.items),
     ))
-    await db.execute(update(SignatureInvitation).where(
-        SignatureInvitation.order_id == order.id,
-        SignatureInvitation.consumed_at.is_(None),
-        SignatureInvitation.revoked_at.is_(None),
-    ).values(revoked_at=datetime.now(timezone.utc)))
     await touch_client_activity(db, order.client_id)
     try:
         await db.commit()
@@ -1365,8 +1260,6 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
-    if order.rep_signature is not None or order.client_signature is not None:
-        raise HTTPException(status_code=409, detail="Pedido assinado é imutável. Crie uma revisão para corrigir os termos.")
     terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
     order.finalized_at = terminal_at
@@ -1374,11 +1267,6 @@ async def finalize_order(
     order.document_version += 1
     if payload.external_code:
         order.external_code = payload.external_code
-    await db.execute(update(SignatureInvitation).where(
-        SignatureInvitation.order_id == order.id,
-        SignatureInvitation.consumed_at.is_(None),
-        SignatureInvitation.revoked_at.is_(None),
-    ).values(revoked_at=terminal_at))
     db.add(OrderHistory(
         id=uuid.uuid4(),
         order_id=order.id,
@@ -1421,18 +1309,11 @@ async def cancel_order(
         raise HTTPException(status_code=409, detail="Pedido finalizado não pode ser cancelado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido já está cancelado.")
-    if order.rep_signature is not None or order.client_signature is not None:
-        raise HTTPException(status_code=409, detail="Pedido assinado é imutável. Crie uma revisão para corrigir os termos.")
     terminal_at = datetime.now(timezone.utc)
     order.is_cancelled = True
     order.cancelled_at = terminal_at
     order.source_version += 1
     order.document_version += 1
-    await db.execute(update(SignatureInvitation).where(
-        SignatureInvitation.order_id == order.id,
-        SignatureInvitation.consumed_at.is_(None),
-        SignatureInvitation.revoked_at.is_(None),
-    ).values(revoked_at=terminal_at))
     db.add(OrderHistory(
         id=uuid.uuid4(),
         order_id=order.id,
@@ -1464,49 +1345,6 @@ async def get_order_history(
         select(OrderHistory).where(OrderHistory.order_id == order_id).order_by(OrderHistory.created_at.asc())
     )
     return hist.scalars().all()
-
-
-@router.get("/signature-audit")
-async def signature_audit(
-    skip: int = Query(default=0, ge=0, le=100_000),
-    limit: int = Query(default=100, ge=1, le=100),
-    db: AsyncSession = Depends(get_db_session),
-    principal: MarketPrincipal = Depends(get_current_principal),
-):
-    if principal.actor.role != UserRole.admin:
-        raise HTTPException(status_code=403, detail="Auditoria de assinatura exige admin do mercado.")
-    rows = (await db.execute(
-        select(Order, OrderSignatureEvidence)
-        .join(OrderSignatureEvidence, OrderSignatureEvidence.order_id == Order.id)
-        .where(Order.market_code == principal.code)
-        .order_by(Order.id, OrderSignatureEvidence.signer_kind)
-        .offset(skip).limit(limit)
-    )).all()
-    result = []
-    for order, evidence in rows:
-        signature = order.client_signature if evidence.signer_kind == "client" else order.rep_signature
-        current_hash = _order_document_hash(order) if evidence.document_hash else None
-        signature_hash = hashlib.sha256(signature.encode("utf-8")).hexdigest() if signature else None
-        if evidence.verification_status == "unverified":
-            status_value = "legacy_unverified"
-        elif (evidence.document_hash is not None
-              and evidence.signature_hash is not None
-              and signature is not None
-              and evidence.document_version == order.document_version
-              and evidence.document_hash == current_hash
-              and evidence.signature_hash == signature_hash):
-            status_value = "matched"
-        else:
-            status_value = "divergent"
-        result.append({
-            "order_id": order.id, "signer_kind": evidence.signer_kind,
-            "verification_status": status_value,
-            "document_version": evidence.document_version,
-            "signed_at": evidence.signed_at,
-            "method": evidence.method,
-            "submitted_by_user_id": evidence.submitted_by_user_id,
-        })
-    return result
 
 
 @router.get("/{id_or_code}", response_model=OrderRead)
@@ -1541,8 +1379,6 @@ async def delete_order(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if order.rep_signature is not None or order.client_signature is not None:
-        raise HTTPException(status_code=409, detail="Pedido assinado não pode ser excluído.")
 
     await enqueue_event(
         db,
@@ -1570,308 +1406,3 @@ async def delete_order(
     )
 
 
-class SignatureInviteIssue(BaseModel):
-    confirmed_email: EmailStr
-    verification_method: Literal["phone_callback", "existing_contract", "in_person"]
-
-
-@router.post("/{order_id}/generate-sign-token", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit("5/minute")
-async def generate_sign_token(
-    request: Request,
-    response: Response,
-    order_id: uuid.UUID,
-    body: SignatureInviteIssue,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
-    principal: MarketPrincipal = Depends(get_current_principal),
-):
-    _require_electronic_signatures_enabled()
-    if current_user.role != UserRole.admin:
-        raise HTTPException(status_code=403, detail="Convite de assinatura exige administrador do mercado.")
-    if not invitation_delivery_ready():
-        raise HTTPException(status_code=503, detail="Envio de convites não configurado.")
-    result = await db.execute(
-        select(Order).where(Order.id == order_id, Order.market_code == principal.code).with_for_update()
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if order.is_cancelled:
-        raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser assinado.")
-    if order.client_signature:
-        raise HTTPException(status_code=409, detail="Pedido já foi assinado pelo cliente.")
-    client = (await db.execute(select(Client).where(
-        Client.id == order.client_id, Client.market_code == principal.code,
-    ))).scalar_one_or_none()
-    recipient = str(body.confirmed_email).strip().lower()
-    if client is None or not client.email or client.email.strip().lower() != recipient:
-        raise HTTPException(status_code=422, detail="Confirme o e-mail atual do titular no cadastro.")
-
-    now = datetime.now(timezone.utc)
-    await db.execute(
-        update(SignatureInvitation)
-        .where(
-            SignatureInvitation.order_id == order.id,
-            SignatureInvitation.consumed_at.is_(None),
-            SignatureInvitation.revoked_at.is_(None),
-        )
-        .values(revoked_at=now)
-    )
-    token = generate_sign_invitation_token()
-    invitation = SignatureInvitation(
-        order_id=order.id,
-        client_id=order.client_id,
-        token_hash=hash_sign_invitation_token(token),
-        document_hash=_order_document_hash(order),
-        document_version=order.document_version,
-        recipient_email=recipient,
-        verified_by_user_id=current_user.id,
-        verification_method=body.verification_method,
-        issued_by=current_user.id,
-        expires_at=sign_invitation_expiry(),
-    )
-    db.add(invitation)
-    await db.commit()
-    try:
-        await send_signature_invitation(recipient, order.code, token)
-    except Exception:
-        logger.warning("Falha no envio de convite de assinatura: invitation_id=%s", invitation.id)
-        invitation.revoked_at = datetime.now(timezone.utc)
-        await db.commit()
-        raise HTTPException(status_code=503, detail="Não foi possível enviar o convite de assinatura.")
-    invitation.sent_at = datetime.now(timezone.utc)
-    await touch_client_activity(db, order.client_id, invitation.sent_at)
-    await db.commit()
-    return {"status": "sent", "recipient_email": recipient}
-
-
-class VerifySignTokenPayload(BaseModel):
-    token: str = Field(..., min_length=32, max_length=512)
-
-
-# POST com token no body — token em querystring ficaria gravado nos access logs (V-04b)
-@router.post("/verify-sign-token")
-@limiter.limit("20/minute")
-async def verify_sign_token(
-    request: Request,
-    response: Response,
-    body: VerifySignTokenPayload,
-    db: AsyncSession = Depends(get_db_session),
-):
-    _require_electronic_signatures_enabled()
-    invitation = (
-        await db.execute(
-            select(SignatureInvitation).where(
-                SignatureInvitation.token_hash == hash_sign_invitation_token(body.token)
-            )
-        )
-    ).scalar_one_or_none()
-    if not _invitation_is_valid(invitation):
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-
-    result = await db.execute(select(Order).where(Order.id == invitation.order_id))
-    order = result.scalar_one_or_none()
-    if (not order or order.is_cancelled
-            or invitation.document_version != order.document_version
-            or invitation.document_hash != _order_document_hash(order)):
-        if invitation:
-            invitation.revoked_at = datetime.now(timezone.utc)
-            await db.commit()
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
-    if (client is None or not client.email
-            or client.email.strip().lower() != invitation.recipient_email):
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-
-    return {
-        "order_code": order.code,
-        "total_value": float(order.total_value),
-        "is_signed": order.client_signature is not None,
-        "document_hash": invitation.document_hash,
-        "document": _order_document_content(order),
-    }
-
-
-_MAX_SIG_SIZE = 500_000  # ~375 KB PNG descomprimida
-
-
-class SignPayload(BaseModel):
-    signature: str
-
-    @field_validator("signature")
-    @classmethod
-    def validate_signature(cls, v: str) -> str:
-        if len(v) > _MAX_SIG_SIZE:
-            raise ValueError("Assinatura excede o tamanho máximo permitido.")
-        if not v.startswith("data:image/png;base64,"):
-            raise ValueError("Formato de assinatura inválido. Esperado PNG em base64.")
-        return v
-
-
-class SignWithTokenPayload(SignPayload):
-    token: str = Field(..., min_length=32, max_length=512)
-    document_hash: str = Field(..., min_length=64, max_length=64)
-
-
-@router.post("/{order_id}/sign-representative")
-async def sign_representative(
-    order_id: uuid.UUID,
-    payload: SignPayload,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
-):
-    _require_electronic_signatures_enabled()
-    if current_user.role != UserRole.representante:
-        raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(
-        select(Order).where(
-            Order.id == order_id,
-            *_order_visibility_filters(current_user),
-        ).with_for_update()
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if order.rep_signature:
-        raise HTTPException(status_code=409, detail="Assinatura do representante já registrada.")
-    if order.is_cancelled:
-        raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser assinado.")
-    order.rep_signature = payload.signature
-    _record_signature(db, order, signer_kind="representative", signature=payload.signature,
-                      method="authenticated", submitted_by_user_id=current_user.id)
-    await touch_client_activity(db, order.client_id)
-    await db.commit()
-    return {"success": True}
-
-
-@router.post("/{order_id}/sign-client")
-async def sign_client(
-    order_id: uuid.UUID,
-    payload: SignPayload,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
-):
-    _require_electronic_signatures_enabled()
-    if not is_client_account(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(
-        select(Order).where(
-            Order.id == order_id,
-            *_order_visibility_filters(current_user),
-        ).with_for_update()
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    if order.client_signature:
-        raise HTTPException(status_code=409, detail="Assinatura do cliente já registrada.")
-    if order.is_cancelled:
-        raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser assinado.")
-    order.client_signature = payload.signature
-    _record_signature(db, order, signer_kind="client", signature=payload.signature,
-                      method="authenticated", submitted_by_user_id=current_user.id)
-    await db.execute(update(SignatureInvitation).where(
-        SignatureInvitation.order_id == order.id,
-        SignatureInvitation.consumed_at.is_(None),
-        SignatureInvitation.revoked_at.is_(None),
-    ).values(revoked_at=datetime.now(timezone.utc)))
-    await touch_client_activity(db, order.client_id)
-    await db.commit()
-    return {"success": True}
-
-
-@router.post("/{order_id}/notify-client", status_code=status.HTTP_204_NO_CONTENT)
-async def notify_client(
-    order_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
-):
-    _require_electronic_signatures_enabled()
-    if current_user.role not in {UserRole.admin, UserRole.representante}:
-        raise HTTPException(status_code=403, detail="Acesso negado.")
-    result = await db.execute(select(Order).where(
-        Order.id == order_id,
-        *_order_visibility_filters(current_user),
-    ))
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-    client_user = (await db.execute(
-        select(User)
-        .join(UserMarket, UserMarket.user_id == User.id)
-        .where(
-            UserMarket.market_code == order.market_code,
-            UserMarket.role == UserRole.cliente.value,
-            UserMarket.status == "active",
-            UserMarket.linked_client_id == order.client_id,
-            User.is_active.is_(True),
-        )
-        .order_by(User.id)
-        .limit(1)
-    )).scalar_one_or_none()
-    if not client_user:
-        raise HTTPException(status_code=404, detail="Cliente não possui conta ativa no sistema.")
-    db.add(Notification(
-        id=uuid.uuid4(),
-        market_code=order.market_code,
-        user_id=client_user.id,
-        message=f"Você tem um contrato pendente de assinatura para o pedido {order.code}.",
-    ))
-    await touch_client_activity(db, order.client_id)
-    await db.commit()
-
-
-@router.post("/sign-with-token")
-@limiter.limit("10/minute")
-async def sign_with_token(
-    request: Request,
-    response: Response,
-    payload: SignWithTokenPayload,
-    db: AsyncSession = Depends(get_db_session),
-):
-    _require_electronic_signatures_enabled()
-    candidate = (
-        await db.execute(
-            select(SignatureInvitation.id, SignatureInvitation.order_id)
-            .where(
-                SignatureInvitation.token_hash == hash_sign_invitation_token(payload.token)
-            )
-        )
-    ).one_or_none()
-    if candidate is None:
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    # Ordem de locks idêntica à emissão: pedido antes do convite.
-    result = await db.execute(
-        select(Order).where(Order.id == candidate.order_id).with_for_update()
-    )
-    order = result.scalar_one_or_none()
-    invitation = (await db.execute(select(SignatureInvitation).where(
-        SignatureInvitation.id == candidate.id,
-        SignatureInvitation.token_hash == hash_sign_invitation_token(payload.token),
-    ).with_for_update())).scalar_one_or_none()
-    if not _invitation_is_valid(invitation):
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    if not order or order.is_cancelled or invitation.client_id != order.client_id:
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one_or_none()
-    if (client is None or not client.email
-            or client.email.strip().lower() != invitation.recipient_email):
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-    if (payload.document_hash != invitation.document_hash
-            or invitation.document_version != order.document_version
-            or invitation.document_hash != _order_document_hash(order)):
-        invitation.revoked_at = datetime.now(timezone.utc)
-        await db.commit()
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
-
-    if order.client_signature:
-        raise HTTPException(status_code=409, detail="Pedido já foi assinado.")
-
-    order.client_signature = payload.signature
-    _record_signature(db, order, signer_kind="client", signature=payload.signature,
-                      method="emailed_token", invitation_id=invitation.id)
-    invitation.consumed_at = datetime.now(timezone.utc)
-    await touch_client_activity(db, order.client_id, invitation.consumed_at)
-    await db.commit()
-    return {"success": True}

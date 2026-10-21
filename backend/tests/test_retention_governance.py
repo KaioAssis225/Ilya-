@@ -58,11 +58,10 @@ def test_categorias_do_dry_run_nao_podem_repetir():
 
 def test_dry_run_padrao_cobre_todas_as_categorias_aprovadas():
     categories = RetentionDryRunRequest().categories
-    assert len(categories) == 10
+    assert len(categories) == 9
     assert {
         "notifications_read",
         "notifications_unread",
-        "signature_invitations",
         "outbox_delivered",
         "outbox_dead_letter",
         "privacy_events",

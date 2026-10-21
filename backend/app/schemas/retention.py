@@ -72,7 +72,6 @@ class RetentionDryRunRequest(BaseModel):
             "representatives",
             "notifications_read",
             "notifications_unread",
-            "signature_invitations",
             "outbox_delivered",
             "outbox_dead_letter",
             "privacy_events",
@@ -85,13 +84,12 @@ class RetentionDryRunRequest(BaseModel):
             "representatives",
             "notifications_read",
             "notifications_unread",
-            "signature_invitations",
             "outbox_delivered",
             "outbox_dead_letter",
             "privacy_events",
         ],
         min_length=1,
-        max_length=10,
+        max_length=9,
     )
 
     @field_validator("categories")
