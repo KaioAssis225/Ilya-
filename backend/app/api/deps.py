@@ -278,6 +278,11 @@ DISCOUNT_MANAGEMENT_ROLES = frozenset(
 CLIENT_IDENTITY_MANAGEMENT_ROLES = frozenset(
     {UserRole.admin, UserRole.cadastros}
 )
+# Quem concede qualquer catálogo, inclusive "todos" (DEC-04). O representante
+# concede só os que ele mesmo vende; os demais papéis não mexem no campo.
+CATALOG_MANAGEMENT_ROLES = frozenset(
+    {UserRole.admin, UserRole.cadastros}
+)
 
 
 def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict:

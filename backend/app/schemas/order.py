@@ -123,6 +123,8 @@ class OrderRead(BaseModel):
     locale: str = "pt-BR"
     client_id: uuid.UUID
     rep_id: Optional[uuid.UUID]
+    catalog_id: Optional[uuid.UUID] = None
+    catalog_name: Optional[str] = None
     total_value: Decimal
     total_ipi: Decimal = Decimal("0")
     total_with_ipi: Decimal = Decimal("0")
@@ -164,6 +166,8 @@ class OrderListRead(BaseModel):
     client_name: str
     rep_id: Optional[uuid.UUID]
     rep_name: Optional[str] = None
+    catalog_id: Optional[uuid.UUID] = None
+    catalog_name: Optional[str] = None
     total_value: Decimal
     total_with_ipi: Decimal = Decimal("0")
     is_finalized: bool = False

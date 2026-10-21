@@ -251,7 +251,7 @@ class TestProductFiscalAssignment:
                 kwargs = dict(
                     payload=ProductCreate(
                         product_code="TESTE", description="Teste", type="Mesa",
-                        altura=1, largura=1, profundidade=1,
+                        altura=1, largura=1, profundidade=1, catalog_id=uuid.uuid4(),
                     ),
                     db=db, current_user=principal.actor, principal=principal,
                 )

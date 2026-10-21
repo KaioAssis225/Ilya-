@@ -27,6 +27,7 @@ def _slugify(text: str) -> str:
 
 from sqlalchemy import select, text
 from app.db.session import AsyncSessionLocal
+from app.models.catalog import Catalog
 from app.models.optional_color import OptionalColor
 from app.models.product import Product, ProductSetComponent
 from app.models.product_type import ProductType
@@ -341,6 +342,14 @@ async def seed() -> None:
         }
 
         # ── Produtos ───────────────────────────────────────────────────────
+        # Catálogo é obrigatório no produto e no pedido (catalog_permissions_r21).
+        seed_catalog = (await db.execute(select(Catalog).where(
+            Catalog.market_code == "BR", Catalog.name == "Ilya",
+        ))).scalar_one_or_none()
+        if seed_catalog is None:
+            seed_catalog = Catalog(market_code="BR", name="Ilya")
+            db.add(seed_catalog)
+            await db.flush()
         print("Criando produtos de luxo...")
         products_map: dict[str, Product] = {}
         for data in PRODUCTS_DATA:
@@ -350,7 +359,7 @@ async def seed() -> None:
             data.setdefault("price_lojista", base_price)
             data.setdefault("price_corporativo", round(base_price * 1.15, 2))
             photo_path = PRODUCT_PHOTOS.get(code)
-            product = Product(**data, photo_path=photo_path)
+            product = Product(**data, photo_path=photo_path, catalog_id=seed_catalog.id)
             product.optionals = [o for cat in cats for o in optionals_map.get(cat, [])]
             db.add(product)
             products_map[code] = product
@@ -366,6 +375,7 @@ async def seed() -> None:
             raise ValueError(f"Opcional {cat}/{color} não encontrado")
 
         p_caracas = Product(
+            catalog_id=seed_catalog.id,
             product_code="ILY-011",
             description="Conjunto Caracas — Living Room Collection",
             type="Conjunto",
@@ -401,6 +411,7 @@ async def seed() -> None:
         products_map["ILY-011"] = p_caracas
 
         p_ipanema = Product(
+            catalog_id=seed_catalog.id,
             product_code="ILY-012",
             description="Conjunto Ipanema — Outdoor Dining Collection",
             type="Conjunto",
@@ -430,6 +441,7 @@ async def seed() -> None:
         products_map["ILY-012"] = p_ipanema
 
         p_leblon = Product(
+            catalog_id=seed_catalog.id,
             product_code="ILY-013",
             description="Conjunto Leblon — Suite Collection",
             type="Conjunto",
@@ -540,6 +552,8 @@ async def seed() -> None:
                 orc_id=orc_id,
                 client_id=client.id,
                 rep_id=rep_obj.id if rep_obj else None,
+                catalog_id=seed_catalog.id,
+                catalog_name=seed_catalog.name,
                 total_value=round(total, 2),
                 notes=None,
                 items=items,

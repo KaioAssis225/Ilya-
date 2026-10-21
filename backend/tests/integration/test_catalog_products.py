@@ -145,9 +145,11 @@ async def _create(
     catalog: Catalog | None = None,
 ) -> dict:
     _, product_type = await _dimensions(db, market)
+    # Catálogo é obrigatório no produto (catalog_permissions_r21).
+    catalog = catalog or await make_catalog(db, market_code=market)
     response = await client.post(
         "/api/v1/products",
-        json=_payload(market, code, catalog.id if catalog else None, product_type.name),
+        json=_payload(market, code, catalog.id, product_type.name),
         headers=_auth(token),
     )
     assert response.status_code == 201, response.text
@@ -300,7 +302,8 @@ async def test_reg_prod_02_eu_create_missing_translation_returns_422_without_dur
     suffix = uuid4().hex[:10]
     code = f"P05-EU-SEM-TRADUCAO-{suffix}"
     _, product_type = await _dimensions(db_session, "EU")
-    body = _payload("EU", code, None, product_type.name)
+    catalog = await make_catalog(db_session, market_code="EU")
+    body = _payload("EU", code, catalog.id, product_type.name)
     body.pop("description_en")
 
     response = await client.post("/api/v1/products", json=body, headers=_auth(token))
@@ -374,9 +377,10 @@ async def test_reg_prod_04_post_role_matrix_matches_market_guards(
     code = f"P05-POST-{market}-{role}-{suffix}"
     before = await _count_product_code(db_session, code)
     _, product_type = await _dimensions(db_session, market)
+    catalog = await make_catalog(db_session, market_code=market)
     response = await client.post(
         "/api/v1/products",
-        json=_payload(market, code, None, product_type.name),
+        json=_payload(market, code, catalog.id, product_type.name),
         headers=_auth(token),
     )
     assert response.status_code == (201 if allowed else 403), response.text

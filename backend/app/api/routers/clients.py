@@ -8,7 +8,14 @@ from sqlalchemy import func, or_, select
 
 import logging
 
+from app.api.catalog_access import (
+    CatalogScope,
+    apply_catalog_selection,
+    resolve_catalog_selection,
+    visible_catalog_scope,
+)
 from app.api.deps import (
+    CATALOG_MANAGEMENT_ROLES,
     CLIENT_ASSIGNMENT_ROLES,
     DISCOUNT_MANAGEMENT_ROLES,
     get_db_session,
@@ -131,6 +138,37 @@ async def _resolved_rep_id(
     return None
 
 
+async def _catalog_selection(
+    db: AsyncSession,
+    market: str,
+    current_user: User,
+    all_catalogs: bool | None,
+    catalog_ids: list[uuid.UUID] | None,
+    *,
+    creating: bool,
+) -> tuple[bool, frozenset[uuid.UUID]] | None:
+    """Catálogos que o cliente pode comprar, conforme quem edita (DEC-04).
+
+    Admin/cadastros concedem qualquer um. O representante só concede os que
+    vende; cliente que ele cadastra sem informar nada herda os dele, porque
+    "todos" seria mais do que ele pode dar. Os demais papéis não mexem no
+    campo, como no teto de desconto.
+    """
+    if current_user.role in CATALOG_MANAGEMENT_ROLES:
+        return await resolve_catalog_selection(
+            db, market, all_catalogs=all_catalogs, catalog_ids=catalog_ids,
+        )
+    if current_user.role != UserRole.representante:
+        return None
+    limit: CatalogScope = await visible_catalog_scope(db, current_user, market)
+    selection = await resolve_catalog_selection(
+        db, market, all_catalogs=all_catalogs, catalog_ids=catalog_ids, limit=limit,
+    )
+    if selection is None and creating and limit is not None:
+        return False, limit
+    return selection
+
+
 def _rep_guard(client: Client, current_user: User) -> None:
     if (
         current_user.role == UserRole.representante
@@ -200,6 +238,8 @@ def _with_metadata(
         client.country = "BR"
     if client.market_code is None:
         client.market_code = "BR"
+    if client.all_catalogs is None:
+        client.all_catalogs = True
     r = ClientRead.model_validate(client)
     return r.model_copy(
         update={
@@ -307,6 +347,8 @@ async def create_client(
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
     data = payload.model_dump()
+    requested_all_catalogs = data.pop("all_catalogs")
+    requested_catalog_ids = data.pop("catalog_ids")
     market = principal.code
     duplicate_email = None
     if payload.email:
@@ -355,6 +397,12 @@ async def create_client(
         raise HTTPException(status_code=422, detail="Lista de preços inválida para o mercado ativo.")
     client = Client(**data, market_code=market, price_list_id=price_list.id, created_by_user_id=current_user.id)
     client.rep_id = await _resolved_rep_id(data, current_user, db)
+    selection = await _catalog_selection(
+        db, market, current_user, requested_all_catalogs, requested_catalog_ids,
+        creating=True,
+    )
+    if selection is not None:
+        apply_catalog_selection(client, selection)
     db.add(client)
     try:
         await db.commit()
@@ -424,6 +472,14 @@ async def update_client(
         )
     if "rep_id" in update_data:
         update_data["rep_id"] = await _validated_rep_id(update_data["rep_id"], db)
+    selection = await _catalog_selection(
+        db, market, current_user,
+        update_data.pop("all_catalogs", None),
+        update_data.pop("catalog_ids", None),
+        creating=False,
+    )
+    if selection is not None:
+        apply_catalog_selection(client, selection)
     if "price_profile" in update_data:
         price_list = (await db.execute(select(PriceList).where(
             PriceList.market_code == client.market_code,

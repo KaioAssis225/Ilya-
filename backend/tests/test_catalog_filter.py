@@ -10,11 +10,15 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.catalog import CatalogCreate, CatalogUpdate
-from app.schemas.product import ProductCreate
+from app.schemas.product import ProductCreate, ProductUpdate
+
+
+_CATALOG_ID = "3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
 
 
 def _product_payload(**overrides):
     payload = {
+        "catalog_id": _CATALOG_ID,
         "product_code": "CER0001",
         "description": "Vaso de teste",
         "type": "Vaso",
@@ -26,15 +30,23 @@ def _product_payload(**overrides):
     return payload
 
 
-def test_produto_sem_catalogo_continua_valido():
-    # Campo opcional: cadastros antigos e importações sem a coluna não quebram.
-    assert ProductCreate.model_validate(_product_payload()).catalog_id is None
+def test_produto_exige_catalogo():
+    # DEC-02 (catalog_permissions_r21): o catálogo define aba e permissão.
+    payload = _product_payload()
+    payload.pop("catalog_id")
+    with pytest.raises(ValidationError):
+        ProductCreate.model_validate(payload)
 
 
 def test_produto_aceita_catalogo():
-    catalog_id = "3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
-    product = ProductCreate.model_validate(_product_payload(catalog_id=catalog_id))
-    assert str(product.catalog_id) == catalog_id
+    product = ProductCreate.model_validate(_product_payload())
+    assert str(product.catalog_id) == _CATALOG_ID
+
+
+def test_patch_nao_remove_catalogo():
+    with pytest.raises(ValidationError):
+        ProductUpdate.model_validate({"catalog_id": None})
+    assert "catalog_id" not in ProductUpdate.model_validate({}).model_fields_set
 
 
 def test_catalogo_exige_nome():

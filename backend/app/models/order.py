@@ -25,6 +25,10 @@ class Order(Base, TimestampMixin):
     # FK composta com market_code em __table_args__.
     client_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     rep_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    # Um pedido é de um único catálogo (catalog_permissions_r21). FK composta
+    # com market_code em __table_args__; o nome é snapshot para listagem e PDF.
+    catalog_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    catalog_name: Mapped[str] = mapped_column(String(50), nullable=False)
     total_value: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     total_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     total_with_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
@@ -65,6 +69,13 @@ class Order(Base, TimestampMixin):
             ["representatives.id", "representatives.market_code"],
             name="fk_orders_rep_same_market",
         ),
+        ForeignKeyConstraint(
+            ["catalog_id", "market_code"],
+            ["catalogs.id", "catalogs.market_code"],
+            name="fk_orders_catalog_same_market",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_orders_catalog_id", "catalog_id"),
         CheckConstraint(
             "NOT (is_finalized AND is_cancelled)",
             name="ck_orders_single_terminal_status",

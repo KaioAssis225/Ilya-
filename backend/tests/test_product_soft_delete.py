@@ -82,6 +82,7 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
         db = AsyncMock()
         db.execute.side_effect = [
             _ScalarResult(uuid.uuid4()),  # tipo EU existe
+            _ScalarResult(uuid.uuid4()),  # catálogo EU existe
             _ScalarResult(None),          # SKU ainda não existe
             lists_result,
         ]
@@ -97,6 +98,7 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
             result = await create_product(
                 ProductCreate(
                     product_code="EU-ONLY-001",
+                    catalog_id=uuid.uuid4(),
                     description="CADEIRA ALBA",
                     description_pt_pt="CADEIRA ALBA",
                     description_en="ALBA CHAIR",
