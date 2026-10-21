@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select, update
 
 from app.api.deps import (
+    CLIENT_IDENTITY_MANAGEMENT_ROLES,
     get_db_session,
     get_current_principal,
     get_current_user,
@@ -313,6 +314,7 @@ async def get_representative(
 async def update_representative(
     rep_id: uuid.UUID,
     payload: RepresentativeUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
     principal: MarketPrincipal = Depends(get_current_principal),
@@ -334,11 +336,12 @@ async def update_representative(
         update_data["country"] = require_launch_country(
             market, update_data.get("country", rep.country)
         )
-    if current_user.role == UserRole.representante:
-        update_data.pop("email", None)
-        # Mesmo motivo do e-mail: identidade do cadastro não se reescreve por
-        # dentro. Corrigir documento é operação de quem administra o cadastro.
-        update_data.pop("cpf_cnpj", None)
+    if current_user.role not in CLIENT_IDENTITY_MANAGEMENT_ROLES:
+        # Mesma regra do cliente (sanitize_client_update_fields): e-mail e
+        # identificadores fiscais só se corrigem por quem administra o
+        # cadastro — nem o próprio representante nem o vendedor interno.
+        for field in ("email", "cpf_cnpj", "tax_id"):
+            update_data.pop(field, None)
     if current_user.role != UserRole.admin:
         update_data.pop("max_discount", None)
     new_email = update_data.get("email")
@@ -374,8 +377,22 @@ async def update_representative(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Já existe um representante com este CPF/CNPJ.",
             )
+    identity_changes = sorted(
+        field for field in ("email", "cpf_cnpj", "tax_id")
+        if field in update_data and update_data[field] != getattr(rep, field)
+    )
     for field, value in update_data.items():
         setattr(rep, field, value)
+    if identity_changes:
+        record_privacy_event(
+            db,
+            actor_user_id=current_user.id,
+            subject_type="representative",
+            subject_id=rep.id,
+            action="identity_updated",
+            request=request,
+            context={"fields": identity_changes},
+        )
     try:
         await db.commit()
     except IntegrityError as error:

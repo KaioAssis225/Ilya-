@@ -4,6 +4,7 @@ import { useDashboardOverview, DASHBOARD_REGIONS } from '../hooks/useDashboard'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
 import { useAuth } from '../hooks/useAuth'
+import { csvRow } from '../lib/csv'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -163,21 +164,21 @@ export default function DashboardPage() {
   function exportCsv() {
     if (!data) return
     const lines = [
-      'Métrica;Valor',
-      `Valor total;${data.metrics.revenue_total}`,
-      `Valor finalizado;${data.metrics.revenue_finalized}`,
-      `Valor em aberto;${data.metrics.revenue_open}`,
-      `Valor cancelado;${data.metrics.revenue_cancelled}`,
-      `Orçamentos total;${data.metrics.orders_total}`,
-      `Orçamentos finalizados;${data.metrics.orders_finalized}`,
-      `Orçamentos em aberto;${data.metrics.orders_open}`,
-      `Orçamentos cancelados;${data.metrics.orders_cancelled}`,
+      csvRow(['Métrica', 'Valor']),
+      csvRow(['Valor total', data.metrics.revenue_total]),
+      csvRow(['Valor finalizado', data.metrics.revenue_finalized]),
+      csvRow(['Valor em aberto', data.metrics.revenue_open]),
+      csvRow(['Valor cancelado', data.metrics.revenue_cancelled]),
+      csvRow(['Orçamentos total', data.metrics.orders_total]),
+      csvRow(['Orçamentos finalizados', data.metrics.orders_finalized]),
+      csvRow(['Orçamentos em aberto', data.metrics.orders_open]),
+      csvRow(['Orçamentos cancelados', data.metrics.orders_cancelled]),
       '',
-      'Representante;Orçamentos;Valor',
-      ...data.representatives.map(r => `${r.name};${r.orders};${r.revenue}`),
+      csvRow(['Representante', 'Orçamentos', 'Valor']),
+      ...data.representatives.map(r => csvRow([r.name, r.orders, r.revenue])),
       '',
-      'Código;Descrição;Quantidade;Valor',
-      ...data.products.map(p => `${p.product_code};${p.description};${p.quantity};${p.revenue}`),
+      csvRow(['Código', 'Descrição', 'Quantidade', 'Valor']),
+      ...data.products.map(p => csvRow([p.product_code, p.description, p.quantity, p.revenue])),
     ]
     const blob = new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv' })
     const link = document.createElement('a')

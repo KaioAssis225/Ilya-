@@ -516,6 +516,7 @@ async def switch_market(
 @limiter.limit("10/minute")
 async def activate_client(
     request: Request,
+    response: Response,
     body: ActivateClientRequest,
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -1129,59 +1130,78 @@ async def anonymize_my_data(
     """Anonimiza cliente/representante vinculado e desativa a conta."""
     _require_reauthentication(body, current_user)
 
-    client_id: uuid.UUID | None = None
-    representative_id: uuid.UUID | None = None
+    # O titular pode ter cadastro em mais de um mercado (um vínculo por
+    # mercado). A sessão só enxerga o vínculo do mercado ativo e a conta é
+    # desativada no fim: anonimiza todos agora, senão os demais ficam sem como
+    # ser pedidos.
+    links = (
+        await db.execute(select(UserMarket).where(UserMarket.user_id == current_user.id))
+    ).scalars().all()
+    subjects: list[tuple[str, uuid.UUID]] = []
+    for link in links:
+        if link.linked_client_id:
+            subjects.append(("client", link.linked_client_id))
+        elif link.rep_id and link.role == UserRole.representante.value:
+            subjects.append(("representative", link.rep_id))
     if is_client_account(current_user) and current_user.linked_id:
-        client_id = current_user.linked_id
-        await ensure_no_active_legal_hold(db, subject_type="client", subject_id=client_id)
-        client = (
-            await db.execute(select(Client).where(Client.id == client_id))
-        ).scalar_one_or_none()
-        if client:
-            anonymize_client_fields(client)
+        subjects.append(("client", current_user.linked_id))
     elif current_user.role == UserRole.representante and current_user.rep_id:
-        representative_id = current_user.rep_id
-        await ensure_no_active_legal_hold(
-            db, subject_type="representative", subject_id=representative_id
-        )
-        representative = (
-            await db.execute(
-                select(Representative).where(
-                    Representative.id == representative_id
-                )
-            )
-        ).scalar_one_or_none()
-        if representative:
-            anonymize_representative_fields(representative)
-    else:
+        subjects.append(("representative", current_user.rep_id))
+    subjects = list(dict.fromkeys(subjects))
+    if not subjects:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Operação disponível apenas para clientes e representantes vinculados.",
+        )
+    # Tudo ou nada: uma retenção em qualquer mercado bloqueia a operação inteira.
+    for subject_type, subject_id in subjects:
+        await ensure_no_active_legal_hold(db, subject_type=subject_type, subject_id=subject_id)
+
+    for subject_type, subject_id in subjects:
+        model, anonymize = (
+            (Client, anonymize_client_fields)
+            if subject_type == "client"
+            else (Representative, anonymize_representative_fields)
+        )
+        record = (
+            await db.execute(
+                select(model)
+                .where(model.id == subject_id)
+                .execution_options(skip_market_scope=True)
+            )
+        ).scalar_one_or_none()
+        if record is None:
+            continue
+        anonymize(record)
+        record_privacy_event(
+            db,
+            actor_user_id=current_user.id,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            action="personal_data_anonymized",
+            request=request,
+            legal_basis="LGPD Art. 18, IV",
+            context={
+                "market": record.market_code,
+                "account_disabled": True,
+                "self_service": True,
+            },
         )
 
     result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one()
     _anonymize_user_fields(user)
     await _revoke_user_sessions(db, user.id)
-    await db.execute(delete(Notification).where(Notification.user_id == user.id))
-    record_privacy_event(
-        db,
-        actor_user_id=user.id,
-        subject_type=(
-            "client" if client_id else "representative"
-        ),
-        subject_id=client_id or representative_id,
-        action="personal_data_anonymized",
-        request=request,
-        legal_basis="LGPD Art. 18, IV",
-        context={"account_disabled": True, "self_service": True},
+    await db.execute(
+        delete(Notification)
+        .where(Notification.user_id == user.id)
+        .execution_options(skip_market_scope=True)
     )
 
     await db.commit()
     logger.info(
-        "Anonimização solicitada: user_id=%s client_id=%s representative_id=%s",
+        "Anonimização solicitada: user_id=%s subjects=%s",
         current_user.id,
-        client_id,
-        representative_id,
+        [str(subject_id) for _, subject_id in subjects],
     )
     _clear_refresh_cookie(response)

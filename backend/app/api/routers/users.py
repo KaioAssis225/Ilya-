@@ -567,6 +567,12 @@ async def update_user(
         await lock_platform_admin_guard(db)
         if await _would_remove_last_platform_admin(db, user.id):
             raise HTTPException(409, "A plataforma precisa manter ao menos um administrador ativo.")
+        # Convite pendente reativaria a conta: activate-client liga is_active.
+        await db.execute(update(ClientAccessInvitation).where(
+            ClientAccessInvitation.user_id == user.id,
+            ClientAccessInvitation.consumed_at.is_(None),
+            ClientAccessInvitation.revoked_at.is_(None),
+        ).values(revoked_at=datetime.now(timezone.utc)))
     for field, value in changes.items():
         setattr(user, field, value)
     if identity_security_changed:

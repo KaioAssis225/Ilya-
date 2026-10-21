@@ -68,3 +68,6 @@ backups/
 /test_*.py
 /test_*.js
 /cookie.txt
+
+# Estado local da auditoria Mantis (achados, KB, helpers); nunca versionar.
+workspace/

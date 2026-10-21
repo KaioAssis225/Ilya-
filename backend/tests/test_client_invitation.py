@@ -76,6 +76,7 @@ def _entities(*, expired=False, recipient="titular@example.com"):
 def _activate(token, session):
     return asyncio.run(activate_client.__wrapped__(
         request=None,
+        response=Response(),
         body=ActivateClientRequest(token=token, new_password="NovaSenha123"),
         db=session,
     ))
