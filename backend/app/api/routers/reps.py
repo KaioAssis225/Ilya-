@@ -15,6 +15,7 @@ from app.api.deps import (
     is_client_account,
     is_internal_operator,
 )
+from app.core.legal_hold import ensure_no_active_legal_hold
 from app.core.search import literal_contains_pattern
 from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client
@@ -455,6 +456,7 @@ async def anonymize_representative(
             detail="Representante não encontrado.",
         )
 
+    await ensure_no_active_legal_hold(db, subject_type="representative", subject_id=rep_id)
     anonymize_representative_fields(rep)
     suspended_user_ids = await suspend_commercial_accesses(
         db,

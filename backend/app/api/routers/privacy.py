@@ -14,6 +14,7 @@ from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_platform_capability
+from app.core.legal_hold import hold_exists, is_active_hold
 from app.core.limiter import limiter
 from app.core.markets import PlatformPrincipal, suspend_commercial_accesses
 from app.core.privacy_audit import record_privacy_event
@@ -67,21 +68,8 @@ def _add_calendar_years(value: datetime, years: int) -> datetime:
         return value.replace(month=2, day=28, year=value.year + years)
 
 
-def _is_active_hold(now: datetime):
-    return (
-        LegalHold.released_at.is_(None)
-        & or_(LegalHold.expires_at.is_(None), LegalHold.expires_at > now)
-    )
-
-
-def _hold_exists(subject_type: str, subject_id, now: datetime):
-    return exists(
-        select(LegalHold.id).where(
-            LegalHold.subject_type == subject_type,
-            LegalHold.subject_id == subject_id,
-            _is_active_hold(now),
-        )
-    )
+_is_active_hold = is_active_hold
+_hold_exists = hold_exists
 
 
 def _order_hold_exists(now: datetime):

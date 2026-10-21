@@ -98,4 +98,6 @@ def anonymize_client_fields(client: Client) -> None:
     client.numero = None
     client.address = "Endereço Excluído, 00"
     client.city = "—"
+    client.region = None
+    client.tax_id = None
     # A UF é agregada e precisa continuar válida para a constraint brasileira.
