@@ -134,6 +134,30 @@ def test_moloni_retries_once_after_server_rejects_token(monkeypatch):
     assert connection.token_expires_at is None
 
 
+def test_moloni_http_error_does_not_leak_access_token(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("PASSWORD_PEPPER", "test-pepper")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
+    import httpx
+    import pytest
+    from app.services import moloni_exporter
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
+        async def post(self, url, params=None, **_kwargs):
+            request = httpx.Request("POST", url, params=params)
+            return httpx.Response(400, request=request)
+
+    monkeypatch.setattr(moloni_exporter, "decrypt_token", lambda _: "tok-secreto")
+    monkeypatch.setattr(moloni_exporter.httpx, "AsyncClient", lambda **_: Client())
+    api = moloni_exporter.MoloniApi(SimpleNamespace(access_token_ciphertext="cipher", token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1)), SimpleNamespace())
+    with pytest.raises(moloni_exporter.MoloniError) as exc:
+        asyncio.run(api.post("estimates/insert", {}))
+    assert "tok-secreto" not in str(exc.value)
+    assert "400" in str(exc.value)
+
+
 def test_moloni_resolves_nested_article_category_without_recreating_it():
     from app.services.moloni_exporter import _resolve_product_category_id
 
