@@ -132,10 +132,14 @@ def test_anonimizacao_de_representante_preserva_id_e_remove_pii():
         address="Rodovia de Teste",
         city="Indaiatuba",
         state="SP",
+        region="Lisboa",
+        tax_id="PT987654321",
     )
     original_id = representative.id
 
     anonymize_representative_fields(representative)
+    assert representative.region is None
+    assert representative.tax_id is None
 
     assert representative.id == original_id
     assert representative.name == "REPRESENTANTE ANONIMIZADO"

@@ -23,6 +23,7 @@ from app.core.login_protection import (
 )
 from app.core.lifecycle import touch_client_activity
 from app.core.client_invites import hash_invite_token, client_identity_isolated
+from app.core.legal_hold import ensure_no_active_legal_hold
 from app.core.origin_guard import require_trusted_cookie_origin
 from app.core.privacy_audit import record_privacy_event
 from app.core.platform import lock_platform_admin_guard
@@ -783,6 +784,50 @@ def _order_personal_data(order: Order) -> dict:
     }
 
 
+def _as_utc(value: datetime) -> datetime:
+    """`refresh_tokens.expires_at` é timestamptz no banco (migração 0002),
+    embora o modelo o declare sem fuso; normaliza antes de comparar."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _client_personal_data(client: Client) -> dict:
+    return {
+        "id": str(client.id),
+        "mercado": client.market_code,
+        "nome": client.name,
+        "telefone": client.phone,
+        "email": client.email,
+        "cpf_cnpj": client.cpf_cnpj,
+        "identificacao_fiscal": client.tax_id,
+        "cep": client.cep,
+        "numero": client.numero,
+        "endereco": client.address,
+        "cidade": client.city,
+        "regiao": client.region,
+        "estado": client.state,
+        "pais": client.country,
+    }
+
+
+def _representative_personal_data(representative: Representative) -> dict:
+    return {
+        "id": str(representative.id),
+        "mercado": representative.market_code,
+        "nome": representative.name,
+        "telefone": representative.phone,
+        "email": representative.email,
+        "cpf_cnpj": representative.cpf_cnpj,
+        "identificacao_fiscal": representative.tax_id,
+        "cep": representative.cep,
+        "numero": representative.numero,
+        "endereco": representative.address,
+        "cidade": representative.city,
+        "regiao": representative.region,
+        "estado": representative.state,
+        "pais": representative.country,
+    }
+
+
 @router.get("/my-data")
 async def my_data(
     db: AsyncSession = Depends(get_db_session),
@@ -808,6 +853,7 @@ async def my_data(
         },
         "dados_cliente": None,
         "dados_representante": None,
+        "vinculos_por_mercado": [],
         "pedidos": [],
         "notificacoes": [],
         "sessoes": [],
@@ -815,62 +861,115 @@ async def my_data(
         "cadastros_criados": [],
         "operacoes_de_privacidade": [],
     }
+
+    # O titular pode ter cadastro em mais de um mercado (um vínculo por
+    # mercado em user_markets). Os IDs saem dos vínculos da própria conta, por
+    # isso a leitura ignora o filtro do mercado da sessão: o acesso do Art. 18
+    # cobre todos os dados, não só os do mercado ativo.
+    links = (
+        await db.execute(
+            select(UserMarket)
+            .where(UserMarket.user_id == current_user.id)
+            .order_by(UserMarket.market_code)
+        )
+    ).scalars().all()
+    client_ids = {link.linked_client_id for link in links if link.linked_client_id}
+    rep_ids = {
+        link.rep_id
+        for link in links
+        if link.rep_id and link.role == UserRole.representante.value
+    }
+    # Contas anteriores aos vínculos por mercado guardam o cadastro em users.
     if current_user.linked_id and is_client_account(current_user):
-        client = (await db.execute(select(Client).where(Client.id == current_user.linked_id))).scalar_one_or_none()
-        if client:
-            payload["dados_cliente"] = {
-                "id": str(client.id),
-                "nome": client.name,
-                "telefone": client.phone,
-                "email": client.email,
-                "cpf_cnpj": client.cpf_cnpj,
-                "cep": client.cep,
-                "numero": client.numero,
-                "endereco": client.address,
-                "cidade": client.city,
-                "estado": client.state,
-            }
-            orders = (
+        client_ids.add(current_user.linked_id)
+    if current_user.rep_id and current_user.role == UserRole.representante:
+        rep_ids.add(current_user.rep_id)
+
+    clients = {}
+    if client_ids:
+        clients = {
+            client.id: client
+            for client in (
                 await db.execute(
-                    select(Order)
-                    .where(Order.client_id == client.id)
-                    .order_by(Order.created_at.desc())
+                    select(Client)
+                    .where(Client.id.in_(client_ids))
+                    .execution_options(skip_market_scope=True)
                 )
-            ).scalars().all()
-            payload["pedidos"] = [_order_personal_data(order) for order in orders]
-    elif current_user.role == UserRole.representante and current_user.rep_id:
-        representative = (
+            ).scalars()
+        }
+    representatives = {}
+    if rep_ids:
+        representatives = {
+            representative.id: representative
+            for representative in (
+                await db.execute(
+                    select(Representative)
+                    .where(Representative.id.in_(rep_ids))
+                    .execution_options(skip_market_scope=True)
+                )
+            ).scalars()
+        }
+
+    payload["vinculos_por_mercado"] = [
+        {
+            "mercado": link.market_code,
+            "papel": link.role,
+            "situacao": link.status,
+            "cliente": (
+                _client_personal_data(clients[link.linked_client_id])
+                if link.linked_client_id in clients
+                else None
+            ),
+            "representante": (
+                _representative_personal_data(representatives[link.rep_id])
+                if link.rep_id in representatives
+                else None
+            ),
+        }
+        for link in links
+    ]
+
+    home_link = next(
+        (link for link in links if link.market_code == current_user.home_market),
+        None,
+    )
+    home_client_id = (home_link.linked_client_id if home_link else None) or (
+        current_user.linked_id if is_client_account(current_user) else None
+    )
+    home_rep_id = (
+        home_link.rep_id
+        if home_link and home_link.role == UserRole.representante.value
+        else None
+    ) or (current_user.rep_id if current_user.role == UserRole.representante else None)
+    if home_client_id in clients:
+        payload["dados_cliente"] = _client_personal_data(clients[home_client_id])
+    if home_rep_id in representatives:
+        payload["dados_representante"] = _representative_personal_data(
+            representatives[home_rep_id]
+        )
+
+    if clients or representatives:
+        orders = (
             await db.execute(
-                select(Representative).where(Representative.id == current_user.rep_id)
-            )
-        ).scalar_one_or_none()
-        if representative:
-            payload["dados_representante"] = {
-                "id": str(representative.id),
-                "nome": representative.name,
-                "telefone": representative.phone,
-                "email": representative.email,
-                "cpf_cnpj": representative.cpf_cnpj,
-                "cep": representative.cep,
-                "numero": representative.numero,
-                "endereco": representative.address,
-                "cidade": representative.city,
-                "estado": representative.state,
-            }
-            orders = (
-                await db.execute(
-                    select(Order)
-                    .where(Order.rep_id == representative.id)
-                    .order_by(Order.created_at.desc())
+                select(Order)
+                .where(
+                    or_(
+                        Order.client_id.in_(list(clients)),
+                        Order.rep_id.in_(list(representatives)),
+                    )
                 )
-            ).scalars().all()
-            payload["pedidos"] = [_order_personal_data(order) for order in orders]
+                .order_by(Order.created_at.desc())
+                .execution_options(skip_market_scope=True)
+            )
+        ).scalars().all()
+        payload["pedidos"] = [_order_personal_data(order) for order in orders]
 
     notifications = (
         await db.execute(
             select(Notification)
             .where(Notification.user_id == current_user.id)
             .order_by(Notification.created_at.desc())
+            .execution_options(skip_market_scope=True)
         )
     ).scalars().all()
     payload["notificacoes"] = [
@@ -883,7 +982,7 @@ async def my_data(
         for notification in notifications
     ]
 
-    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     sessions = (
         await db.execute(
             select(RefreshToken)
@@ -900,7 +999,7 @@ async def my_data(
             "expira_em": session.expires_at,
             "ativa": (
                 not session.revoked
-                and session.expires_at >= now_naive
+                and _as_utc(session.expires_at) >= now
             ),
             "revogada": session.revoked,
             "usada_em": session.used_at,
@@ -954,11 +1053,7 @@ async def my_data(
     ]
 
 
-    subject_ids = [current_user.id]
-    if current_user.linked_id:
-        subject_ids.append(current_user.linked_id)
-    if current_user.rep_id:
-        subject_ids.append(current_user.rep_id)
+    subject_ids = [current_user.id, *clients, *representatives]
     privacy_events = (
         await db.execute(
             select(PrivacyEvent)
@@ -1038,6 +1133,7 @@ async def anonymize_my_data(
     representative_id: uuid.UUID | None = None
     if is_client_account(current_user) and current_user.linked_id:
         client_id = current_user.linked_id
+        await ensure_no_active_legal_hold(db, subject_type="client", subject_id=client_id)
         client = (
             await db.execute(select(Client).where(Client.id == client_id))
         ).scalar_one_or_none()
@@ -1045,6 +1141,9 @@ async def anonymize_my_data(
             anonymize_client_fields(client)
     elif current_user.role == UserRole.representante and current_user.rep_id:
         representative_id = current_user.rep_id
+        await ensure_no_active_legal_hold(
+            db, subject_type="representative", subject_id=representative_id
+        )
         representative = (
             await db.execute(
                 select(Representative).where(

@@ -19,6 +19,7 @@ from app.api.deps import (
     is_client_account,
     sanitize_client_update_fields,
 )
+from app.core.legal_hold import ensure_no_active_legal_hold
 from app.core.search import literal_contains_pattern
 from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client, anonymize_client_fields
@@ -489,6 +490,7 @@ async def update_client(
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_client(
     client_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_roles(*_DELETE_CLIENT_ROLES)),
     principal: MarketPrincipal = Depends(get_current_principal),
@@ -504,7 +506,20 @@ async def delete_client(
     # Representante só apaga cadastro da própria carteira; o de outro dono
     # responde 403 pelo mesmo guard usado na leitura e na edição.
     _rep_guard(client, current_user)
+    await ensure_no_active_legal_hold(db, subject_type="client", subject_id=client_id)
     await db.delete(client)
+    # Mesmo commit da exclusão: se o FK de pedidos barrar, o rollback leva o
+    # evento junto e a trilha não registra uma exclusão que não aconteceu.
+    record_privacy_event(
+        db,
+        actor_user_id=current_user.id,
+        subject_type="client",
+        subject_id=client_id,
+        action="personal_data_deleted",
+        request=request,
+        legal_basis="LGPD Art. 18, VI",
+        context={"self_service": False},
+    )
     try:
         await db.commit()
     except IntegrityError:
@@ -540,6 +555,7 @@ async def anonymize_client(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
 
+    await ensure_no_active_legal_hold(db, subject_type="client", subject_id=client_id)
     anonymize_client_fields(client)
 
     suspended_user_ids = await suspend_commercial_accesses(
