@@ -59,11 +59,14 @@ class Settings(BaseSettings):
     EU_LAUNCH_COUNTRY: str = "PT"
 
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
-    # Deployments de produção/preview do projeto Ilya na conta Vercel indicada.
-    # Mantém escopo restrito ao projeto; não equivale a liberar *.vercel.app.
-    BACKEND_CORS_ORIGIN_REGEX: str = (
-        r"^https://(?:ilya-rust|ilya-[a-z0-9-]+-kaioassis225s-projects)\.vercel\.app$"
-    )
+    # Somente o alias de produção na Vercel. Padrões de preview
+    # (`ilya-*-kaioassis225s-projects.vercel.app`) NÃO entram: o domínio padrão
+    # de um projeto Vercel é `<nome-do-projeto>.vercel.app`, então qualquer
+    # conta registra um nome que casa com o padrão, e esta regex alimenta CORS
+    # com credenciais e a guarda de origem do cookie de refresh (SameSite=None).
+    # Para liberar um preview específico, liste a origem exata em
+    # BACKEND_CORS_ORIGINS.
+    BACKEND_CORS_ORIGIN_REGEX: str = r"^https://ilya-rust\.vercel\.app$"
     UPLOAD_DIR: str = "app/static/uploads"
     MAX_UPLOAD_SIZE_MB: int = 5
     MAX_REQUEST_BODY_MB: int = 15

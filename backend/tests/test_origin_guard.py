@@ -26,16 +26,24 @@ class TestIsTrustedOrigin:
     def test_stable_production_alias_allowed(self):
         assert is_trusted_origin("https://ilya-rust.vercel.app") is True
 
-    def test_vercel_preview_deployment_allowed_by_regex(self):
+    def test_attacker_registrable_vercel_project_rejected(self):
+        # Qualquer conta Vercel pode criar o projeto
+        # `ilya-mantis-kaioassis225s-projects` e servir nesse host; confiar nele
+        # entregaria o refresh token da vítima (cookie SameSite=None).
+        assert is_trusted_origin(
+            "https://ilya-mantis-kaioassis225s-projects.vercel.app"
+        ) is False
+
+    def test_vercel_preview_deployment_rejected_by_default(self):
         assert is_trusted_origin(
             "https://ilya-atyyjocxe-kaioassis225s-projects.vercel.app"
-        ) is True
+        ) is False
 
-    def test_vercel_branch_preview_with_hyphens_allowed_by_regex(self):
+    def test_vercel_branch_preview_rejected_by_default(self):
         assert is_trusted_origin(
             "https://ilya-git-fix-seguranca-revisao-in-38f70e-"
             "kaioassis225s-projects.vercel.app"
-        ) is True
+        ) is False
 
     def test_attacker_domain_rejected(self):
         assert is_trusted_origin("https://attacker.evil") is False
@@ -87,22 +95,21 @@ class TestRequireTrustedCookieOrigin:
         request = _request({"origin": "https://ilya-rust.vercel.app"})
         require_trusted_cookie_origin(request)  # não deve levantar
 
-    def test_legitimate_preview_origin_passes(self):
+    def test_attacker_registrable_vercel_origin_rejected(self):
+        request = _request(
+            {"origin": "https://ilya-mantis-kaioassis225s-projects.vercel.app"}
+        )
+        with pytest.raises(HTTPException) as exc:
+            require_trusted_cookie_origin(request)
+        assert exc.value.status_code == 403
+
+    def test_preview_origin_rejected_by_default(self):
         request = _request(
             {"origin": "https://ilya-atyyjocxe-kaioassis225s-projects.vercel.app"}
         )
-        require_trusted_cookie_origin(request)  # não deve levantar
-
-    def test_legitimate_branch_preview_with_hyphens_passes(self):
-        request = _request(
-            {
-                "origin": (
-                    "https://ilya-git-fix-seguranca-revisao-in-38f70e-"
-                    "kaioassis225s-projects.vercel.app"
-                )
-            }
-        )
-        require_trusted_cookie_origin(request)
+        with pytest.raises(HTTPException) as exc:
+            require_trusted_cookie_origin(request)
+        assert exc.value.status_code == 403
 
     def test_referer_fallback_with_legitimate_domain_passes(self):
         request = _request(

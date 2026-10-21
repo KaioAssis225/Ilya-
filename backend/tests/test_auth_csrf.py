@@ -161,3 +161,37 @@ class TestPlatformCookieOriginGuard:
             assert all("ilya_refresh=" not in value for value in cookies)
         finally:
             _reset_overrides()
+
+
+_SQUATTABLE_VERCEL_ORIGIN = "https://ilya-mantis-kaioassis225s-projects.vercel.app"
+
+
+class TestAttackerRegistrableVercelOrigin:
+    """Um projeto Vercel de terceiros chamado `ilya-*-kaioassis225s-projects`
+    não pode rotacionar o refresh nem ler a resposta via CORS com credenciais."""
+
+    def test_refresh_rejected_and_db_never_touched(self):
+        client, spy = _client_with_spy_session()
+        try:
+            response = client.post(
+                "/api/v1/auth/refresh",
+                headers={"Origin": _SQUATTABLE_VERCEL_ORIGIN},
+            )
+            assert response.status_code == 403
+            assert spy.calls == []
+        finally:
+            _reset_overrides()
+
+    def test_cors_preflight_does_not_allow_origin(self):
+        client, _spy = _client_with_spy_session(with_cookie=False)
+        try:
+            response = client.options(
+                "/api/v1/auth/refresh",
+                headers={
+                    "Origin": _SQUATTABLE_VERCEL_ORIGIN,
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+            assert response.headers.get("access-control-allow-origin") != _SQUATTABLE_VERCEL_ORIGIN
+        finally:
+            _reset_overrides()
