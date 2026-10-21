@@ -62,7 +62,7 @@ try {
     # O .sql entra por stdin para nao precisar de bind mount -- que e
     # justamente o que falha quando o repo esta em drive de rede.
     Get-Content -LiteralPath $SqlFile -Raw -Encoding UTF8 |
-        docker run --rm -i -e PGURL postgres:18-alpine `
+        docker run --rm -i -e PGURL -e PGSSLMODE=require postgres:18-alpine `
             sh -c 'psql "$PGURL" -v ON_ERROR_STOP=1 -f -' 2>&1 |
         Tee-Object -FilePath $OutFile
 

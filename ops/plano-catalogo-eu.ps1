@@ -59,7 +59,7 @@ try {
     $script = $sql.Replace('--SKUS--', $literal)
 
     $script |
-        docker run --rm -i -e PGURL postgres:18-alpine `
+        docker run --rm -i -e PGURL -e PGSSLMODE=require postgres:18-alpine `
             sh -c 'psql "$PGURL" -v ON_ERROR_STOP=1 -f -' 2>&1 |
         Tee-Object -FilePath $OutFile
 

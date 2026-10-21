@@ -14,8 +14,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +36,27 @@ def openssl_path() -> str | None:
         return found
     git_openssl = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "usr" / "bin" / "openssl.exe"
     return str(git_openssl) if git_openssl.exists() else None
+
+
+def require_tls(url: str) -> str:
+    """Garante TLS na conexao com o Postgres publico do Railway.
+
+    O padrao do libpq (`prefer`) aceita texto puro se o servidor ou um
+    intermediario recusar TLS. Modos mais fracos viram `require`; `verify-ca` e
+    `verify-full` (com o certificado do servidor) sao mantidos.
+    """
+    parts = urlsplit(url)
+    params = dict(parse_qsl(parts.query, keep_blank_values=True))
+    if params.get("sslmode") not in ("require", "verify-ca", "verify-full"):
+        params["sslmode"] = "require"
+    return urlunsplit(parts._replace(query=urlencode(params)))
+
+
+def dump_env(target: str) -> dict[str, str]:
+    env = os.environ.copy()
+    if target == "production" and env.get("PRODUCTION_DATABASE_URL"):
+        env["PRODUCTION_DATABASE_URL"] = require_tls(env["PRODUCTION_DATABASE_URL"])
+    return env
 
 
 def dump_command(target: str) -> list[str]:
@@ -58,6 +81,7 @@ def create_dump(target: str, destination: Path) -> None:
             result = subprocess.run(
                 dump_command(target),
                 cwd=ROOT,
+                env=dump_env(target),
                 stdout=output,
                 stderr=subprocess.PIPE,
                 check=False,
@@ -174,11 +198,20 @@ def main() -> int:
             "Use --allow-unencrypted apenas em armazenamento protegido."
         )
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    dump_path = args.output_dir / f"ilya-{args.target}-{stamp}.dump"
-    print(f"Criando backup {args.target}...")
-    create_dump(args.target, dump_path)
-    verify_catalog(dump_path)
-    final_path = encrypt(dump_path) if encrypted else dump_path
+    # O dump nasce em texto puro. Gera, verifica e cifra numa pasta temporaria
+    # local; a pasta de saida (no drive de rede, sincronizada e com snapshots)
+    # so recebe o arquivo final.
+    staging = Path(tempfile.mkdtemp(prefix="ilya-backup-"))
+    try:
+        dump_path = staging / f"ilya-{args.target}-{stamp}.dump"
+        print(f"Criando backup {args.target}...")
+        create_dump(args.target, dump_path)
+        verify_catalog(dump_path)
+        staged = encrypt(dump_path) if encrypted else dump_path
+        final_path = args.output_dir / staged.name
+        shutil.move(str(staged), final_path)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     write_checksum(final_path)
     removed = [] if args.no_retention else apply_gfs_retention(args.output_dir, args.target)
     print(f"Backup verificado: {final_path}")

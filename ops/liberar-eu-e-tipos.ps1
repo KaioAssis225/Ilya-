@@ -83,7 +83,7 @@ try {
     $script = (Get-Content -LiteralPath $SqlFile -Raw -Encoding UTF8) + $Fecho
 
     $script |
-        docker run --rm -i -e PGURL -e ALVO postgres:18-alpine `
+        docker run --rm -i -e PGURL -e PGSSLMODE=require -e ALVO postgres:18-alpine `
             sh -c 'psql "$PGURL" -v ON_ERROR_STOP=1 -v alvo="$ALVO" -f -' 2>&1 |
         Tee-Object -FilePath $OutFile
 
