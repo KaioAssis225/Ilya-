@@ -28,8 +28,9 @@ class Product(Base, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     article_category_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     type: Mapped[str] = mapped_column(String(50), nullable=False, default="Outro")
-    # FK composta com market_code em __table_args__.
-    catalog_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
+    # FK composta com market_code em __table_args__. Obrigatório desde
+    # catalog_permissions_r21: o catálogo define aba e permissão de venda.
+    catalog_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
@@ -64,11 +65,12 @@ class Product(Base, TimestampMixin):
 
     __table_args__ = (
         # Produto e catálogo precisam ser do mesmo mercado
-        # (market_fk_r7_20261005). O SET NULL nomeia apenas catalog_id no DDL.
+        # (market_fk_r7_20261005); catálogo em uso não é excluído (r21).
         ForeignKeyConstraint(
             ["catalog_id", "market_code"],
             ["catalogs.id", "catalogs.market_code"],
             name="fk_products_catalog_same_market",
+            ondelete="RESTRICT",
         ),
         UniqueConstraint("market_code", "product_code", name="uq_products_market_code"),
         Index("ix_products_market_id", "market_code", "id"),

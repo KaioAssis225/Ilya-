@@ -5,9 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 
+from app.api.catalog_access import visible_catalog_scope
 from app.api.deps import get_current_principal, get_db_session, require_platform_capability, require_roles
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.models.catalog import Catalog
+from app.models.order import Order
 from app.models.product import Product
 from app.models.user import User, UserRole
 from app.schemas.catalog import CatalogCreate, CatalogUpdate, CatalogRead
@@ -30,11 +32,14 @@ _ADMIN = Depends(require_roles(UserRole.admin, UserRole.produtos))
 @router.get("", response_model=List[CatalogRead])
 async def list_catalogs(
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = _ANY,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
+    # DEC-08: o filtro de catálogo só oferece o que o usuário pode ver.
+    scope = await visible_catalog_scope(db, current_user, principal.code)
     result = await db.execute(select(Catalog).where(
-        Catalog.market_code == principal.code
+        Catalog.market_code == principal.code,
+        *([] if scope is None else [Catalog.id.in_(scope)]),
     ).order_by(Catalog.name))
     return result.scalars().all()
 
@@ -133,6 +138,19 @@ async def delete_catalog(
         raise HTTPException(
             status_code=409,
             detail=f"Catálogo em uso por {in_use} produto(s). Mova-os antes de excluir.",
+        )
+    # Pedido guarda o catálogo (catalog_permissions_r21) e a FK é RESTRICT:
+    # sem esta checagem a exclusão viraria 500.
+    in_orders = await db.scalar(
+        select(func.count()).select_from(Order).where(
+            Order.catalog_id == catalog_id,
+            Order.market_code == principal.code,
+        )
+    )
+    if in_orders:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Catálogo usado em {in_orders} pedido(s) e não pode ser excluído.",
         )
     await db.delete(catalog)
     await db.commit()

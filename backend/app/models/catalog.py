@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, ForeignKeyConstraint, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
@@ -24,4 +24,58 @@ class Catalog(Base):
         UniqueConstraint("market_code", "name", name="uq_catalogs_market_name"),
         # Alvo da FK composta de products (market_fk_r7_20261005).
         UniqueConstraint("id", "market_code", name="uq_catalogs_id_market"),
+    )
+
+
+class RepresentativeCatalog(Base):
+    """Catálogo que o representante pode vender (catalog_permissions_r21).
+
+    Só vale quando `Representative.all_catalogs` está desligado. A FK composta
+    com `market_code` impede vincular catálogo de outro mercado.
+    """
+
+    __tablename__ = "representative_catalogs"
+
+    representative_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    catalog_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, index=True)
+    market_code: Mapped[str] = mapped_column(String(2), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["representative_id", "market_code"],
+            ["representatives.id", "representatives.market_code"],
+            name="fk_representative_catalogs_owner_same_market",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["catalog_id", "market_code"],
+            ["catalogs.id", "catalogs.market_code"],
+            name="fk_representative_catalogs_catalog_same_market",
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class ClientCatalog(Base):
+    """Catálogo que o cliente pode comprar; espelho de RepresentativeCatalog."""
+
+    __tablename__ = "client_catalogs"
+
+    client_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    catalog_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, index=True)
+    market_code: Mapped[str] = mapped_column(String(2), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["client_id", "market_code"],
+            ["clients.id", "clients.market_code"],
+            name="fk_client_catalogs_owner_same_market",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["catalog_id", "market_code"],
+            ["catalogs.id", "catalogs.market_code"],
+            name="fk_client_catalogs_catalog_same_market",
+            ondelete="CASCADE",
+        ),
     )

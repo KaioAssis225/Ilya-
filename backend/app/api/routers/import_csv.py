@@ -973,6 +973,14 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             ).options(noload(ProductType.group)),
         )
     }
+    # DEC-02 (catalog_permissions_r21): produto novo exige catálogo; no
+    # existente, a coluna é opcional e só troca o catálogo quando vem.
+    catalogs_by_name = {
+        catalog.name.casefold(): catalog
+        for catalog in (await db.execute(
+            select(Catalog).where(Catalog.market_code == principal.code)
+        )).scalars().all()
+    }
     created = updated = 0
     errors: list[dict] = []
     for i, row in enumerate(rows, start=2):
@@ -1054,6 +1062,14 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             if fields["type"] not in valid_types:
                 raise ValueError(f"Tipo de produto '{fields['type']}' não cadastrado no BR.")
             p = existing.get(code)
+            catalog_name = (_first(row, "catalog", "catalogo", "catálogo") or "").strip()
+            if catalog_name:
+                catalog = catalogs_by_name.get(catalog_name.casefold())
+                if catalog is None:
+                    raise ValueError(f"Catálogo '{catalog_name}' não cadastrado no mercado.")
+                fields["catalog_id"] = catalog.id
+            elif p is None:
+                raise ValueError("Catálogo é obrigatório para produto novo (coluna 'catalogo').")
             old_type = p.type if p else None
             type_changed = p is None or old_type != fields["type"]
             if type_changed:
