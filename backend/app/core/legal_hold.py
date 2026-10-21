@@ -51,6 +51,9 @@ async def ensure_no_active_legal_hold(
                     )
                 )
             )
+            # O titular pode estar em outro mercado que o da sessão
+            # (anonimização self-service multimercado); o subject_id é explícito.
+            .execution_options(skip_market_scope=True)
         )
     ).scalar()
     if held:

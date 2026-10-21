@@ -536,6 +536,11 @@ async def list_products(
             )
         )
 
+    if sort_by in ("price_lojista", "price_corporativo") and is_client_account(current_user):
+        # Bloco 96: ordenar pela tabela que o cliente não vê revelaria a ordem
+        # desses preços mesmo com os valores ocultos na resposta.
+        if sort_by != f"price_{await _visible_price_profile(db, current_user)}":
+            sort_by = "product_code"
     sort_column = {
         "product_code": Product.product_code,
         # Evita um índice B-tree inseguro sobre textos de até 20 mil caracteres.
