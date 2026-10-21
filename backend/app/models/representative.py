@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, UniqueConstraint, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, UniqueConstraint, func, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.addresses import br_uf_check_condition
 from app.models.base import Base, TimestampMixin
 
@@ -35,6 +35,17 @@ class Representative(Base, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Ver Client.all_catalogs: catálogos que o representante pode vender.
+    all_catalogs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    catalog_links = relationship(
+        "RepresentativeCatalog", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    @property
+    def catalog_ids(self) -> list[uuid.UUID]:
+        return sorted(link.catalog_id for link in self.catalog_links)
     __table_args__ = (
         UniqueConstraint("id", "market_code", name="uq_representatives_id_market"),
         CheckConstraint(

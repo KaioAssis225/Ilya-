@@ -122,6 +122,8 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
+    # DEC-02 (catalog_permissions_r21): o catálogo define aba e permissão.
+    catalog_id: uuid.UUID
     price_pvp: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
     price_arquiteto: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
     description_pt_pt: Optional[str] = Field(None, min_length=1, max_length=20_000)
@@ -173,6 +175,15 @@ class ProductUpdate(BaseModel):
     @classmethod
     def normalize_article_category(cls, value: Optional[str]) -> Optional[str]:
         return ProductBase.normalize_article_category(value)
+
+    @field_validator("catalog_id")
+    @classmethod
+    def keep_catalog(cls, value: Optional[uuid.UUID]) -> uuid.UUID:
+        # Só roda quando o campo vem no PATCH: ausente não mexe, nulo não
+        # remove o catálogo (DEC-02).
+        if value is None:
+            raise ValueError("Catálogo é obrigatório.")
+        return value
 
 
 class ProductBatchRequest(BaseModel):

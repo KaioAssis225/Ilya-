@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
+from app.api.catalog_access import visible_catalog_scope
 from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
@@ -423,10 +424,18 @@ async def _validate_product_dimensions(
             raise HTTPException(422, "Uma ou mais categorias de opcionais não pertencem ao mercado ativo.")
 
 
+async def _visible_catalog_filters(
+    db: AsyncSession, user: User, market_code: str
+) -> list:
+    """Esconde no servidor os catálogos que o usuário não pode ver (DEC-08)."""
+    scope = await visible_catalog_scope(db, user, market_code)
+    return [] if scope is None else [Product.catalog_id.in_(scope)]
+
+
 @router.get("/article-categories", response_model=list[str])
 async def list_article_categories(
     db: AsyncSession = Depends(get_db_session),
-    _: User = _ANY,
+    current_user: User = _ANY,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
     """Caminhos comerciais usados nos produtos do mercado ativo."""
@@ -435,6 +444,7 @@ async def list_article_categories(
             Product.market_code == principal.code,
             Product.is_active.is_(True),
             Product.article_category_path.is_not(None),
+            *await _visible_catalog_filters(db, current_user, principal.code),
         ).order_by(Product.article_category_path)
     )).scalars().all()
     return list(rows)
@@ -508,6 +518,7 @@ async def list_products(
         )
     if catalog_id:
         filters.append(Product.catalog_id == catalog_id)
+    filters.extend(await _visible_catalog_filters(db, current_user, active_market))
     if article_category_path:
         category_path = article_category_path.strip()
         if category_path:
@@ -590,6 +601,7 @@ async def get_products_batch(
                     ProductMarket.market_code == principal.code,
                     ProductMarket.is_available.is_(True),
                 ),
+                *await _visible_catalog_filters(db, current_user, principal.code),
             )
         )
     ).scalars().all()
@@ -780,6 +792,8 @@ async def get_product(
                 ProductMarket.market_code == principal.code,
                 ProductMarket.is_available.is_(True),
             ),
+            # Catálogo oculto responde como inexistente, sem confirmar o id.
+            *await _visible_catalog_filters(db, current_user, principal.code),
         )
     )
     product = result.scalar_one_or_none()

@@ -48,7 +48,10 @@ class RepresentativeBase(BaseModel):
 
 
 class RepresentativeCreate(RepresentativeBase):
-    pass
+    # DEC-01/04 (catalog_permissions_r21): ausente não mexe na permissão.
+    # Mandar só `catalog_ids` implica seleção específica.
+    all_catalogs: Optional[bool] = None
+    catalog_ids: Optional[list[uuid.UUID]] = Field(None, max_length=200)
 
 
 class RepresentativeUpdate(BaseModel):
@@ -65,6 +68,10 @@ class RepresentativeUpdate(BaseModel):
     region: Optional[str] = Field(None, max_length=120)
     tax_id: Optional[str] = Field(None, max_length=40)
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
+    # DEC-01/04 (catalog_permissions_r21): ausente não mexe na permissão.
+    # Mandar só `catalog_ids` implica seleção específica.
+    all_catalogs: Optional[bool] = None
+    catalog_ids: Optional[list[uuid.UUID]] = Field(None, max_length=200)
 
     @field_validator("cpf_cnpj", mode="before")
     @classmethod
@@ -97,5 +104,7 @@ class RepresentativeRead(RepresentativeBase):
     relationship_ended_at: datetime | None = None
     has_user: bool = False
     created_by_name: str | None = None
+    all_catalogs: bool = True
+    catalog_ids: list[uuid.UUID] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

@@ -10,6 +10,7 @@ from app.schemas.product import ProductCreate, ProductUpdate
 
 def _product_payload(**overrides):
     payload = {
+        "catalog_id": "3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
         "product_code": "BAN0001",
         "description": "Banqueta de teste",
         "type": "Banqueta",

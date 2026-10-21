@@ -68,15 +68,20 @@ async def make_product(
     """Cria um Product sintético no mercado especificado.
 
     product_code único por mercado — usa UUID suffix para evitar colisão.
-    catalog deve ser do mesmo market_code (FK composta verificada no banco).
+    catalog deve ser do mesmo market_code (FK composta verificada no banco);
+    ausente, cria um catálogo próprio, porque o campo é obrigatório (r21).
     """
     _code = product_code or f"TST-{uuid.uuid4().hex[:8].upper()}"
+    if catalog is None:
+        catalog = Catalog(market_code=market_code, name=f"catalog-{uuid.uuid4().hex[:8]}")
+        db.add(catalog)
+        await db.flush()
     product = Product(
         market_code=market_code,
         product_code=_code,
         description=description,
         type="Outro",
-        catalog_id=catalog.id if catalog else None,
+        catalog_id=catalog.id,
         altura=Decimal("0"),
         largura=Decimal("0"),
         profundidade=Decimal("0"),

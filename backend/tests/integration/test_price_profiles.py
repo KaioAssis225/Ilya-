@@ -48,7 +48,9 @@ from app.models.market import (
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.user import UserRole
+from app.models.catalog import Catalog
 from tests.factories import (
+    make_catalog,
     make_client,
     make_product,
     make_product_group,
@@ -102,6 +104,7 @@ async def _product(
     tax_rate: Decimal | None,
     vat_status: str = VAT_APPROVED,
     product_code: str | None = None,
+    catalog: Catalog | None = None,
 ) -> tuple[str, str]:
     """Cria SKU com tipo/grupo fiscal e preço por lista. Devolve (código, tipo).
 
@@ -119,6 +122,7 @@ async def _product(
     product = await make_product(
         db, market_code=market, product_code=product_code or f"P07P-{market}-{suffix}",
         description="Mesa sintética P07",
+        catalog=catalog,
     )
     product.type = product_type.name
     product_market = await make_product_market(db, product)
@@ -307,11 +311,15 @@ async def test_reg_price_order_tax_is_sum_of_rounded_line_taxes(
     Tributar o total (0.20 × 5% = 0.01) daria outro valor — o contrato é por linha.
     """
     admin = await _admin(db_session, "BR")
+    # Mesmo catálogo: um pedido não mistura catálogos (catalog_permissions_r21).
+    catalog = await make_catalog(db_session, market_code="BR")
     code_a, _ = await _product(
         db_session, "BR", admin.user_id, amounts={"lojista": D("0.10")}, tax_rate=D("5.00"),
+        catalog=catalog,
     )
     code_b, _ = await _product(
         db_session, "BR", admin.user_id, amounts={"lojista": D("0.10")}, tax_rate=D("5.00"),
+        catalog=catalog,
     )
     client_id = await _client(db_session, "BR", "lojista")
 

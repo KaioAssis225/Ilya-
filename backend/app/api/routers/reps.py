@@ -6,7 +6,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select, update
 
+from app.api.catalog_access import apply_catalog_selection, resolve_catalog_selection
 from app.api.deps import (
+    CATALOG_MANAGEMENT_ROLES,
     get_db_session,
     get_current_principal,
     get_current_user,
@@ -242,12 +244,19 @@ async def create_representative(
                 detail="Já existe um representante com este CPF/CNPJ.",
             )
     rep_data = payload.model_dump()
+    selection = await resolve_catalog_selection(
+        db, market,
+        all_catalogs=rep_data.pop("all_catalogs"),
+        catalog_ids=rep_data.pop("catalog_ids"),
+    )
     rep_data["country"] = require_launch_country(market, rep_data.get("country"))
     rep = Representative(
         **rep_data,
         market_code=market,
         created_by_user_id=current_user.id,
     )
+    if selection is not None:
+        apply_catalog_selection(rep, selection)
     db.add(rep)
     try:
         await db.commit()
@@ -341,6 +350,17 @@ async def update_representative(
         update_data.pop("cpf_cnpj", None)
     if current_user.role != UserRole.admin:
         update_data.pop("max_discount", None)
+    # MELH-02: o próprio representante nunca amplia o que vende.
+    requested_all_catalogs = update_data.pop("all_catalogs", None)
+    requested_catalog_ids = update_data.pop("catalog_ids", None)
+    if current_user.role in CATALOG_MANAGEMENT_ROLES:
+        selection = await resolve_catalog_selection(
+            db, market,
+            all_catalogs=requested_all_catalogs,
+            catalog_ids=requested_catalog_ids,
+        )
+        if selection is not None:
+            apply_catalog_selection(rep, selection)
     new_email = update_data.get("email")
     if new_email:
         duplicate_email = (
