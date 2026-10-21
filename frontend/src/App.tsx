@@ -4,7 +4,6 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 import { AuthProvider, type AuthUser } from './contexts/AuthContext'
 import { PlatformAuthProvider } from './contexts/PlatformAuthContext'
 import { useAuth } from './hooks/useAuth'
-import { ELECTRONIC_SIGNATURES_ENABLED } from './lib/features'
 import LoginPage from './pages/LoginPage'
 import AtivarContaPage from './pages/AtivarContaPage'
 import { DEMO_MODE } from './lib/demo'
@@ -12,7 +11,6 @@ import { MarketTransition } from './components/MarketTransition'
 import type { MarketCode } from './components/MarketFlag'
 
 const PrivateApp = lazy(() => import('./PrivateApp'))
-const SignContractPage = lazy(() => import('./pages/SignContractPage'))
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
 const PlatformApp = lazy(() => import('./PlatformApp'))
 
@@ -64,10 +62,6 @@ export default function App() {
             <Route path="/" element={<RootPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/ativar-conta" element={<AtivarContaPage />} />
-            <Route
-              path="/sign-contract"
-              element={ELECTRONIC_SIGNATURES_ENABLED ? <SignContractPage /> : <Navigate to="/login" replace />}
-            />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/platform/*" element={<PlatformAuthProvider><PlatformApp /></PlatformAuthProvider>} />
             <Route element={<PrivateGate />}>

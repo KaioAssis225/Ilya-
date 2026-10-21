@@ -219,6 +219,4 @@ def _pedido():
         orc_id="ORC-0007",
         client_id=uuid.uuid4(),
         is_finalized=False,
-        rep_signature=None,
-        client_signature=None,
     )

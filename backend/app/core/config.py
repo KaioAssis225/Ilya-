@@ -48,9 +48,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_TTL_MINUTES: int = 30
     REFRESH_TOKEN_TTL_DAYS: int = 7
     REFRESH_TOKEN_AUDIT_RETENTION_DAYS: int = 30
-    # Temporariamente desativado: mantém código e dados de assinatura intactos,
-    # mas bloqueia criação, validação e aplicação de assinaturas eletrônicas.
-    ELECTRONIC_SIGNATURES_ENABLED: bool = False
     # O schema multimercado pode ser publicado com segurança enquanto a Europa
     # permanece inacessível. Ative somente após importar e conferir preços/IVA.
     # Catálogo e preços europeus foram reconciliados antes do lançamento.

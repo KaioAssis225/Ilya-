@@ -16,8 +16,6 @@ from app.models.order_history import OrderHistory
 from app.models.user import User, UserRole
 from app.models.refresh_token import RefreshToken
 from app.models.notification import Notification
-from app.models.signature_invitation import SignatureInvitation
-from app.models.order_signature_evidence import OrderSignatureEvidence
 from app.models.client_access_invitation import ClientAccessInvitation
 from app.models.login_attempt_state import LoginAttemptState
 from app.models.integration_outbox import IntegrationOutbox, OUTBOX_STATUSES
@@ -51,8 +49,6 @@ __all__ = [
     "UserRole",
     "RefreshToken",
     "Notification",
-    "SignatureInvitation",
-    "OrderSignatureEvidence",
     "ClientAccessInvitation",
     "LoginAttemptState",
     "IntegrationOutbox",

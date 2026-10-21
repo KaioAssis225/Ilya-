@@ -26,7 +26,6 @@ from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
 from app.models.representative import Representative
 from app.models.retention import LegalHold, RetentionReview
-from app.models.signature_invitation import SignatureInvitation
 from app.models.market import UserMarket
 from app.models.user import User
 from app.schemas.retention import (
@@ -102,13 +101,6 @@ def _notification_hold_exists(now: datetime):
                 _hold_exists("representative", UserMarket.rep_id, now),
             ),
         )
-    )
-
-
-def _signature_invitation_hold_exists(now: datetime):
-    return or_(
-        _hold_exists("order", SignatureInvitation.order_id, now),
-        _hold_exists("client", SignatureInvitation.client_id, now),
     )
 
 
@@ -566,7 +558,6 @@ async def create_retention_dry_run(
         "representatives": now - timedelta(days=1825),
         "notifications_read": now - timedelta(days=90),
         "notifications_unread": now - timedelta(days=365),
-        "signature_invitations": now - timedelta(days=30),
         "outbox_delivered": now - timedelta(days=90),
         "privacy_events": now - timedelta(days=1825),
     }
@@ -818,52 +809,6 @@ async def create_retention_dry_run(
                     "reference_at": row.reference_at.isoformat(),
                     "proposed_action": "delete_after_manual_review",
                     "category": "notifications_unread",
-                }
-            )
-
-    if "signature_invitations" in payload.categories:
-        invitation_terminal_at = func.greatest(
-            SignatureInvitation.expires_at,
-            func.coalesce(
-                SignatureInvitation.consumed_at,
-                SignatureInvitation.expires_at,
-            ),
-            func.coalesce(
-                SignatureInvitation.revoked_at,
-                SignatureInvitation.expires_at,
-            ),
-        )
-        due = invitation_terminal_at < cutoffs["signature_invitations"]
-        invitation_hold = _signature_invitation_hold_exists(now)
-        held = due & invitation_hold
-        eligible = due & ~invitation_hold
-        due_count = await _count(db, SignatureInvitation, due)
-        held_count = await _count(db, SignatureInvitation, held)
-        candidate_count = due_count - held_count
-        total_candidates += candidate_count
-        summary["signature_invitations"] = {
-            "status": "evaluated",
-            "retention_days": 30,
-            "reference_field": "expires_at/consumed_at/revoked_at",
-            "due": due_count,
-            "blocked_by_legal_hold": held_count,
-            "candidates": candidate_count,
-            "proposed_action": "delete_token_metadata_after_review",
-        }
-        for row in await _candidate_rows(
-            db,
-            SignatureInvitation,
-            eligible,
-            invitation_terminal_at,
-            _MAX_SNAPSHOT_CANDIDATES - len(candidates),
-        ):
-            candidates.append(
-                {
-                    "subject_type": "signature_invitation",
-                    "subject_id": str(row.id),
-                    "reference_at": row.reference_at.isoformat(),
-                    "proposed_action": "delete_token_metadata_after_review",
-                    "category": "signature_invitations",
                 }
             )
 

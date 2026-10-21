@@ -1,7 +1,6 @@
 import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
 import { formatDimensions } from './measurements'
-import { ELECTRONIC_SIGNATURES_ENABLED } from './features'
 import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
@@ -481,11 +480,7 @@ export async function generateOrderPDF(
   }
 
   // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
-  // Isolamento rígido: repSig nunca vaza para clientSig e vice-versa.
-  // Enquanto a assinatura eletrônica estiver desativada, o PDF mantém apenas
-  // as linhas em branco para assinatura manual. Os dados existentes não mudam.
-  const repSig = ELECTRONIC_SIGNATURES_ENABLED ? order.rep_signature : null
-  const clientSig = ELECTRONIC_SIGNATURES_ENABLED ? order.client_signature : null
+  // O PDF mantém apenas as linhas em branco para assinatura manual.
 
   if (y + 40 > 265) { doc.addPage(); y = 20 }
   y += 6
@@ -497,11 +492,6 @@ export async function generateOrderPDF(
   const colW = (w - 50) / 2
 
   // Coluna esquerda: assinatura do representante
-  if (repSig) {
-    try {
-      doc.addImage(repSig, 'PNG', 20, y, colW, 20, undefined, 'FAST')
-    } catch { /* assinatura inválida — ignora */ }
-  }
   doc.setDrawColor(...DARK)
   doc.setLineWidth(0.3)
   doc.line(20, y + 20, 20 + colW, y + 20)
@@ -512,11 +502,6 @@ export async function generateOrderPDF(
 
   // Coluna direita: assinatura do cliente
   const sx = 20 + colW + 10
-  if (clientSig) {
-    try {
-      doc.addImage(clientSig, 'PNG', sx, y, colW, 20, undefined, 'FAST')
-    } catch { /* assinatura inválida — ignora */ }
-  }
   doc.setDrawColor(...DARK)
   doc.setLineWidth(0.3)
   doc.line(sx, y + 20, sx + colW, y + 20)

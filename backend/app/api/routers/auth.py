@@ -55,7 +55,6 @@ from app.models.market import ProductMarket, UserMarket, UserPlatformPermission,
 from app.models.order import Order
 from app.models.order_history import OrderHistory
 from app.models.privacy_event import PrivacyEvent
-from app.models.signature_invitation import SignatureInvitation
 from app.models.client_access_invitation import ClientAccessInvitation
 from app.schemas.auth import (
     LoginRequest,
@@ -758,8 +757,6 @@ def _order_personal_data(order: Order) -> dict:
         "valor_com_ipi": order.total_with_ipi,
         "observacoes": order.notes,
         "finalizado": order.is_finalized,
-        "assinatura_representante_registrada": order.rep_signed,
-        "assinatura_cliente_registrada": order.client_signed,
         "criado_em": order.created_at,
         "atualizado_em": order.updated_at,
         "itens": [
@@ -816,7 +813,6 @@ async def my_data(
         "sessoes": [],
         "acoes_em_pedidos": [],
         "cadastros_criados": [],
-        "convites_de_assinatura_emitidos": [],
         "operacoes_de_privacidade": [],
     }
     if current_user.linked_id and is_client_account(current_user):
@@ -957,24 +953,6 @@ async def my_data(
         for row in created_representatives
     ]
 
-    invitations = (
-        await db.execute(
-            select(SignatureInvitation)
-            .where(SignatureInvitation.issued_by == current_user.id)
-            .order_by(SignatureInvitation.created_at.desc())
-        )
-    ).scalars().all()
-    payload["convites_de_assinatura_emitidos"] = [
-        {
-            "id": str(invitation.id),
-            "pedido_id": str(invitation.order_id),
-            "criado_em": invitation.created_at,
-            "expira_em": invitation.expires_at,
-            "consumido_em": invitation.consumed_at,
-            "revogado_em": invitation.revoked_at,
-        }
-        for invitation in invitations
-    ]
 
     subject_ids = [current_user.id]
     if current_user.linked_id:
@@ -1087,18 +1065,6 @@ async def anonymize_my_data(
     _anonymize_user_fields(user)
     await _revoke_user_sessions(db, user.id)
     await db.execute(delete(Notification).where(Notification.user_id == user.id))
-    invitation_filters = [SignatureInvitation.issued_by == user.id]
-    if client_id:
-        invitation_filters.append(SignatureInvitation.client_id == client_id)
-    await db.execute(
-        update(SignatureInvitation)
-        .where(
-            or_(*invitation_filters),
-            SignatureInvitation.consumed_at.is_(None),
-            SignatureInvitation.revoked_at.is_(None),
-        )
-        .values(revoked_at=datetime.now(timezone.utc))
-    )
     record_privacy_event(
         db,
         actor_user_id=user.id,

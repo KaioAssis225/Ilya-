@@ -13,7 +13,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="text-lg font-semibold text-ink tracking-wider uppercase">
             Política de Privacidade
           </h1>
-          <p className="text-xs text-muted mt-1">Última atualização técnica: 5 de agosto de 2026</p>
+          <p className="text-xs text-muted mt-1">Última atualização técnica: 21 de outubro de 2026</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-line shadow-sm p-8 space-y-6 text-sm text-ink-2 leading-relaxed">
@@ -34,7 +34,6 @@ export default function PrivacyPolicyPage() {
               <li><strong>Nome, telefone e e-mail</strong> — comunicação comercial e formalização de orçamentos.</li>
               <li><strong>Endereço e CEP</strong> — logística e faturamento de produtos.</li>
               <li><strong>Dados de pedidos</strong> — elaboração de orçamentos, execução da venda, suporte e preservação do histórico comercial.</li>
-              <li><strong>Assinatura eletrônica histórica</strong> — comprovação de aceite contratual; a coleta de novas assinaturas está temporariamente desativada.</li>
               <li><strong>Credenciais de acesso</strong> — autenticação e controle de privilégios no sistema.</li>
               <li><strong>Registros técnicos</strong> — segurança, prevenção de abuso, diagnóstico e continuidade do serviço.</li>
             </ul>
@@ -73,7 +72,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xs font-bold uppercase tracking-widest text-gold mb-2">5. Retenção de Dados</h2>
             <p>
-              Clientes sem pedido são mantidos por até 2 anos após o último contato. Representantes são mantidos durante a relação com a Ilya e por 5 anos após o encerramento. Orçamentos não convertidos são mantidos por 2 anos após a última atualização. Pedidos finalizados ou cancelados, seus históricos e eventuais assinaturas são mantidos por até 10 anos e depois têm os dados pessoais eliminados ou anonimizados, preservado apenas o mínimo legalmente necessário.
+              Clientes sem pedido são mantidos por até 2 anos após o último contato. Representantes são mantidos durante a relação com a Ilya e por 5 anos após o encerramento. Orçamentos não convertidos são mantidos por 2 anos após a última atualização. Pedidos finalizados ou cancelados, e seus históricos são mantidos por até 10 anos e depois têm os dados pessoais eliminados ou anonimizados, preservado apenas o mínimo legalmente necessário.
             </p>
             <p className="mt-2">
               Sessões expiram tecnicamente; evidências de refresh token são descartadas após o período de auditoria configurado. Backups criptografados seguem ciclos diário, semanal e mensal. Quando houver disputa, cobrança, garantia, fiscalização, investigação ou obrigação legal, a eliminação pode ser suspensa até o encerramento da necessidade. A Ilya informará eventual impedimento e restringirá o uso ao propósito que justificou a conservação.
@@ -83,7 +82,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xs font-bold uppercase tracking-widest text-gold mb-2">6. Segurança</h2>
             <p>
-              Adotamos controles técnicos como hashing de senhas com Argon2, tokens JWT de curta duração, refresh token em cookie HttpOnly, bloqueio de login, revogação de sessões, HTTPS em produção, controle de acesso por função, cabeçalhos de segurança, limites de requisição e backups criptografados e testados. Imagens de assinatura não são mantidas no armazenamento persistente do navegador.
+              Adotamos controles técnicos como hashing de senhas com Argon2, tokens JWT de curta duração, refresh token em cookie HttpOnly, bloqueio de login, revogação de sessões, HTTPS em produção, controle de acesso por função, cabeçalhos de segurança, limites de requisição e backups criptografados e testados.
             </p>
           </section>
 

@@ -11,7 +11,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("PASSWORD_PEPPER", "test-pepper")
 
-from app.api.routers.orders import _resolve_item_choices, _order_document_content, _items_history_snapshot
+from app.api.routers.orders import _resolve_item_choices, _items_history_snapshot
 from app.api.routers.products import _replace_applications
 from app.models.optional_application import ProductOptionalApplication
 from app.models.optional_color import OptionalColor
@@ -149,23 +149,6 @@ def test_component_application_and_repeat_policy_cross_component():
     assert resolve(product, [first], [optional], [(first.id, optional.id)], components[:1])[0].component_name == "Assento"
 
 
-def test_old_order_is_unchanged_and_old_signature_content_has_no_new_key():
-    product, application, optional = fixture()
-    old = SimpleNamespace(product_code="ABC", opt_categories={"PINTURA": "Taupe"}, optional_choices=[])
-    incoming = OrderItemCreate(product_code="ABC", qty=1, opt_categories={"PINTURA": "Taupe"}, source_order_item_id=uuid.uuid4())
-    assert asyncio.run(_resolve_item_choices(Session([application], [optional]), product, "BR", incoming, old)) == []
-    order = SimpleNamespace(
-        id=uuid.uuid4(), document_version=1, market_code="BR", code="PED-1", orc_id="ORC-1",
-        client_id=uuid.uuid4(), rep_id=None, price_list_code="lojista", currency="BRL", locale="pt-BR",
-        is_finalized=False, is_cancelled=False, external_code=None, total_value=1, total_ipi=0,
-        total_with_ipi=1, notes=None, items=[SimpleNamespace(
-            id=uuid.uuid4(), product_code="ABC", description="Produto", is_circular=False,
-            altura=1, largura=1, profundidade=1, qty=1, unit_price=1, discount=0,
-            ipi_rate=0, ipi_value=0, tax_label="IPI", currency="BRL", observacao=None,
-            opt_categories={"PINTURA": "Taupe"}, optional_choices=[],
-        )],
-    )
-    assert "application_choices" not in _order_document_content(order)["items"][0]
 
 
 def test_history_keeps_application_and_option_names_as_snapshots():

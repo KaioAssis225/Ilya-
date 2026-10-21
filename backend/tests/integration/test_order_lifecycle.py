@@ -671,7 +671,7 @@ async def test_cancel_order_complete_flow(client, db_session):
     assert history_after == ['created', 'cancelled']
 
 
-async def test_create_signed_revision_conflict_and_success(client, db_session):
+async def test_create_revision_of_finalized_order_conflict_and_success(client, db_session):
     admin = await _admin(db_session, 'BR')
     price_list = await _price_list(db_session, 'BR', 'lojista')
 
@@ -691,24 +691,21 @@ async def test_create_signed_revision_conflict_and_success(client, db_session):
     assert order_response.status_code == 201, order_response.text
     source_order_id = uuid.UUID(order_response.json()['id'])
 
-    result = await db_session.execute(
-        select(OrderItem).where(OrderItem.order_id == source_order_id)
+    revision_before_finalize = await client.post(
+        f'/api/v1/orders/{source_order_id}/revision',
+        headers={'Authorization': f'Bearer {admin.token}'}
     )
-    source_items = result.scalars().all()
-    assert len(source_items) == 1
+    assert revision_before_finalize.status_code == 409, revision_before_finalize.text
+    assert "Somente pedido finalizado pode receber revisão." in revision_before_finalize.text
 
-    original_snapshot = await _capture_history_json(db_session, source_order_id)
-
-    result = await db_session.execute(
-        select(Order).where(Order.id == source_order_id)
-    )
-    source_order = result.scalar_one()
-    source_order.rep_signature = 'data:image/png;base64,AA=='
-    await db_session.commit()
+    finalize_response = await _finalize_order(client, admin, source_order_id)
+    assert finalize_response.status_code == 200, finalize_response.text
 
     put_response = await _put_order(client, admin, source_order_id, order_data)
     assert put_response.status_code == 409, put_response.text
-    assert 'assinado' in put_response.text.lower() or 'signed' in put_response.text.lower()
+
+    # A revisão não pode alterar o histórico do pedido finalizado de origem.
+    original_snapshot = await _capture_history_json(db_session, source_order_id)
 
     revision_response = await client.post(
         f'/api/v1/orders/{source_order_id}/revision',
@@ -728,13 +725,6 @@ async def test_create_signed_revision_conflict_and_success(client, db_session):
     assert revision_order.id == successor_order_id
     assert revision_order.supersedes_order_id == source_order_id
     assert revision_order.revision_number == 2
-    assert revision_order.rep_signature is None or revision_order.rep_signature == ''
-
-    result = await db_session.execute(
-        select(Order).where(Order.id == source_order_id)
-    )
-    source_after = result.scalar_one()
-    assert source_after.rep_signature == 'data:image/png;base64,AA=='
 
     source_snapshot_after = await _capture_history_json(db_session, source_order_id)
     assert source_snapshot_after == original_snapshot

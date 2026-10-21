@@ -3,9 +3,18 @@ import type { ReactNode } from 'react'
 import axios from 'axios'
 import { authApi, bindAuthHandlers, rotatePrivateApiSession } from '../lib/api'
 import { removeUnsafeLegacyCart } from '../lib/cart'
-import { clearSignatureMemory, removeLegacySignatureStorage } from '../lib/signatureMemory'
 import { DEMO_MODE, DEMO_USER } from '../lib/demo'
 import { AuthContext } from '../hooks/useAuth'
+
+function removeLegacySignatureStorage() {
+  const prefixes = ['profile_signature_', 'signature_']
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i)
+    if (key && prefixes.some(prefix => key.startsWith(prefix))) {
+      localStorage.removeItem(key)
+    }
+  }
+}
 
 export type UserRole = 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
 
@@ -164,7 +173,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     // Esconde e remove os dados privados antes da chamada de rede. Mesmo com
     // conexão lenta, a conta anterior nunca continua visível durante o logout.
-    clearSignatureMemory()
     removeLegacySignatureStorage()
     clearSession()
     try {

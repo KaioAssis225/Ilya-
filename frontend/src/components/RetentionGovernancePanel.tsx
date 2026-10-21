@@ -15,7 +15,6 @@ type HoldSubjectType = 'client' | 'representative' | 'order'
 type CandidateSubjectType =
   | HoldSubjectType
   | 'notification'
-  | 'signature_invitation'
   | 'integration_outbox'
   | 'privacy_event'
 
@@ -74,7 +73,6 @@ const SUBJECT_LABEL: Record<CandidateSubjectType, string> = {
   representative: 'Representante',
   order: 'Pedido/orçamento',
   notification: 'Notificação',
-  signature_invitation: 'Convite de assinatura',
   integration_outbox: 'Evento de integração',
   privacy_event: 'Evento de privacidade',
 }
@@ -86,7 +84,6 @@ const CATEGORY_LABEL: Record<string, string> = {
   representatives: 'Representantes',
   notifications_read: 'Notificações lidas',
   notifications_unread: 'Notificações não lidas',
-  signature_invitations: 'Convites de assinatura',
   outbox_delivered: 'Webhooks entregues',
   outbox_dead_letter: 'Webhooks com falha definitiva',
   privacy_events: 'Eventos de privacidade',

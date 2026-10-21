@@ -29,8 +29,6 @@ class Order(Base, TimestampMixin):
     total_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     total_with_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    rep_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
-    client_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_finalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -152,15 +150,6 @@ class Order(Base, TimestampMixin):
         ),
     )
 
-    # Flags derivadas — permitem a listagem informar status de assinatura
-    # sem transportar o blob base64 (~750 KB por assinatura) (V-M7).
-    @property
-    def rep_signed(self) -> bool:
-        return self.rep_signature is not None
-
-    @property
-    def client_signed(self) -> bool:
-        return self.client_signature is not None
 
 
 class OrderItem(Base, TimestampMixin):

@@ -14,8 +14,8 @@ const baseConfig = {
 
 const api = axios.create(baseConfig)
 
-// Instância "crua" para o fluxo de autenticação (login/refresh/me/logout) e
-// endpoints públicos de assinatura. Sem interceptors: a `api` acima chama
+// Instância "crua" para o fluxo de autenticação (login/refresh/me/logout).
+// Sem interceptors: a `api` acima chama
 // _refreshSession() em qualquer 401, o que criaria uma promise circular se o
 // próprio refresh (chamado aqui) também passasse por esse interceptor.
 export const authApi = axios.create(baseConfig)

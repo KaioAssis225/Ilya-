@@ -90,15 +90,6 @@ def _invitation_body(username: str, token: str) -> str:
     )
 
 
-def _signature_body(order_code: str, token: str) -> str:
-    link = settings.CLIENT_INVITE_BASE_URL.rstrip("/") + "/sign-contract#" + quote(token, safe="")
-    return (
-        f"O pedido {order_code} aguarda sua assinatura. Revise os termos antes de assinar.\n\n"
-        f"Link: {link}\n\nEste link é de uso único e expira em breve. "
-        "Se você não reconhece o pedido, ignore esta mensagem."
-    )
-
-
 def _send_smtp(recipient: str, username: str, token: str) -> None:
     message = EmailMessage()
     message["From"] = settings.SMTP_FROM_EMAIL
@@ -126,35 +117,6 @@ async def send_client_invitation(recipient: str, username: str, token: str) -> N
         )
         return
     await asyncio.to_thread(_send_smtp, recipient, username, token)
-
-
-def _send_signature_smtp(recipient: str, order_code: str, token: str) -> None:
-    message = EmailMessage()
-    message["From"] = settings.SMTP_FROM_EMAIL
-    message["To"] = recipient
-    message["Subject"] = "Assinatura do pedido Ilya"
-    message.set_content(_signature_body(order_code, token))
-    context = ssl.create_default_context()
-    if settings.SMTP_USE_SSL:
-        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10, context=context) as smtp:
-            smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-            smtp.send_message(message)
-    else:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
-            smtp.starttls(context=context)
-            smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-            smtp.send_message(message)
-
-
-async def send_signature_invitation(recipient: str, order_code: str, token: str) -> None:
-    if settings.MAIL_DELIVERY_PROVIDER.strip().lower() == "microsoft_graph":
-        await _send_graph(
-            recipient,
-            "Assinatura do pedido Ilya",
-            _signature_body(order_code, token),
-        )
-        return
-    await asyncio.to_thread(_send_signature_smtp, recipient, order_code, token)
 
 
 async def _send_graph(recipient: str, subject: str, body: str) -> None:
