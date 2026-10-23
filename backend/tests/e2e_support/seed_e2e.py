@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.addresses import UF_SENTINEL
 from app.core.security import hash_password
 from app.models import (
-    Client, Market, PriceList, Product, ProductGroup, ProductMarket,
+    Catalog, Client, Market, PriceList, Product, ProductGroup, ProductMarket,
     ProductPrice, ProductType, User, UserMarket, UserRole,
 )
 
@@ -93,13 +93,22 @@ async def seed() -> None:
                 if product_type is None:
                     product_type = ProductType(market_code=code, name=type_name, group_id=group.id)
                     db.add(product_type)
+                # products.catalog_id é obrigatório desde catalog_permissions_r21 e a FK
+                # composta exige catálogo do mesmo mercado do produto.
+                catalog_name = f"E2E Catálogo {code}"
+                catalog = await one(db, select(Catalog).where(Catalog.market_code == code, Catalog.name == catalog_name))
+                if catalog is None:
+                    catalog = Catalog(market_code=code, name=catalog_name)
+                    db.add(catalog)
+                    await db.flush()
                 sku, description = PRODUCTS[code]
                 product = await one(db, select(Product).where(Product.market_code == code, Product.product_code == sku))
                 if product is None:
-                    product = Product(market_code=code, product_code=sku, description=description, type=type_name, altura=Decimal("10"), largura=Decimal("10"), profundidade=Decimal("10"), price=Decimal("100"), price_lojista=Decimal("100"), price_corporativo=Decimal("100"), custo_desativado=Decimal("0"))
+                    product = Product(market_code=code, catalog_id=catalog.id, product_code=sku, description=description, type=type_name, altura=Decimal("10"), largura=Decimal("10"), profundidade=Decimal("10"), price=Decimal("100"), price_lojista=Decimal("100"), price_corporativo=Decimal("100"), custo_desativado=Decimal("0"))
                     db.add(product)
                     await db.flush()
                 product.is_active = True
+                product.catalog_id = catalog.id
                 product.description = description
                 product.type = type_name
                 listing = await db.get(ProductMarket, (product.id, code))
