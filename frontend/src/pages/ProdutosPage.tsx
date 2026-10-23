@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn } from 'lucide-react'
 import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
@@ -10,11 +10,18 @@ import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useCatalogs } from '../hooks/useCatalogs'
 import { useProductGroups } from '../hooks/useProductGroups'
+import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
-import type { PageResult, Product } from '../types'
+import type { OptionalChoiceInput, OptionalColor, PageResult, Product } from '../types'
 import { formatDimensions } from '../lib/measurements'
-import { applicationName, productApplications } from '../lib/optionalApplications'
+import {
+  allowedForApplication,
+  applicationName,
+  productApplications,
+  requiredApplicationProgress,
+  validateApplicationChoices,
+} from '../lib/optionalApplications'
 
 const PAGE_SIZE = 24
 const FULL_IMAGE_WARMUP_COUNT = 4
@@ -315,6 +322,17 @@ const CAT_LABEL: Record<string, string> = {
   couro_soleta: 'Couro Soleta', couro_pele: 'Couro Pele',
 }
 
+function categoryLabel(category: string) {
+  return CAT_LABEL[category] ?? CAT_LABEL[category.toLocaleLowerCase('pt-PT')] ?? category
+}
+
+function freeOptionalCategories(product: Product): string[] {
+  return (product.all_optionals_categories ?? '')
+    .split(',')
+    .map(category => category.trim())
+    .filter(Boolean)
+}
+
 function localizeFurnitureTerm(value: string, locale: 'pt-PT' | 'en-GB') {
   const normalized = value.trim().toLocaleLowerCase('pt-PT')
   const pt: Record<string, string> = {
@@ -345,29 +363,77 @@ function dimLabel(p: Product, locale: 'pt-PT' | 'en-GB' = 'pt-PT') {
   return formatDimensions(p, p.market_code === 'EU' ? 'EU' : 'BR', locale)
 }
 
-function addToCart(product: Product, userId: string, market: 'BR' | 'EU', configure: (code: string) => void) {
-  if (productApplications(product).length > 0) {
+interface CartSelections {
+  opt_categories: Record<string, string>
+  optional_choices: OptionalChoiceInput[]
+}
+
+interface StoredProductLine extends CartSelections {
+  product_code: string
+  qty: number
+  discount: number
+  line_id?: string
+  _product: Product
+}
+
+function sortedChoices(choices: OptionalChoiceInput[] | undefined) {
+  return [...(choices ?? [])].sort((left, right) =>
+    left.application_id.localeCompare(right.application_id)
+      || left.optional_id.localeCompare(right.optional_id),
+  )
+}
+
+function sameSelections(line: Partial<CartSelections>, selections: CartSelections) {
+  const sortedCategories = (categories: Record<string, string> | undefined) =>
+    Object.entries(categories ?? {}).sort(([left], [right]) => left.localeCompare(right))
+
+  return JSON.stringify(sortedCategories(line.opt_categories)) === JSON.stringify(sortedCategories(selections.opt_categories))
+    && JSON.stringify(sortedChoices(line.optional_choices)) === JSON.stringify(sortedChoices(selections.optional_choices))
+}
+
+function addToCart(
+  product: Product,
+  userId: string,
+  market: 'BR' | 'EU',
+  configure: (code: string) => void,
+  selected?: CartSelections,
+) {
+  if (!selected && productApplications(product).length > 0) {
     configure(product.product_code)
     return
   }
   const storageKey = cartStorageKey(userId, market)
   const raw = localStorage.getItem(storageKey)
-  const cart = raw ? JSON.parse(raw) : []
-  const existing = cart.find((i: { product_code: string }) => i.product_code === product.product_code)
+  let cart: StoredProductLine[] = []
+  try {
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    if (Array.isArray(parsed)) cart = parsed as StoredProductLine[]
+  } catch {
+    cart = []
+  }
+
+  const selections: CartSelections = selected ?? {
+    opt_categories: product.optionals.reduce<Record<string, string>>((categories, option) => {
+      if (!(option.category in categories)) categories[option.category] = option.color_name
+      return categories
+    }, {}),
+    optional_choices: [],
+  }
+  const existing = cart.find(line =>
+    line.product_code === product.product_code
+      && line.discount === 0
+      && sameSelections(line, selections),
+  )
   if (existing) {
     existing.qty += 1
   } else {
-    const opt_categories: Record<string, string> = {}
-    for (const opt of product.optionals) {
-      if (!(opt.category in opt_categories)) {
-        opt_categories[opt.category] = opt.color_name
-      }
-    }
     cart.push({
+      line_id: crypto.randomUUID(),
       product_code: product.product_code,
       qty: 1,
       discount: 0,
-      opt_categories,
+      opt_categories: selections.opt_categories,
+      optional_choices: sortedChoices(selections.optional_choices),
       _product: product,
     })
   }
@@ -405,6 +471,7 @@ function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
 // ── Mini modal para zoom de opcional no mobile ────────────────────────────────
 
 function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; label: string; onClose: () => void }) {
+  const { locale } = useLocale()
   const closeRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   useEffect(() => {
@@ -428,9 +495,128 @@ function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; l
       <div className="bg-white rounded-2xl shadow-2xl p-4 mx-6 flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
         <img src={photo_url} alt={label} className="w-48 h-48 object-cover rounded-xl border border-line" />
         <p id="optional-zoom-title" className="text-sm font-medium text-ink text-center">{label}</p>
-        <button ref={closeRef} onClick={onClose} className="btn-secondary min-h-11 px-4 text-xs uppercase tracking-wider">Fechar</button>
+        <button ref={closeRef} onClick={onClose} className="btn-secondary min-h-11 px-4 text-xs uppercase tracking-wider">
+          {locale === 'en-GB' ? 'Close' : 'Fechar'}
+        </button>
       </div>
     </div>
+  )
+}
+
+function OptionalCatalogGroup({
+  id,
+  label,
+  options,
+  selectedId,
+  canDeselect,
+  english,
+  onSelect,
+  onZoom,
+}: {
+  id: string
+  label: string
+  options: OptionalColor[]
+  selectedId?: string
+  canDeselect: boolean
+  english: boolean
+  onSelect: (optionalId: string | undefined) => void
+  onZoom: (photo_url: string, label: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLocaleLowerCase(english ? 'en-GB' : 'pt-PT')
+  const filtered = normalizedQuery
+    ? options.filter(option => option.color_name.toLocaleLowerCase(english ? 'en-GB' : 'pt-PT').includes(normalizedQuery))
+    : options
+  const visible = normalizedQuery || expanded ? filtered : filtered.slice(0, 12)
+  const hasMany = options.length > 12
+
+  return (
+    <fieldset className="min-w-0 space-y-3" aria-labelledby={`${id}-label`}>
+      <legend id={`${id}-label`} className="text-sm font-semibold text-ink break-words">
+        {label}
+      </legend>
+      {hasMany && (
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+          <span className="sr-only">{english ? `Search in ${label}` : `Buscar em ${label}`}</span>
+          <input
+            type="search"
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder={english ? 'Search by name' : 'Buscar por nome'}
+            className="input pl-9 text-base md:text-sm"
+          />
+        </label>
+      )}
+      {visible.length > 0 ? (
+        <div className="flex flex-wrap gap-3">
+          {visible.map(option => {
+            const selected = option.id === selectedId
+            const imageUrl = option.thumbnail_url ?? option.photo_url
+            const zoomUrl = option.photo_url ?? option.thumbnail_url
+            const optionLabel = `${label}: ${option.color_name}`
+            return (
+              <div key={option.id} className="relative w-20">
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={optionLabel}
+                  onClick={() => onSelect(selected && canDeselect ? undefined : option.id)}
+                  className={`group flex w-20 flex-col items-center gap-1.5 rounded-xl border bg-white p-1.5 text-center transition-[border-color,box-shadow,transform] active:scale-[0.98] ${
+                    selected ? 'border-gold ring-2 ring-gold' : 'border-line hover:border-gold/60'
+                  }`}
+                >
+                  <span className="relative block h-16 w-16 overflow-hidden rounded-lg border border-line bg-bg-2">
+                    {imageUrl ? (
+                      <img src={imageUrl} alt="" decoding="async" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center text-xl font-semibold text-muted" aria-hidden="true">
+                        {option.color_name.trim().charAt(0).toLocaleUpperCase() || '?'}
+                      </span>
+                    )}
+                    {selected && (
+                      <span className="absolute bottom-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-gold text-white shadow-sm" aria-hidden="true">
+                        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-h-8 w-full overflow-hidden text-xs font-medium leading-4 text-ink-2 [overflow-wrap:anywhere]">
+                    {option.color_name}
+                  </span>
+                </button>
+                {zoomUrl && (
+                  <button
+                    type="button"
+                    onClick={() => onZoom(zoomUrl, optionLabel)}
+                    aria-label={english ? `Enlarge ${optionLabel}` : `Ampliar ${optionLabel}`}
+                    className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-white/95 text-ink shadow-sm transition-colors hover:border-gold hover:text-gold"
+                  >
+                    <ZoomIn className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-muted">
+          {english ? 'No finishes match this search.' : 'Nenhum acabamento corresponde à busca.'}
+        </p>
+      )}
+      {hasMany && !normalizedQuery && (
+        <button
+          type="button"
+          className="text-sm font-semibold text-gold underline decoration-gold/40 underline-offset-4 hover:text-gold-700"
+          onClick={() => setExpanded(current => !current)}
+          aria-expanded={expanded}
+        >
+          {expanded
+            ? (english ? 'Show fewer' : 'Mostrar menos')
+            : (english ? `View all (${options.length})` : `Ver todas (${options.length})`)}
+        </button>
+      )}
+    </fieldset>
   )
 }
 
@@ -445,10 +631,29 @@ function ProductFullView({
   onClose,
 }: { product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void }) {
   const [added, setAdded] = useState(false)
+  const [validationAlert, setValidationAlert] = useState<string | null>(null)
   const navigate = useNavigate()
   const { locale } = useLocale()
   const english = locale === 'en-GB'
   const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
+  const applications = useMemo(() => productApplications(product), [product])
+  const freeCategories = useMemo(() => freeOptionalCategories(product), [product])
+  const freeCategorySet = useMemo(() => new Set(freeCategories), [freeCategories])
+  const fixedCategories = useMemo(() => Array.from(new Set(
+    product.optionals.map(option => option.category).filter(category => !freeCategorySet.has(category)),
+  )), [product.optionals, freeCategorySet])
+  const fetchedCategories = useMemo(() => Array.from(new Set([
+    ...freeCategories,
+    ...applications.map(({ application }) => application.category_code),
+  ])), [applications, freeCategories])
+  const { data: fetchedOptionals = [], isLoading: optionalsLoading } = useOptionalsForCategories(fetchedCategories)
+  const [categorySelections, setCategorySelections] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fixedCategories.flatMap(category => {
+      const first = product.optionals.find(option => option.category === category)
+      return first ? [[category, first.id]] : []
+    })),
+  )
+  const [applicationSelections, setApplicationSelections] = useState<Record<string, string>>({})
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   const mobileOptModalRef = useRef(mobileOptModal)
@@ -476,16 +681,41 @@ function ProductFullView({
     }
   }, [])
 
+  const applicationChoices = useMemo<OptionalChoiceInput[]>(() =>
+    Object.entries(applicationSelections).map(([application_id, optional_id]) => ({ application_id, optional_id })),
+  [applicationSelections])
+  const progress = requiredApplicationProgress(product, applicationChoices, fetchedOptionals)
+
   function handleAdd() {
-    addToCart(product, userId, market, code => navigate(configureProductPath(code)))
+    const errors = validateApplicationChoices(product, applicationChoices, fetchedOptionals)
+    if (errors.length > 0 || progress.missing > 0) {
+      setValidationAlert(english
+        ? 'Choose every required finish before adding this product.'
+        : 'Escolha todos os acabamentos obrigatórios antes de adicionar este produto.')
+      return
+    }
+
+    const optionsByCategory = new Map<string, OptionalColor[]>([
+      ...fixedCategories.map(category => [category, product.optionals.filter(option => option.category === category)] as const),
+      ...freeCategories.map(category => [category, fetchedOptionals.filter(option => option.category === category)] as const),
+    ])
+    const opt_categories = Object.entries(categorySelections).reduce<Record<string, string>>((selected, [category, optionalId]) => {
+      const option = optionsByCategory.get(category)?.find(candidate => candidate.id === optionalId)
+      if (option) selected[category] = option.color_name
+      return selected
+    }, {})
+
+    addToCart(
+      product,
+      userId,
+      market,
+      code => navigate(configureProductPath(code)),
+      { opt_categories, optional_choices: applicationChoices },
+    )
+    setValidationAlert(null)
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
-
-  const optCategories = Array.from(new Set(product.optionals.map(o => o.category))).map(cat => ({
-    cat,
-    opt: product.optionals.find(o => o.category === cat)!,
-  }))
 
   return (
     <>
@@ -602,65 +832,130 @@ function ProductFullView({
                   )}
                 </div>
               </div>
-            ) : optCategories.length > 0 ? (
-              <div>
-                <p className="text-xs text-muted font-semibold uppercase tracking-wider mb-3">{english ? 'Options' : 'Opcionais'}</p>
-                <div className="flex flex-wrap gap-5">
-                  {optCategories.map(({ cat, opt }) => (
-                    <div key={cat} className="flex flex-col items-center gap-2">
-                      <div className="relative group">
-                        {opt.photo_url ? (
-                          <>
-                            <img
-                              src={opt.thumbnail_url ?? opt.photo_url}
-                              alt={opt.color_name}
-                              decoding="async"
-                              className="w-14 h-14 rounded-xl object-cover border border-line cursor-zoom-in hidden md:block"
-                            />
-                            <div className="hidden group-hover:block absolute z-50 bottom-16 left-1/2 -translate-x-1/2 w-44 h-44 rounded-xl overflow-hidden shadow-2xl border border-line pointer-events-none">
-                              <img src={opt.photo_url} alt={opt.color_name} decoding="async" className="w-full h-full object-cover" />
-                            </div>
-                            <button
-                              type="button"
-                              className="md:hidden w-14 h-14 rounded-xl overflow-hidden border border-line active:opacity-70 transition-opacity"
-                              style={{ touchAction: 'manipulation' }}
-                              onClick={() => setMobileOptModal({ photo_url: opt.photo_url!, label: `${CAT_LABEL[cat] ?? cat}: ${opt.color_name}` })}
-                              aria-label={`Ampliar ${CAT_LABEL[cat] ?? cat}: ${opt.color_name}`}
-                            >
-                              <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-full h-full object-cover" />
-                            </button>
-                          </>
-                        ) : (
-                          <div className="w-14 h-14 rounded-xl bg-bg-2 border border-line" />
-                        )}
-                      </div>
-                      <div className="text-center">
-                        <span className="type-label block">{CAT_LABEL[cat] ?? cat}</span>
-                        <span className="text-xs leading-snug text-ink-2 font-medium">{opt.color_name}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             ) : null}
 
-            {productApplications(product).length > 0 && <div className="border-t border-line-soft pt-4">
-              <p className="type-label mb-2">{english ? 'Optional applications' : 'Aplicações do opcional'}</p>
-              {productApplications(product).map(({ application, componentName }) => <p key={application.id} className="text-xs text-ink-2 mt-1">
-                {componentName ? `${componentName} — ` : ''}{applicationName(application, english)}{application.required ? ' *' : ''}
-              </p>)}
-            </div>}
+            {(fixedCategories.length > 0 || freeCategories.length > 0 || applications.length > 0) && (
+              <section className="space-y-5 border-t border-line-soft pt-5" aria-labelledby="finish-picker-title">
+                <div className="space-y-1.5">
+                  <h3 id="finish-picker-title" className="text-xl text-ink">
+                    {english ? 'Choose finishes' : 'Escolha os acabamentos'}
+                  </h3>
+                  {progress.missing > 0 && (
+                    <p className="text-sm leading-relaxed text-muted">
+                      {english
+                        ? `${progress.missing} of ${progress.total} required finishes still ${progress.missing === 1 ? 'needs' : 'need'} a choice.`
+                        : `${progress.missing} de ${progress.total} ${progress.missing === 1 ? 'acabamento obrigatório ainda precisa' : 'acabamentos obrigatórios ainda precisam'} de escolha.`}
+                    </p>
+                  )}
+                </div>
 
-            <button
-              onClick={handleAdd}
-              style={{ touchAction: 'manipulation' }}
-              className={`w-full flex items-center justify-center gap-2.5 py-4 rounded-xl font-semibold text-[13px] uppercase tracking-[0.12em] text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
-            >
-              {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-              {added
-                ? (english ? 'Added to quote' : 'Adicionado ao orçamento')
-                : (english ? 'Add to quote' : 'Adicionar ao orçamento')}
-            </button>
+                {optionalsLoading && (
+                  <p className="text-sm text-muted" role="status">
+                    {english ? 'Loading finishes…' : 'A carregar acabamentos…'}
+                  </p>
+                )}
+
+                {fixedCategories.map(category => {
+                  const options = product.optionals.filter(option => option.category === category)
+                  return (
+                    <OptionalCatalogGroup
+                      key={`category-${category}`}
+                      id={`category-${category}`}
+                      label={categoryLabel(category)}
+                      options={options}
+                      selectedId={categorySelections[category]}
+                      canDeselect={options.length > 1}
+                      english={english}
+                      onSelect={optionalId => {
+                        setValidationAlert(null)
+                        setCategorySelections(current => {
+                          const next = { ...current }
+                          if (optionalId) next[category] = optionalId
+                          else delete next[category]
+                          return next
+                        })
+                      }}
+                      onZoom={(photo_url, label) => setMobileOptModal({ photo_url, label })}
+                    />
+                  )
+                })}
+
+                {freeCategories.map(category => (
+                  <OptionalCatalogGroup
+                    key={`free-category-${category}`}
+                    id={`free-category-${category}`}
+                    label={categoryLabel(category)}
+                    options={fetchedOptionals.filter(option => option.category === category)}
+                    selectedId={categorySelections[category]}
+                    canDeselect
+                    english={english}
+                    onSelect={optionalId => {
+                      setValidationAlert(null)
+                      setCategorySelections(current => {
+                        const next = { ...current }
+                        if (optionalId) next[category] = optionalId
+                        else delete next[category]
+                        return next
+                      })
+                    }}
+                    onZoom={(photo_url, label) => setMobileOptModal({ photo_url, label })}
+                  />
+                ))}
+
+                {applications.map(({ application, componentName }) => {
+                  const label = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}${application.required ? ' *' : ''}`
+                  return (
+                    <OptionalCatalogGroup
+                      key={`application-${application.id}`}
+                      id={`application-${application.id}`}
+                      label={label}
+                      options={allowedForApplication(application, fetchedOptionals)}
+                      selectedId={applicationSelections[application.id]}
+                      canDeselect
+                      english={english}
+                      onSelect={optionalId => {
+                        setValidationAlert(null)
+                        setApplicationSelections(current => {
+                          const next = { ...current }
+                          if (optionalId) next[application.id] = optionalId
+                          else delete next[application.id]
+                          return next
+                        })
+                      }}
+                      onZoom={(photo_url, optionLabel) => setMobileOptModal({ photo_url, label: optionLabel })}
+                    />
+                  )
+                })}
+              </section>
+            )}
+
+            {validationAlert && (
+              <div role="alert" className="rounded-xl border border-line-note bg-surface-note p-3 text-sm leading-relaxed text-note-ink">
+                {validationAlert}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <button
+                onClick={handleAdd}
+                style={{ touchAction: 'manipulation' }}
+                className={`w-full flex items-center justify-center gap-2.5 py-4 rounded-xl font-semibold text-[13px] uppercase tracking-[0.12em] text-white transition-all active:scale-[0.98] active:opacity-85 ${added ? 'bg-olive' : 'bg-gold'}`}
+              >
+                {added ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
+                {added
+                  ? (english ? 'Added to quote' : 'Adicionado ao orçamento')
+                  : (english ? 'Add to quote' : 'Adicionar ao orçamento')}
+              </button>
+              {applications.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary w-full"
+                  onClick={() => navigate(configureProductPath(product.product_code))}
+                >
+                  {english ? 'Configure in quote' : 'Configurar no orçamento'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1224,6 +1519,7 @@ export default function ProdutosPage() {
 
       {selected && user && (
         <ProductFullView
+          key={selected.id}
           product={selected}
           priceTable={activePriceTable}
           userId={user.id}

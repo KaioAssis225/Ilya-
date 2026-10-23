@@ -81,6 +81,24 @@ describe('CadastroPage — layout de produtos', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
 
+  // Regressão: em telas ≥1680px a coluna do grid ficava em 72px (regra `md:`
+  // vencia a `min-[1680px]:`) enquanto o menu mostrava os rótulos completos,
+  // que vazavam da caixa. A largura agora segue o mesmo estado do conteúdo.
+  it('a largura da coluna do menu acompanha o estado expandido/recolhido', async () => {
+    const user = userEvent.setup()
+    installProductHandlers()
+    localStorage.setItem('cadastros_sidebar_collapsed', '0')
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    const toggle = await screen.findByRole('button', { name: 'Recolher menu' })
+    const grid = toggle.closest('aside')?.parentElement as HTMLElement
+    expect(grid.style.getPropertyValue('--cadastro-sidebar-width')).toBe('220px')
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(grid.style.getPropertyValue('--cadastro-sidebar-width')).toBe('72px')
+  })
+
   it('mostra PVP e Arquiteto na linha principal para o mercado EU', async () => {
     const product = productFixture('EU', {
       id: 'layout-eu-1',

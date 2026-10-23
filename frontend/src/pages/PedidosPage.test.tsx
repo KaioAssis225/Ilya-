@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { renderProductPage, productTestUser } from '../test/productTestUtils'
 import { server } from '../test/setup'
 import PedidosPage from './PedidosPage'
-import type { OrderSummary } from '../types'
+import type { Order, OrderSummary } from '../types'
 
 const makeSummary = (overrides: Partial<OrderSummary> = {}): OrderSummary => ({
   id: 'order-1',
@@ -103,5 +104,134 @@ describe('PedidosPage', () => {
     expect(screen.queryAllByLabelText(`Finalizar pedido ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Cancelar pedido ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Excluir pedido ${summary.code}`)).toHaveLength(0)
+  })
+
+  it('keeps item options collapsed with photo thumbnails and supports item and global expansion', async () => {
+    const user = userEvent.setup()
+    const summary = makeSummary({ items: [
+      { product_code: 'POL-001', qty: 1 },
+      { product_code: 'BAN-001', qty: 1 },
+    ] })
+    const choicePhoto = 'https://example.test/boucle-platina-thumb.jpg'
+    const detail: Order = {
+      ...summary,
+      price_list_code: 'lojista',
+      locale: 'pt-BR',
+      total_ipi: 0,
+      external_code: null,
+      notes: null,
+      updated_at: summary.created_at,
+      history: [],
+      items: [
+        {
+          id: 'item-1',
+          order_id: summary.id,
+          product_code: 'POL-001',
+          description: 'Poltrona teste',
+          is_circular: false,
+          altura: 0.8,
+          largura: 0.7,
+          profundidade: 0.75,
+          opt_categories: {
+            madeira: 'Iroko Taupe Óleo',
+            couro_soleta: 'Branco Fosco',
+          },
+          optional_choices: [{
+            id: 'choice-1',
+            application_id: 'application-1',
+            optional_id: 'optional-boucle',
+            application_name: 'Encosto externo',
+            application_name_en: 'External backrest',
+            category_code: 'tecido',
+            category_name: 'Tecido',
+            optional_name: 'Bouclé Platina',
+            component_name: null,
+            display_order: 0,
+          }],
+          qty: 1,
+          unit_price: 100,
+          discount: 0,
+          ipi_rate: 0,
+          ipi_value: 0,
+          tax_label: 'IPI',
+          currency: 'BRL',
+          observacao: null,
+          created_at: summary.created_at,
+          updated_at: summary.created_at,
+        },
+        {
+          id: 'item-2',
+          order_id: summary.id,
+          product_code: 'BAN-001',
+          description: 'Banco teste',
+          is_circular: false,
+          altura: 0.45,
+          largura: 0.5,
+          profundidade: 0.5,
+          opt_categories: { metal: 'Latão' },
+          optional_choices: [],
+          qty: 1,
+          unit_price: 100,
+          discount: 0,
+          ipi_rate: 0,
+          ipi_value: 0,
+          tax_label: 'IPI',
+          currency: 'BRL',
+          observacao: null,
+          created_at: summary.created_at,
+          updated_at: summary.created_at,
+        },
+      ],
+    }
+    setupHandlers(summary)
+    server.use(
+      http.get('*/orders/order-1', () => HttpResponse.json(detail)),
+      http.post('*/products/batch', () => HttpResponse.json([])),
+      http.get('*/optional-categories', () => HttpResponse.json([
+        { id: 'category-1', code: 'madeira', name: 'Madeira' },
+        { id: 'category-2', code: 'couro_soleta', name: 'Couro Soleta' },
+        { id: 'category-3', code: 'tecido', name: 'Tecido' },
+        { id: 'category-4', code: 'metal', name: 'Metal' },
+      ])),
+      http.get('*/optionals', ({ request }) => {
+        const categories = new URL(request.url).searchParams.get('categories')?.split(',') ?? []
+        return HttpResponse.json([
+          ...(categories.includes('madeira') ? [{ id: 'optional-madeira', category: 'madeira', color_name: 'Iroko Taupe Óleo', photo_url: 'https://example.test/iroko.jpg' }] : []),
+          ...(categories.includes('couro_soleta') ? [{ id: 'optional-couro', category: 'couro_soleta', color_name: 'Branco Fosco', photo_url: 'https://example.test/couro.jpg' }] : []),
+          ...(categories.includes('tecido') ? [{ id: 'optional-boucle', category: 'tecido', color_name: 'Bouclé Platina', photo_url: 'https://example.test/boucle.jpg', thumbnail_url: choicePhoto }] : []),
+          ...(categories.includes('metal') ? [{ id: 'optional-metal', category: 'metal', color_name: 'Latão', photo_url: 'https://example.test/latao.jpg' }] : []),
+        ])
+      }),
+    )
+
+    renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    await screen.findAllByText(summary.code)
+    await user.click(screen.getByLabelText(`Ver detalhes do pedido ${summary.code}`))
+
+    const itemToggle = await screen.findByRole('button', { name: '3 opcionais' })
+    const labels = [
+      'Madeira — Iroko Taupe Óleo',
+      'Couro Soleta — Branco Fosco',
+      'Encosto externo: Bouclé Platina',
+    ]
+    expect(itemToggle).toHaveAttribute('aria-expanded', 'false')
+    labels.forEach((label) => {
+      expect(screen.queryByText(label)).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    })
+    expect(within(screen.getByRole('button', { name: labels[2] })).getByRole('img')).toHaveAttribute('src', choicePhoto)
+
+    await user.click(itemToggle)
+    expect(itemToggle).toHaveAttribute('aria-expanded', 'true')
+    labels.forEach((label) => expect(screen.getByText(label)).toBeVisible())
+
+    await user.click(itemToggle)
+    expect(itemToggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Metal — Latão')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Mostrar todos os opcionais' }))
+    expect(itemToggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '1 opcional' })).toHaveAttribute('aria-expanded', 'true')
+    labels.forEach((label) => expect(screen.getByText(label)).toBeVisible())
+    expect(screen.getByText('Metal — Latão')).toBeVisible()
   })
 })
