@@ -1,6 +1,8 @@
 # Environment variables
 .env
-.env*.local
+.env.*
+!.env.example
+!.env.*.example
 
 # Python / FastAPI
 __pycache__/
@@ -71,3 +73,33 @@ backups/
 
 # Estado local da auditoria Mantis (achados, KB, helpers); nunca versionar.
 workspace/
+
+# Estado de agentes, cópias de trabalho e relatórios locais
+.agents/
+.worktrees/
+.playwright-mcp/
+.mimocode/
+.mypy_cache/
+.ruff_cache/
+playwright-report/
+*.tsbuildinfo
+/checkpoint-*.patch
+/checkpoint-*.zip
+/docs/amostras-pdf/
+/docs/benchmark_production_report.json
+/swatches_hd/
+/tapetes_1600/
+
+# Credenciais, sessões e dumps locais (fixtures SQL continuam versionáveis)
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+auth.json
+storage-state*.json
+storageState*.json

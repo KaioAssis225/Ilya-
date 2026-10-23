@@ -2,6 +2,12 @@
 
 Este repositório contém a transposição de nível de produção para o **Projeto Ilya**, um sistema para catálogo de móveis, banco de dados de clientes/representantes externos e fechamento/geração de orçamentos e pedidos com snapshots históricos de segurança e controle de acesso baseado em papéis (RBAC).
 
+O repositório mantém código, testes, migrações, configuração de implantação e
+documentação de manutenção. Relatórios de auditoria, exportações de dados,
+rascunhos e arquivos de sessão devem ficar fora da pasta do projeto.
+Use `.env.example` como modelo; credenciais reais ficam em variáveis de ambiente
+ou no armazenamento local de segredos, sempre fora do versionamento.
+
 O sistema é **multimercado**: Brasil (`BR`) e Europa (`EU`, com Portugal como
 único país da primeira liberação) convivem no mesmo backend, banco e frontend,
 com dados comercialmente isolados. Ver [Multimercado](#-multimercado-brasil-e-europa).
