@@ -4,10 +4,9 @@ Três focos, no mesmo estilo mockado dos demais testes (AsyncMock, sem banco):
 
 1. Importação sem IVA é rejeitada — coluna ausente e valor ausente por linha,
    com 0 sendo um valor válido (não "sem IVA").
-2. Toda taxa importada nasce `pending` e não é faturável/ativável enquanto não
-   houver aprovação manual (que ainda não existe — RBAC P2).
-3. Cálculo EU só usa taxa `approved`; sem herança do IPI do grupo e sem zero
-   de conveniência.
+2. Toda taxa importada nasce `pending`; não pode ser usada diretamente.
+3. Cálculo EU usa taxa aprovada do produto ou taxa aprovada uniforme do grupo;
+   sem herança do IPI brasileiro e sem zero de conveniência.
 """
 import asyncio
 import io
@@ -26,7 +25,7 @@ from app.api.routers.markets import (
     activate_europe,
     import_europe_catalog,
 )
-from app.api.routers.orders import _resolve_eu_vat
+from app.api.routers.orders import _load_eu_group_vat_rates, _resolve_eu_vat
 from app.api.routers.auth import delete_my_account
 from app.api.routers.users import delete_user
 from app.schemas.auth import ReauthenticationRequest
@@ -298,7 +297,7 @@ def test_activate_recusa_dimensao_de_produto_fora_do_mercado_eu():
 
 
 # ---------------------------------------------------------------------------
-# 3. Cálculo EU só usa taxa aprovada (sem herança, sem zero de conveniência)
+# 3. Cálculo EU usa taxa aprovada do produto ou do grupo
 # ---------------------------------------------------------------------------
 class TestResolveEuVat:
     def test_aprovado_usa_a_taxa(self):
@@ -308,22 +307,44 @@ class TestResolveEuVat:
         # Isenção aprovada (0%) é faturável; é diferente de taxa ausente.
         assert _resolve_eu_vat("EU-1", Decimal("0"), VAT_APPROVED) == Decimal("0")
 
-    def test_pendente_e_recusado(self):
+    def test_pendente_usa_iva_do_grupo(self):
+        assert _resolve_eu_vat("EU-1", Decimal("5"), VAT_PENDING, Decimal("23")) == Decimal("23")
+
+    def test_pendente_sem_taxa_de_grupo_e_recusado(self):
         with pytest.raises(HTTPException) as exc:
             _resolve_eu_vat("EU-1", Decimal("23.00"), VAT_PENDING)
         assert exc.value.status_code == 422
         assert "EU-1" in exc.value.detail
 
-    def test_rejeitado_e_recusado(self):
-        with pytest.raises(HTTPException) as exc:
-            _resolve_eu_vat("EU-1", Decimal("23.00"), VAT_REJECTED)
-        assert exc.value.status_code == 422
+    def test_rejeitado_usa_iva_do_grupo(self):
+        assert _resolve_eu_vat("EU-1", Decimal("5"), VAT_REJECTED, Decimal("23")) == Decimal("23")
+
+    def test_aprovado_prevalece_sobre_grupo(self):
+        assert _resolve_eu_vat("EU-1", Decimal("13"), VAT_APPROVED, Decimal("23")) == Decimal("13")
 
     def test_aprovado_mas_sem_taxa_e_recusado(self):
         # Defesa em profundidade: o CHECK já impede, mas a rota não confia nisso.
         with pytest.raises(HTTPException) as exc:
             _resolve_eu_vat("EU-1", None, VAT_APPROVED)
         assert exc.value.status_code == 422
+
+
+def test_group_vat_requires_one_approved_rate():
+    async def run():
+        group_ok, group_mixed = uuid.uuid4(), uuid.uuid4()
+        db = AsyncMock()
+        db.execute.return_value = SimpleNamespace(all=lambda: [
+            (group_ok, Decimal("23")),
+            (group_mixed, Decimal("13")),
+            (group_mixed, Decimal("23")),
+        ])
+        types = {
+            "chair": SimpleNamespace(group_id=group_ok),
+            "sofa": SimpleNamespace(group_id=group_mixed),
+        }
+        assert await _load_eu_group_vat_rates(db, types) == {group_ok: Decimal("23")}
+
+    asyncio.run(run())
 
 
 def test_aprovador_com_taxa_ativa_nao_pode_ser_excluido():

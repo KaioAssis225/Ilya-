@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import false, or_, select, text, tuple_
+from sqlalchemy import and_, false, func, or_, select, text, tuple_
 from sqlalchemy.orm import load_only, noload, selectinload
 
 from app.api.deps import (
@@ -408,20 +408,49 @@ def _resolve_eu_vat(
     product_code: str,
     vat_rate: Decimal | None,
     vat_status: str | None,
+    group_rate: Decimal | None = None,
 ) -> Decimal:
-    """IVA faturável de Portugal: só taxa aprovada por uma pessoa conta.
+    """Usa a taxa do SKU ou a taxa aprovada e uniforme de seu grupo EU."""
+    if vat_status == VAT_APPROVED and vat_rate is not None:
+        return _decimal(vat_rate)
+    if group_rate is not None:
+        return _decimal(group_rate)
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=f"Produto '{product_code}' não possui IVA definido no produto ou no grupo europeu.",
+    )
 
-    Sem herança do IPI do grupo e sem fallback para zero — se o SKU não tem
-    `vat_status == approved` com uma taxa definida, o pedido é recusado. Como o
-    aprovação nominal é gravada por produto e continua sendo verificada em toda
-    criação ou recálculo de pedido, mesmo depois de o mercado EU ser ativado.
-    """
-    if vat_status != VAT_APPROVED or vat_rate is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Produto '{product_code}' não possui IVA aprovado para o mercado europeu.",
-        )
-    return _decimal(vat_rate)
+
+async def _load_eu_group_vat_rates(
+    db: AsyncSession, type_map: dict[str, ProductType]
+) -> dict[uuid.UUID, Decimal]:
+    """Taxa de grupo inferida apenas se os produtos aprovados concordarem."""
+    group_ids = {type_.group_id for type_ in type_map.values() if type_.group_id}
+    if not group_ids:
+        return {}
+    type_key = lambda col: func.regexp_replace(func.lower(func.btrim(col)), "s$", "")
+    rows = (await db.execute(
+        select(ProductType.group_id, ProductMarket.vat_rate)
+        .select_from(ProductType)
+        .join(Product, and_(
+            Product.market_code == "EU",
+            Product.is_active.is_(True),
+            type_key(Product.type) == type_key(ProductType.name),
+        ))
+        .join(ProductMarket, and_(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == "EU",
+            ProductMarket.is_available.is_(True),
+            ProductMarket.vat_status == VAT_APPROVED,
+            ProductMarket.vat_rate.is_not(None),
+        ))
+        .where(ProductType.market_code == "EU", ProductType.group_id.in_(group_ids))
+        .distinct()
+    )).all()
+    rates: dict[uuid.UUID, set[Decimal]] = {}
+    for group_id, rate in rows:
+        rates.setdefault(group_id, set()).add(_decimal(rate))
+    return {group_id: next(iter(values)) for group_id, values in rates.items() if len(values) == 1}
 
 
 def _resolve_br_ipi(product_code: str, product_type: ProductType | None) -> Decimal:
@@ -680,6 +709,7 @@ async def create_order(
     product_vat = {
         row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
     }
+    group_vat = await _load_eu_group_vat_rates(db, type_map) if market_code == "EU" else {}
     localized_descriptions = {
         row.product_id: (row.description_pt_pt, row.description_en)
         for row in product_market_rows
@@ -706,7 +736,10 @@ async def create_order(
         product_type = type_map.get(product.type)
         if market_code == "EU":
             vat_rate, vat_status = product_vat.get(product.id, (None, None))
-            ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
+            ipi_rate = _resolve_eu_vat(
+                product.product_code, vat_rate, vat_status,
+                group_vat.get(product_type.group_id) if product_type else None,
+            )
         else:
             ipi_rate = _resolve_br_ipi(product.product_code, product_type)
         unit_price, discount, subtotal, ipi_rate, ipi_value = (
@@ -1172,6 +1205,7 @@ async def update_order(
         product_vat = {
             row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
         }
+        group_vat = await _load_eu_group_vat_rates(db, type_map) if order.market_code == "EU" else {}
         localized_descriptions = {
             row.product_id: (row.description_pt_pt, row.description_en)
             for row in product_market_rows
@@ -1211,7 +1245,10 @@ async def update_order(
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
                 vat_rate, vat_status = product_vat.get(product.id, (None, None))
-                ipi_rate = _resolve_eu_vat(product.product_code, vat_rate, vat_status)
+                ipi_rate = _resolve_eu_vat(
+                    product.product_code, vat_rate, vat_status,
+                    group_vat.get(product_type.group_id) if product_type else None,
+                )
             else:
                 ipi_rate = _resolve_br_ipi(product.product_code, product_type)
             unit_price, discount, subtotal, ipi_rate, ipi_value = (
