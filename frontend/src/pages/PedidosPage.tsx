@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Lock, Ban } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Lock, Ban, ChevronDown } from 'lucide-react'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
@@ -233,7 +233,10 @@ function OrderDetailModal({
   const optionalCategories = orderDetail
     ? Array.from(
         new Set(
-          orderDetail.items.flatMap((item) => Object.keys(item.opt_categories)),
+          orderDetail.items.flatMap((item) => [
+            ...Object.keys(item.opt_categories),
+            ...(item.optional_choices ?? []).map((choice) => choice.category_code),
+          ]).filter(Boolean),
         ),
       )
     : []
@@ -245,6 +248,7 @@ function OrderDetailModal({
   const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
   const [tab, setTab] = useState<'details' | 'history'>('details')
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
+  const [expandedOptionalItems, setExpandedOptionalItems] = useState<Set<string>>(() => new Set())
   const [revisionError, setRevisionError] = useState(false)
   const [revisionLoading, setRevisionLoading] = useState(false)
 
@@ -257,11 +261,34 @@ function OrderDetailModal({
   const canRevise = userRole === 'admin' || userRole === 'representante'
     || userRole === 'vendedor'
 
-  function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null }[] {
-    return Object.entries(cats).map(([cat, color]) => ({
-      label: `${catLabel(cat)} — ${color}`,
-      swatch: allOptionals.find(o => o.category === cat && o.color_name === color)?.photo_url ?? null,
-    }))
+  function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null }[] {
+    return Object.entries(cats).map(([cat, color]) => {
+      const optional = allOptionals.find(o => o.category === cat && o.color_name === color)
+      return {
+        label: `${catLabel(cat)} — ${color}`,
+        swatch: optional?.photo_url ?? optional?.thumbnail_url ?? null,
+        thumbnail: optional?.thumbnail_url ?? optional?.photo_url ?? null,
+      }
+    })
+  }
+
+  const optionalItemIds = order.items
+    .filter((item) => Object.keys(item.opt_categories).length > 0 || (item.optional_choices?.length ?? 0) > 0)
+    .map((item) => item.id)
+  const allOptionalsExpanded = optionalItemIds.length > 0
+    && optionalItemIds.every((itemId) => expandedOptionalItems.has(itemId))
+
+  function toggleAllOptionals() {
+    setExpandedOptionalItems(allOptionalsExpanded ? new Set() : new Set(optionalItemIds))
+  }
+
+  function toggleItemOptionals(itemId: string) {
+    setExpandedOptionalItems((current) => {
+      const next = new Set(current)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
   }
 
   if (detailError) {
@@ -297,7 +324,10 @@ function OrderDetailModal({
 
   return (
     <div className="modal-overlay overflow-y-auto" onClick={onClose}>
-      <DialogPanel onClose={onClose} className="modal-panel relative w-full max-w-2xl p-6 my-4">
+      {/* Mais largo no desktop: a tabela de itens (com os opcionais abertos)
+          pede ~950px; com max-w-2xl (672px) quantidade, imposto, subtotal e o
+          total ficavam fora da área visível. */}
+      <DialogPanel onClose={onClose} className="modal-panel relative w-full max-w-2xl lg:max-w-5xl p-6 my-4">
         {/* Header — em tela estreita as ações descem para a própria linha em vez
             de vazarem o painel; o X fica ancorado no canto para não ser
             empurrado para fora junto com elas. */}
@@ -375,7 +405,22 @@ function OrderDetailModal({
               )}
             </div>
 
-            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-2">{viewText('Itens', 'Items')}</h4>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">{viewText('Itens', 'Items')}</h4>
+              {optionalItemIds.length > 0 && (
+                <button
+                  type="button"
+                  aria-expanded={allOptionalsExpanded}
+                  onClick={toggleAllOptionals}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-gold hover:text-gold-600 transition-colors"
+                >
+                  {allOptionalsExpanded
+                    ? viewText('Ocultar opcionais', 'Hide options')
+                    : viewText('Mostrar todos os opcionais', 'Show all options')}
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${allOptionalsExpanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+              )}
+            </div>
             <div className="border border-line rounded-xl overflow-x-auto">
               <table className="w-full min-w-[700px] text-sm">
                 <thead className="bg-surface-2">
@@ -407,7 +452,7 @@ function OrderDetailModal({
                           <div className="text-ink-2 text-xs mt-0.5 max-w-[150px] truncate">{isEuOrder ? (products.find(p => p.product_code === item.product_code)?.description_en ?? item.description) : item.description}</div>
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
-                        <td className="px-3 py-2 text-ink-3 text-xs whitespace-nowrap">
+                        <td className="px-3 py-2 text-ink-3 text-xs min-w-[120px]">
                           {formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
@@ -415,9 +460,72 @@ function OrderDetailModal({
                             const parsed = parseOptCategories(item.opt_categories)
                             const choices = item.optional_choices ?? []
                             if (parsed.length === 0 && choices.length === 0) return '—'
-                            return <>{parsed.map((p, i) => <span key={p.label}>{i > 0 && <span className="mx-1 text-faint">·</span>}<OptionalWithPreview label={p.label} swatch={p.swatch} /></span>)}
-                              {choices.map(choice => <span key={choice.id} className="block text-xs">{choice.component_name ? `${choice.component_name} — ` : ''}{isEuOrder && choice.application_name_en ? choice.application_name_en : choice.application_name}: {choice.optional_name}</span>)}
-                            </>
+                            const choiceDetails = choices.map((choice) => {
+                              const applicationName = isEuOrder && choice.application_name_en
+                                ? choice.application_name_en
+                                : choice.application_name
+                              const label = `${choice.component_name ? `${choice.component_name} — ` : ''}${applicationName}: ${choice.optional_name}`
+                              const optional = allOptionals.find((candidate) => candidate.id === choice.optional_id)
+                              return {
+                                choice,
+                                label,
+                                thumbnail: optional?.thumbnail_url ?? optional?.photo_url ?? null,
+                                photo: optional?.photo_url ?? optional?.thumbnail_url ?? null,
+                              }
+                            })
+                            const optionals = [
+                              ...parsed.map((optional) => ({ key: `legacy-${optional.label}`, label: optional.label, thumbnail: optional.thumbnail, photo: optional.swatch })),
+                              ...choiceDetails.map(({ choice, label, thumbnail, photo }) => ({ key: `choice-${choice.id}`, label, thumbnail, photo })),
+                            ]
+                            const isExpanded = expandedOptionalItems.has(item.id)
+                            const detailsId = `order-item-optionals-${item.id}`
+                            const countLabel = `${optionals.length} ${viewText(optionals.length === 1 ? 'opcional' : 'opcionais', optionals.length === 1 ? 'option' : 'options')}`
+                            return (
+                              <div className="min-w-[150px]">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center -space-x-1">
+                                    {optionals.map((optional) => (
+                                      <button
+                                        key={optional.key}
+                                        type="button"
+                                        title={optional.label}
+                                        aria-label={optional.label}
+                                        disabled={!optional.photo}
+                                        onClick={() => optional.photo && setActivePhotoModal(optional.photo)}
+                                        className="relative w-7 h-7 flex-shrink-0 overflow-hidden rounded border border-line bg-white text-[10px] font-semibold text-muted disabled:cursor-default"
+                                      >
+                                        {optional.thumbnail
+                                          ? <img src={optional.thumbnail} alt={optional.label} className="w-full h-full rounded object-cover" />
+                                          : <span className="flex w-full h-full items-center justify-center bg-bg-2" aria-hidden="true">{optional.label.trim().charAt(0).toUpperCase()}</span>
+                                        }
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    aria-controls={detailsId}
+                                    onClick={() => toggleItemOptionals(item.id)}
+                                    className="inline-flex items-center gap-1 whitespace-nowrap font-medium text-gold hover:text-gold-600 transition-colors"
+                                  >
+                                    {countLabel}
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                  </button>
+                                </div>
+                                {isExpanded && (
+                                  <div id={detailsId} className="mt-2 space-y-1">
+                                    {parsed.map((optional) => (
+                                      <div key={optional.label}>
+                                        <OptionalWithPreview label={optional.label} swatch={optional.swatch} />
+                                      </div>
+                                    ))}
+                                    {choiceDetails.map(({ choice, label }) => (
+                                      <div key={choice.id} className="text-xs">{label}</div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
                           })()}
                         </td>
                         <td className="px-3 py-2 text-center text-ink">{item.qty}</td>
@@ -778,7 +886,7 @@ export default function PedidosPage() {
                   </div>
                 ))}
               </div>
-              <div className="hidden md:block rounded-xl border border-line overflow-hidden">
+              <div className="hidden md:block rounded-xl border border-line bg-white overflow-hidden">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-bg-2 last:border-0">
                     <div className="h-4 w-20 rounded bg-line-soft animate-pulse" />
@@ -820,7 +928,9 @@ export default function PedidosPage() {
                 )}
               </div>
 
-              <div className="hidden md:block overflow-x-auto rounded-xl border border-line">
+              {/* Superfície branca própria: sem ela a tabela herdava o fundo da
+                  página (linho no tema EU) e o conteúdo não se destacava. */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
                 <table className="w-full text-sm">
                   <thead className="bg-surface-2">
                     <tr>
@@ -838,15 +948,15 @@ export default function PedidosPage() {
                   <tbody>
                     {filtered.map((order) => (
                       <tr key={order.id} className="table-row">
-                        <td className="px-4 py-3 font-mono text-gold">{order.code}</td>
-                        <td className="px-4 py-3 font-mono text-ink-3 text-xs">{order.orc_id}</td>
+                        <td className="px-4 py-3 font-mono text-gold whitespace-nowrap">{order.code}</td>
+                        <td className="px-4 py-3 font-mono text-ink-3 text-xs whitespace-nowrap">{order.orc_id}</td>
                         <td className="px-4 py-3 text-ink">{order.client_name}</td>
                         <td className="px-4 py-3 text-ink-3">{order.rep_name ?? '—'}</td>
                         <td className="px-4 py-3 text-ink-3 text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></td>
-                        <td className="px-4 py-3 text-ink-3 text-xs">{fmtDate(order.created_at)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-ink whitespace-nowrap"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></td>
+                        <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
+                          <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
                             {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
                             {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
                           </span>

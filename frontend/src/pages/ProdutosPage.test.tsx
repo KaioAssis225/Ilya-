@@ -8,6 +8,8 @@ import { AuthContext } from '../hooks/useAuth'
 import PrivateApp from '../PrivateApp'
 import ProdutosPage from './ProdutosPage'
 import { server } from '../test/setup'
+import { cartStorageKey } from '../lib/cart'
+import type { OptionalApplication, OptionalColor, Product } from '../types'
 import {
   installProductHandlers,
   productFixture,
@@ -47,6 +49,37 @@ function privateAppHandlers(products: (requestCount: number) => ReturnType<typeo
     http.post('*/products/batch', empty),
   )
   return () => requestCount
+}
+
+function detailProduct(overrides: Partial<Product>): Product {
+  return { ...productFixture('BR'), description: 'Produto com acabamentos', ...overrides } as Product
+}
+
+function optional(id: string, category: string, color_name: string): OptionalColor {
+  return {
+    id,
+    category,
+    color_name,
+    photo_url: `/optionals/${id}.jpg`,
+    thumbnail_url: `/optionals/${id}-thumb.jpg`,
+  }
+}
+
+function installDetailProduct(product: Product, availableOptionals: OptionalColor[] = []) {
+  installProductHandlers({ products: [product as unknown as ReturnType<typeof productFixture>] })
+  server.use(http.get('*/optionals', () => HttpResponse.json(availableOptionals)))
+}
+
+function readCart(user: AuthUser) {
+  const raw = localStorage.getItem(cartStorageKey(user.id, user.active_market))
+  return raw ? JSON.parse(raw) as Array<{
+    line_id: string
+    product_code: string
+    qty: number
+    discount: number
+    opt_categories: Record<string, string>
+    optional_choices: Array<{ application_id: string; optional_id: string }>
+  }> : []
 }
 
 describe('ProdutosPage de catálogo em DOM', () => {
@@ -183,5 +216,120 @@ describe('ProdutosPage de catálogo em DOM', () => {
     expect(await screen.findByRole('heading', { name: 'Product catalogue' })).toBeVisible()
     expect(await screen.findByText('English table')).toBeVisible()
     await waitFor(() => expect(requests).toContain('en-GB'))
+  })
+
+  it('seleciona acabamento fixo com foto e só mescla linhas com escolhas iguais', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'BR')
+    const carvalho = optional('wood-oak', 'MADEIRA', 'Carvalho')
+    const nogueira = optional('wood-walnut', 'MADEIRA', 'Nogueira')
+    const product = detailProduct({ optionals: [carvalho, nogueira] })
+    installDetailProduct(product)
+    renderProductPage(<ProdutosPage />, authUser)
+
+    await user.click(await screen.findByText(product.description))
+    const oakButton = screen.getByRole('button', { name: 'MADEIRA: Carvalho' })
+    const walnutButton = screen.getByRole('button', { name: 'MADEIRA: Nogueira' })
+    expect(oakButton.querySelector('img')).toHaveAttribute('src', carvalho.thumbnail_url)
+    expect(walnutButton.querySelector('img')).toHaveAttribute('src', nogueira.thumbnail_url)
+    expect(oakButton).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(walnutButton)
+    const addButton = screen.getByRole('button', { name: 'Adicionar ao orçamento' })
+    await user.click(addButton)
+    await user.click(addButton)
+
+    let cart = readCart(authUser)
+    expect(cart).toHaveLength(1)
+    expect(cart[0]).toMatchObject({ qty: 2, discount: 0, opt_categories: { MADEIRA: 'Nogueira' } })
+    expect(cart[0].line_id).toEqual(expect.any(String))
+
+    await user.click(oakButton)
+    await user.click(addButton)
+    cart = readCart(authUser)
+    expect(cart).toHaveLength(2)
+    expect(cart.map(line => line.opt_categories.MADEIRA)).toEqual(['Nogueira', 'Carvalho'])
+  })
+
+  it('lista a categoria livre e omite ou grava a seleção de TECIDO', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'BR')
+    const fabrics = [
+      optional('fabric-sand', 'TECIDO', 'Areia'),
+      optional('fabric-blue', 'TECIDO', 'Azul'),
+      optional('fabric-green', 'TECIDO', 'Verde'),
+    ]
+    const product = detailProduct({ all_optionals_categories: 'TECIDO', optionals: [] })
+    installDetailProduct(product, fabrics)
+    renderProductPage(<ProdutosPage />, authUser)
+
+    await user.click(await screen.findByText(product.description))
+    for (const fabric of fabrics) {
+      expect(await screen.findByRole('button', { name: `TECIDO: ${fabric.color_name}` })).toBeVisible()
+    }
+
+    const addButton = screen.getByRole('button', { name: 'Adicionar ao orçamento' })
+    await user.click(addButton)
+    expect(readCart(authUser)[0].opt_categories).not.toHaveProperty('TECIDO')
+
+    await user.click(screen.getByRole('button', { name: 'TECIDO: Azul' }))
+    await user.click(addButton)
+    const cart = readCart(authUser)
+    expect(cart).toHaveLength(2)
+    expect(cart[1].opt_categories).toMatchObject({ TECIDO: 'Azul' })
+  })
+
+  it('bloqueia aplicação obrigatória pendente e grava a escolha sem navegar', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'BR')
+    const fabric = optional('fabric-required', 'TECIDO', 'Linho Natural')
+    const application: OptionalApplication = {
+      id: 'seat-fabric',
+      category_id: 'fabric-category',
+      category_code: 'TECIDO',
+      category_name: 'Tecido',
+      name: 'Assento',
+      name_en: 'Seat',
+      required: true,
+      display_order: 0,
+      allow_all: false,
+      allow_repeat: false,
+      allowed_optionals: [fabric],
+    }
+    const product = detailProduct({ optional_applications: [application] })
+    installDetailProduct(product)
+    renderProductPage(<ProdutosPage />, authUser)
+
+    await user.click(await screen.findByText(product.description))
+    expect(await screen.findByText('1 de 1 acabamento obrigatório ainda precisa de escolha.')).toBeVisible()
+    const addButton = screen.getByRole('button', { name: 'Adicionar ao orçamento' })
+    await user.click(addButton)
+    expect(readCart(authUser)).toEqual([])
+    expect(screen.getByRole('alert')).toHaveTextContent('Escolha todos os acabamentos obrigatórios')
+
+    await user.click(screen.getByRole('button', { name: 'Assento *: Linho Natural' }))
+    await user.click(addButton)
+    expect(readCart(authUser)).toHaveLength(1)
+    expect(readCart(authUser)[0].optional_choices).toEqual([
+      { application_id: application.id, optional_id: fabric.id },
+    ])
+    expect(screen.getByRole('dialog', { name: product.description })).toBeVisible()
+  })
+
+  it('abre a foto pela lupa e Escape fecha somente o zoom', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'BR')
+    const wood = optional('wood-zoom', 'MADEIRA', 'Nogueira')
+    const product = detailProduct({ optionals: [wood] })
+    installDetailProduct(product)
+    renderProductPage(<ProdutosPage />, authUser)
+
+    await user.click(await screen.findByText(product.description))
+    await user.click(screen.getByRole('button', { name: 'Ampliar MADEIRA: Nogueira' }))
+    expect(screen.getByRole('dialog', { name: 'MADEIRA: Nogueira' })).toBeVisible()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'MADEIRA: Nogueira' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: product.description })).toBeVisible()
   })
 })

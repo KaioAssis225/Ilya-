@@ -3598,11 +3598,11 @@ export default function CadastroPage() {
 
   const activeColor = TAB_PALETTE[tab].color
   const isSidebarCollapsed = sidebarCollapsed ?? !isWideViewport
-  const cadastroGridColumns = sidebarCollapsed === undefined
-    ? 'md:grid-cols-[72px_minmax(0,1fr)] min-[1680px]:grid-cols-[220px_minmax(0,1fr)]'
-    : sidebarCollapsed
-      ? 'md:grid-cols-[72px_minmax(0,1fr)]'
-      : 'md:grid-cols-[220px_minmax(0,1fr)]'
+  // A largura da coluna do menu sai do MESMO estado que decide o conteúdo do
+  // menu (rótulos ou só ícones). Antes ela vinha de classes responsivas
+  // (`md:` + `min-[1680px]:`) e o Tailwind emitiu a de 1680px antes da `md:`;
+  // em telas ≥1680px a coluna ficava com 72px e os rótulos vazavam da caixa.
+  const sidebarColumnWidth = isSidebarCollapsed ? '72px' : '220px'
 
   return (
     <div className="min-h-screen bg-bg text-ink pb-24 md:pb-0">
@@ -3641,7 +3641,10 @@ export default function CadastroPage() {
           })}
         </div>
 
-        <div className={`flex flex-col gap-4 md:grid md:gap-6 ${cadastroGridColumns}`}>
+        <div
+          className="flex flex-col gap-4 md:grid md:gap-6 md:grid-cols-[var(--cadastro-sidebar-width)_minmax(0,1fr)]"
+          style={{ '--cadastro-sidebar-width': sidebarColumnWidth } as React.CSSProperties}
+        >
 
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
