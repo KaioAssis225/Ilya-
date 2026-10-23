@@ -13,6 +13,7 @@ import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
 import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 import { OptionalCombobox } from '../components/OptionalCombobox'
+import { QuantityInput } from '../components/QuantityInput'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
@@ -718,7 +719,10 @@ function MobileCartCard({
           {soldByArea && <label htmlFor={`mobile-area-${item.line_id}`} className="type-label block mb-1 text-center">M²</label>}
           <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
             <button
-              onClick={() => onQtyChange(item.line_id, soldByArea ? Math.max(0.01, item.qty - 1) : Math.max(1, item.qty - 1))}
+              // Botões andam em inteiros: 5,02 → 5. Abaixo de 1 m² só digitando.
+              onClick={() => onQtyChange(item.line_id, soldByArea
+                ? (item.qty <= 1 ? item.qty : Math.max(1, Math.ceil(item.qty) - 1))
+                : Math.max(1, item.qty - 1))}
               className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
               style={{ touchAction: 'manipulation' }}
               aria-label={isEnglish ? `Decrease ${soldByArea ? 'area' : 'quantity'} of ${item._product.description}` : `Diminuir ${soldByArea ? 'área' : 'quantidade'} de ${item._product.description}`}
@@ -726,23 +730,21 @@ function MobileCartCard({
               <Minus className="w-3.5 h-3.5" />
             </button>
             {soldByArea ? (
-              <input
+              <QuantityInput
                 id={`mobile-area-${item.line_id}`}
-                type="number"
-                inputMode="decimal"
-                min="0.01"
-                max={maximumArea ?? undefined}
-                step="0.01"
                 value={item.qty}
-                aria-label={`M² — ${item._product.description}`}
+                allowDecimal
+                max={maximumArea}
+                ariaLabel={`M² — ${item._product.description}`}
                 className="h-11 w-16 border-x border-line bg-white text-center text-sm font-semibold text-ink focus:outline-none focus:ring-1 focus:ring-gold"
-                onChange={(event) => onQtyChange(item.line_id, Number(event.target.value))}
+                onCommit={(qty) => onQtyChange(item.line_id, qty)}
               />
             ) : (
               <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
             )}
             <button
-              onClick={() => onQtyChange(item.line_id, item.qty + 1)}
+              // 5,02 → 6 (próximo inteiro); o limite do item é aplicado no updateQty.
+              onClick={() => onQtyChange(item.line_id, soldByArea ? Math.floor(item.qty) + 1 : item.qty + 1)}
               className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
               style={{ touchAction: 'manipulation' }}
               aria-label={isEnglish ? `Increase ${soldByArea ? 'area' : 'quantity'} of ${item._product.description}` : `Aumentar ${soldByArea ? 'área' : 'quantidade'} de ${item._product.description}`}
@@ -1804,17 +1806,14 @@ export default function OrcamentoPage() {
                         <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[520px]">
                           <div>
                             <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{soldByArea ? 'M²' : (isEnglish ? 'Qty' : 'Qtd')}</label>
-                            <input
+                            <QuantityInput
                               id={`desktop-qty-${item.line_id}`}
-                              type="number"
-                              min={soldByArea ? 0.01 : 1}
-                              max={soldByArea ? maximumArea ?? undefined : undefined}
-                              step={soldByArea ? 0.01 : 1}
-                              inputMode={soldByArea ? 'decimal' : 'numeric'}
-                              aria-label={soldByArea ? `M² — ${item._product.description}` : (isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`)}
-                              className="input w-16 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
                               value={item.qty}
-                              onChange={(e) => updateQty(item.line_id, Number(e.target.value))}
+                              allowDecimal={soldByArea}
+                              max={soldByArea ? maximumArea : null}
+                              ariaLabel={soldByArea ? `M² — ${item._product.description}` : (isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`)}
+                              className="input w-20 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
+                              onCommit={(qty) => updateQty(item.line_id, qty)}
                             />
                             {maximumArea !== null && <p className={`text-[9px] mt-0.5 text-center whitespace-nowrap ${qtyLimitWarnings.has(item.line_id) ? 'text-warning font-semibold' : 'text-muted'}`}>{isEnglish ? 'max.' : 'máx.'} {formatArea(maximumArea, locale)}</p>}
                           </div>
