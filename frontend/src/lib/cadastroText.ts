@@ -317,6 +317,22 @@ const EN: Record<string, string> = {
   'Ao salvar, a taxa é aplicada e aprovada em todos os produtos dos subgrupos deste grupo.': 'On save, the rate is applied and approved on every product in the subgroups of this group.',
   'Informe um IVA entre 0 e 100.': 'Enter a VAT rate between 0 and 100.',
   'Aplicar e aprovar IVA de {rate}% em {count} produto(s) do grupo "{group}"?': 'Apply and approve {rate}% VAT on {count} product(s) of group "{group}"?',
+
+  // layout de cadastros (FRN-17/18): menu recolhível, detalhes expansíveis, tabelas
+  'Expandir menu': 'Expand menu',
+  'Recolher menu': 'Collapse menu',
+  'Detalhes': 'Details',
+  'Ações': 'Actions',
+  'Ver detalhes de {code}': 'Show details of {code}',
+  'Ocultar detalhes de {code}': 'Hide details of {code}',
+  'Foto de {code}': 'Photo of {code}',
+  'Opcionais e aplicações': 'Options and applications',
+  'Aplicações': 'Applications',
+  'Configurar aplicações do opcional': 'Configure option applications',
+  'Role para ver mais colunas →': 'Scroll to see more columns →',
+  'Contato': 'Contact',
+  'Cidade / UF': 'City / State',
+  'Ordenar por {label}': 'Sort by {label}',
 }
 
 export type CadastroTextVars = Record<string, string | number>

@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { Fragment, useCallback, useLayoutEffect, useState, useRef, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
+import { BR_PRODUCT_COLUMN_KEYS, EU_PRODUCT_COLUMN_KEYS, INITIAL_PRODUCT_COLUMN_WIDTHS, PRODUCT_COLUMN_MIN_WIDTHS, fittedProductColumnWidths, type ProductColumnKey } from '../lib/productColumns'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
 import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto, useDeleteProductPhoto } from '../hooks/useProducts'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
@@ -77,52 +78,37 @@ function SortIcon({ active, dir, color }: { active: boolean; dir: SortDir; color
     : <ChevronDown className="w-3 h-3" style={{ color }} />
 }
 
-function Th({ label, col, sortKey, sortDir, onSort, color }: {
-  label: string; col: string; sortKey: string; sortDir: SortDir; onSort: (k: string) => void; color: string
+function Th({ sorts, sortKey, sortDir, onSort, color, align = 'left' }: {
+  sorts: { label: string; col: string }[]
+  sortKey: string
+  sortDir: SortDir
+  onSort: (k: string) => void
+  color: string
+  align?: 'left' | 'right'
 }) {
+  const activeSort = sorts.find(({ col }) => sortKey === col)
   return (
     <th
-      className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider cursor-pointer select-none transition-colors"
-      onClick={() => onSort(col)}
-      onMouseEnter={(e) => (e.currentTarget.style.color = color)}
-      onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+      className={`px-4 py-3 text-xs font-semibold text-muted uppercase tracking-wider ${align === 'right' ? 'text-right' : 'text-left'}`}
+      aria-sort={activeSort ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
-      <span className="flex items-center gap-1">
-        {label}
-        <SortIcon active={sortKey === col} dir={sortDir} color={color} />
+      <span className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        {sorts.map(({ label, col }) => (
+          <button
+            key={col}
+            type="button"
+            className="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-wider rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
+            onClick={() => onSort(col)}
+            onMouseEnter={(e) => (e.currentTarget.style.color = color)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+          >
+            {label}
+            <SortIcon active={sortKey === col} dir={sortDir} color={color} />
+          </button>
+        ))}
       </span>
     </th>
   )
-}
-
-type ProductColumnKey = 'code' | 'description' | 'type' | 'dimensions' | 'price_lojista' | 'price_corporativo' | 'price_pvp' | 'price_arquiteto' | 'optionals' | 'photo' | 'actions'
-
-const PRODUCT_COLUMN_MIN_WIDTHS: Record<ProductColumnKey, number> = {
-  code: 110,
-  description: 180,
-  type: 130,
-  dimensions: 190,
-  price_lojista: 120,
-  price_corporativo: 120,
-  price_pvp: 120,
-  price_arquiteto: 120,
-  optionals: 150,
-  photo: 72,
-  actions: 72,
-}
-
-const INITIAL_PRODUCT_COLUMN_WIDTHS: Record<ProductColumnKey, number> = {
-  code: 140,
-  description: 320,
-  type: 160,
-  dimensions: 270,
-  price_lojista: 140,
-  price_corporativo: 140,
-  price_pvp: 140,
-  price_arquiteto: 140,
-  optionals: 240,
-  photo: 88,
-  actions: 80,
 }
 
 function ResizableProductTh({
@@ -133,6 +119,8 @@ function ResizableProductTh({
   onAutoFit,
   color,
   sort,
+  align = 'left',
+  sticky = false,
 }: {
   label: string
   column: ProductColumnKey
@@ -141,6 +129,8 @@ function ResizableProductTh({
   onAutoFit: (column: ProductColumnKey) => void
   color: string
   sort?: { active: boolean; dir: SortDir; onClick: () => void }
+  align?: 'left' | 'right'
+  sticky?: boolean
 }) {
   const tx = useCadastroText()
   function startResize(e: React.MouseEvent<HTMLDivElement>) {
@@ -184,16 +174,26 @@ function ResizableProductTh({
   return (
     <th
       data-product-col={column}
-      className={`relative px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider select-none ${sort ? 'cursor-pointer' : ''}`}
-      style={{ width }}
-      onClick={sort?.onClick}
-      onMouseEnter={(e) => { if (sort) e.currentTarget.style.color = color }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = '' }}
+      aria-label={label}
+      aria-sort={sort ? (sort.active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
+      className={`relative px-4 py-3 text-xs font-semibold text-muted uppercase tracking-wider select-none ${align === 'right' ? 'text-right' : 'text-left'} ${sticky ? 'sticky right-0 z-20 shadow-[-8px_0_12px_-12px_var(--color-muted)]' : ''}`}
+      style={{ width, ...(sticky ? { backgroundColor: `color-mix(in srgb, ${color} 7%, white)` } : {}) }}
     >
-      <span className="flex items-center gap-1">
-        {label}
-        {sort && <SortIcon active={sort.active} dir={sort.dir} color={color} />}
-      </span>
+      {sort ? (
+        // Ordenação acessível por teclado (FRN-14): o controle é um botão, não o <th>.
+        <button
+          type="button"
+          onClick={sort.onClick}
+          onMouseEnter={(e) => { e.currentTarget.style.color = color }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '' }}
+          className={`inline-flex w-full items-center gap-1 uppercase tracking-wider rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 ${align === 'right' ? 'justify-end' : ''}`}
+        >
+          {label}
+          <SortIcon active={sort.active} dir={sort.dir} color={color} />
+        </button>
+      ) : (
+        <span className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>{label}</span>
+      )}
       <div
         role="separator"
         aria-orientation="vertical"
@@ -866,10 +866,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [newTypeName, setNewTypeName] = useState('')
   const [newTypeErr, setNewTypeErr] = useState('')
   const [columnWidths, setColumnWidths] = useState<Record<ProductColumnKey, number>>(INITIAL_PRODUCT_COLUMN_WIDTHS)
-  const visibleColumnKeys = (Object.keys(columnWidths) as ProductColumnKey[]).filter(
-    column => isEurope || (column !== 'price_pvp' && column !== 'price_arquiteto')
-  )
+  const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
+  const [tableContainerWidth, setTableContainerWidth] = useState(0)
+  const visibleColumnKeys = isEurope ? EU_PRODUCT_COLUMN_KEYS : BR_PRODUCT_COLUMN_KEYS
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  const automaticallyFitColumnsRef = useRef(true)
+  const tableWidth = visibleColumnKeys.reduce((total, column) => total + columnWidths[column], 0)
+  const hasHorizontalOverflow = tableContainerWidth > 0 && tableWidth > tableContainerWidth
   // Um produto pode já ter um tipo salvo enquanto a lista de tipos ainda
   // carrega, ou depois de uma importação anterior ao cadastro do tipo no
   // mercado. Mantê-lo entre as opções evita que o navegador caia visualmente
@@ -886,7 +889,36 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     }
   }, [photoPreview])
 
+  // A tabela só entra no DOM depois do "Carregando...", então um useEffect
+  // preso ao mount nunca veria o container: o callback ref guarda o nó em
+  // estado e o efeito abaixo roda quando ele realmente existir.
+  const [tableContainer, setTableContainer] = useState<HTMLDivElement | null>(null)
+  const attachTableContainer = useCallback((node: HTMLDivElement | null) => {
+    tableContainerRef.current = node
+    setTableContainer(node)
+  }, [])
+
+  useLayoutEffect(() => {
+    const container = tableContainer
+    if (!container) return
+
+    function fitToCurrentContainer() {
+      const width = Math.floor(container?.clientWidth ?? 0)
+      setTableContainerWidth(width)
+      if (automaticallyFitColumnsRef.current) {
+        setColumnWidths(fittedProductColumnWidths(isEurope ? EU_PRODUCT_COLUMN_KEYS : BR_PRODUCT_COLUMN_KEYS, width, isEurope))
+      }
+    }
+
+    fitToCurrentContainer()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(fitToCurrentContainer)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [tableContainer, isEurope])
+
   function resizeColumn(column: ProductColumnKey, requestedWidth: number) {
+    automaticallyFitColumnsRef.current = false
     const width = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[column], Math.min(requestedWidth, 1600))
     setColumnWidths((current) => ({ ...current, [column]: width }))
   }
@@ -915,38 +947,24 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   function fitColumnsToContainer() {
     const availableWidth = Math.floor(tableContainerRef.current?.clientWidth ?? 0)
-    if (availableWidth <= 0) return
-
-    // Distribuição pensada para leitura: descrição e opcionais recebem mais
-    // espaço; todo texto continua visível por quebra de linha, sem reticências.
-    const ratios: Record<ProductColumnKey, number> = {
-      code: 0.11,
-      description: isEurope ? 0.16 : 0.19,
-      type: 0.10,
-      dimensions: 0.14,
-      price_lojista: 0.10,
-      price_corporativo: 0.10,
-      price_pvp: isEurope ? 0.10 : 0,
-      price_arquiteto: isEurope ? 0.10 : 0,
-      optionals: 0.10,
-      photo: 0.05,
-      actions: 0.04,
-    }
-    const fitted = {} as Record<ProductColumnKey, number>
-    let assigned = 0
-    const columns = visibleColumnKeys
-    columns.forEach((column, index) => {
-      const width = index === columns.length - 1
-        ? availableWidth - assigned
-        : Math.floor(availableWidth * ratios[column])
-      fitted[column] = width
-      assigned += width
-    })
-    setColumnWidths(fitted)
+    automaticallyFitColumnsRef.current = true
+    setTableContainerWidth(availableWidth)
+    setColumnWidths(fittedProductColumnWidths(visibleColumnKeys, availableWidth, isEurope))
   }
 
   function restoreColumnWidths() {
+    // "Restaurar" volta às larguras padrão fixas; o auto-ajuste só reativa em "Ajustar à tela".
+    automaticallyFitColumnsRef.current = false
     setColumnWidths({ ...INITIAL_PRODUCT_COLUMN_WIDTHS })
+  }
+
+  function toggleProductDetails(productId: string) {
+    setExpandedProductIds((current) => {
+      const next = new Set(current)
+      if (next.has(productId)) next.delete(productId)
+      else next.add(productId)
+      return next
+    })
   }
 
   function openCreate() {
@@ -1192,9 +1210,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
           {/* ── Desktop table ──────────────────────────────────── */}
           <div className="hidden lg:flex items-center justify-between gap-4 mb-2">
-            <p className="text-[11px] text-muted">
-              {tx('Arraste os divisores para redimensionar ou dê duplo clique para autoajustar.')}
-            </p>
+            <div className="text-[11px] text-muted">
+              <p>{tx('Arraste os divisores para redimensionar ou dê duplo clique para autoajustar.')}</p>
+              {hasHorizontalOverflow && <p className="font-medium text-gold">{tx('Role para ver mais colunas →')}</p>}
+            </div>
             <div className="flex items-center rounded-lg border border-line bg-surface-2 p-0.5 flex-shrink-0">
               <button
                 type="button"
@@ -1217,10 +1236,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </button>
             </div>
           </div>
-          <div ref={tableContainerRef} className="hidden lg:block w-full max-w-full min-w-0 overflow-x-auto rounded-xl border border-line overscroll-x-contain">
+          <div ref={attachTableContainer} className="hidden lg:block w-full max-w-full min-w-0 overflow-x-auto rounded-xl border border-line overscroll-x-contain">
             <table
               className="table-fixed text-sm"
-              style={{ width: visibleColumnKeys.reduce((total, column) => total + columnWidths[column], 0) }}
+              style={{ width: tableWidth }}
             >
               <colgroup>
                 {visibleColumnKeys.map((column) => (
@@ -1229,60 +1248,107 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </colgroup>
               <thead style={{ backgroundColor: `${tint(color, 7)}` }}>
                 <tr>
+                  <th data-product-col="details" className="px-1 py-3 text-center" style={{ width: columnWidths.details }}>
+                    <span className="sr-only">{tx('Detalhes')}</span>
+                  </th>
                   <ResizableProductTh label={tx('Código')} column="code" width={columnWidths.code} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'product_code', dir: sortDir, onClick: () => toggle('product_code') }} />
                   <ResizableProductTh label={tx('Descrição')} column="description" width={columnWidths.description} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
                     sort={{ active: sortKey === 'description', dir: sortDir, onClick: () => toggle('description') }} />
                   <ResizableProductTh label={tx('Tipo')} column="type" width={columnWidths.type} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  <ResizableProductTh label={tx('Dimensões')} column="dimensions" width={columnWidths.dimensions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  <ResizableProductTh label="Lojista" column="price_lojista" width={columnWidths.price_lojista} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color}
+                  <ResizableProductTh label={tx('Lojista')} column="price_lojista" width={columnWidths.price_lojista} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} align="right"
                     sort={{ active: sortKey === 'price_lojista', dir: sortDir, onClick: () => toggle('price_lojista') }} />
-                  <ResizableProductTh label="Corporativo" column="price_corporativo" width={columnWidths.price_corporativo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  {isEurope && <ResizableProductTh label="PVP" column="price_pvp" width={columnWidths.price_pvp} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />}
-                  {isEurope && <ResizableProductTh label="Arquiteto" column="price_arquiteto" width={columnWidths.price_arquiteto} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />}
-                  <ResizableProductTh label={tx('Opcionais')} column="optionals" width={columnWidths.optionals} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  <ResizableProductTh label={tx('Foto')} column="photo" width={columnWidths.photo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
-                  <ResizableProductTh label="" column="actions" width={columnWidths.actions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} />
+                  <ResizableProductTh label={tx('Corporativo')} column="price_corporativo" width={columnWidths.price_corporativo} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} align="right" />
+                  {isEurope && <ResizableProductTh label={tx('PVP')} column="price_pvp" width={columnWidths.price_pvp} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} align="right" />}
+                  {isEurope && <ResizableProductTh label={tx('Arquiteto')} column="price_arquiteto" width={columnWidths.price_arquiteto} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} align="right" />}
+                  <ResizableProductTh label={tx('Ações')} column="actions" width={columnWidths.actions} onResize={resizeColumn} onAutoFit={autoFitColumn} color={color} align="right" sticky={hasHorizontalOverflow} />
                 </tr>
               </thead>
               <tbody>
-                {pageItems.map((p) => (
-                  <tr key={p.id} className="table-row">
-                    <td data-product-col="code" className="px-4 py-3 font-mono text-sm font-medium border-r border-line whitespace-normal break-words align-top" style={{ color }}>
-                      {p.product_code}
-                      {p.ean && <span className="block text-[10px] text-muted">EAN {p.ean}</span>}
-                    </td>
-                    <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>
-                      {p.description}
-                      {p.article_category_path && <span className="block text-xs text-muted">{p.article_category_path}</span>}
-                    </td>
-                    <td data-product-col="type" className="px-4 py-3 text-xs font-medium text-ink-2 border-r border-line whitespace-normal break-words align-top">
-                      {p.type || tx('Sem tipo')}
-                    </td>
-                    <td data-product-col="dimensions" className="px-4 py-3 text-ink-2 text-xs border-r border-line whitespace-normal break-words align-top">
-                      {isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}
-                    </td>
-                    <td data-product-col="price_lojista" className="px-4 py-3 text-sm font-medium text-ink border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'lojista'))}</td>
-                    <td data-product-col="price_corporativo" className="px-4 py-3 text-sm text-ink-2 border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'corporativo'))}</td>
-                    {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'pvp'))}</td>}
-                    {isEurope && <td data-product-col="price_arquiteto" className="px-4 py-3 text-sm font-semibold text-gold border-r border-line whitespace-normal align-top">{money(marketPrice(p, 'arquiteto'))}</td>}
-                    <td data-product-col="optionals" className="px-4 py-3 text-muted-2 text-xs border-r border-line whitespace-normal break-words align-top">
-                      {[getProductOptionalsLabel(p, catLabel, ', ', tx('Todos')), ...(p.optional_applications ?? []).map(app => app.name), ...p.components.flatMap(component => (component.optional_applications ?? []).map(app => `${component.description}: ${app.name}`))].filter(Boolean).join(', ') || '—'}
-                    </td>
-                    <td data-product-col="photo" className="px-2 py-3 border-r border-line align-top">
-                      {p.photo_url
-                        ? <img src={p.photo_url} alt="" className="w-10 h-10 object-cover rounded-lg border border-line" />
-                        : <ImageIcon className="w-6 h-6 text-faint" />}
-                    </td>
-                    <td data-product-col="actions" className="px-2 py-3 align-top">
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => openEdit(p, true)} aria-label="Configurar aplicações do opcional" className="text-xs font-medium text-gold hover:underline">Aplicações</button>
-                        <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {pageItems.map((p) => {
+                  const isExpanded = expandedProductIds.has(p.id)
+                  const detailsId = `product-details-${p.id}`
+                  const productPhoto = p.thumbnail_url || p.photo_url
+                  const optionalsLabel = [
+                    getProductOptionalsLabel(p, catLabel, ', ', tx('Todos')),
+                    ...(p.optional_applications ?? []).map(app => app.name),
+                    ...p.components.flatMap(component => (component.optional_applications ?? []).map(app => `${component.description}: ${app.name}`)),
+                  ].filter(Boolean).join(', ') || '—'
+                  return (
+                    <Fragment key={p.id}>
+                      <tr className="table-row">
+                        <td data-product-col="details" className="px-1 py-3 text-center align-top">
+                          <button
+                            type="button"
+                            className="btn-icon mx-auto"
+                            aria-expanded={isExpanded}
+                            aria-controls={detailsId}
+                            aria-label={tx(isExpanded ? 'Ocultar detalhes de {code}' : 'Ver detalhes de {code}', { code: p.product_code })}
+                            onClick={() => toggleProductDetails(p.id)}
+                          >
+                            {isExpanded
+                              ? <ChevronDown className="w-4 h-4" aria-hidden="true" />
+                              : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
+                          </button>
+                        </td>
+                        <td data-product-col="code" className="px-4 py-3 font-mono text-sm font-medium border-r border-line whitespace-normal break-words align-top" style={{ color }}>
+                          {p.product_code}
+                        </td>
+                        <td data-product-col="description" className="px-4 py-3 text-ink border-r border-line whitespace-normal break-words align-top" title={p.description}>
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-line bg-white">
+                              {productPhoto
+                                ? <img src={productPhoto} alt={tx('Foto de {code}', { code: p.product_code })} className="h-10 w-10 rounded-lg object-cover" />
+                                : <ImageIcon className="w-5 h-5 text-faint" aria-hidden="true" />}
+                            </span>
+                            <span>{p.description}</span>
+                          </div>
+                        </td>
+                        <td data-product-col="type" className="px-4 py-3 text-xs font-medium text-ink-2 border-r border-line whitespace-normal break-words align-top">
+                          {p.type || tx('Sem tipo')}
+                        </td>
+                        <td data-product-col="price_lojista" className="px-4 py-3 text-right text-sm font-medium text-ink border-r border-line whitespace-nowrap tabular-nums align-top">{money(marketPrice(p, 'lojista'))}</td>
+                        <td data-product-col="price_corporativo" className="px-4 py-3 text-right text-sm text-ink-2 border-r border-line whitespace-nowrap tabular-nums align-top">{money(marketPrice(p, 'corporativo'))}</td>
+                        {isEurope && <td data-product-col="price_pvp" className="px-4 py-3 text-right text-sm font-semibold text-gold border-r border-line whitespace-nowrap tabular-nums align-top">{money(marketPrice(p, 'pvp'))}</td>}
+                        {isEurope && <td data-product-col="price_arquiteto" className="px-4 py-3 text-right text-sm font-semibold text-gold border-r border-line whitespace-nowrap tabular-nums align-top">{money(marketPrice(p, 'arquiteto'))}</td>}
+                        <td data-product-col="actions" className={`px-2 py-3 align-top bg-white ${hasHorizontalOverflow ? 'sticky right-0 z-10 shadow-[-8px_0_12px_-12px_var(--color-muted)]' : ''}`}>
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => openEdit(p)} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
+                            <button onClick={() => openEdit(p, true)} aria-label={tx('Configurar aplicações do opcional')} className="px-1 text-xs font-medium text-gold hover:underline">{tx('Aplicações')}</button>
+                            <button onClick={() => setDeleting(p)} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr id={detailsId} className="border-b border-line bg-surface-2">
+                          <td colSpan={visibleColumnKeys.length} className="px-5 py-4">
+                            <div className="flex items-start gap-5">
+                              {p.photo_url && <img src={p.photo_url} alt={tx('Foto de {code}', { code: p.product_code })} className="h-24 w-24 flex-shrink-0 rounded-xl border border-line bg-white object-cover" />}
+                              <dl className="grid min-w-0 flex-1 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <div>
+                                  <dt className="text-xs font-semibold text-muted">{tx('Dimensões')}</dt>
+                                  <dd className="mt-0.5 text-sm text-ink-2">{isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs font-semibold text-muted">{tx('Opcionais e aplicações')}</dt>
+                                  <dd className="mt-0.5 text-sm text-ink-2">{optionalsLabel}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs font-semibold text-muted">{tx('EAN')}</dt>
+                                  <dd className="mt-0.5 text-sm text-ink-2">{p.ean || '—'}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs font-semibold text-muted">{tx('Categoria de artigo')}</dt>
+                                  <dd className="mt-0.5 text-sm text-ink-2">{p.article_category_path || '—'}</dd>
+                                </div>
+                              </dl>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
                 {pageItems.length === 0 && (
                   <tr><td colSpan={visibleColumnKeys.length} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado.')}</td></tr>
                 )}
@@ -2144,39 +2210,60 @@ function PeopleTab<T extends Client | Representative>({
 
           {/* ── Desktop table ──────────────────────────────────── */}
           <div className="hidden lg:block overflow-x-auto rounded-xl border border-line">
-            <table className="w-full text-sm">
+            {/* Mínimos somam 812px (682 sem "Criado por"): cabem no painel a partir
+                de 1024px com o menu em rail (≈815px úteis com barra de rolagem);
+                acima disso o table-fixed distribui a sobra. */}
+            <table className={`table-fixed w-full text-sm ${canViewCreator ? 'min-w-[812px]' : 'min-w-[682px]'}`}>
+              <colgroup>
+                <col className="w-[170px]" />
+                <col className="w-[160px]" />
+                <col className="w-[140px]" />
+                <col className="w-[80px]" />
+                {canViewCreator && <col className="w-[130px]" />}
+                <col className="w-[132px]" />
+              </colgroup>
               <thead style={{ backgroundColor: `${tint(color, 7)}` }}>
                 <tr>
-                  <Th label={tx('Nome')} col="name" {...thProps} />
-                  <Th label={tx('Telefone')} col="phone" {...thProps} />
-                  <Th label={tx('E-mail')} col="email" {...thProps} />
-                  <Th label={tx('Cidade')} col="city" {...thProps} />
-                  <Th label={tx('UF')} col="state" {...thProps} />
-                  <Th label={tx('Desc. Máx.')} col="max_discount" {...thProps} />
+                  <Th sorts={[{ label: tx('Nome'), col: 'name' }]} {...thProps} />
+                  <Th sorts={[
+                    { label: tx('Telefone'), col: 'phone' },
+                    { label: tx('E-mail'), col: 'email' },
+                  ]} {...thProps} />
+                  <Th sorts={[
+                    { label: tx('Cidade'), col: 'city' },
+                    { label: tx('UF'), col: 'state' },
+                  ]} {...thProps} />
+                  <Th sorts={[{ label: tx('Desc. Máx.'), col: 'max_discount' }]} align="right" {...thProps} />
                   {canViewCreator && (
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
                       {tx('Criado por')}
                     </th>
                   )}
-                  <th className="px-4 py-3"></th>
+                  <th className="sticky right-0 px-2 py-3" style={{ backgroundColor: `color-mix(in srgb, ${color} 7%, white)` }}>
+                    <span className="sr-only">{tx('Ações')}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {pageItems.map((item) => (
                   <tr key={item.id} className="table-row">
-                    <td className="px-4 py-3 text-ink font-medium">{item.name}</td>
-                    <td className="px-4 py-3 text-ink-2">{item.phone}</td>
-                    <td className="px-4 py-3 text-ink-2">{item.email || '—'}</td>
-                    <td className="px-4 py-3 text-ink-2">{item.city}</td>
-                    <td className="px-4 py-3 text-muted-2">{item.state}</td>
-                    <td className="px-4 py-3 text-muted-2">{item.max_discount}%</td>
+                    <td className="min-w-[170px] px-4 py-3 font-medium text-ink break-words">{item.name}</td>
+                    <td className="min-w-[160px] px-4 py-3 text-ink-2">
+                      <p className="whitespace-nowrap tabular-nums">{item.phone}</p>
+                      <p className="mt-0.5 text-muted-2 break-all">{item.email || '—'}</p>
+                    </td>
+                    <td className="px-4 py-3 text-ink-2 break-words">
+                      <span>{item.city}</span>
+                      {item.state && <span className="whitespace-nowrap text-muted-2">{item.city ? ' · ' : ''}{item.state}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-2 whitespace-nowrap">{item.max_discount}%</td>
                     {canViewCreator && (
-                      <td className="px-4 py-3 text-muted-2">
+                      <td className="px-4 py-3 text-muted-2 break-words">
                         {item.created_by_name || tx('Cadastro anterior')}
                       </td>
                     )}
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
+                    <td className="sticky right-0 w-[132px] px-2 py-3 whitespace-nowrap bg-white">
+                      <div className="flex justify-end gap-2">
                         <button onClick={() => openView(item)} title={tx('Visualizar')} aria-label={tx('Visualizar')} className="btn-icon"><Eye className="w-4 h-4" /></button>
                         <button onClick={() => openEdit(item)} title={tx('Editar')} aria-label={tx('Editar')} className="btn-icon"><Pencil className="w-4 h-4" /></button>
                         <button onClick={() => setDeleting(item)} title={tx('Excluir')} aria-label={tx('Excluir')} className="btn-icon hover:text-danger"><Trash2 className="w-4 h-4" /></button>
@@ -2185,7 +2272,7 @@ function PeopleTab<T extends Client | Representative>({
                   </tr>
                 ))}
                 {pageItems.length === 0 && (
-                  <tr><td colSpan={canViewCreator ? 8 : 7} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.')}</td></tr>
+                  <tr><td colSpan={canViewCreator ? 6 : 5} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -3367,6 +3454,27 @@ const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
 
 const CADASTRO_STATE_KEY = 'cadastros_ui_state'
 const CADASTRO_STATE_TTL_MS = 5 * 60 * 1000
+const SIDEBAR_PREFERENCE_KEY = 'cadastros_sidebar_collapsed'
+const SIDEBAR_WIDE_MEDIA_QUERY = '(min-width: 1680px)'
+
+/** `undefined` = automático pela largura; `true`/`false` = escolha do usuário. */
+function loadSidebarPreference(): boolean | undefined {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_PREFERENCE_KEY)
+    return raw === null ? undefined : raw === '1'
+  } catch {
+    return undefined
+  }
+}
+
+function saveSidebarPreference(collapsed: boolean | undefined) {
+  try {
+    if (collapsed === undefined) localStorage.removeItem(SIDEBAR_PREFERENCE_KEY)
+    else localStorage.setItem(SIDEBAR_PREFERENCE_KEY, collapsed ? '1' : '0')
+  } catch {
+    // armazenamento indisponível: a preferência vale só para a sessão em memória
+  }
+}
 
 interface PersistedCadastroState {
   tab: Tab
@@ -3425,10 +3533,35 @@ export default function CadastroPage() {
   const [clientPage, setClientPage] = useState(persisted?.clientPage ?? 1)
   const [repPage, setRepPage] = useState(persisted?.repPage ?? 1)
   const [groupPage, setGroupPage] = useState(persisted?.groupPage ?? 1)
+  // Preferência do menu lateral: chave própria, sem o TTL de 5 min do estado de
+  // aba/página — é uma preferência duradoura, não um "voltar onde parei".
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean | undefined>(loadSidebarPreference)
+  const [isWideViewport, setIsWideViewport] = useState(() => (
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(SIDEBAR_WIDE_MEDIA_QUERY).matches
+      : false
+  ))
+
+  // Abaixo de 1680px o menu nasce compacto (rail de 72px): é a largura a partir
+  // da qual a tabela de produtos EU (4 preços, mínimos ~1200px) cabe íntegra ao
+  // lado do menu completo de 220px. O usuário pode forçar um modo e a escolha
+  // fica persistida.
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mediaQuery = window.matchMedia(SIDEBAR_WIDE_MEDIA_QUERY)
+    const updateViewport = () => setIsWideViewport(mediaQuery.matches)
+    updateViewport()
+    mediaQuery.addEventListener('change', updateViewport)
+    return () => mediaQuery.removeEventListener('change', updateViewport)
+  }, [])
 
   useEffect(() => {
     savePersistedCadastroState({ tab, productPage, clientPage, repPage, groupPage })
   }, [tab, productPage, clientPage, repPage, groupPage])
+
+  useEffect(() => {
+    saveSidebarPreference(sidebarCollapsed)
+  }, [sidebarCollapsed])
 
   const { data: productsCount } = useProductsPage({ skip: 0, limit: 1 })
   const { data: clientsCount } = useClientsPage({ skip: 0, limit: 1 })
@@ -3452,11 +3585,17 @@ export default function CadastroPage() {
   }
 
   const activeColor = TAB_PALETTE[tab].color
+  const isSidebarCollapsed = sidebarCollapsed ?? !isWideViewport
+  const cadastroGridColumns = sidebarCollapsed === undefined
+    ? 'md:grid-cols-[72px_minmax(0,1fr)] min-[1680px]:grid-cols-[220px_minmax(0,1fr)]'
+    : sidebarCollapsed
+      ? 'md:grid-cols-[72px_minmax(0,1fr)]'
+      : 'md:grid-cols-[220px_minmax(0,1fr)]'
 
   return (
     <div className="min-h-screen bg-bg text-ink pb-24 md:pb-0">
       <h1 className="sr-only">{tx('Cadastros')}</h1>
-      <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 md:py-6">
+      <div className="max-w-[1680px] mx-auto px-4 md:px-8 py-4 md:py-6">
 
         {/* ── Mobile horizontal tab bar ──────────────────────── */}
         <div className="md:hidden mb-3 flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
@@ -3490,47 +3629,67 @@ export default function CadastroPage() {
           })}
         </div>
 
-        <div className="flex flex-col gap-4 md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
+        <div className={`flex flex-col gap-4 md:grid md:gap-6 ${cadastroGridColumns}`}>
 
           {/* ── Sidebar (desktop only) ──────────────────────────── */}
           <aside className="hidden md:block">
-            <div className="bg-white border border-line rounded-xl shadow-sm p-3 sticky top-20 space-y-1">
-              <p className="text-xs font-semibold text-muted uppercase tracking-widest px-3 pb-2">{tx('Cadastros')}</p>
-              {visibleTabs.map(({ key, label: rawLabel, Icon }) => {
-            const label = tx(rawLabel)
-                const { color } = TAB_PALETTE[key]
-                const isActive = tab === key
-                const count = counts[key]
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setTab(key)}
-                    type="button"
-                    aria-current={isActive ? 'page' : undefined}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-[background-color,color,box-shadow] duration-150 text-left ${isActive ? '' : 'hover:bg-bg'}`}
-                    style={isActive
-                      ? { backgroundColor: tint(color, 7), color, boxShadow: `inset 0 0 0 1px ${tint(color, 14)}` }
-                      : undefined
-                    }
-                  >
-                    <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: 'var(--color-muted)' }} />
-                    <span className="flex-1" style={isActive ? {} : { color: 'var(--color-ink-3)' }}>{label}</span>
-                    <span
-                      className="text-xs px-1.5 py-0.5 rounded-full font-semibold min-w-[22px] text-center"
+            <div className={`bg-white border border-line rounded-xl shadow-sm sticky top-20 ${isSidebarCollapsed ? 'p-2' : 'p-3'}`}>
+              <div className={`flex items-center pb-2 ${isSidebarCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
+                <p className={isSidebarCollapsed ? 'sr-only' : 'px-2 text-xs font-semibold text-muted uppercase tracking-widest'}>{tx('Cadastros')}</p>
+                <button
+                  type="button"
+                  className="btn-icon flex-shrink-0"
+                  aria-label={tx(isSidebarCollapsed ? 'Expandir menu' : 'Recolher menu')}
+                  aria-expanded={!isSidebarCollapsed}
+                  aria-controls="cadastro-desktop-navigation"
+                  title={tx(isSidebarCollapsed ? 'Expandir menu' : 'Recolher menu')}
+                  onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
+                >
+                  {isSidebarCollapsed
+                    ? <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                    : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}
+                </button>
+              </div>
+              <nav id="cadastro-desktop-navigation" aria-label={tx('Cadastros')} className="space-y-1">
+                {visibleTabs.map(({ key, label: rawLabel, Icon }) => {
+                  const label = tx(rawLabel)
+                  const { color } = TAB_PALETTE[key]
+                  const isActive = tab === key
+                  const count = counts[key]
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setTab(key)}
+                      type="button"
+                      title={isSidebarCollapsed ? label : undefined}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`relative w-full flex items-center rounded-lg text-sm font-medium transition-[background-color,color,box-shadow] duration-150 ${isSidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5 text-left'} ${isActive ? '' : 'hover:bg-bg'}`}
                       style={isActive
-                        ? { backgroundColor: tint(color, 13), color }
-                        : { backgroundColor: 'var(--color-bg-2)', color: 'var(--color-muted)' }}
+                        ? { backgroundColor: tint(color, 7), color, boxShadow: `inset 0 0 0 1px ${tint(color, 14)}` }
+                        : undefined
+                      }
                     >
-                      {count}
-                    </span>
-                  </button>
-                )
-              })}
+                      <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: 'var(--color-muted)' }} />
+                      <span className={isSidebarCollapsed ? 'sr-only' : 'flex-1'} style={isActive ? {} : { color: 'var(--color-ink-3)' }}>{label}</span>
+                      <span
+                        className={isSidebarCollapsed
+                          ? 'absolute -right-1 -top-1 min-w-[20px] rounded-full px-1 py-0.5 text-center text-xs font-semibold'
+                          : 'min-w-[22px] rounded-full px-1.5 py-0.5 text-center text-xs font-semibold'}
+                        style={isActive
+                          ? { backgroundColor: tint(color, 13), color }
+                          : { backgroundColor: 'var(--color-bg-2)', color: 'var(--color-muted)' }}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </nav>
             </div>
           </aside>
 
           {/* ── Painel de Dados ───────────────────────────────────── */}
-          <section aria-label={tx('Painel de dados')} className="min-w-0 max-w-full bg-white border border-line rounded-xl shadow-sm p-6"
+          <section aria-label={tx('Painel de dados')} className="min-w-0 max-w-full bg-white border border-line rounded-xl shadow-sm p-4 xl:p-6"
             style={{ borderTop: `3px solid ${activeColor}` }}>
             {tab === 'produtos' && <ProductsTab color={TAB_PALETTE.produtos.color} page={productPage} onPage={setProductPage} />}
 

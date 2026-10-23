@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import OrcamentoPage from './OrcamentoPage'
 import { cartStorageKey } from '../lib/cart'
@@ -50,11 +50,12 @@ function buildApplications(): OptionalApplication[] {
   ]
 }
 
-function buildProduct(market: 'BR' | 'EU'): Product {
+function buildProduct(market: 'BR' | 'EU', overrides: Partial<Product> = {}): Product {
   return {
     ...productFixture(market),
     product_code: market === 'BR' ? 'SKU-BR' : 'SKU-EU',
     optional_applications: buildApplications(),
+    ...overrides,
   } as Product
 }
 
@@ -120,6 +121,11 @@ function selectChoice(label: string, optionId: string) {
 function clickAdd() {
   const buttons = screen.getAllByRole('button', { name: /ADICIONAR AO ORÇAMENTO/i })
   fireEvent.click(buttons[0])
+}
+
+function expectItemSubtotal(item: HTMLElement, formattedValue: string) {
+  const subtotalLabel = within(item).getByText('Subtotal')
+  expect(subtotalLabel.parentElement?.textContent).toContain(formattedValue)
 }
 
 describe('OrcamentoPage', () => {
@@ -252,5 +258,111 @@ describe('OrcamentoPage', () => {
         ),
       ).toBe(false)
     }
+  })
+
+  it('mantém subtotal e remoção no mesmo item e remove a linha do orçamento', async () => {
+    const user = productTestUser('admin', 'BR')
+    const product = buildProduct('BR')
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    clickAdd()
+
+    const item = await screen.findByRole('listitem', { name: 'SKU-BR Mesa BR' })
+    const itemQueries = within(item)
+    const removeButtons = itemQueries.getAllByRole('button', {
+      name: 'Remover Mesa BR do orçamento',
+    })
+    const expectedSubtotal = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(100)
+
+    expect(removeButtons).toHaveLength(1)
+    expectItemSubtotal(item, expectedSubtotal)
+
+    fireEvent.click(removeButtons[0])
+
+    await waitFor(() => {
+      expect(screen.queryByRole('listitem', { name: 'SKU-BR Mesa BR' })).toBeNull()
+      expect(screen.queryByText('Mesa BR')).toBeNull()
+      expect(screen.getByText('Seu orçamento ainda está vazio.')).toBeTruthy()
+    })
+  })
+
+  it('recalcula o subtotal do item ao alterar a quantidade', async () => {
+    const user = productTestUser('admin', 'BR')
+    const price = 1234.56
+    const product = buildProduct('BR', {
+      price,
+      price_lojista: price,
+      market_prices: { lojista: price, corporativo: price },
+    })
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    clickAdd()
+
+    const item = await screen.findByRole('listitem', { name: 'SKU-BR Mesa BR' })
+    const quantity = within(item).getByLabelText('Qtd — Mesa BR')
+    const expectedSubtotal = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(price * 3)
+
+    fireEvent.change(quantity, { target: { value: '3' } })
+
+    await waitFor(() => {
+      expectItemSubtotal(item, expectedSubtotal)
+    })
+  })
+
+  it('não renderiza tabela quando há itens no carrinho', async () => {
+    const user = productTestUser('admin', 'BR')
+    const product = buildProduct('BR')
+    installOrcamentoHandlers([product])
+
+    const { container } = renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    clickAdd()
+
+    await screen.findByRole('listitem', { name: 'SKU-BR Mesa BR' })
+    expect(container.querySelector('table')).toBeNull()
+  })
+
+  it('expõe no title o nome completo do acabamento selecionado', async () => {
+    const user = productTestUser('admin', 'BR')
+    const longFinish = 'Nogueira Natural Envelhecida de Veios Contínuos'
+    const product = buildProduct('BR', {
+      optionals: [
+        ...OPTIONALS,
+        {
+          id: 'opt-nogueira-natural',
+          category: CATEGORY_CODE,
+          color_name: longFinish,
+          photo_url: null,
+        },
+      ],
+    })
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    clickAdd()
+
+    const item = await screen.findByRole('listitem', { name: 'SKU-BR Mesa BR' })
+    const finishSelect = within(item).getByLabelText('Acabamento') as HTMLSelectElement
+
+    fireEvent.change(finishSelect, { target: { value: longFinish } })
+
+    await waitFor(() => {
+      expect(finishSelect.title).toBe(longFinish)
+    })
   })
 })
