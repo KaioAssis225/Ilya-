@@ -12,6 +12,7 @@ import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
 import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
+import { OptionalCombobox } from '../components/OptionalCombobox'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
@@ -433,12 +434,14 @@ function Toast({ message, onDone, variant = 'success' }: { message: string; onDo
 
 // ── Opcionais interativos no carrinho ─────────────────────────────────────────
 
-function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
+function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }: {
   item: CartItem
   allOptionals: OptionalColor[]
   onChange: (cat: string, value: string | null) => void
+  onPreview: (photoUrl: string, label: string) => void
   catLabel: (code: string) => string
 }) {
+  const isEnglish = useLocale().locale === 'en-GB'
   const freeCats = new Set((item._product.all_optionals_categories ?? '').split(',').filter(Boolean))
   const productCats = Array.from(new Set(item._product.optionals.map(o => o.category)))
   const allCats = Array.from(new Set([...productCats, ...Array.from(freeCats)]))
@@ -453,25 +456,31 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
         const currentValue = item.opt_categories[cat] ?? ''
         const currentOpt = available.find(o => o.color_name === currentValue)
         return (
-          // O anel de foco fica no chip inteiro (focus-within): o select some
-          // na borda do chip e não tinha nenhum indicador ao navegar por Tab.
           <div key={cat} className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt?.photo_url && (
-              <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
+              <button
+                type="button"
+                onClick={() => onPreview(currentOpt.photo_url!, currentOpt.color_name)}
+                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 lg:h-5 lg:w-5"
+                aria-label={isEnglish ? `View photo of ${currentOpt.color_name}` : `Ver foto de ${currentOpt.color_name}`}
+              >
+                <img src={currentOpt.photo_url} alt="" className="h-3.5 w-3.5 rounded object-cover" />
+              </button>
             )}
-            <select
+            <OptionalCombobox
               value={currentValue}
-              onChange={(e) => onChange(cat, e.target.value || null)}
-              aria-label={catLabel(cat)}
-              title={currentValue || undefined}
-              className="min-h-11 lg:min-h-0 min-w-0 flex-1 max-w-[240px] text-xs leading-snug text-ink bg-transparent border-none cursor-pointer focus-visible:outline-none"
-            >
-              <option value="">—</option>
-              {available.map(opt => (
-                <option key={opt.id} value={opt.color_name}>{opt.color_name}</option>
-              ))}
-            </select>
+              onChange={value => onChange(cat, value || null)}
+              onPreview={onPreview}
+              label={catLabel(cat)}
+              placeholder="—"
+              options={available.map(option => ({
+                value: option.color_name,
+                label: option.color_name,
+                photoUrl: option.photo_url,
+              }))}
+              className="min-w-0 max-w-[240px]"
+            />
           </div>
         )
       })}
@@ -479,11 +488,12 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
   )
 }
 
-function ApplicationSelectors({ product, choices, allOptionals, onChange, english }: {
+function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english }: {
   product: Product
   choices: CartItem['optional_choices']
   allOptionals: OptionalColor[]
   onChange: (applicationId: string, optionalId: string | null) => void
+  onPreview: (photoUrl: string, label: string) => void
   english: boolean
 }) {
   const entries = productApplications(product)
@@ -518,24 +528,36 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, englis
         const selected = options.find(option => option.id === value)
         const preview = selected?.thumbnail_url ?? selected?.photo_url
         const areaName = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
-        return <label key={application.id} className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
+        return <div key={application.id} className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
           <span className="flex min-w-0 items-center border-r border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
             <span className="break-words leading-snug">{areaName}{application.required && <span className="ml-0.5 text-warning" aria-label={english ? 'Required' : 'Obrigatório'}>•</span>}</span>
           </span>
           <span className="flex min-w-0 items-center">
-            {preview && <img src={preview} alt="" loading="lazy" decoding="async" className="ml-2 h-5 w-5 flex-shrink-0 rounded object-cover" />}
-            <select
-              value={value}
-              onChange={event => onChange(application.id, event.target.value || null)}
-              aria-label={`${group.categoryName}: ${areaName}`}
-              aria-invalid={missing}
-              className={`min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-2 py-1 text-[11px] font-medium focus:outline-none ${value ? 'text-ink' : 'text-warning'}`}
+            {preview && selected && <button
+              type="button"
+              onClick={() => onPreview(selected.photo_url ?? selected.thumbnail_url ?? preview, selected.color_name)}
+              className="ml-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 lg:h-9 lg:w-9"
+              aria-label={english ? `View photo of ${selected.color_name}` : `Ver foto de ${selected.color_name}`}
             >
-              <option value="">{english ? 'Choose an option' : 'Escolha uma opção'}</option>
-              {options.map(option => <option key={option.id} value={option.id}>{option.color_name}</option>)}
-            </select>
+              <img src={preview} alt="" loading="lazy" decoding="async" className="h-5 w-5 rounded object-cover" />
+            </button>}
+            <OptionalCombobox
+              value={value}
+              onChange={optionalId => onChange(application.id, optionalId || null)}
+              onPreview={onPreview}
+              label={`${group.categoryName}: ${areaName}`}
+              placeholder={english ? 'Choose an option' : 'Escolha uma opção'}
+              invalid={missing}
+              options={options.map(option => ({
+                value: option.id,
+                label: option.color_name,
+                photoUrl: option.thumbnail_url ?? option.photo_url,
+                previewUrl: option.photo_url ?? option.thumbnail_url,
+              }))}
+              className="min-w-0 flex-1 px-2 py-1 text-[11px] font-medium"
+            />
           </span>
-        </label>
+        </div>
       })}
     </div>)}
     {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
@@ -607,7 +629,7 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onDiscountChange, maxDiscount, onRemove, onPhotoClick, allOptionals, onOptChange, onApplicationChange, onEditApplications, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, onOptChange, onApplicationChange, onEditApplications, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -615,6 +637,7 @@ function MobileCartCard({
   maxDiscount: number
   onRemove: (code: string) => void
   onPhotoClick: (url: string) => void
+  onPreview: (photoUrl: string, label: string) => void
   allOptionals: OptionalColor[]
   onOptChange: (cat: string, value: string | null) => void
   onApplicationChange: (applicationId: string, optionalId: string | null) => void
@@ -673,11 +696,11 @@ function MobileCartCard({
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} catLabel={catLabel} />
+          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} onPreview={onPreview} catLabel={catLabel} />
           {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
-          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} english={isEnglish} />}
+          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} />}
         </div>
       </div>
 
@@ -1525,6 +1548,7 @@ export default function OrcamentoPage() {
       )}
       {selectedProduct && <ApplicationSelectors
         product={selectedProduct} choices={selectedChoices} allOptionals={allOptionals} english={isEnglish}
+        onPreview={photoUrl => setActivePhotoModal(photoUrl)}
         onChange={(applicationId, optionalId) => setSelectedChoices(previous => [
           ...previous.filter(choice => choice.application_id !== applicationId),
           ...(optionalId ? [{ application_id: applicationId, optional_id: optionalId }] : []),
@@ -1648,6 +1672,7 @@ export default function OrcamentoPage() {
                       maxDiscount={user?.max_discount ?? 0}
                       onRemove={removeItem}
                       onPhotoClick={setActivePhotoModal}
+                      onPreview={photoUrl => setActivePhotoModal(photoUrl)}
                       allOptionals={allOptionals}
                       onOptChange={(cat, val) => updateOptCategory(item.line_id, cat, val)}
                       onApplicationChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)}
@@ -1705,12 +1730,12 @@ export default function OrcamentoPage() {
                             {dimLabel(item._product, market, locale) && (
                               <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
                             )}
-                            <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} catLabel={catLabel} />
+                            <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} catLabel={catLabel} />
                             {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">
                               {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
-                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} english={isEnglish} />}
+                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} />}
                           </div>
                         </div>
 

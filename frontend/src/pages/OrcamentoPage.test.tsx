@@ -19,6 +19,19 @@ const OPTIONALS: OptionalColor[] = [
   { id: 'opt-preto', category: CATEGORY_CODE, color_name: 'Preto', photo_url: null },
 ]
 
+const OPTIONAL_PHOTO_URL = 'https://example.com/opcionais/canela.jpg'
+const OPTIONAL_THUMBNAIL_URL = 'https://example.com/opcionais/canela-thumb.jpg'
+const PHOTO_OPTIONALS: OptionalColor[] = [
+  { id: 'opt-sem-foto', category: CATEGORY_CODE, color_name: 'Sem foto', photo_url: null },
+  {
+    id: 'opt-canela',
+    category: CATEGORY_CODE,
+    color_name: 'Canela',
+    photo_url: OPTIONAL_PHOTO_URL,
+    thumbnail_url: OPTIONAL_THUMBNAIL_URL,
+  },
+]
+
 function buildApplications(): OptionalApplication[] {
   return [
     {
@@ -57,6 +70,16 @@ function buildProduct(market: 'BR' | 'EU', overrides: Partial<Product> = {}): Pr
     optional_applications: buildApplications(),
     ...overrides,
   } as Product
+}
+
+function buildPhotoProduct(): Product {
+  return buildProduct('BR', {
+    optionals: PHOTO_OPTIONALS,
+    optional_applications: buildApplications().map(application => ({
+      ...application,
+      allowed_optionals: PHOTO_OPTIONALS,
+    })),
+  })
 }
 
 function installOrcamentoHandlers(products: Product[]) {
@@ -112,10 +135,9 @@ async function pickProduct(sku: string) {
   fireEvent.mouseDown(li as HTMLElement)
 }
 
-function selectChoice(label: string, optionId: string) {
-  const selects = screen.getAllByLabelText(label)
-  const select = selects[0] as HTMLSelectElement
-  fireEvent.change(select, { target: { value: optionId } })
+function selectChoice(label: string, optionName: string) {
+  fireEvent.click(screen.getAllByRole('combobox', { name: label })[0])
+  fireEvent.click(screen.getByRole('option', { name: optionName }))
 }
 
 function clickAdd() {
@@ -145,8 +167,8 @@ describe('OrcamentoPage', () => {
     await waitFor(() => {
       expect(screen.getAllByLabelText('Acabamento: Tampo').length).toBeGreaterThan(0)
     })
-    selectChoice('Acabamento: Tampo', 'opt-branco')
-    selectChoice('Acabamento: Base', 'opt-preto')
+    selectChoice('Acabamento: Tampo', 'Branco')
+    selectChoice('Acabamento: Base', 'Preto')
     clickAdd()
 
     await waitFor(() => {
@@ -171,8 +193,8 @@ describe('OrcamentoPage', () => {
     await waitFor(() => {
       expect(screen.getAllByLabelText('Acabamento: Tampo').length).toBeGreaterThan(0)
     })
-    selectChoice('Acabamento: Tampo', 'opt-preto')
-    selectChoice('Acabamento: Base', 'opt-branco')
+    selectChoice('Acabamento: Tampo', 'Preto')
+    selectChoice('Acabamento: Base', 'Branco')
     clickAdd()
 
     await waitFor(() => {
@@ -357,12 +379,101 @@ describe('OrcamentoPage', () => {
     clickAdd()
 
     const item = await screen.findByRole('listitem', { name: 'SKU-BR Mesa BR' })
-    const finishSelect = within(item).getByLabelText('Acabamento') as HTMLSelectElement
-
-    fireEvent.change(finishSelect, { target: { value: longFinish } })
+    const finishCombobox = within(item).getByRole('combobox', { name: 'Acabamento' })
+    fireEvent.click(finishCombobox)
+    fireEvent.click(screen.getByRole('option', { name: longFinish }))
 
     await waitFor(() => {
-      expect(finishSelect.title).toBe(longFinish)
+      expect(finishCombobox.title).toBe(longFinish)
     })
+  })
+
+  it('mostra a miniatura do opcional na lista aberta', async () => {
+    const user = productTestUser('admin', 'BR')
+    installOrcamentoHandlers([buildPhotoProduct()])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    const combobox = screen.getAllByRole('combobox', { name: 'Acabamento: Tampo' })[0]
+    fireEvent.click(combobox)
+
+    const option = screen.getByRole('option', { name: 'Canela' })
+    expect(option.querySelector('img')?.getAttribute('src')).toBe(OPTIONAL_THUMBNAIL_URL)
+  })
+
+  it('seleciona um opcional com foto e abre a imagem ampliada', async () => {
+    const user = productTestUser('admin', 'BR')
+    installOrcamentoHandlers([buildPhotoProduct()])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    const combobox = screen.getAllByRole('combobox', { name: 'Acabamento: Tampo' })[0]
+    fireEvent.click(combobox)
+    fireEvent.click(screen.getByRole('option', { name: 'Canela' }))
+
+    expect(combobox.textContent).toContain('Canela')
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.querySelector(`img[src="${OPTIONAL_PHOTO_URL}"]`)).toBeTruthy()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('seleciona um opcional sem foto sem abrir o lightbox', async () => {
+    const user = productTestUser('admin', 'BR')
+    installOrcamentoHandlers([buildPhotoProduct()])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    const combobox = screen.getAllByRole('combobox', { name: 'Acabamento: Tampo' })[0]
+    fireEvent.click(combobox)
+    fireEvent.click(screen.getByRole('option', { name: 'Sem foto' }))
+
+    expect(combobox.textContent).toContain('Sem foto')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('permite escolher pelo teclado e Escape fecha a lista sem mudar o valor', async () => {
+    const user = productTestUser('admin', 'BR')
+    installOrcamentoHandlers([buildPhotoProduct()])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    const combobox = screen.getAllByRole('combobox', { name: 'Acabamento: Tampo' })[0]
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    expect(combobox.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    fireEvent.keyDown(combobox, { key: 'Enter' })
+
+    expect(combobox.textContent).toContain('Sem foto')
+    expect(combobox.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    fireEvent.keyDown(combobox, { key: 'Escape' })
+
+    expect(combobox.getAttribute('aria-expanded')).toBe('false')
+    expect(combobox.textContent).toContain('Sem foto')
+  })
+
+  it('abre novamente o lightbox pela miniatura do opcional selecionado', async () => {
+    const user = productTestUser('admin', 'BR')
+    installOrcamentoHandlers([buildPhotoProduct()])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    await pickProduct('SKU-BR')
+    selectChoice('Acabamento: Tampo', 'Canela')
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    const previewButtons = screen.getAllByRole('button', { name: 'Ver foto de Canela' })
+    fireEvent.click(previewButtons[0])
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.querySelector(`img[src="${OPTIONAL_PHOTO_URL}"]`)).toBeTruthy()
   })
 })
