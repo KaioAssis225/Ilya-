@@ -14,6 +14,7 @@ import api from '../lib/api'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
+import { formatArea } from '../lib/areaProduct'
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
@@ -24,7 +25,13 @@ function fmtDateTime(s: string) {
 }
 
 function itemsSummary(order: OrderSummary) {
-  return order.items.map((i) => `${i.product_code}(${i.qty})`).join(', ')
+  // O resumo da API nÃ£o traz `sold_by_area`: quantidades fracionÃ¡rias sÃ£o a
+  // Ãºnica pista segura. Um tapete com quantidade inteira continua como CODE(n).
+  const locale = order.market_code === 'EU' ? 'en-GB' : 'pt-BR'
+  return order.items.map((item) => {
+    const qty = Number(item.qty)
+    return `${item.product_code}(${Number.isInteger(qty) ? qty : formatArea(qty, locale)})`
+  }).join(', ')
 }
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -453,7 +460,7 @@ function OrderDetailModal({
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs min-w-[120px]">
-                          {formatDimensions(item, order.market_code, viewLocale)}
+                          {item.sold_by_area ? '—' : formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
                           {(() => {
@@ -528,7 +535,7 @@ function OrderDetailModal({
                             )
                           })()}
                         </td>
-                        <td className="px-3 py-2 text-center text-ink">{item.qty}</td>
+                        <td className="px-3 py-2 text-center text-ink">{item.sold_by_area ? formatArea(item.qty, viewLocale) : item.qty}</td>
                         <td className="px-3 py-2 text-right text-xs text-ink-2 font-semibold whitespace-nowrap">
                           <SafePrice value={Number(item.unit_price)} currency={order.currency} locale={viewLocale} />
                         </td>
@@ -600,6 +607,7 @@ function MobileOrderCard({
           </div>
         </div>
         <div className="mt-2">
+          {order.items.length > 0 && <p className="mb-2 truncate text-xs text-ink-3">{itemsSummary(order)}</p>}
           <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
             {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
             {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}

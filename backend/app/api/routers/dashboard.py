@@ -228,7 +228,8 @@ async def get_overview(
         ProductRanking(
             product_code=row.product_code,
             description=row.description,
-            quantity=int(row.quantity),
+            # Tapete soma m² com 2 casas; inteiro truncaria 4,5 m² para 4.
+            quantity=float(row.quantity),
             revenue=float(row.revenue),
         )
         for row in (await db.execute(products_stmt)).all()

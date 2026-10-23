@@ -283,3 +283,28 @@ test('regressão EU: preserva item.description histórico do snapshot mesmo se p
     'não deve sobrescrever o snapshot com o description_en atual do catálogo',
   )
 })
+
+test('area item hides dimensions, formats square metres and counts one line', async () => {
+  const order = makeOrder({
+    items: [makeOrderItem({
+      product_code: 'TAP-001',
+      description: 'Tapete Amazonas',
+      sold_by_area: true,
+      qty: 4.5,
+      altura: 9,
+      largura: 9,
+      profundidade: 9,
+    })],
+  })
+
+  await generateOrderPDF(order, makeClient(), null, [makeProduct({
+    product_code: 'TAP-001',
+    description: 'Tapete Amazonas',
+    catalog: { id: 'tapetes', name: 'Tapete' },
+  })])
+
+  assert.ok(renderedTexts.includes('4,5 m²'))
+  const totalItemsIndex = renderedTexts.indexOf('Total de Itens:')
+  assert.equal(renderedTexts[totalItemsIndex + 1], '1')
+  assert.ok(!renderedTexts.some((text) => text.startsWith('DIMENSÕES:') || text.startsWith('DIMENSIONS:')))
+})

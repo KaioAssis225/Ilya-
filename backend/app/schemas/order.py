@@ -28,7 +28,7 @@ class OptionalChoiceRead(BaseModel):
 
 class OrderItemCreate(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
-    qty: int = Field(..., ge=1, le=1_000_000)
+    qty: Decimal = Field(..., gt=0, le=1_000_000, decimal_places=2)
     discount: Decimal = Field(Decimal("0"), ge=0, le=100, decimal_places=2)
     opt_categories: Dict[str, str] = Field(default_factory=dict, max_length=50)
     optional_choices: List[OptionalChoiceCreate] = Field(default_factory=list, max_length=100)
@@ -79,7 +79,8 @@ class OrderItemRead(BaseModel):
     profundidade: Decimal
     opt_categories: Dict[str, str] = Field(default_factory=dict)
     optional_choices: List[OptionalChoiceRead] = Field(default_factory=list)
-    qty: int
+    qty: float
+    sold_by_area: bool = False
     unit_price: Decimal
     discount: Decimal = Decimal("0")
     ipi_rate: Decimal = Decimal("0")
@@ -147,7 +148,7 @@ class OrderRead(BaseModel):
 
 class OrderListItemRead(BaseModel):
     product_code: str
-    qty: int
+    qty: float
 
 
 class OrderListRead(BaseModel):

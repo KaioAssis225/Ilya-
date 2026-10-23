@@ -40,6 +40,7 @@ from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROV
 from app.core.markets import MarketPrincipal, require_launch_country
 from app.schemas.order import OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
+from app.services.area_products import is_area_product
 
 logger = logging.getLogger("ilya.orders")
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -500,10 +501,46 @@ def _validate_discount(
         )
 
 
+def _format_area(value: Decimal) -> str:
+    """12.50 -> "12,5"; 10.00 -> "10" (mensagens em pt-BR)."""
+    text_value = format(value.normalize(), "f")
+    return text_value.replace(".", ",")
+
+
+def _validate_item_quantity(product: Product, qty: Decimal) -> bool:
+    """Valida a quantidade do item e devolve se ele é vendido por m².
+
+    Tapete (catálogo "Tapete") aceita m² com até 2 casas e respeita o limite
+    por item quando ligado no cadastro. Os demais produtos continuam em
+    unidades inteiras — o tipo decimal da coluna não pode abrir brecha para
+    vender 1,5 cadeira.
+    """
+    quantity = _decimal(qty)
+    sold_by_area = is_area_product(product)
+    if not sold_by_area:
+        if quantity != quantity.to_integral_value():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"A quantidade do item '{product.product_code}' deve ser um número inteiro.",
+            )
+        return False
+    if product.area_limit_enabled and product.max_area_m2 is not None:
+        max_area = _decimal(product.max_area_m2)
+        if quantity > max_area:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"O tapete '{product.product_code}' permite no máximo "
+                    f"{_format_area(max_area)} m² por item."
+                ),
+            )
+    return True
+
+
 def _calculate_order_line(
     *,
     unit_price: Decimal | float,
-    qty: int,
+    qty: Decimal | int,
     discount: Decimal | float,
     max_discount: Decimal | float,
     product_code: str,
@@ -742,6 +779,7 @@ async def create_order(
             )
         else:
             ipi_rate = _resolve_br_ipi(product.product_code, product_type)
+        sold_by_area = _validate_item_quantity(product, item_in.qty)
         unit_price, discount, subtotal, ipi_rate, ipi_value = (
             _calculate_order_line(
                 unit_price=price_map[product.id],
@@ -770,6 +808,7 @@ async def create_order(
             opt_categories=item_in.opt_categories,
             optional_choices=optional_choices,
             qty=item_in.qty,
+            sold_by_area=sold_by_area,
             unit_price=unit_price,
             discount=discount,
             ipi_rate=ipi_rate,
@@ -1006,7 +1045,7 @@ async def list_orders(
         ).all()
         for order_id_value, product_code, qty in item_rows:
             items_by_order[order_id_value].append(
-                {"product_code": product_code, "qty": qty}
+                {"product_code": product_code, "qty": float(qty)}
             )
 
     if has_more and page_rows:
@@ -1251,6 +1290,7 @@ async def update_order(
                 )
             else:
                 ipi_rate = _resolve_br_ipi(product.product_code, product_type)
+            sold_by_area = _validate_item_quantity(product, item_in.qty)
             unit_price, discount, subtotal, ipi_rate, ipi_value = (
                 _calculate_order_line(
                     unit_price=price_map[product.id],
@@ -1280,6 +1320,7 @@ async def update_order(
                 opt_categories=item_in.opt_categories,
                 optional_choices=optional_choices,
                 qty=item_in.qty,
+                sold_by_area=sold_by_area,
                 unit_price=unit_price,
                 discount=discount,
                 ipi_rate=ipi_rate,

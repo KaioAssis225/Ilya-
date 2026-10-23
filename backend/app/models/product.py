@@ -1,5 +1,7 @@
 import uuid
-from sqlalchemy import String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func
+from decimal import Decimal
+
+from sqlalchemy import CheckConstraint, String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
@@ -33,6 +35,12 @@ class Product(Base, TimestampMixin):
     catalog_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    area_limit_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    max_area_m2: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
     altura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     largura: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     profundidade: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
@@ -71,6 +79,10 @@ class Product(Base, TimestampMixin):
             ["catalogs.id", "catalogs.market_code"],
             name="fk_products_catalog_same_market",
             ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "NOT area_limit_enabled OR (max_area_m2 IS NOT NULL AND max_area_m2 > 0)",
+            name="ck_products_area_limit_requires_max",
         ),
         UniqueConstraint("market_code", "product_code", name="uq_products_market_code"),
         Index("ix_products_market_id", "market_code", "id"),

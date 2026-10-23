@@ -28,7 +28,7 @@ class RepresentativeRanking(BaseModel):
 class ProductRanking(BaseModel):
     product_code: str
     description: str
-    quantity: int
+    quantity: float
     revenue: float
 
 

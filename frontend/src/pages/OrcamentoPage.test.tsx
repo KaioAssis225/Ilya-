@@ -476,4 +476,46 @@ describe('OrcamentoPage', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog.querySelector(`img[src="${OPTIONAL_PHOTO_URL}"]`)).toBeTruthy()
   })
+
+  it('area product uses decimal m², clamps the limit and counts one cart line', async () => {
+    const user = productTestUser('admin', 'BR')
+    const product = buildProduct('BR', {
+      product_code: 'TAP-001',
+      description: 'Tapete Amazonas',
+      catalog_id: 'tapetes',
+      catalog: { id: 'tapetes', name: 'Tapete' },
+      area_limit_enabled: true,
+      max_area_m2: '12.5',
+      altura: 9,
+      largura: 9,
+      profundidade: 9,
+      optional_applications: [],
+    })
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+    await pickProduct('TAP-001')
+    clickAdd()
+
+    const item = await screen.findByRole('listitem', { name: 'TAP-001 Tapete Amazonas' })
+    expect(within(item).queryByText(/L 9/)).not.toBeInTheDocument()
+    const areaInputs = screen.getAllByLabelText('M² — Tapete Amazonas') as HTMLInputElement[]
+    fireEvent.change(areaInputs[0], { target: { value: '4.5' } })
+    await waitFor(() => expect(areaInputs[0]).toHaveValue(4.5))
+
+    const expectedSubtotal = new Intl.NumberFormat('pt-BR', {
+      style: 'currency', currency: 'BRL',
+    }).format(450)
+    expectItemSubtotal(item, expectedSubtotal)
+    expect(Array.from(document.querySelectorAll('div')).some((node) => node.textContent === 'Itens: 1')).toBe(true)
+
+    fireEvent.change(areaInputs[0], { target: { value: '20' } })
+    await waitFor(() => expect(areaInputs[0]).toHaveValue(12.5))
+    expect(screen.getAllByText('máx. 12,5 m²').some((node) => node.className.includes('text-warning'))).toBe(true)
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(cartStorageKey(user.id, 'BR')) ?? '[]') as Array<{ sold_by_area?: boolean }>
+      expect(saved[0]?.sold_by_area).toBe(true)
+    })
+  })
 })

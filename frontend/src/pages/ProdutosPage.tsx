@@ -15,6 +15,7 @@ import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
 import type { OptionalChoiceInput, OptionalColor, PageResult, Product } from '../types'
 import { formatDimensions } from '../lib/measurements'
+import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
 import {
   allowedForApplication,
   applicationName,
@@ -244,12 +245,19 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
 function CardText({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
   const { locale } = useLocale()
   const prices = visiblePrices(product, priceTable)
+  const maximumArea = areaLimit(product)
 
   return (
     <>
       <h3 className="font-sans font-medium tracking-normal text-[15px] md:text-[17px] text-ink leading-snug mt-1.5 line-clamp-2">
         {product.description}
       </h3>
+      {isAreaProduct(product) && (
+        <p className="type-meta mt-1.5">
+          {locale === 'en-GB' ? 'Sold per m²' : 'Vendido por m²'}
+          {maximumArea !== null && <span className="block">{locale === 'en-GB' ? 'Max.' : 'Máx.'} {formatArea(maximumArea, locale)} {locale === 'en-GB' ? 'per item' : 'por item'}</span>}
+        </p>
+      )}
       {prices.length > 0 && <CardPrice prices={prices} currency={product.currency} locale={product.market_code === 'EU' ? locale : 'pt-BR'} />}
     </>
   )
@@ -372,6 +380,7 @@ interface StoredProductLine extends CartSelections {
   product_code: string
   qty: number
   discount: number
+  sold_by_area?: boolean
   line_id?: string
   _product: Product
 }
@@ -424,14 +433,19 @@ function addToCart(
       && line.discount === 0
       && sameSelections(line, selections),
   )
+  const maximumArea = areaLimit(product)
   if (existing) {
-    existing.qty += 1
+    existing.qty = isAreaProduct(product)
+      ? Math.min(maximumArea ?? Number.POSITIVE_INFINITY, existing.qty + 1)
+      : existing.qty + 1
+    existing.sold_by_area = isAreaProduct(product)
   } else {
     cart.push({
       line_id: crypto.randomUUID(),
       product_code: product.product_code,
-      qty: 1,
+      qty: isAreaProduct(product) ? Math.min(maximumArea ?? 1, 1) : 1,
       discount: 0,
+      sold_by_area: isAreaProduct(product),
       opt_categories: selections.opt_categories,
       optional_choices: sortedChoices(selections.optional_choices),
       _product: product,
@@ -763,8 +777,15 @@ function ProductFullView({
 
             {!isConjuntoType(product.type) && (
               <div className="flex items-baseline gap-6 py-4 border-b border-line-soft">
-                <span className="type-label flex-shrink-0">{english ? 'Dimensions' : 'Dimensões'}</span>
-                <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product, locale)}</span>
+                <span className="type-label flex-shrink-0">{isAreaProduct(product) ? (english ? 'Sale' : 'Venda') : (english ? 'Dimensions' : 'Dimensões')}</span>
+                {isAreaProduct(product) ? (
+                  <span className="text-[15px] text-ink-2">
+                    {english ? 'Sold per m²' : 'Vendido por m²'}
+                    {areaLimit(product) !== null && <span className="block text-xs text-muted mt-1">{english ? 'Max.' : 'Máx.'} {formatArea(areaLimit(product)!, locale)} {english ? 'per item' : 'por item'}</span>}
+                  </span>
+                ) : (
+                  <span className="text-[15px] text-ink-2 font-mono tabular-nums">{dimLabel(product, locale)}</span>
+                )}
               </div>
             )}
 
@@ -1459,7 +1480,7 @@ export default function ProdutosPage() {
                   quantidade a tirar; flex (não offset calculado) empurra o "+"
                   para a direita sozinho quando o irmão aparece. */}
               <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                {cartQuantities[product.product_code] > 0 && (
+                {(cartQuantities[product.product_code]?.qty ?? 0) > 0 && (
                   <button
                     type="button"
                     onClick={() => user && decrementCart(product, user.id, user.active_market)}
@@ -1482,7 +1503,7 @@ export default function ProdutosPage() {
                              hover:bg-gold-600 active:scale-90"
                 >
                   {cartQuantities[product.product_code] ? (
-                    <span className="text-sm font-semibold tabular-nums">{cartQuantities[product.product_code]}</span>
+                    <span className="text-sm font-semibold tabular-nums">{cartQuantities[product.product_code].qty}</span>
                   ) : (
                     <Plus className="w-5 h-5" strokeWidth={2.5} />
                   )}

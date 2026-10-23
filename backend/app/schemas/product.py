@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -89,6 +89,10 @@ class ProductBase(BaseModel):
     catalog_id: Optional[uuid.UUID] = None
     is_circular: bool = False
     is_set: bool = False
+    area_limit_enabled: bool = False
+    max_area_m2: Optional[Decimal] = Field(
+        None, gt=0, le=100_000, decimal_places=2
+    )
     altura: Decimal = Field(..., ge=0, decimal_places=2)
     largura: Decimal = Field(..., ge=0, decimal_places=2)
     profundidade: Decimal = Field(Decimal("0"), ge=0, decimal_places=2)
@@ -120,6 +124,14 @@ class ProductBase(BaseModel):
             raise ValueError("Cada nível da categoria deve ter entre 1 e 80 caracteres.")
         return " / ".join(parts)
 
+    @model_validator(mode="after")
+    def validate_area_limit(self):
+        if self.area_limit_enabled and self.max_area_m2 is None:
+            raise ValueError(
+                "Informe o limite máximo em m² quando o limite de área estiver ativado."
+            )
+        return self
+
 
 class ProductCreate(ProductBase):
     # DEC-02 (catalog_permissions_r21): o catálogo define aba e permissão.
@@ -144,6 +156,10 @@ class ProductUpdate(BaseModel):
     catalog_id: Optional[uuid.UUID] = None
     is_circular: Optional[bool] = None
     is_set: Optional[bool] = None
+    area_limit_enabled: Optional[bool] = None
+    max_area_m2: Optional[Decimal] = Field(
+        None, gt=0, le=100_000, decimal_places=2
+    )
     altura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     largura: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     profundidade: Optional[Decimal] = Field(None, ge=0, decimal_places=2)

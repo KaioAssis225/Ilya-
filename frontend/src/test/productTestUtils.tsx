@@ -54,6 +54,8 @@ export interface ProductFixture {
   type: string
   catalog_id: string | null
   catalog: { id: string; name: string } | null
+  area_limit_enabled: boolean
+  max_area_m2: number | string | null
   is_circular: boolean
   is_set: boolean
   altura: number
@@ -89,6 +91,7 @@ export function productFixture(
     description_pt_pt: market === 'EU' ? 'Mesa PT' : null,
     description_en: market === 'EU' ? 'Table EN' : null,
     type: 'Outro', catalog_id: null, catalog: null,
+    area_limit_enabled: false, max_area_m2: null,
     is_circular: false, is_set: false, altura: 0, largura: 1, profundidade: 1,
     price: 100, price_lojista: 100, price_corporativo: 90,
     market_code: market, currency: market === 'EU' ? 'EUR' : 'BRL',
