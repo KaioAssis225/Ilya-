@@ -24,9 +24,7 @@ from reportlab.platypus import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "GUIA_INFRA_OPERACOES.md"
-DEFAULT_OUTPUT = Path(
-    r"C:\Users\matheus.cardoso\Documents\Programador\Projeto Ilya\Alto Comando\Auditoria\guia_infra_operacoes.pdf"
-)
+DEFAULT_OUTPUT = Path.home() / "Ilya-exports" / "guia_infra_operacoes.pdf"
 GOLD = colors.HexColor("#8B6914")
 DARK = colors.HexColor("#2C2420")
 MUTED = colors.HexColor("#6B5D52")

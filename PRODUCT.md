@@ -72,8 +72,8 @@ Devem ser evitadas interfaces com aparência de ERP industrial genérico ou de S
 
 ## Evidence on Hand
 
-- Código funcional do monorepo em `C:\Users\koian\OneDrive\Documentos\Ilya-`.
-- Documentação operacional, histórica e de segurança em `C:\Users\koian\OneDrive\Desktop\Programador\Programador\Projeto Ilya`.
+- Código funcional nas pastas `backend/` e `frontend/` deste repositório.
+- Documentação operacional e de segurança em `docs/`.
 - Catálogo, fotografias e dados reais de produtos presentes nos fluxos e ativos do projeto.
 - Histórico de migrations, testes backend, auditorias, pentests e correções versionadas.
 - Relatórios de deploy e verificações de produção registrados na documentação externa.

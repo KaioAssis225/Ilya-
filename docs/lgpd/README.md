@@ -13,8 +13,6 @@ Os documentos refletem o sistema analisado no commit `b21b765`, em 05/08/2026.
 - [Playbook de incidentes](./PLAYBOOK-INCIDENTES-LGPD.md): resposta e comunicação.
 - [Proposta de prazos auxiliares](./PROPOSTA-PRAZOS-AUXILIARES.md): recomendações
   aprovadas para inventário e simulação não destrutiva.
-- [Relatório consolidado](./RELATORIO-CONSOLIDADO-LGPD-2026-08-05.md): tudo que
-  foi implementado, validado e o que ainda depende da empresa.
 - [Procedimento de desligamento](./PROCEDIMENTO-DESLIGAMENTO-E-ACESSOS.md).
 - [Modelos de comunicação de incidente](./MODELOS-COMUNICACAO-INCIDENTE.md).
 - [Checklist de fornecedores](./CHECKLIST-FORNECEDORES.md).

@@ -220,7 +220,7 @@ Caminhos de artefatos coerentes com `pytest.ini` (`--junitxml=test-results/pytes
 
 3. **SO local difere do runner CI:** o backend foi instalado a partir de `requirements-dev.txt`/`requirements.txt` localmente, mas o runner CI usa Ubuntu. Diferenças de plataforma podem gerar comportamento distinto; o CI é a confirmação final.
 
-4. **Frontend via UNC path:** `npm run lint` e `npm test` falham quando executados via caminho UNC (`\\192.168.3.59\...`) porque CMD.EXE não suporta UNC e resolve para `C:\Windows`. Sempre usar drive mapeado (ex.: `W:\`).
+4. **Frontend via UNC path:** `npm run lint` e `npm test` falham quando executados via caminho UNC (`\\servidor\compartilhamento\...`) porque CMD.EXE não suporta UNC e resolve para `C:\Windows`. Sempre usar drive mapeado (ex.: `W:\`).
 
 5. **Cobertura de 59% é baseline, não meta:** o percentual atual reflete principalmente testes unitários e de contrato com mocks. Após P02 (integração HTTP/PostgreSQL) e P03 (componentes React), o piso subirá e um threshold será ativado.
 
