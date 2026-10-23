@@ -455,7 +455,7 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
         return (
           // O anel de foco fica no chip inteiro (focus-within): o select some
           // na borda do chip e não tinha nenhum indicador ao navegar por Tab.
-          <div key={cat} className="flex min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
+          <div key={cat} className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt?.photo_url && (
               <img src={currentOpt.photo_url} alt="" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />
@@ -464,7 +464,8 @@ function OptionalSelectors({ item, allOptionals, onChange, catLabel }: {
               value={currentValue}
               onChange={(e) => onChange(cat, e.target.value || null)}
               aria-label={catLabel(cat)}
-              className="min-h-11 lg:min-h-0 max-w-[100px] text-xs leading-snug text-ink bg-transparent border-none cursor-pointer focus-visible:outline-none"
+              title={currentValue || undefined}
+              className="min-h-11 lg:min-h-0 min-w-0 flex-1 max-w-[240px] text-xs leading-snug text-ink bg-transparent border-none cursor-pointer focus-visible:outline-none"
             >
               <option value="">—</option>
               {available.map(opt => (
@@ -653,7 +654,7 @@ function MobileCartCard({
                     <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
                       • {comp.qty}x {comp.description} ({formatDimensions(comp, measurementMarket, measurementLocale)})
                       {comp.optionals.length > 0 && (
-                        <span className="block text-muted pl-2.5">{compFinishes(comp.optionals, catLabel)}</span>
+                        <span className="block text-muted pl-2.5 break-words">{compFinishes(comp.optionals, catLabel)}</span>
                       )}
                     </li>
                   ))}
@@ -674,7 +675,7 @@ function MobileCartCard({
           </div>
           <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} catLabel={catLabel} />
           {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
-            {(item.saved_choices ?? []).map(choice => <p key={choice.id}>{formatChoice(choice, isEnglish)}</p>)}
+            {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
           </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} english={isEnglish} />}
         </div>
@@ -1566,7 +1567,7 @@ export default function OrcamentoPage() {
           </button>
         </div>
       )}
-      <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 pb-28 lg:pb-6">
+      <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px] gap-6 pb-28 lg:pb-6">
 
         {/* ── Mobile: product search card ────────────────────────────────── */}
         <div className="lg:hidden">{productSearchCard}</div>
@@ -1615,9 +1616,9 @@ export default function OrcamentoPage() {
             </div>
           </div>
 
-          {/* overflow-auto (e não um wrapper novo): a tabela rola na horizontal
-              em 1024–1180px sem quebrar o thead sticky deste mesmo container. */}
-          <div className="flex-1 overflow-auto">
+          {/* A lista desktop reorganiza a faixa numérica em vez de criar
+              rolagem horizontal nas larguras entre 1024 e 1180px. */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {filteredCart.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted space-y-3">
                 <Clipboard className="w-10 h-10 text-faint stroke-[1.2]" />
@@ -1659,83 +1660,83 @@ export default function OrcamentoPage() {
                   ))}
                 </div>
 
-                {/* ── Desktop table ────────────────────────────── */}
-                <table className="hidden lg:table w-full min-w-[920px] text-sm">
-                  <thead className="bg-surface-2 text-xs text-muted uppercase font-semibold border-b border-line sticky top-0 z-10">
-                    <tr>
-                      <th className="min-w-[340px] px-4 py-3 text-left">{isEnglish ? 'Product' : 'Produto'}</th>
-                      <th className="px-4 py-3 text-left w-16">{isEnglish ? 'Qty' : 'Qtd'}</th>
-                      <th className="px-4 py-3 text-left w-28">{isEnglish ? 'Base Price' : 'Preço Base'}</th>
-                      <th className="px-4 py-3 text-left w-24">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</th>
-                      <th className="px-4 py-3 text-right w-28">{taxLabel}</th>
-                      <th className="px-4 py-3 text-right w-28">Subtotal</th>
-                      <th className="px-4 py-3 w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {filteredCart.map((item) => {
-                      const pt = productTypes.find(t => t.name === item._product.type)
-                      const ipiRate = Number(pt?.group?.ipi ?? 0)
-                      const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
-                      const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
-                      return (
-                        <tr key={item.line_id} className="hover:bg-surface-2 align-top transition-colors">
-                          <td className="px-4 py-3.5">
-                            <div className="flex gap-3">
-                              {item._product.photo_url
-                                ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
-                                    <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
-                                  </button>
-                                : <div className="bg-bg-2 rounded-lg flex items-center justify-center"
-                                    style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
-                                    <ImageIcon className="w-5 h-5 text-faint" />
-                                  </div>
-                              }
-                              <div className="flex-1 min-w-0">
-                                <span className="type-code">{item.product_code}</span>
-                                <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item._product.description}</span>
-                                {!item.preserve_optional_choices && <div><ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} /></div>}
-                                {item._product.components.length > 0 && (
-                                  <ul className="mt-0.5 space-y-0.5">
-                                    {item._product.components.map((comp) => (
-                                      <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
-                                        • {comp.qty}x {comp.description} ({formatDimensions(comp, market, locale)})
-                                        {comp.optionals.length > 0 && (
-                                          <span className="block text-muted pl-2.5">{compFinishes(comp.optionals, catLabel)}</span>
-                                        )}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                                {item._product.observacao && (
-                                  <div className="text-[11px] leading-snug text-gold italic mt-1">{item._product.observacao}</div>
-                                )}
-                                {dimLabel(item._product, market, locale) && (
-                                  <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
-                                )}
-                                <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} catLabel={catLabel} />
-                                {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">
-                                  {(item.saved_choices ?? []).map(choice => <p key={choice.id}>{formatChoice(choice, isEnglish)}</p>)}
-                                  <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
-                                </div>}
-                                {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} english={isEnglish} />}
+                {/* ── Desktop item list ────────────────────────── */}
+                <ul className="hidden lg:block divide-y divide-line">
+                  {filteredCart.map((item) => {
+                    const pt = productTypes.find(t => t.name === item._product.type)
+                    const ipiRate = Number(pt?.group?.ipi ?? 0)
+                    const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
+                    const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
+                    return (
+                      <li
+                        key={item.line_id}
+                        aria-label={`${item.product_code} ${item._product.description}`}
+                        className="grid gap-4 px-4 lg:px-6 py-4 hover:bg-surface-2 transition-colors xl:grid-cols-[minmax(0,1fr)_auto]"
+                      >
+                        <div className="flex min-w-0 gap-3">
+                          {item._product.photo_url
+                            ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
+                                <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
+                              </button>
+                            : <div className="bg-bg-2 rounded-lg flex items-center justify-center"
+                                style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
+                                <ImageIcon className="w-5 h-5 text-faint" />
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3.5 align-middle">
+                          }
+                          <div className="flex-1 min-w-0">
+                            <span className="type-code">{item.product_code}</span>
+                            <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item._product.description}</span>
+                            {!item.preserve_optional_choices && <div><ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} /></div>}
+                            {item._product.components.length > 0 && (
+                              <ul className="mt-0.5 space-y-0.5">
+                                {item._product.components.map((comp) => (
+                                  <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
+                                    • {comp.qty}x {comp.description} ({formatDimensions(comp, market, locale)})
+                                    {comp.optionals.length > 0 && (
+                                      <span className="block text-muted pl-2.5 break-words">{compFinishes(comp.optionals, catLabel)}</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {item._product.observacao && (
+                              <div className="text-[11px] leading-snug text-gold italic mt-1">{item._product.observacao}</div>
+                            )}
+                            {dimLabel(item._product, market, locale) && (
+                              <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
+                            )}
+                            <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} catLabel={catLabel} />
+                            {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">
+                              {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
+                              <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
+                            </div>}
+                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} english={isEnglish} />}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[520px]">
+                          <div>
+                            <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
                             <input
+                              id={`desktop-qty-${item.line_id}`}
                               type="number" min={1}
+                              aria-label={isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`}
                               className="input w-16 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
                               value={item.qty}
                               onChange={(e) => updateQty(item.line_id, Number(e.target.value))}
                             />
-                          </td>
-                          <td className="px-4 py-3.5 text-ink-2 text-xs font-semibold whitespace-nowrap align-middle">
-                            <SafePrice value={effectivePrice(item._product, priceProfile)} currency={currency} locale={locale} />
-                          </td>
-                          <td className="px-4 py-3.5 align-middle">
+                          </div>
+                          <div>
+                            <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Base Price' : 'Preço base'}</span>
+                            <div className="text-ink-2 text-xs font-semibold whitespace-nowrap min-h-8 flex items-center">
+                              <SafePrice value={effectivePrice(item._product, priceProfile)} currency={currency} locale={locale} />
+                            </div>
+                          </div>
+                          <div>
+                            <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
                             <NumberField
                               min={0} max={user?.max_discount ?? 0}
+                              aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
                               className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
                               value={item.discount}
                               placeholder="0"
@@ -1746,26 +1747,32 @@ export default function OrcamentoPage() {
                                 <span>− </span><SafePrice value={effectivePrice(item._product, priceProfile) * item.discount / 100} currency={currency} locale={locale} />
                               </p>
                             )}
-                          </td>
-                          <td className="px-4 py-3.5 text-right align-middle whitespace-nowrap">
-                            {ipiRate > 0
-                              ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
-                              : <span className="text-xs text-muted">—</span>
-                            }
-                          </td>
-                          <td className="px-4 py-3.5 text-right text-xs font-bold text-ink align-middle whitespace-nowrap">
-                            <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
-                          </td>
-                          <td className="px-4 py-3.5 align-middle text-center">
-                            <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center mx-auto" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
+                          </div>
+                          <div>
+                            <span className="type-label text-xs block mb-1 whitespace-nowrap">{taxLabel}</span>
+                            <div className="min-h-8 flex items-center whitespace-nowrap">
+                              {ipiRate > 0
+                                ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
+                                : <span className="text-xs text-muted">—</span>
+                              }
+                            </div>
+                          </div>
+                          <div className="flex items-end gap-2">
+                            <div>
+                              <span className="type-label text-xs block mb-1 whitespace-nowrap">Subtotal</span>
+                              <div className="min-h-11 flex items-center text-xs font-bold text-ink tabular-nums whitespace-nowrap">
+                                <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
+                              </div>
+                            </div>
+                            <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                               <Trash2 className="w-4 h-4" />
                             </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
               </>
             )}
           </div>
