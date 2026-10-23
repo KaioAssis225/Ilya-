@@ -417,7 +417,7 @@ def _resolve_eu_vat(
         return _decimal(group_rate)
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail=f"Produto '{product_code}' não possui IVA definido no produto ou no grupo europeu.",
+        detail=f"Produto '{product_code}' não possui IVA aprovado no produto ou no grupo europeu.",
     )
 
 
