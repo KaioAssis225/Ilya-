@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { cartStorageKey, configureProductPath, countCartUnits, privateScopeKey } from './cart.ts'
+import { cartStorageKey, configureProductPath, countCartUnits, privateScopeKey, readCartQuantities } from './cart.ts'
 
 test('separa o carrinho por identidade e mercado', () => {
   assert.equal(cartStorageKey('user-1', 'BR'), 'carrinho_orcamento:user-1:BR')
@@ -11,7 +11,22 @@ test('separa o carrinho por identidade e mercado', () => {
 
 test('conta unidades, não apenas SKUs distintos', () => {
   assert.equal(countCartUnits({ cadeira: 2, mesa: 3 }), 5)
+  assert.equal(countCartUnits({ tapete: { qty: 4.5, sold_by_area: true }, cadeira: { qty: 2, sold_by_area: false } }), 3)
   assert.equal(countCartUnits({}), 0)
+})
+
+test('lê venda por área e mantém carrinhos antigos como unidades', () => {
+  localStorage.setItem(cartStorageKey('user-cart', 'BR'), JSON.stringify([
+    { product_code: 'TAP-1', qty: 4.5, sold_by_area: true },
+    { product_code: 'CAD-1', qty: 2 },
+  ]))
+
+  const quantities = readCartQuantities('user-cart', 'BR')
+  assert.deepEqual(quantities, {
+    'TAP-1': { qty: 4.5, sold_by_area: true },
+    'CAD-1': { qty: 2, sold_by_area: false },
+  })
+  assert.equal(countCartUnits(quantities), 3)
 })
 
 test('a fronteira privada muda ao trocar de mercado', () => {

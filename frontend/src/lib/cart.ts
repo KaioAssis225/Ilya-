@@ -11,7 +11,8 @@
 const CART_KEY_PREFIX = 'carrinho_orcamento'
 export const CART_EVENT = 'ilya:cart-changed'
 
-type StoredCartItem = { product_code: string; qty: number }
+type StoredCartItem = { product_code: string; qty: number; sold_by_area?: boolean }
+export type CartQuantity = { qty: number; sold_by_area: boolean }
 
 /** Quantidade por SKU: `{ IAC0000: 2 }`. Vazio se não houver carrinho ou o JSON estiver corrompido. */
 export function cartStorageKey(userId: string, market: 'BR' | 'EU' = 'BR'): string {
@@ -40,7 +41,7 @@ export function removeUnsafeLegacyCart(): void {
   localStorage.removeItem(CART_KEY_PREFIX)
 }
 
-export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' = 'BR'): Record<string, number> {
+export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' = 'BR'): Record<string, CartQuantity> {
   if (!userId) return {}
   try {
     const raw = localStorage.getItem(cartStorageKey(userId, market))
@@ -48,12 +49,12 @@ export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' =
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return {}
 
-    const quantities: Record<string, number> = {}
+    const quantities: Record<string, CartQuantity> = {}
     for (const item of parsed as StoredCartItem[]) {
       if (!item || typeof item.product_code !== 'string') continue
       const qty = Number(item.qty)
       if (!Number.isFinite(qty) || qty <= 0) continue
-      quantities[item.product_code] = qty
+      quantities[item.product_code] = { qty, sold_by_area: item.sold_by_area === true }
     }
     return quantities
   } catch {
@@ -62,8 +63,11 @@ export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' =
 }
 
 /** Total de UNIDADES (não de produtos distintos), igual à barra do orçamento. */
-export function countCartUnits(quantities: Record<string, number>): number {
-  return Object.values(quantities).reduce((total, qty) => total + qty, 0)
+export function countCartUnits(quantities: Record<string, number | CartQuantity>): number {
+  return Object.values(quantities).reduce<number>((total, entry) => {
+    if (typeof entry === 'number') return total + entry
+    return total + (entry.sold_by_area ? 1 : entry.qty)
+  }, 0)
 }
 
 export function notifyCartChanged() {

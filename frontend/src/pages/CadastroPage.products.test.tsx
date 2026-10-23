@@ -126,4 +126,84 @@ describe('CadastroPage de produtos em DOM', () => {
     expect(await screen.findByText('Nome em inglês inválido.')).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Novo Produto em Portugal' })).toBeVisible()
   })
+
+  it('area-product form hides dimensions, validates and submits the item limit', async () => {
+    const user = userEvent.setup()
+    const create = vi.fn((payload: Record<string, unknown>) => HttpResponse.json(
+      { ...productFixture('BR'), ...payload, id: 'tapete-created' }, { status: 201 },
+    ))
+    installProductHandlers({ catalogs: [
+      { id: 'tapete', name: 'Tapete' },
+      { id: 'moveis', name: 'Móveis' },
+    ], onCreate: create })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    await clickNewProduct(user)
+    await user.selectOptions(screen.getByLabelText('Catálogo'), 'tapete')
+    expect(screen.queryByLabelText('Largura L (m) *')).not.toBeInTheDocument()
+    expect(screen.getByText('Vendido por m²')).toBeVisible()
+
+    await user.click(screen.getByRole('switch', { name: 'Limitar tamanho por item' }))
+    fireEvent.submit(screen.getByLabelText('Código *').closest('form')!)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe um máximo por item maior que zero.')
+    expect(create).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Código *'), 'TAP-001')
+    await user.type(screen.getByLabelText('Descrição *'), 'Tapete Amazonas')
+    await user.type(screen.getByLabelText(/Preço Lojista/), '100')
+    await user.type(screen.getByLabelText(/Preço Corporativo/), '90')
+    fireEvent.change(screen.getByLabelText('Máximo por item (m²)'), { target: { value: '12.5' } })
+    fireEvent.submit(screen.getByLabelText('Código *').closest('form')!)
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create.mock.calls[0][0]).toMatchObject({
+      area_limit_enabled: true,
+      max_area_m2: 12.5,
+      is_circular: false,
+      altura: 0,
+      largura: 0,
+      profundidade: 0,
+    })
+  })
+
+  it('regular catalogue restores dimensions and hides the area block', async () => {
+    const user = userEvent.setup()
+    installProductHandlers({ catalogs: [
+      { id: 'tapete', name: 'Tapetes' },
+      { id: 'moveis', name: 'Móveis' },
+    ] })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    await clickNewProduct(user)
+    const catalog = screen.getByLabelText('Catálogo')
+    await user.selectOptions(catalog, 'tapete')
+    expect(screen.getByRole('switch', { name: 'Limitar tamanho por item' })).toBeVisible()
+    await user.selectOptions(catalog, 'moveis')
+    expect(screen.queryByRole('switch', { name: 'Limitar tamanho por item' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Largura L (m) *')).toBeVisible()
+  })
+
+  it('editing an area product loads and resubmits its saved limit', async () => {
+    const user = userEvent.setup()
+    const product = productFixture('BR', {
+      id: 'tap-edit', product_code: 'TAP-EDIT', description: 'Tapete Editável',
+      catalog_id: 'tapete', catalog: { id: 'tapete', name: 'Tapete' },
+      area_limit_enabled: true, max_area_m2: '12.5',
+    })
+    const patch = vi.fn((_id: string, payload: Record<string, unknown>) => HttpResponse.json({ ...product, ...payload }))
+    installProductHandlers({ products: [product], catalogs: [{ id: 'tapete', name: 'Tapete' }], onPatch: patch })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    await user.click((await screen.findAllByRole('button', { name: 'Editar' }))[0])
+    expect(screen.getByRole('switch', { name: 'Limitar tamanho por item' })).toBeChecked()
+    expect(screen.getByLabelText('Máximo por item (m²)')).toHaveValue(12.5)
+    expect(screen.queryByLabelText('Largura L (m) *')).not.toBeInTheDocument()
+    fireEvent.submit(screen.getByLabelText('Código *').closest('form')!)
+
+    await waitFor(() => expect(patch).toHaveBeenCalledOnce())
+    expect(patch.mock.calls[0][1]).toMatchObject({
+      area_limit_enabled: true, max_area_m2: 12.5,
+      altura: 0, largura: 0, profundidade: 0,
+    })
+  })
 })

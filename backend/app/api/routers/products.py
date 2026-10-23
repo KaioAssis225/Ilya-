@@ -741,6 +741,23 @@ async def _create_product_for_market(
     return product
 
 
+def _ensure_area_limit(product: Product) -> None:
+    """Limite de m² ligado exige máximo > 0 (também garantido por CHECK no banco).
+
+    O schema de atualização é parcial: ligar o limite sem mandar o máximo, ou
+    apagar o máximo com o limite ligado, só é detectável depois de aplicar as
+    mudanças. Sem esta checagem o CHECK do banco viraria erro 500.
+    """
+    max_area = getattr(product, "max_area_m2", None)
+    if getattr(product, "area_limit_enabled", False) and (
+        max_area is None or Decimal(max_area) <= 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Informe o limite máximo em m² quando o limite de área estiver ativado.",
+        )
+
+
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
 async def create_product(
     payload: ProductCreate,
@@ -919,6 +936,7 @@ async def update_product(
                 ))
         for field, value in product_changes.items():
             setattr(product, field, value)
+        _ensure_area_limit(product)
         product.source_version += 1
         if payload.optional_ids is not None:
             product.optionals = await _resolve_optionals(db, payload.optional_ids, principal.code)
@@ -973,6 +991,7 @@ async def update_product(
     )
     for field, value in data.items():
         setattr(product, field, value)
+    _ensure_area_limit(product)
     product.source_version += 1
     if optional_ids is not None:
         product.optionals = await _resolve_optionals(db, optional_ids, principal.code)

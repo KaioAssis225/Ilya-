@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, DateTime, String, Text, Numeric, Integer, Boolean, ForeignKey, ForeignKeyConstraint, Index, JSON, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -184,7 +185,10 @@ class OrderItem(Base, TimestampMixin):
     )
 
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=1)
+    sold_by_area: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     discount: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     ipi_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)

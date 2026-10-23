@@ -22,6 +22,7 @@ import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice } from '../types'
 import { formatDimensions } from '../lib/measurements'
+import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/areaProduct'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -46,7 +47,7 @@ function compFinishes(
 function dimLabel(p: Product, market: 'BR' | 'EU', locale: 'pt-BR' | 'pt-PT' | 'en-GB') {
   // Conjunto é o agrupador comercial; as medidas pertencem exclusivamente aos
   // componentes internos e não devem aparecer como 0 × 0 × 0 no item-pai.
-  if (p.is_set || isConjuntoType(p.type) || p.components.length > 0) return null
+  if (isAreaProduct(p) || p.is_set || isConjuntoType(p.type) || p.components.length > 0) return null
   return formatDimensions(p, market, locale)
 }
 
@@ -369,6 +370,7 @@ interface CartItem {
   line_id: string
   product_code: string
   qty: number
+  sold_by_area?: boolean
   discount: number
   opt_categories: Partial<Record<string, string>>
   optional_choices: { application_id: string; optional_id: string }[]
@@ -629,10 +631,11 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, onOptChange, onApplicationChange, onEditApplications, priceProfile, catLabel, currency, locale
+  item, onQtyChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, onOptChange, onApplicationChange, onEditApplications, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
+  qtyLimitWarning: boolean
   onDiscountChange: (code: string, discount: number) => void
   maxDiscount: number
   onRemove: (code: string) => void
@@ -652,6 +655,8 @@ function MobileCartCard({
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
+  const soldByArea = isAreaProduct(item._product)
+  const maximumArea = areaLimit(item._product)
 
   return (
     <div className="bg-white border border-line rounded-xl p-3.5 shadow-sm">
@@ -709,24 +714,43 @@ function MobileCartCard({
           teto é o do usuário; o servidor revalida contra cliente/representante. */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mt-3 pt-3 border-t border-bg-2">
         {/* Qty stepper */}
-        <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
-          <button
-            onClick={() => onQtyChange(item.line_id, Math.max(1, item.qty - 1))}
-            className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
-            style={{ touchAction: 'manipulation' }}
-            aria-label={isEnglish ? `Decrease quantity of ${item._product.description}` : `Diminuir quantidade de ${item._product.description}`}
-          >
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
-          <button
-            onClick={() => onQtyChange(item.line_id, item.qty + 1)}
-            className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
-            style={{ touchAction: 'manipulation' }}
-            aria-label={isEnglish ? `Increase quantity of ${item._product.description}` : `Aumentar quantidade de ${item._product.description}`}
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+        <div>
+          {soldByArea && <label htmlFor={`mobile-area-${item.line_id}`} className="type-label block mb-1 text-center">M²</label>}
+          <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
+            <button
+              onClick={() => onQtyChange(item.line_id, soldByArea ? Math.max(0.01, item.qty - 1) : Math.max(1, item.qty - 1))}
+              className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+              aria-label={isEnglish ? `Decrease ${soldByArea ? 'area' : 'quantity'} of ${item._product.description}` : `Diminuir ${soldByArea ? 'área' : 'quantidade'} de ${item._product.description}`}
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            {soldByArea ? (
+              <input
+                id={`mobile-area-${item.line_id}`}
+                type="number"
+                inputMode="decimal"
+                min="0.01"
+                max={maximumArea ?? undefined}
+                step="0.01"
+                value={item.qty}
+                aria-label={`M² — ${item._product.description}`}
+                className="h-11 w-16 border-x border-line bg-white text-center text-sm font-semibold text-ink focus:outline-none focus:ring-1 focus:ring-gold"
+                onChange={(event) => onQtyChange(item.line_id, Number(event.target.value))}
+              />
+            ) : (
+              <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
+            )}
+            <button
+              onClick={() => onQtyChange(item.line_id, item.qty + 1)}
+              className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+              aria-label={isEnglish ? `Increase ${soldByArea ? 'area' : 'quantity'} of ${item._product.description}` : `Aumentar ${soldByArea ? 'área' : 'quantidade'} de ${item._product.description}`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {maximumArea !== null && <p className={`mt-1 text-center text-[10px] ${qtyLimitWarning ? 'text-warning font-semibold' : 'text-muted'}`}>{isEnglish ? 'max.' : 'máx.'} {formatArea(maximumArea, measurementLocale)}</p>}
         </div>
 
         {/* Desconto percentual */}
@@ -995,6 +1019,7 @@ export default function OrcamentoPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [qtyLimitWarnings, setQtyLimitWarnings] = useState<Set<string>>(() => new Set())
   const productRef = useRef<HTMLDivElement>(null)
   const itemsSectionRef = useRef<HTMLElement>(null)
   // Último `?configure=` já processado. O ajuste de estado correspondente roda
@@ -1029,7 +1054,8 @@ export default function OrcamentoPage() {
       setCart(previous => [...previous, {
         line_id: crypto.randomUUID(),
         product_code: configureProduct.product_code,
-        qty: 1,
+        qty: isAreaProduct(configureProduct) ? Math.min(areaLimit(configureProduct) ?? 1, 1) : 1,
+        sold_by_area: isAreaProduct(configureProduct),
         discount: 0,
         opt_categories: initialLegacyOptionCategories(configureProduct),
         optional_choices: [],
@@ -1189,6 +1215,7 @@ export default function OrcamentoPage() {
           .filter((item) => productMap.has(item.product_code))
           .map((item) => ({
             ...item,
+            sold_by_area: isAreaProduct(productMap.get(item.product_code)!),
             line_id: item.line_id || crypto.randomUUID(),
             optional_choices: item.optional_choices ?? [],
             _product: productMap.get(item.product_code)!,
@@ -1200,7 +1227,10 @@ export default function OrcamentoPage() {
 
   useEffect(() => {
     if (editId || !cartHydrated) return
-    const serializable = cart.map(({ _product, ...rest }) => rest)
+    const serializable = cart.map(({ _product, ...rest }) => ({
+      ...rest,
+      sold_by_area: isAreaProduct(_product),
+    }))
     localStorage.setItem(cartKey, JSON.stringify(serializable))
     notifyCartChanged()
   }, [cart, cartHydrated, cartKey, editId])
@@ -1215,6 +1245,7 @@ export default function OrcamentoPage() {
       )
       setCart(prev => prev.map(item => ({
         ...item,
+        sold_by_area: isAreaProduct(productMap.get(item.product_code) ?? item._product),
         _product: productMap.get(item.product_code) ?? item._product,
       })))
     }
@@ -1249,6 +1280,7 @@ export default function OrcamentoPage() {
               product_code: item.product_code,
               line_id: item.id,
               qty: item.qty,
+              sold_by_area: item.sold_by_area ?? isAreaProduct(product),
               discount: Number(item.discount),
               opt_categories: item.opt_categories,
               optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && choice.optional_id).map(choice => ({ application_id: choice.application_id!, optional_id: choice.optional_id! })),
@@ -1315,12 +1347,17 @@ export default function OrcamentoPage() {
       const existing = prev.find((i) => i.product_code === selectedProduct.product_code && i.discount === 0 &&
         JSON.stringify({ legacy: i.opt_categories, choices: [...i.optional_choices].sort((a, b) => a.application_id.localeCompare(b.application_id)) }) === signature)
       if (existing) {
-        return prev.map((i) => i.line_id === existing.line_id ? { ...i, qty: i.qty + 1 } : i)
+        const maximumArea = areaLimit(selectedProduct)
+        const nextQty = isAreaProduct(selectedProduct)
+          ? Math.min(maximumArea ?? Number.POSITIVE_INFINITY, normalizeAreaQty(existing.qty + 1))
+          : existing.qty + 1
+        return prev.map((i) => i.line_id === existing.line_id ? { ...i, qty: nextQty, sold_by_area: isAreaProduct(selectedProduct) } : i)
       }
       return [...prev, {
         line_id: crypto.randomUUID(),
         product_code: selectedProduct.product_code,
-        qty: 1,
+        qty: isAreaProduct(selectedProduct) ? Math.min(areaLimit(selectedProduct) ?? 1, 1) : 1,
+        sold_by_area: isAreaProduct(selectedProduct),
         discount: 0,
         opt_categories: auto_categories,
         optional_choices: selectedChoices,
@@ -1333,8 +1370,24 @@ export default function OrcamentoPage() {
   }
 
   function updateQty(lineId: string, qty: number) {
-    if (qty < 1) return
-    setCart((prev) => prev.map((i) => i.line_id === lineId ? { ...i, qty } : i))
+    const item = cart.find((candidate) => candidate.line_id === lineId)
+    if (!item || !Number.isFinite(qty)) return
+    const soldByArea = isAreaProduct(item._product)
+    const maximumArea = areaLimit(item._product)
+    if (soldByArea && qty < 0.01) return
+    if (!soldByArea && qty < 1) return
+
+    const overLimit = soldByArea && maximumArea !== null && qty > maximumArea
+    const normalized = soldByArea
+      ? Math.min(maximumArea ?? Number.POSITIVE_INFINITY, normalizeAreaQty(qty))
+      : Math.max(1, Math.round(qty))
+    setQtyLimitWarnings((current) => {
+      const next = new Set(current)
+      if (overLimit) next.add(lineId)
+      else next.delete(lineId)
+      return next
+    })
+    setCart((prev) => prev.map((candidate) => candidate.line_id === lineId ? { ...candidate, qty: normalized, sold_by_area: soldByArea } : candidate))
   }
 
   // Desconto por item — mesmo caminho para tabela desktop e cartão mobile. O
@@ -1345,6 +1398,11 @@ export default function OrcamentoPage() {
 
   function removeItem(lineId: string) {
     setCart((prev) => prev.filter((i) => i.line_id !== lineId))
+    setQtyLimitWarnings((current) => {
+      const next = new Set(current)
+      next.delete(lineId)
+      return next
+    })
   }
 
   const filteredCart = cart.filter((item) =>
@@ -1365,14 +1423,15 @@ export default function OrcamentoPage() {
   }, 0)
 
   const totalWithIpi = total + ipiTotal
+  const cartUnitCount = cart.reduce((sum, item) => sum + (isAreaProduct(item._product) ? 1 : item.qty), 0)
 
   // O código definitivo é atribuído atomicamente pelo PostgreSQL ao salvar.
   // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
   const budgetCode = isEnglish ? 'Assigned on save' : 'Gerado ao salvar'
 
-  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices }) => ({
+  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, _product }) => ({
     product_code,
-    qty,
+    qty: isAreaProduct(_product) ? normalizeAreaQty(qty) : Math.max(1, Math.round(qty)),
     discount: discount || 0,
     opt_categories: opt_categories as Record<string, string>,
     optional_choices,
@@ -1668,6 +1727,7 @@ export default function OrcamentoPage() {
                       key={item.line_id}
                       item={item}
                       onQtyChange={updateQty}
+                      qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
                       onDiscountChange={updateDiscount}
                       maxDiscount={user?.max_discount ?? 0}
                       onRemove={removeItem}
@@ -1692,6 +1752,8 @@ export default function OrcamentoPage() {
                     const ipiRate = Number(pt?.group?.ipi ?? 0)
                     const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                     const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
+                    const soldByArea = isAreaProduct(item._product)
+                    const maximumArea = areaLimit(item._product)
                     return (
                       <li
                         key={item.line_id}
@@ -1741,15 +1803,20 @@ export default function OrcamentoPage() {
 
                         <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[520px]">
                           <div>
-                            <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
+                            <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{soldByArea ? 'M²' : (isEnglish ? 'Qty' : 'Qtd')}</label>
                             <input
                               id={`desktop-qty-${item.line_id}`}
-                              type="number" min={1}
-                              aria-label={isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`}
+                              type="number"
+                              min={soldByArea ? 0.01 : 1}
+                              max={soldByArea ? maximumArea ?? undefined : undefined}
+                              step={soldByArea ? 0.01 : 1}
+                              inputMode={soldByArea ? 'decimal' : 'numeric'}
+                              aria-label={soldByArea ? `M² — ${item._product.description}` : (isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`)}
                               className="input w-16 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
                               value={item.qty}
                               onChange={(e) => updateQty(item.line_id, Number(e.target.value))}
                             />
+                            {maximumArea !== null && <p className={`text-[9px] mt-0.5 text-center whitespace-nowrap ${qtyLimitWarnings.has(item.line_id) ? 'text-warning font-semibold' : 'text-muted'}`}>{isEnglish ? 'max.' : 'máx.'} {formatArea(maximumArea, locale)}</p>}
                           </div>
                           <div>
                             <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Base Price' : 'Preço base'}</span>
@@ -1806,7 +1873,7 @@ export default function OrcamentoPage() {
           {cart.length > 0 && (
             <div className="hidden lg:flex bg-surface-2 border-t border-line px-6 py-4 justify-between items-center flex-shrink-0">
               <div className="flex gap-4 text-xs text-muted-2">
-                <div><span>{isEnglish ? 'Items: ' : 'Itens: '}</span><span className="font-semibold text-ink">{cart.reduce((s, i) => s + i.qty, 0)}</span></div>
+                <div><span>{isEnglish ? 'Items: ' : 'Itens: '}</span><span className="font-semibold text-ink">{cartUnitCount}</span></div>
                 <div><span>{isEnglish ? 'Products: ' : 'Produtos: '}</span><span className="font-semibold text-ink">{cart.length}</span></div>
               </div>
               <div className="flex items-center gap-2">
@@ -1860,8 +1927,8 @@ export default function OrcamentoPage() {
             <span className="text-sm font-semibold">
               {cart.length > 0
                 ? (isEnglish
-                  ? `View Summary (${cart.reduce((s, i) => s + i.qty, 0)} ${cart.reduce((s, i) => s + i.qty, 0) === 1 ? 'item' : 'items'})`
-                  : `Ver Resumo (${cart.reduce((s, i) => s + i.qty, 0)} ${cart.reduce((s, i) => s + i.qty, 0) === 1 ? 'item' : 'itens'})`)
+                  ? `View Summary (${cartUnitCount} ${cartUnitCount === 1 ? 'item' : 'items'})`
+                  : `Ver Resumo (${cartUnitCount} ${cartUnitCount === 1 ? 'item' : 'itens'})`)
                 : (isEnglish ? 'Quote Settings' : 'Configurar Orçamento')}
             </span>
           </div>

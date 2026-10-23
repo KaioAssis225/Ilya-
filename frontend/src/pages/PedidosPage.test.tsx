@@ -234,4 +234,42 @@ describe('PedidosPage', () => {
     labels.forEach((label) => expect(screen.getByText(label)).toBeVisible())
     expect(screen.getByText('Metal — Latão')).toBeVisible()
   })
+
+  it('shows area quantity and hides dimensions using the saved order snapshot', async () => {
+    const user = userEvent.setup()
+    const summary = makeSummary({ items: [{ product_code: 'TAP-001', qty: 4.5 }] })
+    const detail: Order = {
+      ...summary,
+      price_list_code: 'lojista',
+      locale: 'pt-BR',
+      total_ipi: 0,
+      external_code: null,
+      notes: null,
+      updated_at: summary.created_at,
+      history: [],
+      items: [{
+        id: 'area-item', order_id: summary.id, product_code: 'TAP-001', description: 'Tapete Amazonas',
+        sold_by_area: true, is_circular: false, altura: 9, largura: 9, profundidade: 9,
+        opt_categories: {}, optional_choices: [], qty: 4.5, unit_price: 100, discount: 0,
+        ipi_rate: 0, ipi_value: 0, tax_label: 'IPI', currency: 'BRL', observacao: null,
+        created_at: summary.created_at, updated_at: summary.created_at,
+      }],
+    }
+    setupHandlers(summary)
+    server.use(
+      http.get('*/orders/order-1', () => HttpResponse.json(detail)),
+      http.post('*/products/batch', () => HttpResponse.json([])),
+      http.get('*/optionals', () => HttpResponse.json([])),
+    )
+
+    renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    expect((await screen.findAllByText('TAP-001(4,5 m²)')).length).toBeGreaterThan(0)
+    await user.click(screen.getByLabelText(`Ver detalhes do pedido ${summary.code}`))
+
+    const code = await screen.findByText('TAP-001')
+    const row = code.closest('tr')!
+    const cells = within(row).getAllByRole('cell')
+    expect(cells[2]).toHaveTextContent('—')
+    expect(cells[4]).toHaveTextContent('4,5 m²')
+  })
 })

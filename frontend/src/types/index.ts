@@ -117,6 +117,8 @@ export interface Product {
   type: string
   catalog_id: string | null
   catalog: { id: string; name: string } | null
+  area_limit_enabled?: boolean
+  max_area_m2?: number | string | null
   is_circular: boolean
   is_set: boolean
   altura: number
@@ -152,6 +154,8 @@ export interface ProductCreate {
   description_en?: string | null
   type?: string
   catalog_id?: string | null
+  area_limit_enabled?: boolean
+  max_area_m2?: number | string | null
   is_circular: boolean
   is_set?: boolean
   altura: number
@@ -258,6 +262,7 @@ export interface OrderItem {
   order_id: string
   product_code: string
   description: string
+  sold_by_area?: boolean
   is_circular: boolean
   altura: number
   largura: number

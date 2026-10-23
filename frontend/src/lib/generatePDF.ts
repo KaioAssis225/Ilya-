@@ -4,6 +4,7 @@ import { formatDimensions } from './measurements'
 import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
+import { formatArea } from './areaProduct'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const GOLD: [number, number, number] = [139, 105, 20]
@@ -273,7 +274,7 @@ export async function generateOrderPDF(
     const isSetProduct = !!product && (product.is_set || isConjuntoType(product.type) || components.length > 0)
     // O conjunto é apenas o agregador. Suas dimensões pertencem aos componentes,
     // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
-    const hasDims = !isSetProduct && (item.largura !== 0 || item.altura !== 0)
+    const hasDims = !item.sold_by_area && !isSetProduct && (item.largura !== 0 || item.altura !== 0)
     const optSlots = orderOptionalSlots(item, locale === 'en-GB', catLabel)
     // Bloco 82: quebra de linha (80mm) para textos longos de opcionais, observação
     // e componentes — o rowH soma as linhas físicas reais para não colidir com a
@@ -388,7 +389,7 @@ export async function generateOrderPDF(
     doc.setTextColor(...DARK)
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
-    doc.text(String(item.qty), 125, y, { align: 'right' })
+    doc.text(item.sold_by_area ? formatArea(item.qty, locale) : String(item.qty), 125, y, { align: 'right' })
 
     // Valor unitário (com desconto se houver)
     if (discount > 0) {
@@ -440,7 +441,7 @@ export async function generateOrderPDF(
   doc.line(20, y, w - 20, y)
   y += 8
 
-  const totalItems = order.items.reduce((s, i) => s + i.qty, 0)
+  const totalItems = order.items.reduce((sum, item) => sum + (item.sold_by_area ? 1 : item.qty), 0)
 
   doc.setFontSize(9)
   doc.setTextColor(...DARK)

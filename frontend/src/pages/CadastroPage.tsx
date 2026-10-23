@@ -26,6 +26,7 @@ import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
+import { areaLimit, isAreaCatalogName, isAreaProduct } from '../lib/areaProduct'
 import { withMarketProductNames } from '../lib/productPayload'
 import { shouldCloseModal } from '../lib/modalDismissal'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
@@ -385,6 +386,7 @@ function ConfirmDelete({ name, onConfirm, onCancel }: { name: string; onConfirm:
 const EMPTY_PRODUCT: ProductCreate = {
   product_code: '', description: '', ean: null, summary: null, article_category_path: null,
   type: 'Outro', catalog_id: null, is_circular: false,
+  area_limit_enabled: false, max_area_m2: null,
   is_set: false, set_items: [], components: [],
   altura: 0, largura: 0, profundidade: 0, price: 0, price_lojista: 0, price_corporativo: 0, price_pvp: 0, price_arquiteto: 0, observacao: null,
   all_optionals_categories: null, optional_ids: [], optional_applications: [],
@@ -856,6 +858,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [photoRemoved, setPhotoRemoved] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [areaLimitError, setAreaLimitError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [addItemCode, setAddItemCode] = useState('')
   const [addItemQty, setAddItemQty] = useState(1)
@@ -883,6 +886,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     ...allTypes.map(({ name }) => name),
     ...(form.type && form.type !== 'Outro' ? [form.type] : []),
   ])).sort((left, right) => left.localeCompare(right, locale))
+  const formIsAreaProduct = isAreaCatalogName(allCatalogs.find((catalog) => catalog.id === form.catalog_id)?.name)
 
   useEffect(() => {
     const preview = photoPreview
@@ -971,6 +975,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
   function openCreate() {
     setForm(EMPTY_PRODUCT); setEditing(null)
+    setAreaLimitError(null)
     setFocusOptionals(false)
     setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null); setPhotoRemoved(false)
     setAddItemCode(''); setAddItemQty(1)
@@ -1000,6 +1005,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       description_en: p.description_en ?? '',
       type: p.type ?? 'Outro',
       catalog_id: p.catalog_id ?? null,
+      area_limit_enabled: p.area_limit_enabled ?? false,
+      max_area_m2: p.max_area_m2 ?? null,
       is_circular: p.is_circular,
       is_set: p.is_set,
       altura: p.altura,
@@ -1037,6 +1044,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       })),
     })
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setPhotoRemoved(false); setEditing(p)
+    setAreaLimitError(null)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
     setFocusOptionals(showOptionals)
@@ -1073,6 +1081,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
+    setAreaLimitError(null)
+    const maximumArea = Number(form.max_area_m2)
+    if (formIsAreaProduct && form.area_limit_enabled && (!Number.isFinite(maximumArea) || maximumArea <= 0)) {
+      setAreaLimitError(tx('Informe um máximo por item maior que zero.'))
+      return
+    }
     const isConjunto = isConjuntoType(form.type)
     const activeCatsSet = new Set(activeCategories)
     // Exclude optionals from "all" categories — those are selected freely in the cart
@@ -1083,12 +1097,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
     const payload = withMarketProductNames({
       ...form,
+      area_limit_enabled: formIsAreaProduct ? !!form.area_limit_enabled : false,
+      max_area_m2: formIsAreaProduct && form.area_limit_enabled ? maximumArea : null,
+      is_circular: formIsAreaProduct ? false : form.is_circular,
+      altura: formIsAreaProduct ? 0 : form.altura,
+      largura: formIsAreaProduct ? 0 : form.largura,
       price: form.price_lojista ?? 0, // mantém a coluna legada coerente com o preço lojista
       optional_ids: filteredOptionalIds,
       all_optionals_categories: isConjunto ? null : (allOptCats.size > 0 ? Array.from(allOptCats).join(',') : null),
       set_items: isConjunto ? [] : (form.set_items ?? []),
       components: isConjunto ? (form.components ?? []) : [],
-      profundidade: form.is_circular ? 0 : form.profundidade,
+      profundidade: formIsAreaProduct || form.is_circular ? 0 : form.profundidade,
     }, isEurope)
     try {
       if (editing) {
@@ -1192,7 +1211,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] text-muted">
-                      {isConjuntoType(p.type) ? '' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}
+                      {isAreaProduct(p)
+                        ? <>{tx('Vendido por m²')}{areaLimit(p) !== null && <span className="block">{tx('Máx. {area} m² por item', { area: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(areaLimit(p)!) })}</span>}</>
+                        : (isConjuntoType(p.type) ? '' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale))}
                     </span>
                     <span className="space-y-0.5 text-right">
                       <span className="block text-[10px] text-muted">Lojista <strong className="text-sm text-ink">{money(marketPrice(p, 'lojista'))}</strong></span>
@@ -1338,8 +1359,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                               {p.photo_url && <img src={p.photo_url} alt={tx('Foto de {code}', { code: p.product_code })} className="h-24 w-24 flex-shrink-0 rounded-xl border border-line bg-white object-cover" />}
                               <dl className="grid min-w-0 flex-1 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
                                 <div>
-                                  <dt className="text-xs font-semibold text-muted">{tx('Dimensões')}</dt>
-                                  <dd className="mt-0.5 text-sm text-ink-2">{isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale)}</dd>
+                                  <dt className="text-xs font-semibold text-muted">{tx(isAreaProduct(p) ? 'Venda' : 'Dimensões')}</dt>
+                                  <dd className="mt-0.5 text-sm text-ink-2">
+                                    {isAreaProduct(p)
+                                      ? <>{tx('Vendido por m²')}{areaLimit(p) !== null && <span className="block text-xs text-muted">{tx('Máx. {area} m² por item', { area: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(areaLimit(p)!) })}</span>}</>
+                                      : (isConjuntoType(p.type) ? '—' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale))}
+                                  </dd>
                                 </div>
                                 <div>
                                   <dt className="text-xs font-semibold text-muted">{tx('Opcionais e aplicações')}</dt>
@@ -1495,7 +1520,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 <select
                   className="input"
                   value={form.catalog_id ?? ''}
-                  onChange={(e) => setForm({ ...form, catalog_id: e.target.value || null })}
+                  onChange={(e) => {
+                    setAreaLimitError(null)
+                    setForm({ ...form, catalog_id: e.target.value || null })
+                  }}
                 >
                   <option value="">{tx('Sem catálogo')}</option>
                   {allCatalogs.map(c => (
@@ -1505,7 +1533,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </label>
             </div>
 
-            {!isConjuntoType(form.type) && (
+            {!isConjuntoType(form.type) && !formIsAreaProduct && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1519,7 +1547,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             )}
 
 
-            {!isConjuntoType(form.type) && (
+            {!isConjuntoType(form.type) && !formIsAreaProduct && (
               <div className="grid grid-cols-3 gap-3">
                 {form.is_circular ? (
                   <>
@@ -1554,6 +1582,49 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </>
                 )}
               </div>
+            )}
+
+            {!isConjuntoType(form.type) && formIsAreaProduct && (
+              <fieldset className="rounded-xl border border-line bg-surface-quiet p-4 space-y-3">
+                <legend className="px-1 text-sm font-semibold text-ink">{tx('Vendido por m²')}</legend>
+                <label className="flex items-center justify-between gap-4 cursor-pointer">
+                  <span className="text-sm text-ink-2">{tx('Limitar tamanho por item')}</span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={!!form.area_limit_enabled}
+                    onChange={(event) => {
+                      setAreaLimitError(null)
+                      setForm({
+                        ...form,
+                        area_limit_enabled: event.target.checked,
+                        max_area_m2: event.target.checked ? form.max_area_m2 : null,
+                      })
+                    }}
+                    style={{ accentColor: color }}
+                    className="h-5 w-5"
+                  />
+                </label>
+                {form.area_limit_enabled && (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">{tx('Máximo por item (m²)')}</span>
+                    <NumberField
+                      className="input"
+                      aria-label={tx('Máximo por item (m²)')}
+                      min="0.01"
+                      step="0.01"
+                      value={Number(form.max_area_m2 ?? 0)}
+                      onValueChange={(value) => {
+                        setAreaLimitError(null)
+                        setForm({ ...form, max_area_m2: value })
+                      }}
+                      required
+                      aria-invalid={!!areaLimitError}
+                    />
+                    {areaLimitError && <span role="alert" className="text-xs text-warning">{areaLimitError}</span>}
+                  </label>
+                )}
+              </fieldset>
             )}
 
             {isConjuntoType(form.type) ? (
