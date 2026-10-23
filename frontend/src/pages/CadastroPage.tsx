@@ -867,6 +867,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const [newTypeErr, setNewTypeErr] = useState('')
   const [columnWidths, setColumnWidths] = useState<Record<ProductColumnKey, number>>(INITIAL_PRODUCT_COLUMN_WIDTHS)
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
+  // Miniaturas que falharam (ex.: legado BR sem thumbnail): caem para a foto original uma vez.
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set())
   const [tableContainerWidth, setTableContainerWidth] = useState(0)
   const visibleColumnKeys = isEurope ? EU_PRODUCT_COLUMN_KEYS : BR_PRODUCT_COLUMN_KEYS
   const tableContainerRef = useRef<HTMLDivElement>(null)
@@ -1268,7 +1270,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {pageItems.map((p) => {
                   const isExpanded = expandedProductIds.has(p.id)
                   const detailsId = `product-details-${p.id}`
-                  const productPhoto = p.thumbnail_url || p.photo_url
+                  const productPhoto = (p.thumbnail_url && !failedThumbnails.has(p.thumbnail_url) ? p.thumbnail_url : null) || p.photo_url
                   const optionalsLabel = [
                     getProductOptionalsLabel(p, catLabel, ', ', tx('Todos')),
                     ...(p.optional_applications ?? []).map(app => app.name),
@@ -1298,7 +1300,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           <div className="flex items-start gap-3">
                             <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-line bg-white">
                               {productPhoto
-                                ? <img src={productPhoto} alt={tx('Foto de {code}', { code: p.product_code })} className="h-10 w-10 rounded-lg object-cover" />
+                                ? <img
+                                    src={productPhoto}
+                                    alt={tx('Foto de {code}', { code: p.product_code })}
+                                    className="h-10 w-10 rounded-lg object-cover"
+                                    onError={() => {
+                                      const thumbnail = p.thumbnail_url
+                                      if (thumbnail && productPhoto === thumbnail && p.photo_url && p.photo_url !== thumbnail) {
+                                        setFailedThumbnails(prev => new Set(prev).add(thumbnail))
+                                      }
+                                    }}
+                                  />
                                 : <ImageIcon className="w-5 h-5 text-faint" aria-hidden="true" />}
                             </span>
                             <span>{p.description}</span>

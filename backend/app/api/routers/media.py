@@ -1,3 +1,4 @@
+import logging
 import time
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -5,6 +6,9 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import Response
 
 from app.core.uploads import read_media_upload, verify_media_signature
+
+
+logger = logging.getLogger("ilya.media")
 
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
@@ -24,7 +28,14 @@ async def get_media(object_key: str, expires: int, signature: str) -> Response:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Imagem não encontrada.",
         )
-    except (BotoCoreError, ClientError):
+    except (BotoCoreError, ClientError) as exc:
+        # Só prefixo, tipo e código: a chave completa e a assinatura ficam fora do log.
+        logger.warning(
+            "Falha de storage ao servir mídia: prefix=%s error=%s code=%s",
+            object_key.partition("/")[0],
+            type(exc).__name__,
+            exc.response.get("Error", {}).get("Code") if isinstance(exc, ClientError) else None,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Armazenamento de imagens temporariamente indisponível.",

@@ -258,3 +258,25 @@ describe('CadastroPage — foto do produto', () => {
     expect(screen.getByRole('img', { name: 'Mesa com foto' })).toHaveAttribute('src', 'blob:p06/mesa.png')
   })
 })
+
+describe('CadastroPage — miniatura da lista', () => {
+  const THUMB = '/api/v1/media/product-thumbnails/legada.png.webp?expires=1&signature=t'
+
+  it('REG-MEDIA-FE-07: miniatura que falha cai para a foto original uma única vez', async () => {
+    installProductHandlers({
+      products: [productFixture('BR', { photo_url: SIGNED_PHOTO, thumbnail_url: THUMB })],
+    })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    const image = await screen.findByRole('img', { name: 'Foto de P05-BR-SKU' })
+    expect(image).toHaveAttribute('src', THUMB)
+
+    fireEvent.error(image)
+    await waitFor(() => expect(image).toHaveAttribute('src', SIGNED_PHOTO))
+
+    // A original também falhou: nada de alternar de volta para a miniatura.
+    fireEvent.error(image)
+    fireEvent.error(image)
+    expect(screen.getByRole('img', { name: 'Foto de P05-BR-SKU' })).toHaveAttribute('src', SIGNED_PHOTO)
+  })
+})

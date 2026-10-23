@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import io
+import logging
 import mimetypes
 import os
 import tempfile
@@ -21,6 +22,8 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
+
+logger = logging.getLogger("ilya.uploads")
 
 _CHUNK_SIZE = 64 * 1024
 _FORMAT_TO_EXTENSION = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
@@ -578,6 +581,12 @@ async def delete_upload(path: str | None, *, market: str | None = None) -> None:
     await run_in_threadpool(_delete_upload, path)
 
 
+def _storage_error_code(exc: Exception) -> str | None:
+    if isinstance(exc, ClientError):
+        return exc.response.get("Error", {}).get("Code")
+    return None
+
+
 def _read_object_upload(object_key: str) -> tuple[bytes, str]:
     client, bucket = _storage_for_key(object_key)
     try:
@@ -606,13 +615,23 @@ def _read_object_upload(object_key: str) -> tuple[bytes, str]:
                     raise FileNotFoundError(original_key) from original_exc
                 raise
             thumbnail = _make_thumbnail_bytes(original)
-            client.put_object(
-                Bucket=bucket,
-                Key=object_key,
-                Body=thumbnail,
-                ContentType="image/webp",
-                CacheControl="public, max-age=31536000, immutable",
-            )
+            # Gravar a miniatura é só cache: se falhar, a próxima leitura gera
+            # de novo, e a imagem já gerada continua sendo servida.
+            try:
+                client.put_object(
+                    Bucket=bucket,
+                    Key=object_key,
+                    Body=thumbnail,
+                    ContentType="image/webp",
+                    CacheControl="public, max-age=31536000, immutable",
+                )
+            except (BotoCoreError, ClientError) as cache_exc:
+                logger.warning(
+                    "Miniatura gerada sem cache no storage: prefix=%s error=%s code=%s",
+                    object_key.partition("/")[0],
+                    type(cache_exc).__name__,
+                    _storage_error_code(cache_exc),
+                )
             return thumbnail, "image/webp"
         raise
 

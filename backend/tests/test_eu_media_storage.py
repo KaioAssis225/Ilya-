@@ -238,3 +238,58 @@ def test_sincronizacao_exige_bucket_europeu(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(markets_module.sync_europe_media(limit=20, db=MagicMock(), _=None))
     assert exc.value.status_code == 409
+
+
+def _client_error(code: str, operation: str):
+    from botocore.exceptions import ClientError
+
+    return ClientError({"Error": {"Code": code, "Message": "x"}}, operation)
+
+
+class ReadOnlyBucket(FakeBucket):
+    """Bucket que lê, mas recusa gravar (ex.: credencial só de leitura)."""
+
+    def get_object(self, *, Bucket, Key):
+        if Key not in self.objects:
+            raise _client_error("NoSuchKey", "GetObject")
+        return super().get_object(Bucket=Bucket, Key=Key)
+
+    def put_object(self, *, Bucket, Key, Body, **_):
+        raise _client_error("AccessDenied", "PutObject")
+
+
+def test_miniatura_legada_br_e_servida_mesmo_se_o_cache_falhar(monkeypatch, buckets, caplog):
+    br = ReadOnlyBucket("br-uploads")
+    br.objects["products/legada.png"] = b"foto-br"
+    monkeypatch.setattr(uploads_module, "_object_storage_client", lambda: br)
+
+    with caplog.at_level("WARNING"):
+        content, content_type = asyncio.run(
+            uploads_module.read_object_upload("product-thumbnails/legada.png.webp")
+        )
+
+    assert (content, content_type) == (b"mini", "image/webp")
+    assert "AccessDenied" in caplog.text
+    assert "br-secret" not in caplog.text and "signature" not in caplog.text
+
+
+@pytest.mark.contract
+def test_rota_media_registra_codigo_do_erro_de_storage_sem_segredo(monkeypatch, caplog):
+    from fastapi.testclient import TestClient
+
+    from app.api.routers import media as media_module
+    from app.main import app
+
+    async def falha(_key):
+        raise _client_error("SlowDown", "GetObject")
+
+    monkeypatch.setattr(media_module, "read_media_upload", falha)
+    monkeypatch.setattr(media_module, "verify_media_signature", lambda *_: True)
+    with caplog.at_level("WARNING"):
+        response = TestClient(app).get(
+            "/api/v1/media/products/x.png?expires=9999999999&signature=segredo-assinado"
+        )
+
+    assert response.status_code == 503
+    assert "SlowDown" in caplog.text and "ClientError" in caplog.text
+    assert "segredo-assinado" not in caplog.text
