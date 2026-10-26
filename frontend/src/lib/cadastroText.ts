@@ -221,6 +221,10 @@ const EN: Record<string, string> = {
   'Editar {item}': 'Edit {item}',
   'Novo {item}': 'New {item}',
   'Perfil de faturamento *': 'Billing profile *',
+  'Tabelas de preço visíveis': 'Visible price lists',
+  'Tabelas de preço': 'Price lists',
+  'Todas': 'All',
+  'O perfil de faturamento fica sempre visível.': 'The billing profile is always visible.',
   'Desconto Máximo (%)': 'Maximum discount (%)',
   'Os dados coletados neste formulário são processados estritamente para a elaboração de orçamentos e gestão do pedido, conforme a nossa Política de Privacidade.':
     'The data collected in this form is processed strictly to prepare quotes and manage orders, in line with our Privacy Policy.',

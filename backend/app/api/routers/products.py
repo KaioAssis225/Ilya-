@@ -7,6 +7,7 @@ from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
 from app.api.catalog_access import visible_catalog_scope
+from app.api.price_access import PRICE_LIST_ORDER, PriceScope, allows_price, visible_price_scope
 from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
@@ -98,12 +99,12 @@ async def _visible_price_profile(db: AsyncSession, user: User) -> Optional[str]:
     return profile or "lojista"
 
 
-def _to_read(product: Product, visible_profile: Optional[str] = None) -> ProductRead:
+def _to_read(product: Product, price_scope: PriceScope = None) -> ProductRead:
     data = ProductRead.model_validate(product)
-    if visible_profile == "corporativo":
+    if not allows_price(price_scope, "lojista"):
         data.price_lojista = None
         data.price = None  # coluna legada espelha o preço lojista (Bloco 62)
-    elif visible_profile == "lojista":
+    if not allows_price(price_scope, "corporativo"):
         data.price_corporativo = None
     data.photo_url = _build_photo_url(product.photo_path)
     data.thumbnail_url = build_thumbnail_url(product.photo_path)
@@ -136,6 +137,7 @@ async def _to_market_reads(
     principal: MarketPrincipal,
     visible_profile: Optional[str],
     language: Literal["pt-PT", "en-GB"] = "pt-PT",
+    price_scope: PriceScope = None,
 ) -> list[ProductRead]:
     market = principal.code
     context = principal.market
@@ -153,7 +155,7 @@ async def _to_market_reads(
     )).all() if ids else []
     prices: dict[uuid.UUID, dict[str, Decimal]] = {}
     for product_id, code, amount in rows:
-        if visible_profile is None or visible_profile == code:
+        if allows_price(price_scope, code):
             prices.setdefault(product_id, {})[code] = amount
     localized_names: dict[uuid.UUID, tuple[str | None, str | None]] = {}
     if market == "EU" and ids:
@@ -173,7 +175,7 @@ async def _to_market_reads(
         }
     result = []
     for product in products:
-        item = _to_read(product, visible_profile if market == "BR" else None)
+        item = _to_read(product, price_scope if market == "BR" else None)
         for application in sorted(applications_by_product.get(product.id, []), key=lambda a: (a.display_order, str(a.id))):
             allowed = []
             for optional in application.allowed_optionals:
@@ -205,7 +207,17 @@ async def _to_market_reads(
                 translated_description = descriptions[1] if language == "en-GB" else descriptions[0]
                 if translated_description:
                     item.description = translated_description
-            item.price = item.market_prices.get(visible_profile or "lojista")
+            fallback_price = next(
+                (
+                    item.market_prices[code]
+                    for code in PRICE_LIST_ORDER
+                    if code in item.market_prices
+                ),
+                None,
+            )
+            item.price = item.market_prices.get(
+                visible_profile or "lojista", fallback_price
+            )
             item.price_lojista = item.market_prices.get("lojista")
             item.price_corporativo = item.market_prices.get("corporativo")
         result.append(item)
@@ -536,11 +548,13 @@ async def list_products(
             )
         )
 
-    if sort_by in ("price_lojista", "price_corporativo") and is_client_account(current_user):
-        # Bloco 96: ordenar pela tabela que o cliente não vê revelaria a ordem
+    price_scope = await visible_price_scope(db, current_user, active_market)
+    if sort_by == "price_lojista" and not allows_price(price_scope, "lojista"):
+        # Bloco 96: ordenar pela tabela que o usuário não vê revelaria a ordem
         # desses preços mesmo com os valores ocultos na resposta.
-        if sort_by != f"price_{await _visible_price_profile(db, current_user)}":
-            sort_by = "product_code"
+        sort_by = "product_code"
+    elif sort_by == "price_corporativo" and not allows_price(price_scope, "corporativo"):
+        sort_by = "product_code"
     sort_column = {
         "product_code": Product.product_code,
         # Evita um índice B-tree inseguro sobre textos de até 20 mil caracteres.
@@ -583,7 +597,9 @@ async def list_products(
     response.headers["X-Has-More"] = "true" if has_more else "false"
     response.headers["X-Page-Size"] = str(len(products))
     visible_profile = await _visible_price_profile(db, current_user)
-    return await _to_market_reads(db, products, principal, visible_profile, language)
+    return await _to_market_reads(
+        db, products, principal, visible_profile, language, price_scope
+    )
 
 
 @router.post("/batch", response_model=List[ProductRead])
@@ -612,8 +628,11 @@ async def get_products_batch(
     ).scalars().all()
     product_map = {product.product_code: product for product in products}
     visible_profile = await _visible_price_profile(db, current_user)
+    price_scope = await visible_price_scope(db, current_user, principal.code)
     ordered = [product_map[code] for code in codes if code in product_map]
-    return await _to_market_reads(db, ordered, principal, visible_profile, language)
+    return await _to_market_reads(
+        db, ordered, principal, visible_profile, language, price_scope
+    )
 
 
 async def _create_product_for_market(
@@ -772,11 +791,13 @@ async def create_product(
     product = await _create_product_for_market(
         payload, db, principal.code, fiscal_actor_user_id
     )
+    price_scope = await visible_price_scope(db, current_user, principal.code)
     return (await _to_market_reads(
         db,
         [product],
         principal,
         await _visible_price_profile(db, current_user),
+        price_scope=price_scope,
     ))[0]
 
 
@@ -822,7 +843,11 @@ async def get_product(
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
 
-    return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user), language))[0]
+    price_scope = await visible_price_scope(db, current_user, principal.code)
+    return (await _to_market_reads(
+        db, [product], principal,
+        await _visible_price_profile(db, current_user), language, price_scope,
+    ))[0]
 
 
 @router.patch("/{product_id}", response_model=ProductRead)
@@ -963,11 +988,13 @@ async def update_product(
                     setattr(localized, field, value.strip())
         await db.commit()
         await db.refresh(product)
+        price_scope = await visible_price_scope(db, current_user, principal.code)
         return (await _to_market_reads(
             db,
             [product],
             principal,
             await _visible_price_profile(db, current_user),
+            price_scope=price_scope,
         ))[0]
 
     data = payload.model_dump(exclude_unset=True, exclude={"optional_ids", "optional_applications", "set_items", "components"})
@@ -1022,7 +1049,11 @@ async def update_product(
                 db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=price_changes[price_list.code]))
     await db.commit()
     await db.refresh(product)
-    return (await _to_market_reads(db, [product], principal, await _visible_price_profile(db, current_user)))[0]
+    price_scope = await visible_price_scope(db, current_user, principal.code)
+    return (await _to_market_reads(
+        db, [product], principal,
+        await _visible_price_profile(db, current_user), price_scope=price_scope,
+    ))[0]
 
 
 @router.patch("/platform/EU/{product_id}", response_model=ProductRead)

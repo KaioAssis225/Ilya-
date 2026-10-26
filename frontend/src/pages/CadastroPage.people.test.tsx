@@ -51,6 +51,8 @@ const clients: Client[] = [
     tax_id: null,
     market_code: 'BR',
     price_profile: 'corporativo',
+    all_price_lists: false,
+    price_list_codes: [],
     max_discount: 10,
     rep_id: null,
     created_at: '2026-10-23T12:00:00Z',
@@ -115,5 +117,63 @@ describe('CadastroPage — tabela de clientes', () => {
         && url.searchParams.get('sort_dir') === 'desc'
       ))).toBe(true)
     })
+  })
+})
+
+describe('CadastroPage — tabelas de preço visíveis', () => {
+  it('admin cria representante com a lista Lojista após sair de Todas', async () => {
+    const user = userEvent.setup()
+    let createPayload: Record<string, unknown> | null = null
+    installProductHandlers()
+    server.use(
+      http.get('*/representatives', () => HttpResponse.json([], {
+        headers: { 'X-Total-Count': '0' },
+      })),
+      http.post('*/representatives', async ({ request }) => {
+        createPayload = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ id: 'rep-price-list-new' }, { status: 201 })
+      }),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+    await user.click(screen.getAllByRole('button', { name: /Representantes/ })[0])
+    const newRepresentativeButton = await waitFor(() => {
+      const button = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        .find((candidate) => candidate.textContent?.includes('Novo Representante'))
+      if (!button) throw new Error('Botão Novo Representante não encontrado')
+      return button
+    })
+    await user.click(newRepresentativeButton)
+
+    expect(screen.getByRole('button', { name: 'Todas' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Lojista' }))
+    expect(screen.getByRole('button', { name: 'Todas' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Lojista' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.type(screen.getByLabelText('Nome *'), 'Representante Teste')
+    await user.type(screen.getByLabelText('Telefone *'), '11999999999')
+    await user.type(screen.getByLabelText('CEP *'), '01001000')
+    await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
+    await user.type(screen.getByLabelText('Cidade *'), 'São Paulo')
+    await user.selectOptions(screen.getByLabelText('Estado *'), 'SP')
+    await user.click(screen.getByRole('button', { name: 'Criar' }))
+
+    await waitFor(() => {
+      expect(createPayload).toMatchObject({
+        all_price_lists: false,
+        price_list_codes: ['lojista'],
+      })
+    })
+  })
+
+  it('mantém o perfil de faturamento corporativo pressionado e bloqueado na edição', async () => {
+    const { table, user } = await renderClientsPage()
+    const row = within(table).getByText('Studio Lumina').closest('tr')
+    if (!row) throw new Error('Linha do cliente não encontrada')
+
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    const billingProfile = screen.getByTitle('O perfil de faturamento fica sempre visível.')
+    expect(billingProfile).toHaveAttribute('aria-pressed', 'true')
+    expect(billingProfile).toBeDisabled()
   })
 })

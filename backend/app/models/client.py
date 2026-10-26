@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import Boolean, CheckConstraint, DateTime, String, ForeignKey, Numeric, Index, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.addresses import br_uf_check_condition
 from app.models.base import Base, TimestampMixin
@@ -48,6 +49,14 @@ class Client(Base, TimestampMixin):
     )
     catalog_links = relationship(
         "ClientCatalog", cascade="all, delete-orphan", lazy="selectin"
+    )
+    # Tabelas de preço que o cliente pode ver; o perfil de faturamento continua
+    # sempre visível. `false` + lista vazia = só o perfil de faturamento.
+    all_price_lists: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    price_list_codes: Mapped[list[str]] = mapped_column(
+        ARRAY(String(30)), nullable=False, default=list, server_default=text("'{}'")
     )
 
     @property

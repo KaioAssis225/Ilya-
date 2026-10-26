@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 from pydantic import BaseModel, Field, EmailStr, field_validator
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 
 from app.core.addresses import UF_SENTINEL, is_valid_uf
@@ -52,6 +52,10 @@ class RepresentativeCreate(RepresentativeBase):
     # Mandar só `catalog_ids` implica seleção específica.
     all_catalogs: Optional[bool] = None
     catalog_ids: Optional[list[uuid.UUID]] = Field(None, max_length=200)
+    # price_list_access_r23: ausente não mexe na permissão. Mandar só
+    # `price_list_codes` implica seleção específica.
+    all_price_lists: Optional[bool] = None
+    price_list_codes: Optional[list[Literal["lojista", "corporativo", "pvp", "arquiteto"]]] = Field(None, max_length=10)
 
 
 class RepresentativeUpdate(BaseModel):
@@ -72,6 +76,10 @@ class RepresentativeUpdate(BaseModel):
     # Mandar só `catalog_ids` implica seleção específica.
     all_catalogs: Optional[bool] = None
     catalog_ids: Optional[list[uuid.UUID]] = Field(None, max_length=200)
+    # price_list_access_r23: ausente não mexe na permissão. Mandar só
+    # `price_list_codes` implica seleção específica.
+    all_price_lists: Optional[bool] = None
+    price_list_codes: Optional[list[Literal["lojista", "corporativo", "pvp", "arquiteto"]]] = Field(None, max_length=10)
 
     @field_validator("cpf_cnpj", mode="before")
     @classmethod
@@ -106,5 +114,7 @@ class RepresentativeRead(RepresentativeBase):
     created_by_name: str | None = None
     all_catalogs: bool = True
     catalog_ids: list[uuid.UUID] = Field(default_factory=list)
+    all_price_lists: bool = True
+    price_list_codes: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

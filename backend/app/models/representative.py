@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Numeric, ForeignKey, Index, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.addresses import br_uf_check_condition
 from app.models.base import Base, TimestampMixin
@@ -41,6 +42,14 @@ class Representative(Base, TimestampMixin):
     )
     catalog_links = relationship(
         "RepresentativeCatalog", cascade="all, delete-orphan", lazy="selectin"
+    )
+    # Tabelas de preço que o representante pode ver; `true` = todas, inclusive
+    # as criadas depois (price_list_access_r23).
+    all_price_lists: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    price_list_codes: Mapped[list[str]] = mapped_column(
+        ARRAY(String(30)), nullable=False, default=list, server_default=text("'{}'")
     )
 
     @property
