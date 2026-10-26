@@ -740,3 +740,56 @@ async def test_create_revision_of_finalized_order_conflict_and_success(client, d
     )
     final_revision_orders = result.scalars().all()
     assert len(final_revision_orders) == 1
+
+
+async def test_area_product_order_reads_limit_fields_without_lazy_load(client, db_session):
+    """Tapete com limite de m² não pode estourar 500 (MissingGreenlet) ao criar pedido.
+
+    O carregamento em lote usa load_only; campos de área fora da lista viravam
+    lazy load síncrono dentro da rota assíncrona.
+    """
+    from app.models.catalog import Catalog
+
+    market = "BR"
+    admin = await _admin(db_session, market)
+    price_list = await _price_list(db_session, market, "lojista")
+    suffix = uuid.uuid4().hex[:8].upper()
+    catalog = (
+        await db_session.execute(
+            select(Catalog)
+            .where(Catalog.market_code == market, Catalog.name == "Tapete")
+            .execution_options(**_SKIP_SCOPE)
+        )
+    ).scalar_one()
+    group = await make_product_group(db_session, market_code=market, name=f"Tapete grupo {suffix}", ipi=Decimal("0"))
+    product_type = await make_product_type(db_session, market_code=market, name=f"Tapete tipo {suffix}", group=group)
+    product = await make_product(
+        db_session,
+        market_code=market,
+        product_code=f"TAP-{suffix}",
+        description="Tapete sintético",
+        catalog=catalog,
+    )
+    product.type = product_type.name
+    product.area_limit_enabled = True
+    product.max_area_m2 = Decimal("10")
+    await make_product_market(db_session, product)
+    await make_product_price(db_session, product, price_list, amount=Decimal("100"))
+    client_id = await _create_client(db_session, market, price_list)
+    product_code = product.product_code
+    await db_session.flush()
+    # A rota usa a mesma sessão: sem limpar, o produto completo do identity map
+    # esconderia o load_only incompleto.
+    db_session.expunge_all()
+
+    within_limit = await _post_order(
+        client, admin, client_id, [{"product_code": product_code, "qty": "2.5", "discount": "0"}]
+    )
+    assert within_limit.status_code == 201, within_limit.text
+
+    db_session.expunge_all()
+    over_limit = await _post_order(
+        client, admin, client_id, [{"product_code": product_code, "qty": "12", "discount": "0"}]
+    )
+    assert over_limit.status_code == 422, over_limit.text
+    assert "10 m²" in over_limit.json()["detail"]

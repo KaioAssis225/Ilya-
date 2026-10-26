@@ -318,6 +318,8 @@ async def _load_products_and_types(
                 Product.id,
                 Product.product_code,
                 Product.catalog_id,
+                Product.area_limit_enabled,
+                Product.max_area_m2,
                 Product.description,
                 Product.type,
                 Product.is_circular,
