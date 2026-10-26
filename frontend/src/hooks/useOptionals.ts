@@ -48,7 +48,10 @@ export function useUpdateOptional() {
   const qc = useQueryClient()
   return useMutation<OptionalColor, Error, { id: string; data: OptionalColorUpdate }>({
     mutationFn: ({ id, data }) => api.patch(`/optionals/${id}`, data).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [KEY] })
+      void qc.invalidateQueries({ queryKey: ['products'] })
+    },
   })
 }
 

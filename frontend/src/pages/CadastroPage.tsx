@@ -1,5 +1,7 @@
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { optionalBrand, optionalGroup } from '../lib/optionalGroups'
+import type { OptionalBrand } from '../types'
 import { Fragment, useCallback, useLayoutEffect, useState, useRef, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useQueryClient } from '@tanstack/react-query'
@@ -2602,9 +2604,11 @@ function PeopleTab<T extends Client | Representative>({
 
 // ── OPCIONAIS ─────────────────────────────────────────────────────────────────
 
-const EMPTY_OPT: OptionalColorCreate = { category: '', color_name: '' }
+const EMPTY_OPT: OptionalColorCreate = { category: '', color_name: '', brand: 'ILYA' }
 
 function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: boolean }) {
+  const { user } = useAuth()
+  const [brandFilter, setBrandFilter] = useState<OptionalBrand>(user?.active_market === 'EU' ? 'IBTW' : 'ILYA')
   const english = useLocale().locale === 'en-GB'
   const { data: optionals, isLoading } = useOptionals()
   const tx = useCadastroText()
@@ -2637,12 +2641,12 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   function openCreate() {
-    const defaultCat = categories[0]?.code ?? ''
-    setForm({ category: defaultCat, color_name: '' }); setEditing(null)
+    const defaultCat = optionals?.find(optional => optionalBrand(optional) === brandFilter)?.category ?? categories[0]?.code ?? ''
+    setForm({ category: defaultCat, color_name: '', brand: brandFilter }); setEditing(null)
     setPendingOptFile(null); setOptPhotoPreview(null); setShowForm(true)
   }
   function openEdit(opt: OptionalColor) {
-    setForm({ category: opt.category, color_name: opt.color_name })
+    setForm({ category: opt.category, color_name: opt.color_name, brand: optionalBrand(opt) })
     setOptPhotoPreview(opt.photo_url ?? null); setPendingOptFile(null)
     setEditing(opt); setShowForm(true)
   }
@@ -2663,6 +2667,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       }
     }
     setPendingOptFile(null); setOptPhotoPreview(null)
+    setBrandFilter(form.brand)
     setShowForm(false)
   }
 
@@ -2689,19 +2694,19 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   // mais qualquer código "órfão" achado nos opcionais sem categoria correspondente
   // — isso torna visível (em vez de mascarar) uma futura divergência de código.
   const optionalsByCode = new Map<string, OptionalColor[]>()
-  for (const opt of optionals ?? []) {
+  for (const opt of (optionals ?? []).filter(optional => optionalBrand(optional) === brandFilter)) {
     if (!optionalsByCode.has(opt.category)) optionalsByCode.set(opt.category, [])
     optionalsByCode.get(opt.category)!.push(opt)
   }
   const knownCodes = new Set(categories.map(c => c.code))
   const grouped = [
     ...categories.map((c) => ({
-      category: c.code, label: c.name, items: optionalsByCode.get(c.code) ?? [], cat: c as OptionalCategory | null,
+      category: c.code, label: optionalCategoryLabel(c.name, english), items: optionalsByCode.get(c.code) ?? [], cat: c as OptionalCategory | null,
     })),
     ...Array.from(optionalsByCode.keys())
       .filter((code) => !knownCodes.has(code))
       .map((code) => ({ category: code, label: code, items: optionalsByCode.get(code)!, cat: null })),
-  ]
+  ].filter(group => group.items.length > 0 || !(optionals ?? []).some(optional => optional.category === group.category))
 
   return (
     <div>
@@ -2729,6 +2734,16 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
         )}
       </div>
 
+      <div role="group" aria-label={english ? 'Finish brand' : 'Marca dos opcionais'} className="mb-4 flex flex-wrap gap-2">
+        {(['IBTW', 'ILYA'] as const).map(brand => (
+          <button key={brand} type="button" aria-pressed={brandFilter === brand}
+            className={brandFilter === brand ? 'btn-primary' : 'btn-secondary'}
+            onClick={() => setBrandFilter(brand)}>
+            {brand}<span className="text-xs">{optionals?.filter(optional => optionalBrand(optional) === brand).length ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
       {isLoading ? (
         <p className="text-muted text-sm py-8 text-center">{tx('Carregando...')}</p>
       ) : (
@@ -2754,7 +2769,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                         <button onClick={() => openEditGroup(cat)} className="btn-icon" title={tx('Editar grupo')}>
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => setDeletingGroup({ id: cat.id, name: cat.name, count: items.length })}
+                        <button onClick={() => setDeletingGroup({ id: cat.id, name: cat.name, count: (optionals ?? []).filter(optional => optional.category === cat.code).length })}
                           className="btn-icon hover:text-danger" title={tx('Excluir grupo')}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -2775,8 +2790,14 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
               ) : (
               <table className="w-full text-sm">
                 <tbody>
-                  {items.map((opt) => (
-                    <tr key={opt.id} className="table-row">
+                  {items.map((opt, index) => {
+                    const family = optionalGroup(opt, label, english)
+                    const previousFamily = index > 0 ? optionalGroup(items[index - 1], label, english) : null
+                    return <Fragment key={opt.id}>
+                    {family.code !== category && family.code !== previousFamily?.code && <tr>
+                      <th scope="rowgroup" colSpan={readOnly ? 2 : 3} className="bg-bg-2 px-4 py-2 text-left text-xs font-semibold text-ink-2">{family.label}</th>
+                    </tr>}
+                    <tr className="table-row">
                       <td className="px-4 py-2.5 w-12">
                         {opt.photo_url
                           ? <button onClick={() => setLightboxUrl(opt.photo_url!)} className="cursor-zoom-in">
@@ -2799,7 +2820,8 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                         </td>
                       )}
                     </tr>
-                  ))}
+                    </Fragment>
+                  })}
                 </tbody>
               </table>
               )}
@@ -2830,6 +2852,13 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       {showForm && (
         <Modal title={tx(editing ? 'Editar Opcional' : 'Novo Opcional')} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">{english ? 'Brand *' : 'Marca *'}</span>
+              <select className="input" value={form.brand} onChange={event => setForm({ ...form, brand: event.target.value as OptionalBrand })} required>
+                <option value="ILYA">ILYA</option>
+                <option value="IBTW">IBTW</option>
+              </select>
+            </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">{tx('Categoria *')}</span>
               <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
@@ -3500,7 +3529,7 @@ const SUPPORT_TABLES: { value: string; label: string; columns: string }[] = [
   { value: 'product-groups',  label: 'Grupos de Produto',  columns: 'name, ipi' },
   { value: 'product-types',   label: 'Tipos de Produto',   columns: 'name, group' },
   { value: 'catalogs',        label: 'Catálogos',          columns: 'name' },
-  { value: 'optionals',       label: 'Opcionais',          columns: 'category, color_name' },
+  { value: 'optionals',       label: 'Opcionais',          columns: 'category, color_name, brand (ILYA/IBTW)' },
   { value: 'representatives', label: 'Representantes',      columns: 'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state' },
   { value: 'clients',         label: 'Clientes',           columns: 'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state, price_profile, rep_email' },
 ]

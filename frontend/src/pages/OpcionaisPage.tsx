@@ -11,7 +11,8 @@ import { useOptionalCategories, type OptionalCategory } from '../hooks/useOption
 import { useOptionals } from '../hooks/useOptionals'
 import { hasOptionalPhoto } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
-import type { OptionalColor } from '../types'
+import { optionalBrand, optionalGroup } from '../lib/optionalGroups'
+import type { OptionalBrand, OptionalColor } from '../types'
 
 function normalizeSearch(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().trim()
@@ -35,6 +36,8 @@ export default function OpcionaisPage() {
   const { data: optionals, isLoading: loadingOptionals, isError: optionalsError, refetch: refetchOptionals } = useOptionals(undefined, 5000)
   const { data: categories, isLoading: loadingCategories, isError: categoriesError, refetch: refetchCategories } = useOptionalCategories()
   const [query, setQuery] = useState('')
+  const [selectedBrand, setSelectedBrand] = useState<OptionalBrand | null>(null)
+  const activeBrand = selectedBrand ?? (user?.active_market === 'EU' ? 'IBTW' : 'ILYA')
   const [zoomed, setZoomed] = useState<OptionalColor | null>(null)
   const [pendingReplacement, setPendingReplacement] = useState<OptionalColor | null>(null)
   const [announcement, setAnnouncement] = useState('')
@@ -46,18 +49,21 @@ export default function OpcionaisPage() {
     const sortedCategories = [...categories].sort((left, right) =>
       left.display_order - right.display_order || left.name.localeCompare(right.name),
     )
+    const result = new Map<string, OptionalGroup>()
+    const brandItems = optionals.filter(optional => optionalBrand(optional) === activeBrand)
+    for (const category of sortedCategories) {
+      for (const optional of brandItems.filter(item => item.category === category.code)) {
+        const group = optionalGroup(optional, category.name, english)
+        const existing = result.get(group.code)
+        if (existing) existing.items.push(optional)
+        else result.set(group.code, { ...group, category, items: [optional] })
+      }
+    }
     const knownCodes = new Set(sortedCategories.map(category => category.code))
-    const registered = sortedCategories.map(category => ({
-      code: category.code,
-      label: optionalCategoryLabel(category.name, english),
-      category,
-      items: optionals.filter(optional => optional.category === category.code),
-    }))
-    const orphaned = optionals.filter(optional => !knownCodes.has(optional.category))
-    return orphaned.length > 0
-      ? [...registered, { code: '__other__', label: english ? 'Other' : 'Outros', category: null, items: orphaned }]
-      : registered
-  }, [categories, english, optionals])
+    const orphaned = brandItems.filter(optional => !knownCodes.has(optional.category))
+    if (orphaned.length) result.set('__other__', { code: '__other__', label: english ? 'Other' : 'Outros', category: null, items: orphaned })
+    return [...result.values()]
+  }, [categories, english, optionals, activeBrand])
 
   const normalizedQuery = normalizeSearch(query)
   const visibleGroups = useMemo(() => groups
@@ -98,7 +104,7 @@ export default function OpcionaisPage() {
           <div>
             <h1 className="font-display text-4xl leading-none text-ink md:text-5xl">{english ? 'Finishes' : 'Opcionais'}</h1>
             <p className="mt-2 text-sm text-muted">
-              {user.active_market === 'EU' ? 'IBTW · Portugal' : 'ILYA · Brasil'}
+              {activeBrand} · {user.active_market === 'EU' ? 'Portugal' : 'Brasil'}
             </p>
           </div>
           <label className="relative block w-full md:max-w-sm">
@@ -113,6 +119,16 @@ export default function OpcionaisPage() {
             />
           </label>
         </header>
+
+        <div role="group" aria-label={english ? 'Finish brand' : 'Marca dos opcionais'} className="mt-6 flex flex-wrap gap-2">
+          {(['IBTW', 'ILYA'] as const).map(brand => (
+            <button key={brand} type="button" aria-pressed={activeBrand === brand}
+              className={activeBrand === brand ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => setSelectedBrand(brand)}>
+              {brand}<span className="text-xs">{optionals?.filter(optional => optionalBrand(optional) === brand).length ?? 0}</span>
+            </button>
+          ))}
+        </div>
 
         {!isLoading && !isError && groups.length > 0 && (
           <nav aria-label={english ? 'Finish categories' : 'Categorias de opcionais'} className="my-6 flex gap-2 overflow-x-auto pb-2">
@@ -156,7 +172,7 @@ export default function OpcionaisPage() {
         )}
 
         {!isLoading && !isError && !normalizedQuery && groups.length === 0 && (
-          <p className="py-20 text-center text-sm text-muted">{english ? 'No finish categories registered.' : 'Nenhuma categoria de opcionais cadastrada.'}</p>
+          <p className="py-20 text-center text-sm text-muted">{english ? `No ${activeBrand} finishes registered.` : `Nenhum opcional ${activeBrand} cadastrado.`}</p>
         )}
 
         {!isLoading && !isError && (!normalizedQuery || resultCount > 0) && (

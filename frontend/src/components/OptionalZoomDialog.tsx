@@ -4,6 +4,7 @@ import { OptionalSwatchImage } from './OptionalSwatchImage'
 import type { OptionalColor } from '../types'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { optionalBrand } from '../lib/optionalGroups'
 
 export function OptionalZoomDialog({
   optional,
@@ -46,7 +47,7 @@ export function OptionalZoomDialog({
         />
         <div className="px-1 pb-1 pt-4 text-center">
           <h2 className="text-xl leading-tight text-ink sm:text-2xl">{optionalName(optional.color_name, english)}</h2>
-          <p className="mt-1 text-sm text-muted">{optionalCategoryLabel(type, english)}</p>
+          <p className="mt-1 text-sm text-muted">{optionalBrand(optional)} · {optionalCategoryLabel(type, english)}</p>
         </div>
       </DialogPanel>
     </div>

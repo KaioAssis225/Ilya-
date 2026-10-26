@@ -27,6 +27,7 @@ import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -461,7 +462,7 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
           ? allOptionals.filter(o => o.category === cat)
           : item._product.optionals.filter(o => o.category === cat)
         const currentValue = item.opt_categories[cat] ?? ''
-        const currentOpt = available.find(o => o.color_name === currentValue)
+        const currentOpt = available.find(o => optionalMatchesLegacyName(o, currentValue))
         return (
           <div key={cat} className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>

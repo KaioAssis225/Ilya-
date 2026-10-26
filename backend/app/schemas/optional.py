@@ -1,11 +1,12 @@
 import uuid
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 class OptionalColorBase(BaseModel):
     category: str = Field(..., max_length=50)
     color_name: str = Field(..., max_length=100)
+    brand: Literal["ILYA", "IBTW"] = "ILYA"
 
 
 class OptionalColorCreate(OptionalColorBase):
@@ -15,6 +16,14 @@ class OptionalColorCreate(OptionalColorBase):
 class OptionalColorUpdate(BaseModel):
     category: Optional[str] = Field(None, max_length=50)
     color_name: Optional[str] = Field(None, max_length=100)
+    brand: Optional[Literal["ILYA", "IBTW"]] = None
+
+    @field_validator("brand")
+    @classmethod
+    def brand_cannot_be_null(cls, value):
+        if value is None:
+            raise ValueError("Informe ILYA ou IBTW.")
+        return value
 
 
 class OptionalPhotoVariant(BaseModel):

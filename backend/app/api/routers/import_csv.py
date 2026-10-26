@@ -586,7 +586,7 @@ async def import_product_types(file: UploadFile = File(...), db: AsyncSession = 
 
 @router.post("/optionals")
 async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depends(get_db_session), _: object = _ADMIN_CADASTROS, principal: MarketPrincipal = Depends(get_current_principal)):
-    """Colunas: category (código), color_name. Upsert por (category, color_name)."""
+    """Colunas: category (código), color_name, brand (ILYA/IBTW; opcional)."""
     rows = await _load_rows(file)
     await _acquire_import_lock(db)
     categories = {
@@ -639,11 +639,16 @@ async def import_optionals(file: UploadFile = File(...), db: AsyncSession = Depe
                 raise ValueError(
                     f"Categoria '{category}' não existe no mercado {principal.code}."
                 )
+            brand = (_first(row, "brand", "marca") or "ILYA").upper()
+            if brand not in {"ILYA", "IBTW"}:
+                raise ValueError("Marca do opcional deve ser ILYA ou IBTW.")
             key = (category, color_name)
             if key in existing:
+                if _first(row, "brand", "marca") and existing[key].brand != brand:
+                    raise ValueError("Opcional já existe com outra marca; altere a marca pelo cadastro.")
                 updated += 1  # idempotente
                 continue
-            o = OptionalColor(market_code=principal.code, category=category, color_name=color_name)
+            o = OptionalColor(market_code=principal.code, category=category, color_name=color_name, brand=brand)
             db.add(o)
             existing[key] = o
             created += 1
