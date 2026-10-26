@@ -165,15 +165,14 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     })
   })
 
-  it('mantém o perfil de faturamento corporativo pressionado e bloqueado na edição', async () => {
+  it('não mostra tabelas de preço visíveis na edição do cliente', async () => {
     const { table, user } = await renderClientsPage()
     const row = within(table).getByText('Studio Lumina').closest('tr')
     if (!row) throw new Error('Linha do cliente não encontrada')
 
     await user.click(within(row).getByRole('button', { name: 'Editar' }))
 
-    const billingProfile = screen.getByTitle('O perfil de faturamento fica sempre visível.')
-    expect(billingProfile).toHaveAttribute('aria-pressed', 'true')
-    expect(billingProfile).toBeDisabled()
+    expect(screen.queryByText('Tabelas de preço visíveis')).toBeNull()
+    expect(screen.getByText('Perfil de faturamento *')).toBeVisible()
   })
 })

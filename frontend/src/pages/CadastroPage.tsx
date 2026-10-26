@@ -2123,7 +2123,7 @@ function PeopleTab<T extends Client | Representative>({
   const priceLists: Client['price_profile'][] = activeMarket === 'EU'
     ? ['lojista', 'corporativo', 'pvp', 'arquiteto']
     : ['lojista', 'corporativo']
-  const canEditPriceLists = authUser?.role === 'admin' || authUser?.role === 'cadastros' || (isRep && entityType === 'client')
+  const canEditPriceLists = entityType === 'rep' && (authUser?.role === 'admin' || authUser?.role === 'cadastros')
   const priceListCodeLabel = (code: string) => code === 'pvp' ? 'PVP' : code.charAt(0).toUpperCase() + code.slice(1)
 
   const [search, setSearch] = useState('')
@@ -2205,7 +2205,6 @@ function PeopleTab<T extends Client | Representative>({
       return
     }
     if (currentCodes.includes(code)) {
-      if (entityType === 'client' && code === (form.price_profile ?? 'lojista')) return
       const nextCodes = currentCodes.filter((current) => current !== code)
       if (entityType === 'rep' && nextCodes.length === 0) return
       setForm({ ...form, all_price_lists: false, price_list_codes: nextCodes })
@@ -2417,17 +2416,16 @@ function PeopleTab<T extends Client | Representative>({
               <div><span className="text-xs text-muted block">{tx('Estado')}</span><span className="text-ink-2">{viewing.state}</span></div>
               <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
               <div className="col-span-2"><span className="text-xs text-muted block">{tx('Endereço')}</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — {tx('CEP')} {viewing.cep}</span></div>
-              <div className="col-span-2">
-                <span className="text-xs text-muted block">{tx('Tabelas de preço')}</span>
-                <span className="text-ink-2">
-                  {viewing.all_price_lists
-                    ? tx('Todas')
-                    : (Array.from(new Set([
-                        ...(viewing.price_list_codes ?? []),
-                        ...(entityType === 'client' ? [(viewing as Client).price_profile] : []),
-                      ])).map(priceListCodeLabel).join(', ') || '—')}
-                </span>
-              </div>
+              {entityType === 'rep' && (
+                <div className="col-span-2">
+                  <span className="text-xs text-muted block">{tx('Tabelas de preço')}</span>
+                  <span className="text-ink-2">
+                    {viewing.all_price_lists
+                      ? tx('Todas')
+                      : ((viewing.price_list_codes ?? []).map(priceListCodeLabel).join(', ') || '—')}
+                  </span>
+                </div>
+              )}
               {canViewCreator && (
                 <div className="col-span-2">
                   <span className="text-xs text-muted block">{tx('Criado por')}</span>
@@ -2544,16 +2542,12 @@ function PeopleTab<T extends Client | Representative>({
                     {tx('Todas')}
                   </button>
                   {priceLists.map((code) => {
-                    const isBillingProfile = entityType === 'client' && code === (form.price_profile ?? 'lojista')
-                    const isPressed = !form.all_price_lists && ((form.price_list_codes ?? []).includes(code) || isBillingProfile)
-                    const isDisabled = isBillingProfile && !form.all_price_lists
+                    const isPressed = !form.all_price_lists && (form.price_list_codes ?? []).includes(code)
                     return (
                       <button
                         key={code}
                         type="button"
                         aria-pressed={isPressed}
-                        disabled={isDisabled}
-                        title={isBillingProfile ? tx('O perfil de faturamento fica sempre visível.') : undefined}
                         onClick={() => togglePriceList(code)}
                         className={`flex-1 min-w-0 px-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${isPressed ? 'text-white' : 'border-line text-ink-3 hover:border-faint'}`}
                         style={isPressed ? { backgroundColor: color, borderColor: color } : undefined}
@@ -2563,9 +2557,6 @@ function PeopleTab<T extends Client | Representative>({
                     )
                   })}
                 </div>
-                {entityType === 'client' && (
-                  <span className="text-xs text-muted">{tx('O perfil de faturamento fica sempre visível.')}</span>
-                )}
               </div>
             )}
             {canEditDiscount && (
