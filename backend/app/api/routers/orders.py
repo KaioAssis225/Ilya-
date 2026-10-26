@@ -22,6 +22,7 @@ from app.api.deps import (
     is_internal_operator,
 )
 from app.api.catalog_access import CatalogScope, allows, order_catalog_scope
+from app.api.price_access import ensure_price_visible, visible_price_scope
 from app.core.lifecycle import touch_client_activity
 from app.models.catalog import Catalog
 from app.core.search import literal_contains_pattern
@@ -676,6 +677,11 @@ async def create_order(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     require_launch_country(principal.code, client.country)
+    if current_user.role == UserRole.representante:
+        ensure_price_visible(
+            await visible_price_scope(db, current_user, principal.code),
+            client.price_profile,
+        )
     if is_client_account(current_user):
         # O vínculo comercial é definido pelo cadastro do cliente; a API não
         # aceita que uma conta de cliente atribua o pedido a outro representante.
@@ -1184,6 +1190,11 @@ async def update_order(
                 Client.id == order.client_id,
                 Client.market_code == principal.code,
             ))).scalar_one()
+            if current_user.role == UserRole.representante:
+                ensure_price_visible(
+                    await visible_price_scope(db, current_user, principal.code),
+                    client.price_profile,
+                )
             if not allows(order_catalog_scope(current_user, client, selected_rep), order.catalog_id):
                 raise HTTPException(
                     status_code=403,
@@ -1221,6 +1232,11 @@ async def update_order(
         if not client or not price_list:
             raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
         require_launch_country(principal.code, client.country)
+        if current_user.role == UserRole.representante:
+            ensure_price_visible(
+                await visible_price_scope(db, current_user, principal.code),
+                client.price_profile,
+            )
         product_ids = [product.id for product in product_map.values()]
         available_ids = set((await db.execute(select(ProductMarket.product_id).where(
             ProductMarket.market_code == order.market_code,

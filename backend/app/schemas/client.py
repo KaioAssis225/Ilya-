@@ -58,6 +58,10 @@ class ClientCreate(ClientBase):
     # Mandar só `catalog_ids` implica seleção específica.
     all_catalogs: Optional[bool] = None
     catalog_ids: Optional[list[uuid.UUID]] = Field(None, max_length=200)
+    # price_list_access_r23: ausente não mexe na permissão. Mandar só
+    # `price_list_codes` implica seleção específica.
+    all_price_lists: Optional[bool] = None
+    price_list_codes: Optional[list[Literal["lojista", "corporativo", "pvp", "arquiteto"]]] = Field(None, max_length=10)
 
 
 class ClientUpdate(BaseModel):
@@ -83,6 +87,10 @@ class ClientUpdate(BaseModel):
     # Mandar só `catalog_ids` implica seleção específica.
     all_catalogs: Optional[bool] = None
     catalog_ids: Optional[list[uuid.UUID]] = Field(None, max_length=200)
+    # price_list_access_r23: ausente não mexe na permissão. Mandar só
+    # `price_list_codes` implica seleção específica.
+    all_price_lists: Optional[bool] = None
+    price_list_codes: Optional[list[Literal["lojista", "corporativo", "pvp", "arquiteto"]]] = Field(None, max_length=10)
 
     @field_validator("cpf_cnpj", mode="before")
     @classmethod
@@ -120,5 +128,7 @@ class ClientRead(ClientBase):
     created_by_name: str | None = None
     all_catalogs: bool = True
     catalog_ids: list[uuid.UUID] = Field(default_factory=list)
+    all_price_lists: bool = False
+    price_list_codes: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

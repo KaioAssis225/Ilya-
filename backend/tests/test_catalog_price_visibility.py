@@ -69,12 +69,12 @@ class TestToReadRedaction:
         assert data.price_corporativo == Decimal("1500.00")
 
     def test_cliente_lojista_nao_recebe_preco_corporativo(self):
-        data = _to_read(_product(), "lojista")
+        data = _to_read(_product(), frozenset({"lojista"}))
         assert data.price_lojista == Decimal("1000.00")
         assert data.price_corporativo is None
 
     def test_cliente_corporativo_nao_recebe_preco_lojista(self):
-        data = _to_read(_product(), "corporativo")
+        data = _to_read(_product(), frozenset({"corporativo"}))
         assert data.price_corporativo == Decimal("1500.00")
         assert data.price_lojista is None
         # A coluna legada `price` espelha o preço lojista (Bloco 62) e por isso

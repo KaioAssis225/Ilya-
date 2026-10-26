@@ -357,9 +357,11 @@ function Modal({ title, onClose, children, accentColor, closeOnlyByButton = fals
   return (
     <div className="modal-overlay" onClick={() => closeFrom('backdrop')}>
       <DialogPanel onClose={() => closeFrom('escape')} className="modal-panel w-full max-w-lg mx-4 md:mx-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line"
-          style={accentColor ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : {}}>
-          <h3 className="text-base font-semibold text-ink">{title}</h3>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+          <div className="flex items-center gap-3 min-w-0">
+            {accentColor && <span aria-hidden="true" className="w-1 h-5 rounded-full shrink-0" style={{ backgroundColor: accentColor }} />}
+            <h3 className="text-base font-semibold text-ink truncate">{title}</h3>
+          </div>
           <button type="button" onClick={() => closeFrom('close-button')} className="btn-icon -mr-2" aria-label={tx('Fechar')}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
@@ -2118,6 +2120,11 @@ function PeopleTab<T extends Client | Representative>({
   const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
   const defaultMaxDiscount = entityType === 'client' ? 0 : 30
   const canViewCreator = !isRep && authUser?.role !== 'cliente'
+  const priceLists: Client['price_profile'][] = activeMarket === 'EU'
+    ? ['lojista', 'corporativo', 'pvp', 'arquiteto']
+    : ['lojista', 'corporativo']
+  const canEditPriceLists = authUser?.role === 'admin' || authUser?.role === 'cadastros' || (isRep && entityType === 'client')
+  const priceListCodeLabel = (code: string) => code === 'pvp' ? 'PVP' : code.charAt(0).toUpperCase() + code.slice(1)
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)
@@ -2172,10 +2179,39 @@ function PeopleTab<T extends Client | Representative>({
   const createFromRep = useCreateUserFromRep()
   const issueInvitation = useIssueClientInvitation()
 
-  function openCreate() { setForm(emptyAddress(activeMarket)); setEditing(null); setFormError(null); setShowForm(true) }
+  function openCreate() {
+    setForm({
+      ...emptyAddress(activeMarket),
+      all_price_lists: entityType === 'rep',
+      price_list_codes: [],
+    })
+    setEditing(null); setFormError(null); setShowForm(true)
+  }
   function openEdit(item: T) {
-    setForm({ name: item.name, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''), tax_id: item.tax_id, country: item.country, region: item.region, cep: item.cep, numero: item.numero ?? '', address: item.address, city: item.city, state: item.state, price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount })
+    setForm({
+      name: item.name, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
+      tax_id: item.tax_id, country: item.country, region: item.region, cep: item.cep, numero: item.numero ?? '',
+      address: item.address, city: item.city, state: item.state,
+      price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount,
+      all_price_lists: item.all_price_lists ?? entityType === 'rep',
+      price_list_codes: item.price_list_codes ?? [],
+    })
     setEditing(item); setFormError(null); setShowForm(true)
+  }
+  function togglePriceList(code: string) {
+    const currentCodes = form.price_list_codes ?? []
+    if (form.all_price_lists) {
+      setForm({ ...form, all_price_lists: false, price_list_codes: [code] })
+      return
+    }
+    if (currentCodes.includes(code)) {
+      if (entityType === 'client' && code === (form.price_profile ?? 'lojista')) return
+      const nextCodes = currentCodes.filter((current) => current !== code)
+      if (entityType === 'rep' && nextCodes.length === 0) return
+      setForm({ ...form, all_price_lists: false, price_list_codes: nextCodes })
+      return
+    }
+    setForm({ ...form, all_price_lists: false, price_list_codes: [...currentCodes, code] })
   }
   function openView(item: T) {
     setViewing(item); setCreatedUser(null); setCreateUserError(null)
@@ -2186,6 +2222,10 @@ function PeopleTab<T extends Client | Representative>({
     setFormError(null)
     // Normaliza campos antes de enviar — evita 422 por espaços ou UF vazia/minúscula
     const cleaned = normalizePersonPayload(form)
+    if (!canEditPriceLists) {
+      delete cleaned.all_price_lists
+      delete cleaned.price_list_codes
+    }
     if (activeMarket === 'BR' && cleaned.state.length !== 2) {
       setFormError('Selecione o estado (UF).')
       return
@@ -2377,6 +2417,17 @@ function PeopleTab<T extends Client | Representative>({
               <div><span className="text-xs text-muted block">{tx('Estado')}</span><span className="text-ink-2">{viewing.state}</span></div>
               <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
               <div className="col-span-2"><span className="text-xs text-muted block">{tx('Endereço')}</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — {tx('CEP')} {viewing.cep}</span></div>
+              <div className="col-span-2">
+                <span className="text-xs text-muted block">{tx('Tabelas de preço')}</span>
+                <span className="text-ink-2">
+                  {viewing.all_price_lists
+                    ? tx('Todas')
+                    : (Array.from(new Set([
+                        ...(viewing.price_list_codes ?? []),
+                        ...(entityType === 'client' ? [(viewing as Client).price_profile] : []),
+                      ])).map(priceListCodeLabel).join(', ') || '—')}
+                </span>
+              </div>
               {canViewCreator && (
                 <div className="col-span-2">
                   <span className="text-xs text-muted block">{tx('Criado por')}</span>
@@ -2465,7 +2516,7 @@ function PeopleTab<T extends Client | Representative>({
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{tx('Perfil de faturamento *')}</span>
                 <div className="flex gap-2">
-                  {(activeMarket === 'EU' ? ['lojista', 'corporativo', 'pvp', 'arquiteto'] as const : ['lojista', 'corporativo'] as const).map((profile) => (
+                  {priceLists.map((profile) => (
                     <button
                       key={profile}
                       type="button"
@@ -2473,10 +2524,48 @@ function PeopleTab<T extends Client | Representative>({
                       className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${(form.price_profile ?? 'lojista') === profile ? 'text-white' : 'border-line text-ink-3 hover:border-faint'}`}
                       style={(form.price_profile ?? 'lojista') === profile ? { backgroundColor: color, borderColor: color } : undefined}
                     >
-                      {profile}
+                      {priceListCodeLabel(profile)}
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {canEditPriceLists && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">{tx('Tabelas de preço visíveis')}</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={!!form.all_price_lists}
+                    onClick={() => setForm({ ...form, all_price_lists: true })}
+                    className={`flex-1 min-w-0 px-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${form.all_price_lists ? 'text-white' : 'border-line text-ink-3 hover:border-faint'}`}
+                    style={form.all_price_lists ? { backgroundColor: color, borderColor: color } : undefined}
+                  >
+                    {tx('Todas')}
+                  </button>
+                  {priceLists.map((code) => {
+                    const isBillingProfile = entityType === 'client' && code === (form.price_profile ?? 'lojista')
+                    const isPressed = !form.all_price_lists && ((form.price_list_codes ?? []).includes(code) || isBillingProfile)
+                    const isDisabled = isBillingProfile && !form.all_price_lists
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        aria-pressed={isPressed}
+                        disabled={isDisabled}
+                        title={isBillingProfile ? tx('O perfil de faturamento fica sempre visível.') : undefined}
+                        onClick={() => togglePriceList(code)}
+                        className={`flex-1 min-w-0 px-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${isPressed ? 'text-white' : 'border-line text-ink-3 hover:border-faint'}`}
+                        style={isPressed ? { backgroundColor: color, borderColor: color } : undefined}
+                      >
+                        {priceListCodeLabel(code)}
+                      </button>
+                    )
+                  })}
+                </div>
+                {entityType === 'client' && (
+                  <span className="text-xs text-muted">{tx('O perfil de faturamento fica sempre visível.')}</span>
+                )}
               </div>
             )}
             {canEditDiscount && (

@@ -14,6 +14,13 @@ from app.api.catalog_access import (
     resolve_catalog_selection,
     visible_catalog_scope,
 )
+from app.api.price_access import (
+    PriceScope,
+    apply_price_selection,
+    ensure_price_visible,
+    resolve_price_selection,
+    visible_price_scope,
+)
 from app.api.deps import (
     CATALOG_MANAGEMENT_ROLES,
     CLIENT_ASSIGNMENT_ROLES,
@@ -169,6 +176,51 @@ async def _catalog_selection(
     return selection
 
 
+async def _price_selection(
+    db: AsyncSession,
+    market: str,
+    current_user: User,
+    all_price_lists: bool | None,
+    price_list_codes: list[str] | None,
+    *,
+    limit: PriceScope = None,
+    current: tuple[bool, tuple[str, ...]] | None = None,
+) -> tuple[bool, tuple[str, ...]] | None:
+    """Tabelas de preço que o cliente pode ver, conforme quem edita.
+
+    Admin/cadastros concedem qualquer seleção. O representante só concede o que
+    ele mesmo vê; os demais papéis não mexem no campo, como no catálogo.
+    """
+    if current_user.role in CATALOG_MANAGEMENT_ROLES:
+        return await resolve_price_selection(
+            db, market,
+            all_price_lists=all_price_lists,
+            price_list_codes=price_list_codes,
+            allow_empty=True,
+        )
+    if current_user.role != UserRole.representante:
+        return None
+    if current is not None:
+        requested_all = all_price_lists
+        if requested_all is None and price_list_codes is not None:
+            requested_all = False
+        if (
+            requested_all == current[0]
+            and (
+                requested_all
+                or set(price_list_codes or ()) == set(current[1])
+            )
+        ):
+            return None
+    return await resolve_price_selection(
+        db, market,
+        all_price_lists=all_price_lists,
+        price_list_codes=price_list_codes,
+        limit=limit,
+        allow_empty=True,
+    )
+
+
 def _rep_guard(client: Client, current_user: User) -> None:
     if (
         current_user.role == UserRole.representante
@@ -240,6 +292,10 @@ def _with_metadata(
         client.market_code = "BR"
     if client.all_catalogs is None:
         client.all_catalogs = True
+    if client.all_price_lists is None:
+        client.all_price_lists = False
+    if client.price_list_codes is None:
+        client.price_list_codes = []
     r = ClientRead.model_validate(client)
     return r.model_copy(
         update={
@@ -349,7 +405,12 @@ async def create_client(
     data = payload.model_dump()
     requested_all_catalogs = data.pop("all_catalogs")
     requested_catalog_ids = data.pop("catalog_ids")
+    requested_all_price_lists = data.pop("all_price_lists")
+    requested_price_list_codes = data.pop("price_list_codes")
     market = principal.code
+    rep_price_limit: PriceScope = None
+    if current_user.role == UserRole.representante:
+        rep_price_limit = await visible_price_scope(db, current_user, market)
     duplicate_email = None
     if payload.email:
         duplicate_email = (
@@ -395,6 +456,8 @@ async def create_client(
     ))).scalar_one_or_none()
     if not price_list:
         raise HTTPException(status_code=422, detail="Lista de preços inválida para o mercado ativo.")
+    if current_user.role == UserRole.representante:
+        ensure_price_visible(rep_price_limit, data["price_profile"])
     client = Client(**data, market_code=market, price_list_id=price_list.id, created_by_user_id=current_user.id)
     client.rep_id = await _resolved_rep_id(data, current_user, db)
     selection = await _catalog_selection(
@@ -403,6 +466,14 @@ async def create_client(
     )
     if selection is not None:
         apply_catalog_selection(client, selection)
+    price_selection = await _price_selection(
+        db, market, current_user,
+        requested_all_price_lists,
+        requested_price_list_codes,
+        limit=rep_price_limit,
+    )
+    if price_selection is not None:
+        apply_price_selection(client, price_selection)
     db.add(client)
     try:
         await db.commit()
@@ -463,6 +534,9 @@ async def update_client(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     _rep_guard(client, current_user)
+    rep_price_limit: PriceScope = None
+    if current_user.role == UserRole.representante:
+        rep_price_limit = await visible_price_scope(db, current_user, market)
     update_data = sanitize_client_update_fields(
         payload.model_dump(exclude_unset=True), current_user
     )
@@ -480,6 +554,15 @@ async def update_client(
     )
     if selection is not None:
         apply_catalog_selection(client, selection)
+    price_selection = await _price_selection(
+        db, market, current_user,
+        update_data.pop("all_price_lists", None),
+        update_data.pop("price_list_codes", None),
+        limit=rep_price_limit,
+        current=(client.all_price_lists, tuple(client.price_list_codes)),
+    )
+    if price_selection is not None:
+        apply_price_selection(client, price_selection)
     if "price_profile" in update_data:
         price_list = (await db.execute(select(PriceList).where(
             PriceList.market_code == client.market_code,
@@ -489,6 +572,11 @@ async def update_client(
         if not price_list:
             raise HTTPException(status_code=422, detail="Lista de preços inválida para o mercado do cliente.")
         update_data["price_list_id"] = price_list.id
+    if current_user.role == UserRole.representante:
+        ensure_price_visible(
+            rep_price_limit,
+            update_data.get("price_profile", client.price_profile),
+        )
     new_email = update_data.get("email")
     if new_email:
         duplicate_email = (

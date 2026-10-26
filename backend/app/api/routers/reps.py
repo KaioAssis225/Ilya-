@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select, update
 
 from app.api.catalog_access import apply_catalog_selection, resolve_catalog_selection
+from app.api.price_access import apply_price_selection, resolve_price_selection
 from app.api.deps import (
     CATALOG_MANAGEMENT_ROLES,
     CLIENT_IDENTITY_MANAGEMENT_ROLES,
@@ -250,6 +251,12 @@ async def create_representative(
         all_catalogs=rep_data.pop("all_catalogs"),
         catalog_ids=rep_data.pop("catalog_ids"),
     )
+    price_selection = await resolve_price_selection(
+        db, market,
+        all_price_lists=rep_data.pop("all_price_lists"),
+        price_list_codes=rep_data.pop("price_list_codes"),
+        allow_empty=False,
+    )
     rep_data["country"] = require_launch_country(market, rep_data.get("country"))
     rep = Representative(
         **rep_data,
@@ -258,6 +265,8 @@ async def create_representative(
     )
     if selection is not None:
         apply_catalog_selection(rep, selection)
+    if price_selection is not None:
+        apply_price_selection(rep, price_selection)
     db.add(rep)
     try:
         await db.commit()
@@ -356,6 +365,8 @@ async def update_representative(
     # MELH-02: o próprio representante nunca amplia o que vende.
     requested_all_catalogs = update_data.pop("all_catalogs", None)
     requested_catalog_ids = update_data.pop("catalog_ids", None)
+    requested_all_price_lists = update_data.pop("all_price_lists", None)
+    requested_price_list_codes = update_data.pop("price_list_codes", None)
     if current_user.role in CATALOG_MANAGEMENT_ROLES:
         selection = await resolve_catalog_selection(
             db, market,
@@ -364,6 +375,14 @@ async def update_representative(
         )
         if selection is not None:
             apply_catalog_selection(rep, selection)
+        price_selection = await resolve_price_selection(
+            db, market,
+            all_price_lists=requested_all_price_lists,
+            price_list_codes=requested_price_list_codes,
+            allow_empty=False,
+        )
+        if price_selection is not None:
+            apply_price_selection(rep, price_selection)
     new_email = update_data.get("email")
     if new_email:
         duplicate_email = (

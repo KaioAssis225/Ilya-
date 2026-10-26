@@ -193,6 +193,8 @@ export interface Client {
   tax_id: string | null
   market_code: 'BR' | 'EU'
   price_profile: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
+  all_price_lists?: boolean
+  price_list_codes?: string[]
   max_discount: number
   rep_id: string | null
   created_at: string
@@ -217,6 +219,8 @@ export interface ClientCreate {
   region?: string | null
   tax_id?: string | null
   price_profile?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
+  all_price_lists?: boolean
+  price_list_codes?: string[]
   max_discount?: number
 }
 
