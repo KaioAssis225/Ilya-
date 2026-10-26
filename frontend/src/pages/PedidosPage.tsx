@@ -15,6 +15,7 @@ import type { Order, OrderHistory, OrderSummary, Product, Client, Representative
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { formatArea } from '../lib/areaProduct'
 
 function fmtDate(s: string) {
@@ -272,7 +273,7 @@ function OrderDetailModal({
 
   function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null }[] {
     return Object.entries(cats).map(([cat, color]) => {
-      const optional = allOptionals.find(o => o.category === cat && o.color_name === color)
+      const optional = allOptionals.find(o => o.category === cat && optionalMatchesLegacyName(o, color))
       return {
         label: `${catLabel(cat)} — ${optionalName(color, optionalEnglish)}`,
         swatch: optional?.photo_url ?? optional?.thumbnail_url ?? null,

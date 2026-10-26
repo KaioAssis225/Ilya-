@@ -24,6 +24,33 @@ async function clickNewProduct(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('CadastroPage aplicações de opcionais independentes (BR)', () => {
+  it('cadastra a marca explicitamente e permite alterá-la sem perder o nome e o ID', async () => {
+    const user = userEvent.setup()
+    const record = { id: 'optional-brand', category: 'COR', color_name: 'Areia', brand: 'ILYA', photo_url: null }
+    const create = vi.fn((payload: Record<string, unknown>) => HttpResponse.json({ ...record, ...payload }, { status: 201 }))
+    const update = vi.fn((payload: Record<string, unknown>) => HttpResponse.json({ ...record, ...payload }))
+    installProductHandlers({ products: [] })
+    server.use(
+      http.get('*/optional-categories', () => HttpResponse.json([{ id: 'cat', code: 'COR', name: 'Cor', display_order: 0 }])),
+      http.get('*/optionals', () => HttpResponse.json([record])),
+      http.post('*/optionals', async ({ request }) => create(await request.json() as Record<string, unknown>)),
+      http.patch('*/optionals/:id', async ({ request }) => update(await request.json() as Record<string, unknown>)),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+    await user.click((await screen.findAllByRole('button', { name: /^Opcionais/ }))[0])
+    await user.click(await screen.findByRole('button', { name: 'Novo Opcional' }))
+    await user.selectOptions(screen.getByLabelText('Marca *'), 'IBTW')
+    await user.type(screen.getByLabelText('Nome da Cor *'), 'Nova cor')
+    await user.click(screen.getByRole('button', { name: 'Criar' }))
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ category: 'COR', color_name: 'Nova cor', brand: 'IBTW' }))
+    const brands = screen.getByRole('group', { name: 'Marca dos opcionais' })
+    await user.click(within(brands).getByRole('button', { name: /ILYA/ }))
+    await user.click(await screen.findByRole('button', { name: 'Editar' }))
+    expect(screen.getByLabelText('Nome da Cor *')).toHaveValue('Areia')
+    await user.selectOptions(screen.getByLabelText('Marca *'), 'IBTW')
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ category: 'COR', color_name: 'Areia', brand: 'IBTW' }))
+  })
   it('REG-PROD-OPT-01: duas aplicações da mesma categoria ficam independentes no payload', async () => {
     const user = userEvent.setup()
     const create = vi.fn((payload: Record<string, unknown>) =>

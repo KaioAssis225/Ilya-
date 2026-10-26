@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
+import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn } from 'lucide-react'
 import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
@@ -559,6 +560,7 @@ function OptionalCatalogGroup({
                   <span className="min-h-8 w-full overflow-hidden text-xs font-medium leading-4 text-ink-2 [overflow-wrap:anywhere]">
                     {optionalName(option.color_name, english)}
                   </span>
+                  <span className="text-[10px] text-muted">{optionalBrand(option)}</span>
                 </button>
                 {hasOptionalPhoto(option) && (
                   <button

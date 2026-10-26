@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
@@ -49,7 +49,7 @@ function renderPage(activeUser: AuthUser = user) {
 
 describe('OpcionaisPage', () => {
   it('traduz nomes, categorias, busca, bancada e zoom no EN e volta aos originais no PT', async () => {
-    const original = { id: 'opt-branco', category: 'MADEIRA', color_name: 'Branco', photo_url: '/branco.jpg' }
+    const original = { id: 'opt-branco', category: 'MADEIRA', color_name: 'Branco', photo_url: '/branco.jpg', brand: 'IBTW' }
     server.use(
       http.get('*/optional-categories', () => HttpResponse.json([
         { id: 'cat-madeira', code: 'MADEIRA', name: 'Madeira', display_order: 1 },
@@ -109,14 +109,39 @@ describe('OpcionaisPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Opcionais', level: 1 })).toBeVisible()
     expect((await screen.findAllByRole('heading', { level: 2 })).map(heading => heading.textContent)).toEqual([
-      'Alumínio', 'Madeira', 'Categoria vazia', 'Outros',
+      'Alumínio', 'Madeira', 'Outros',
     ])
-    expect(screen.getByText('Nenhum opcional nesta categoria.')).toBeVisible()
+    expect(screen.queryByText('Categoria vazia')).not.toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Imagem em atualização: Neve' })).toBeVisible()
     expect(screen.getAllByRole('button', { name: 'Colocar lado a lado' }).some(button => button.hasAttribute('disabled'))).toBe(true)
 
     await userEvent.type(screen.getByRole('searchbox', { name: 'Buscar opcionais por nome' }), 'agata')
     expect(screen.getByText('Ágata')).toBeVisible()
     expect(screen.queryByText('Neve')).not.toBeInTheDocument()
+  })
+
+  it('separa marcas e famílias sem perder a bancada ao trocar de marca', async () => {
+    server.use(
+      http.get('*/optional-categories', () => HttpResponse.json([
+        { id: 'fabric', code: 'TECIDOS_IBTW', name: 'TECIDOS IBTW', display_order: 1 },
+      ])),
+      http.get('*/optionals', () => HttpResponse.json([
+        { id: 'baeta', category: 'TECIDOS_IBTW', brand: 'IBTW', color_name: 'BAETA ARGILA', photo_url: '/baeta.jpg' },
+        { id: 'sarja', category: 'TECIDOS_IBTW', brand: 'IBTW', color_name: 'SARJA MENTA', photo_url: '/sarja.jpg' },
+        { id: 'ilya', category: 'TECIDOS_IBTW', brand: 'ILYA', color_name: 'LINHO AREIA', photo_url: '/linho.jpg' },
+      ])),
+    )
+    renderPage({ ...user, active_market: 'EU', allowed_markets: ['EU'] })
+    const brands = await screen.findByRole('group', { name: 'Marca dos opcionais' })
+    expect(await screen.findByRole('heading', { name: 'Tecido Baeta Solar' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Tecido Sarja Solar' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'LINHO AREIA' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Colocar lado a lado' })[0])
+    await userEvent.click(within(brands).getByRole('button', { name: /ILYA/ }))
+    expect(screen.getByRole('heading', { name: 'LINHO AREIA' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'BAETA ARGILA' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remover BAETA ARGILA' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Colocar lado a lado' }))
+    expect(screen.getByRole('button', { name: 'Remover LINHO AREIA' })).toBeVisible()
   })
 })

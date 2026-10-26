@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, X } from 'lucide-react'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { optionalBrand } from '../lib/optionalGroups'
 import type { OptionalColor } from '../types'
 import { OptionalSwatchImage } from './OptionalSwatchImage'
 
@@ -92,7 +93,7 @@ export function OptionalBenchPanel({
                 </div>
                 <div className="pt-2">
                   <p className="text-sm font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optionalName(optional.color_name, english)}</p>
-                  <p className="mt-0.5 text-xs text-muted">{optionalCategoryLabel(categoryLabel(optional.category), english)}</p>
+                  <p className="mt-0.5 text-xs text-muted">{optionalBrand(optional)} · {optionalCategoryLabel(categoryLabel(optional.category), english)}</p>
                   <div className="mt-1 flex gap-1">
                     <button
                       type="button"

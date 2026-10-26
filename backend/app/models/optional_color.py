@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Table, Column, ForeignKey, Index
+from sqlalchemy import String, Table, Column, ForeignKey, Index, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -21,9 +21,11 @@ class OptionalColor(Base, TimestampMixin):
     )
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     color_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    brand: Mapped[str] = mapped_column(String(4), nullable=False, default="ILYA", server_default="ILYA")
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
+        CheckConstraint("brand IN ('ILYA', 'IBTW')", name="ck_optionals_brand"),
         Index(
             "ix_optionals_category_color_id",
             "category",

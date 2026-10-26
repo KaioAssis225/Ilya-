@@ -9,10 +9,14 @@ export interface ProductGroupCreate {
   ipi: number
 }
 
+export type OptionalBrand = 'ILYA' | 'IBTW'
+
 export interface OptionalColor {
   id: string
   category: string
   color_name: string
+  /** Optional during a rolling deployment; legacy records display as ILYA. */
+  brand?: OptionalBrand
   photo_url: string | null
   thumbnail_url?: string | null
   photo_variants?: OptionalPhotoVariants | null
@@ -34,6 +38,7 @@ export interface OptionalPhotoVariants {
 export interface OptionalColorCreate {
   category: string
   color_name: string
+  brand: OptionalBrand
 }
 
 export interface OptionalColorUpdate extends Partial<OptionalColorCreate> {}
