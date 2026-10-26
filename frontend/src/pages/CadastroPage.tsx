@@ -2619,6 +2619,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   const [form, setForm] = useState<OptionalColorCreate>(EMPTY_OPT)
   const [pendingOptFile, setPendingOptFile] = useState<File | null>(null)
   const [optPhotoPreview, setOptPhotoPreview] = useState<string | null>(null)
+  const [photoWarning, setPhotoWarning] = useState<string | null>(null)
   const optFileRef = useRef<HTMLInputElement>(null)
 
   // Group modal
@@ -2651,7 +2652,12 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
       const created = await createM.mutateAsync(form)
       optId = created.id
     }
-    if (pendingOptFile) await uploadOptM.mutateAsync({ id: optId, file: pendingOptFile })
+    if (pendingOptFile) {
+      const uploaded = await uploadOptM.mutateAsync({ id: optId, file: pendingOptFile })
+      if (uploaded.photo_low_resolution === true) {
+        setPhotoWarning(tx('Foto abaixo de 1200 px no maior lado; aceita, mas substitua por uma fonte melhor quando possível.'))
+      }
+    }
     setPendingOptFile(null); setOptPhotoPreview(null)
     setShowForm(false)
   }
@@ -2695,6 +2701,14 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
 
   return (
     <div>
+      {photoWarning && (
+        <div role="status" className="toast mb-4 flex items-start gap-3 rounded-xl border border-line-note bg-surface-note px-4 py-3 text-sm text-note-ink">
+          <span className="flex-1 leading-relaxed">{photoWarning}</span>
+          <button type="button" onClick={() => setPhotoWarning(null)} className="btn-icon -my-2 -mr-2" aria-label={tx('Fechar')}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4 gap-2">
         <span className="text-sm text-muted">{tx('{count} opcionais cadastrados', { count: optionals?.length ?? 0 })}</span>
         {!readOnly && (

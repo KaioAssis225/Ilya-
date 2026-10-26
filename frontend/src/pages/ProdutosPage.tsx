@@ -13,9 +13,12 @@ import { useProductGroups } from '../hooks/useProductGroups'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
+import { OptionalSwatchImage } from '../components/OptionalSwatchImage'
+import { OptionalZoomDialog } from '../components/OptionalZoomDialog'
 import type { OptionalChoiceInput, OptionalColor, PageResult, Product } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
+import { hasOptionalPhoto } from '../lib/optionalMedia'
 import {
   allowedForApplication,
   applicationName,
@@ -482,41 +485,6 @@ function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
   notifyCartChanged()
 }
 
-// ── Mini modal para zoom de opcional no mobile ────────────────────────────────
-
-function OptionalZoomModal({ photo_url, label, onClose }: { photo_url: string; label: string; onClose: () => void }) {
-  const { locale } = useLocale()
-  const closeRef = useRef<HTMLButtonElement>(null)
-  const onCloseRef = useRef(onClose)
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
-  useEffect(() => {
-    const returnFocus = document.activeElement as HTMLElement | null
-    closeRef.current?.focus()
-    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onCloseRef.current() }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => { document.removeEventListener('keydown', handleKeyDown); returnFocus?.focus() }
-  }, [])
-  return (
-    <div
-      className="fixed inset-0 z-modal-sub flex items-center justify-center bg-scrim/60 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="optional-zoom-title"
-    >
-      <div className="bg-white rounded-2xl shadow-2xl p-4 mx-6 flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
-        <img src={photo_url} alt={label} className="w-48 h-48 object-cover rounded-xl border border-line" />
-        <p id="optional-zoom-title" className="text-sm font-medium text-ink text-center">{label}</p>
-        <button ref={closeRef} onClick={onClose} className="btn-secondary min-h-11 px-4 text-xs uppercase tracking-wider">
-          {locale === 'en-GB' ? 'Close' : 'Fechar'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function OptionalCatalogGroup({
   id,
   label,
@@ -534,7 +502,7 @@ function OptionalCatalogGroup({
   canDeselect: boolean
   english: boolean
   onSelect: (optionalId: string | undefined) => void
-  onZoom: (photo_url: string, label: string) => void
+  onZoom: (optional: OptionalColor, type: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [query, setQuery] = useState('')
@@ -567,8 +535,6 @@ function OptionalCatalogGroup({
         <div className="flex flex-wrap gap-3">
           {visible.map(option => {
             const selected = option.id === selectedId
-            const imageUrl = option.thumbnail_url ?? option.photo_url
-            const zoomUrl = option.photo_url ?? option.thumbnail_url
             const optionLabel = `${label}: ${option.color_name}`
             return (
               <div key={option.id} className="relative w-20">
@@ -581,14 +547,8 @@ function OptionalCatalogGroup({
                     selected ? 'border-gold ring-2 ring-gold' : 'border-line hover:border-gold/60'
                   }`}
                 >
-                  <span className="relative block h-16 w-16 overflow-hidden rounded-lg border border-line bg-bg-2">
-                    {imageUrl ? (
-                      <img src={imageUrl} alt="" decoding="async" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-xl font-semibold text-muted" aria-hidden="true">
-                        {option.color_name.trim().charAt(0).toLocaleUpperCase() || '?'}
-                      </span>
-                    )}
+                  <span className="relative block h-16 w-16">
+                    <OptionalSwatchImage optional={option} variant="thumb" displaySize={64} decorative className="h-16 w-16 rounded-lg border border-line" />
                     {selected && (
                       <span className="absolute bottom-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-gold text-white shadow-sm" aria-hidden="true">
                         <Check className="h-3.5 w-3.5" strokeWidth={3} />
@@ -599,10 +559,10 @@ function OptionalCatalogGroup({
                     {option.color_name}
                   </span>
                 </button>
-                {zoomUrl && (
+                {hasOptionalPhoto(option) && (
                   <button
                     type="button"
-                    onClick={() => onZoom(zoomUrl, optionLabel)}
+                    onClick={() => onZoom(option, label)}
                     aria-label={english ? `Enlarge ${optionLabel}` : `Ampliar ${optionLabel}`}
                     className="absolute right-1.5 top-1.5 z-10 flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-white/95 text-ink shadow-sm transition-colors hover:border-gold hover:text-gold"
                   >
@@ -649,7 +609,7 @@ function ProductFullView({
   const navigate = useNavigate()
   const { locale } = useLocale()
   const english = locale === 'en-GB'
-  const [mobileOptModal, setMobileOptModal] = useState<{ photo_url: string; label: string } | null>(null)
+  const [mobileOptModal, setMobileOptModal] = useState<{ optional: OptionalColor; type: string } | null>(null)
   const applications = useMemo(() => productApplications(product), [product])
   const freeCategories = useMemo(() => freeOptionalCategories(product), [product])
   const freeCategorySet = useMemo(() => new Set(freeCategories), [freeCategories])
@@ -816,7 +776,7 @@ function ProductFullView({
                               const opt = comp.optionals.find(o => o.category === cat)!
                               return (
                                 <div key={cat} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-line bg-white">
-                                  {opt.photo_url && <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-3 h-3 rounded object-cover" />}
+                                  <OptionalSwatchImage optional={opt} variant="thumb" displaySize={12} decorative className="h-3 w-3 rounded" />
                                   <span className="text-[11px] leading-snug text-ink-2">{CAT_LABEL[cat] ?? cat}: {opt.color_name}</span>
                                 </div>
                               )
@@ -896,7 +856,7 @@ function ProductFullView({
                           return next
                         })
                       }}
-                      onZoom={(photo_url, label) => setMobileOptModal({ photo_url, label })}
+                      onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )
                 })}
@@ -919,7 +879,7 @@ function ProductFullView({
                         return next
                       })
                     }}
-                    onZoom={(photo_url, label) => setMobileOptModal({ photo_url, label })}
+                    onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                   />
                 ))}
 
@@ -943,7 +903,7 @@ function ProductFullView({
                           return next
                         })
                       }}
-                      onZoom={(photo_url, optionLabel) => setMobileOptModal({ photo_url, label: optionLabel })}
+                      onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )
                 })}
@@ -982,9 +942,9 @@ function ProductFullView({
       </div>
 
       {mobileOptModal && (
-        <OptionalZoomModal
-          photo_url={mobileOptModal.photo_url}
-          label={mobileOptModal.label}
+        <OptionalZoomDialog
+          optional={mobileOptModal.optional}
+          type={mobileOptModal.type}
           onClose={() => setMobileOptModal(null)}
         />
       )}
@@ -1022,7 +982,7 @@ export default function ProdutosPage() {
   // Só um card por vez mostra os opcionais expandidos — evita a grade inteira
   // virando um mosaico de painéis abertos ao mesmo tempo.
   const [expandedOptionalsCode, setExpandedOptionalsCode] = useState<string | null>(null)
-  const [zoomOptional, setZoomOptional] = useState<{ photo_url: string; label: string } | null>(null)
+  const [zoomOptional, setZoomOptional] = useState<{ optional: OptionalColor; type: string } | null>(null)
 
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
@@ -1409,9 +1369,7 @@ export default function ProdutosPage() {
                         <div className="grid grid-cols-2 gap-1.5 content-start">
                           {groupOptionalsByCategory(product.optionals).map(opt => {
                             const label = `${CAT_LABEL[opt.category] ?? opt.category}: ${opt.color_name}`
-                            const swatch = opt.photo_url
-                              ? <img src={opt.thumbnail_url ?? opt.photo_url} alt={opt.color_name} decoding="async" className="w-5 h-5 rounded-full object-cover border border-line flex-shrink-0" />
-                              : <span className="w-5 h-5 rounded-full bg-gold/10 border border-line flex-shrink-0" aria-hidden="true" />
+                            const swatch = <OptionalSwatchImage optional={opt} variant="thumb" displaySize={20} decorative className="h-5 w-5 flex-shrink-0 rounded border border-line" />
                             const text = (
                               <span className="min-w-0 leading-tight">
                                 <span className="block text-[10px] uppercase tracking-wide text-muted truncate">{CAT_LABEL[opt.category] ?? opt.category}</span>
@@ -1421,11 +1379,11 @@ export default function ProdutosPage() {
                             // Só vira botão quando há foto pra ampliar — sem
                             // isso não há o que mostrar num zoom maior que o
                             // próprio swatch já exibe.
-                            return opt.photo_url ? (
+                            return hasOptionalPhoto(opt) ? (
                               <button
                                 key={opt.category}
                                 type="button"
-                                onClick={() => setZoomOptional({ photo_url: opt.photo_url!, label })}
+                                onClick={() => setZoomOptional({ optional: opt, type: CAT_LABEL[opt.category] ?? opt.category })}
                                 aria-label={`Ampliar ${label}`}
                                 style={{ touchAction: 'manipulation' }}
                                 className="flex min-h-11 items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-2 py-1.5 text-left
@@ -1550,9 +1508,9 @@ export default function ProdutosPage() {
       )}
 
       {zoomOptional && (
-        <OptionalZoomModal
-          photo_url={zoomOptional.photo_url}
-          label={zoomOptional.label}
+        <OptionalZoomDialog
+          optional={zoomOptional.optional}
+          type={zoomOptional.type}
           onClose={() => setZoomOptional(null)}
         />
       )}

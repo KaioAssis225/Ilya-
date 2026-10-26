@@ -1,12 +1,16 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
+import type { OptionalColor } from '../types'
+import { OptionalSwatchImage } from './OptionalSwatchImage'
+import { optionalMedia } from '../lib/optionalMedia'
 
 export interface OptionalComboboxOption {
   value: string
   label: string
   photoUrl: string | null
   previewUrl?: string | null
+  optional?: OptionalColor
 }
 
 interface OptionalComboboxProps {
@@ -91,7 +95,9 @@ export function OptionalCombobox({
   function choose(option: OptionalComboboxOption) {
     onChange(option.value)
     closeList()
-    const previewUrl = option.previewUrl ?? option.photoUrl
+    const previewUrl = option.optional?.photo_variants
+      ? optionalMedia(option.optional, 'zoom').src
+      : option.previewUrl ?? option.photoUrl
     if (previewUrl) onPreview?.(previewUrl, option.label)
   }
 
@@ -228,8 +234,14 @@ export function OptionalCombobox({
               onMouseDown={event => event.preventDefault()}
               onClick={() => choose(option)}
             >
-              {option.photoUrl
-                ? <img src={option.photoUrl} alt="" loading="lazy" decoding="async" className="h-8 w-8 flex-shrink-0 rounded border border-line bg-white object-cover" />
+              {option.photoUrl || option.optional
+                ? <OptionalSwatchImage
+                    optional={option.optional ?? { id: option.value, category: '', color_name: option.label, photo_url: option.photoUrl, thumbnail_url: option.photoUrl, photo_variants: null }}
+                    variant="thumb"
+                    displaySize={32}
+                    decorative
+                    className="h-8 w-8 flex-shrink-0 rounded border border-line"
+                  />
                 : <span aria-hidden="true" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-line bg-bg-2 text-[11px] font-semibold uppercase text-muted">
                     {option.label.trim().charAt(0) || '—'}
                   </span>}

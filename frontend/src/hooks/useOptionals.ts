@@ -4,11 +4,11 @@ import type { OptionalColor, OptionalColorCreate, OptionalColorUpdate } from '..
 
 const KEY = 'optionals'
 
-export function useOptionals(category?: string) {
+export function useOptionals(category?: string, limit?: number) {
   return useQuery<OptionalColor[]>({
-    queryKey: category ? [KEY, category] : [KEY],
+    queryKey: category ? [KEY, category, limit] : limit ? [KEY, 'all', limit] : [KEY],
     queryFn: async () => {
-      const params = category ? { category } : {}
+      const params = { ...(category ? { category } : {}), ...(limit ? { limit } : {}) }
       return (await api.get('/optionals', { params })).data
     },
   })
@@ -70,6 +70,9 @@ export function useUploadOptionalPhoto() {
         headers: { 'Content-Type': 'multipart/form-data' },
       }).then((r) => r.data)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [KEY] })
+      void qc.invalidateQueries({ queryKey: ['products'] })
+    },
   })
 }

@@ -28,6 +28,9 @@
      superfícies (5.38 branco / 4.99 bg / 4.57 bg-2). */
   --color-faint:       #c8bdb5;
   --color-bg-2:        #f0ece6;
+  /* Fundo fotográfico neutro: deliberadamente idêntico em BR e EU para não
+     alterar a percepção de cor dos materiais entre mercados. */
+  --color-swatch-bg:   #f1f0ed;
   --color-scrim:       #1a1410;
 
   --color-gold:        #8b6914;
@@ -250,6 +253,23 @@
   button,
   [role='button'] {
     min-width: 44px;
+  }
+}
+
+.optional-bench-position {
+  bottom: calc(4rem + env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 5rem - env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (min-width: 768px) {
+  .optional-bench-position {
+    bottom: 0;
+    max-height: min(70dvh, 46rem);
   }
 }
 

@@ -26,6 +26,7 @@ from app.schemas.product import (
     ProductBatchRequest, OptionalApplicationWrite, OptionalApplicationRead,
 )
 from app.schemas.optional import OptionalColorRead
+from app.api.routers.optionals import fill_optional_media
 from app.core.config import settings
 from app.core.search import literal_contains_pattern
 from app.core.uploads import build_photo_url, build_thumbnail_url, delete_upload, persist_upload, sanitize_image_upload
@@ -109,8 +110,7 @@ def _to_read(product: Product, price_scope: PriceScope = None) -> ProductRead:
     data.photo_url = _build_photo_url(product.photo_path)
     data.thumbnail_url = build_thumbnail_url(product.photo_path)
     for opt_read, opt_orm in zip(data.optionals, product.optionals):
-        opt_read.photo_url = _build_photo_url(opt_orm.photo_path)
-        opt_read.thumbnail_url = build_thumbnail_url(opt_orm.photo_path)
+        fill_optional_media(opt_read, opt_orm.photo_path)
     data.set_items = [
         ProductSetItemRead(
             product_code=si.product.product_code,
@@ -125,8 +125,7 @@ def _to_read(product: Product, price_scope: PriceScope = None) -> ProductRead:
     for comp in product.components:
         comp_read = ProductSetComponentRead.model_validate(comp)
         for opt_read, opt_orm in zip(comp_read.optionals, comp.optionals):
-            opt_read.photo_url = _build_photo_url(opt_orm.photo_path)
-            opt_read.thumbnail_url = build_thumbnail_url(opt_orm.photo_path)
+            fill_optional_media(opt_read, opt_orm.photo_path)
         data.components.append(comp_read)
     return data
 
@@ -179,10 +178,9 @@ async def _to_market_reads(
         for application in sorted(applications_by_product.get(product.id, []), key=lambda a: (a.display_order, str(a.id))):
             allowed = []
             for optional in application.allowed_optionals:
-                read = OptionalColorRead.model_validate(optional)
-                read.photo_url = _build_photo_url(optional.photo_path)
-                read.thumbnail_url = build_thumbnail_url(optional.photo_path)
-                allowed.append(read)
+                allowed.append(fill_optional_media(
+                    OptionalColorRead.model_validate(optional), optional.photo_path,
+                ))
             read = OptionalApplicationRead(
                 id=application.id, category_id=application.category_id,
                 category_code=application.category.code, category_name=application.category.name,

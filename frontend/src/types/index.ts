@@ -15,6 +15,20 @@ export interface OptionalColor {
   color_name: string
   photo_url: string | null
   thumbnail_url?: string | null
+  photo_variants?: OptionalPhotoVariants | null
+  /** Returned by the photo upload endpoint only. */
+  photo_low_resolution?: boolean | null
+}
+
+export interface OptionalPhotoVariant {
+  url: string
+  max_side: number
+}
+
+export interface OptionalPhotoVariants {
+  thumb: OptionalPhotoVariant
+  gallery: OptionalPhotoVariant
+  zoom: OptionalPhotoVariant
 }
 
 export interface OptionalColorCreate {

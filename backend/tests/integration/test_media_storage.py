@@ -56,9 +56,9 @@ _REFERENCE_PREFIX = "object://"
 _MEDIA_PATH_PREFIX = "/api/v1/media/"
 # Únicas chaves que a limpeza aceita apagar: o formato exato gerado pelo app.
 _OWNED_KEY = re.compile(
-    r"^(?:eu-)?(?:products|optionals|product-thumbnails|optional-thumbnails)/"
+    r"^(?:eu-)?(?:products|optionals|product-thumbnails|optional-thumbnails|optional-variants)/"
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-    r"\.(?:jpg|png|webp)(?:\.webp)?$"
+    r"\.(?:jpg|png|webp)(?:\.webp|\.v1-(?:thumb|gallery|zoom)\.webp)?$"
 )
 _DENIED_ROLES = ("cadastros", "executivo")
 

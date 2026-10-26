@@ -59,6 +59,11 @@ def buckets(monkeypatch):
     monkeypatch.setattr(uploads_module, "_object_storage_client", lambda: br)
     monkeypatch.setattr(uploads_module, "_eu_object_storage_client", lambda: eu)
     monkeypatch.setattr(uploads_module, "_make_thumbnail_bytes", lambda _: b"mini")
+    monkeypatch.setattr(
+        uploads_module,
+        "_make_optional_variants",
+        lambda _: {variant: b"variante" for variant in uploads_module.OPTIONAL_VARIANTS},
+    )
     return br, eu
 
 

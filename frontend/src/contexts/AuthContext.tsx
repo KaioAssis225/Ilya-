@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import axios from 'axios'
 import { authApi, bindAuthHandlers, rotatePrivateApiSession } from '../lib/api'
 import { removeUnsafeLegacyCart } from '../lib/cart'
+import { clearAllOptionalBenches } from '../lib/optionalBench'
 import { DEMO_MODE, DEMO_USER } from '../lib/demo'
 import { AuthContext } from '../hooks/useAuth'
 
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const clearSession = useCallback(() => {
+    clearAllOptionalBenches(sessionStorage)
     accessTokenRef.current = null
     sessionScopeRef.current = null
     rotatePrivateApiSession()
