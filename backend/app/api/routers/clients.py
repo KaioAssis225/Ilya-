@@ -292,6 +292,10 @@ def _with_metadata(
         client.market_code = "BR"
     if client.all_catalogs is None:
         client.all_catalogs = True
+    if client.all_price_lists is None:
+        client.all_price_lists = False
+    if client.price_list_codes is None:
+        client.price_list_codes = []
     r = ClientRead.model_validate(client)
     return r.model_copy(
         update={
