@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { OptionalSwatchImage } from './OptionalSwatchImage'
 
 interface Props {
   label: string
@@ -41,6 +42,7 @@ export function OptionalWithPreview({ label, swatch }: Props) {
   )
 
   if (!swatch) return <span className="inline-flex items-center gap-1">{text}</span>
+  const optional = { color_name: label, photo_url: swatch, thumbnail_url: swatch, photo_variants: null }
 
   return (
     <>
@@ -57,7 +59,7 @@ export function OptionalWithPreview({ label, swatch }: Props) {
         // que o popup feche no mesmo toque. Fecha por Escape, blur ou toque fora.
         onClick={handleOpen}
       >
-        <img src={swatch} alt="" className="w-4 h-4 rounded object-cover border border-line flex-shrink-0" />
+        <OptionalSwatchImage optional={optional} variant="thumb" displaySize={16} decorative className="h-4 w-4 flex-shrink-0 rounded border border-line" />
         {text}
       </button>
       {pos && (
@@ -70,7 +72,7 @@ export function OptionalWithPreview({ label, swatch }: Props) {
             transform: pos.below ? 'translateX(-50%)' : 'translate(-50%, -100%)',
           }}
         >
-          <img src={swatch} alt={label} className="w-24 h-24 rounded-lg object-cover" />
+          <OptionalSwatchImage optional={optional} variant="gallery" displaySize={96} className="h-24 w-24 rounded-lg" />
           <span className="text-xs text-ink mt-1.5 text-center font-medium whitespace-nowrap">{label}</span>
         </span>
       )}

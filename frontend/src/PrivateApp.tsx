@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, ShoppingCart, ClipboardList, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
+import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -23,6 +23,7 @@ const CadastroPage = lazy(() => import('./pages/CadastroPage'))
 const OrcamentoPage = lazy(() => import('./pages/OrcamentoPage'))
 const PedidosPage = lazy(() => import('./pages/PedidosPage'))
 const ProdutosPage = lazy(() => import('./pages/ProdutosPage'))
+const OpcionaisPage = lazy(() => import('./pages/OpcionaisPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
@@ -44,6 +45,10 @@ function canSeeOrcamentoPedidos(user: AuthUser) {
 
 function canSeeCadastros(user: AuthUser) {
   return !isCliente(user) && user.role !== 'executivo'
+}
+
+function canSeeOptionals(user: AuthUser) {
+  return ['admin', 'vendedor', 'representante', 'cliente', 'produtos'].includes(user.role)
 }
 
 // Bloco 95: role executivo (ou qualquer role com a flag habilitada pelo admin)
@@ -102,16 +107,22 @@ function BottomNav() {
   const active = (path: string) => location.pathname.startsWith(path)
 
   const itemClass = (path: string) =>
-    `flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 transition-colors ${
+    `flex shrink-0 flex-col items-center gap-0.5 min-w-[60px] min-h-[44px] justify-center px-2 transition-colors ${
       active(path) ? 'text-gold' : 'text-muted-3'
     }`
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-around px-2 pb-safe" aria-label={t('mainNavigation')}>
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur-md border-t border-line flex items-center justify-start gap-1 overflow-x-auto px-2 pb-safe" aria-label={t('mainNavigation')}>
       <NavLink to="/produtos" className={itemClass('/produtos')} aria-label={t('products')}>
         <LayoutGrid className="w-5 h-5" />
         <span className="text-[11px] font-semibold uppercase tracking-wider">{t('products')}</span>
       </NavLink>
+      {canSeeOptionals(user) && (
+        <NavLink to="/opcionais" className={itemClass('/opcionais')} aria-label={t('optionals')}>
+          <Layers3 className="w-5 h-5" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{t('optionals')}</span>
+        </NavLink>
+      )}
       {canSeeOrcamentoPedidos(user) && (
         <NavLink
           to="/orcamentos"
@@ -154,7 +165,7 @@ function BottomNav() {
         // Fica na zona do polegar: um toque acidental derrubava a sessão.
         onClick={() => { if (window.confirm(t('confirmLogout'))) logout() }}
         aria-label={t('logout')}
-        className="flex flex-col items-center gap-0.5 min-w-[44px] min-h-[44px] justify-center px-3 text-muted-3 active:text-ink transition-colors"
+        className="flex shrink-0 flex-col items-center gap-0.5 min-w-[60px] min-h-[44px] justify-center px-2 text-muted-3 active:text-ink transition-colors"
       >
         <LogOut className="w-5 h-5" />
         <span className="text-[11px] font-semibold uppercase tracking-wider">{t('logout')}</span>
@@ -178,7 +189,7 @@ function Nav() {
   if (location.pathname.startsWith('/dashboard')) return null
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `nav-link ${isActive ? 'nav-link-active' : ''}`
+    `nav-link shrink-0 ${isActive ? 'nav-link-active' : ''}`
 
   if (!user) return null
 
@@ -197,9 +208,10 @@ function Nav() {
             {brandName} <span className="hidden text-xs font-semibold tracking-[0.08em] text-gold sm:inline sm:text-sm">— {marketName}</span>
           </div>
           {!user.must_change_password && (
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden min-w-0 items-center gap-1 overflow-x-auto md:flex">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
+              {canSeeOptionals(user) && <NavLink to="/opcionais" className={linkClass} aria-label={t('optionals')}>{t('optionals')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
                 {t('quote')}
@@ -331,6 +343,14 @@ export default function PrivateApp() {
                     }
                   />
                   <Route path="/produtos" element={<ProdutosPage />} />
+                  <Route
+                    path="/opcionais"
+                    element={
+                      <RoleGuard allowed={canSeeOptionals}>
+                        <OpcionaisPage />
+                      </RoleGuard>
+                    }
+                  />
                   <Route
                     path="/orcamentos"
                     element={

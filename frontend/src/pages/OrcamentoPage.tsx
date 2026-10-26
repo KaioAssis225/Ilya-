@@ -13,6 +13,7 @@ import { SafePrice } from '../components/SafePrice'
 import { NumberField } from '../components/NumberField'
 import { BrandLoadingOverlay } from '../components/BrandLoadingOverlay'
 import { OptionalCombobox } from '../components/OptionalCombobox'
+import { OptionalSwatchImage } from '../components/OptionalSwatchImage'
 import { QuantityInput } from '../components/QuantityInput'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
@@ -24,6 +25,7 @@ import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/areaProduct'
+import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -461,14 +463,17 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
         return (
           <div key={cat} className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
-            {currentOpt?.photo_url && (
+            {currentOpt && hasOptionalPhoto(currentOpt) && (
               <button
                 type="button"
-                onClick={() => onPreview(currentOpt.photo_url!, currentOpt.color_name)}
+                onClick={() => {
+                  const source = optionalMedia(currentOpt, 'zoom').src
+                  if (source) onPreview(source, currentOpt.color_name)
+                }}
                 className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 lg:h-5 lg:w-5"
                 aria-label={isEnglish ? `View photo of ${currentOpt.color_name}` : `Ver foto de ${currentOpt.color_name}`}
               >
-                <img src={currentOpt.photo_url} alt="" className="h-3.5 w-3.5 rounded object-cover" />
+                <OptionalSwatchImage optional={currentOpt} variant="thumb" displaySize={14} decorative className="h-3.5 w-3.5 rounded" />
               </button>
             )}
             <OptionalCombobox
@@ -481,6 +486,7 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
                 value: option.color_name,
                 label: option.color_name,
                 photoUrl: option.photo_url,
+                optional: option,
               }))}
               className="min-w-0 max-w-[240px]"
             />
@@ -529,7 +535,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
         const missing = application.required && !value
         const options = allowedForApplication(application, allOptionals)
         const selected = options.find(option => option.id === value)
-        const preview = selected?.thumbnail_url ?? selected?.photo_url
+        const preview = selected ? optionalMedia(selected, 'thumb').src : null
         const areaName = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
         return <div key={application.id} className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
           <span className="flex min-w-0 items-center border-r border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
@@ -538,11 +544,16 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
           <span className="flex min-w-0 items-center">
             {preview && selected && <button
               type="button"
-              onClick={() => onPreview(selected.photo_url ?? selected.thumbnail_url ?? preview, selected.color_name)}
+              onClick={() => {
+                const source = selected.photo_variants
+                  ? optionalMedia(selected, 'zoom').src
+                  : selected.photo_url ?? selected.thumbnail_url ?? preview
+                if (source) onPreview(source, selected.color_name)
+              }}
               className="ml-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 lg:h-9 lg:w-9"
               aria-label={english ? `View photo of ${selected.color_name}` : `Ver foto de ${selected.color_name}`}
             >
-              <img src={preview} alt="" loading="lazy" decoding="async" className="h-5 w-5 rounded object-cover" />
+              <OptionalSwatchImage optional={selected} variant="thumb" displaySize={20} decorative className="h-5 w-5 rounded" />
             </button>}
             <OptionalCombobox
               value={value}
@@ -556,6 +567,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
                 label: option.color_name,
                 photoUrl: option.thumbnail_url ?? option.photo_url,
                 previewUrl: option.photo_url ?? option.thumbnail_url,
+                optional: option,
               }))}
               className="min-w-0 flex-1 px-2 py-1 text-[11px] font-medium"
             />

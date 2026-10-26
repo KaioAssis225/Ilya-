@@ -5,6 +5,7 @@ export interface OptionalCategory {
   id: string
   name: string
   code: string
+  display_order: number
 }
 
 const KEY = ['optional-categories']

@@ -71,6 +71,15 @@ describe('PrivateApp em DOM', () => {
     },
   )
 
+  it.each(roles)("mostra a aba Opcionais apenas para o papel autorizado: %s", async role => {
+    mapRequests()
+    renderPrivate(userFor(role), '/produtos')
+    await screen.findByRole('heading', { name: 'Catálogo de produtos', level: 1 })
+    const links = screen.queryAllByRole('link', { name: 'Opcionais' })
+    const allowed = ['admin', 'vendedor', 'representante', 'cliente', 'produtos'].includes(role)
+    expect(links).toHaveLength(allowed ? 2 : 0)
+  })
+
   it.each(roles.flatMap(role => markets.map(market => [role, market] as const)))(
     'aplica o guard de /cadastros para %s em %s', async (role, market) => {
       mapRequests()

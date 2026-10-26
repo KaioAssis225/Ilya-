@@ -244,6 +244,8 @@ const EN: Record<string, string> = {
   'Categoria *': 'Category *',
   'Nome da Cor *': 'Colour name *',
   'Imagem de Textura (swatch)': 'Texture image (swatch)',
+  'Foto abaixo de 1200 px no maior lado; aceita, mas substitua por uma fonte melhor quando possível.':
+    'Photo below 1200 px on its longest side; accepted, but replace it with a better source when possible.',
   'PNG, JPG — textura do material': 'PNG, JPG — material texture',
   'Editar Grupo': 'Edit group',
   'Novo Grupo de Opcionais': 'New option group',

@@ -1,9 +1,9 @@
 import os
 import uuid
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import get_current_principal, get_db_session, require_platform_capability, require_roles
 from app.core.markets import MarketPrincipal, PlatformPrincipal
@@ -13,7 +13,17 @@ from app.models.optional_application import optional_application_allowed
 from app.models.user import User, UserRole
 from app.schemas.optional import OptionalColorCreate, OptionalColorUpdate, OptionalColorRead
 from app.core.config import settings
-from app.core.uploads import build_photo_url, build_thumbnail_url, delete_upload, persist_upload, sanitize_image_upload
+from app.core.uploads import (
+    OPTIONAL_RECOMMENDED_MIN_SIDE,
+    build_optional_variants,
+    build_photo_url,
+    build_thumbnail_url,
+    delete_upload,
+    image_max_side,
+    inspect_optional_variants,
+    persist_upload,
+    sanitize_image_upload,
+)
 
 router = APIRouter(prefix="/api/v1/optionals", tags=["optionals"])
 
@@ -30,15 +40,16 @@ _ANY = Depends(
 )
 
 
-def _build_photo_url(photo_path: Optional[str]) -> Optional[str]:
-    return build_photo_url(photo_path)
+def fill_optional_media(read: OptionalColorRead, photo_path: Optional[str]) -> OptionalColorRead:
+    """Mesmo contrato de imagem em todo lugar que devolve um opcional."""
+    read.photo_url = build_photo_url(photo_path)
+    read.thumbnail_url = build_thumbnail_url(photo_path)
+    read.photo_variants = build_optional_variants(photo_path)
+    return read
 
 
 def _to_read(opt: OptionalColor) -> OptionalColorRead:
-    data = OptionalColorRead.model_validate(opt)
-    data.photo_url = _build_photo_url(opt.photo_path)
-    data.thumbnail_url = build_thumbnail_url(opt.photo_path)
-    return data
+    return fill_optional_media(OptionalColorRead.model_validate(opt), opt.photo_path)
 
 
 @router.get("", response_model=List[OptionalColorRead])
@@ -127,6 +138,58 @@ async def create_europe_optional_before_activation(
     await db.commit()
     await db.refresh(optional)
     return _to_read(optional)
+
+
+@router.post("/platform/{market}/media/variants")
+async def inventory_optional_variants(
+    market: Literal["BR", "EU"],
+    offset: int = Query(0, ge=0, le=1_000_000),
+    limit: int = Query(20, ge=1, le=50),
+    apply: bool = Query(False),
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Manifesto do acervo de fotos de opcionais e pré-geração das variantes.
+
+    Sem `apply` é só simulação: lê as originais e informa ausências, baixa
+    resolução e variantes que faltam. Com `apply`, gera só o que falta.
+    Lote pequeno por chamada, em ordem estável por ID; quem chama repete com
+    `next_offset` até ele vir nulo. Falha de um item não interrompe o lote."""
+    total = (await db.execute(
+        select(func.count()).select_from(OptionalColor)
+        .where(OptionalColor.market_code == market)
+        .execution_options(skip_market_scope=True)
+    )).scalar_one()
+    rows = (await db.execute(
+        select(OptionalColor)
+        .where(OptionalColor.market_code == market)
+        .order_by(OptionalColor.id)
+        .offset(offset)
+        .limit(limit)
+        .execution_options(skip_market_scope=True)
+    )).scalars().all()
+    items = []
+    for row in rows:
+        item = {
+            "id": str(row.id),
+            "category": row.category,
+            "name": row.color_name,
+            "has_photo": bool(row.photo_path),
+        }
+        if row.photo_path:
+            try:
+                item.update(await inspect_optional_variants(row.photo_path, apply=apply))
+            except Exception as exc:  # um arquivo ruim não interrompe o lote
+                item["error"] = type(exc).__name__
+        items.append(item)
+    next_offset = offset + len(rows)
+    return {
+        "market": market,
+        "apply": apply,
+        "total": total,
+        "items": items,
+        "next_offset": next_offset if next_offset < total else None,
+    }
 
 
 @router.patch("/{optional_id}", response_model=OptionalColorRead)
@@ -226,4 +289,9 @@ async def upload_photo(
         raise
     await delete_upload(old_photo_path, market=opt.market_code)
     await db.refresh(opt)
-    return _to_read(opt)
+    read = _to_read(opt)
+    max_side = image_max_side(content)
+    read.photo_low_resolution = (
+        max_side is not None and max_side < OPTIONAL_RECOMMENDED_MIN_SIDE
+    )
+    return read
