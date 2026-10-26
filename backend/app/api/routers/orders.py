@@ -350,36 +350,46 @@ async def _load_products_and_types(
     return product_map, type_map
 
 
-async def _order_catalog(
-    db: AsyncSession,
-    products: list[Product],
-    scope: CatalogScope,
-    *,
-    current_catalog_id: uuid.UUID | None = None,
-) -> Catalog:
-    """Catálogo único do pedido, validado contra as permissões (MELH-07).
-
-    Mistura de catálogos e troca do catálogo na edição/revisão são 422 (dado
-    inválido); catálogo fora da permissão do cliente/representante é 403.
-    """
-    catalog_ids = {product.catalog_id for product in products}
-    if len(catalog_ids) != 1:
-        raise HTTPException(
-            status_code=422,
-            detail="Um pedido não pode misturar catálogos. Gere um pedido por catálogo.",
-        )
-    catalog_id = catalog_ids.pop()
-    if current_catalog_id is not None and catalog_id != current_catalog_id:
-        raise HTTPException(
-            status_code=422,
-            detail="A edição não pode trocar o catálogo do pedido.",
-        )
-    if not allows(scope, catalog_id):
+def _ensure_catalogs_allowed(scope: CatalogScope, catalog_ids: set[uuid.UUID]) -> None:
+    """Todo catálogo do pedido precisa estar liberado (MELH-07): senão 403."""
+    if not all(allows(scope, catalog_id) for catalog_id in catalog_ids):
         raise HTTPException(
             status_code=403,
             detail="Catálogo não liberado para este cliente ou representante.",
         )
-    return (await db.execute(select(Catalog).where(Catalog.id == catalog_id))).scalar_one()
+
+
+async def _order_catalog(
+    db: AsyncSession,
+    products: list[Product],
+    scope: CatalogScope,
+) -> Catalog | None:
+    """Valida os catálogos dos itens e devolve o catálogo do pedido.
+
+    O pedido pode misturar catálogos; cada um deles passa pela permissão do
+    cliente/representante. Devolve o catálogo quando é um só e None quando o
+    pedido mistura catálogos (orders.catalog_id fica vazio).
+    """
+    catalog_ids = {product.catalog_id for product in products}
+    _ensure_catalogs_allowed(scope, catalog_ids)
+    if len(catalog_ids) != 1:
+        return None
+    return (await db.execute(select(Catalog).where(Catalog.id == next(iter(catalog_ids))))).scalar_one()
+
+
+async def _order_item_catalog_ids(db: AsyncSession, order: Order) -> set[uuid.UUID]:
+    """Catálogos dos itens já gravados no pedido (pelo código do produto)."""
+    if order.catalog_id is not None:
+        return {order.catalog_id}
+    codes = {item.product_code for item in order.items}
+    if not codes:
+        return set()
+    return set((await db.execute(
+        select(Product.catalog_id).where(
+            Product.market_code == order.market_code,
+            Product.product_code.in_(codes),
+        )
+    )).scalars().all())
 
 
 def _price_for_profile(product: Product, profile: str) -> Decimal:
@@ -830,7 +840,6 @@ async def create_order(
         db,
         [product_map[item_in.product_code] for item_in in payload.items],
         order_catalog_scope(current_user, client, rep),
-        current_catalog_id=source_order.catalog_id if source_order else None,
     )
     total = _money(total)
     total_ipi = _money(total_ipi)
@@ -849,8 +858,8 @@ async def create_order(
         orc_id=orc_id,
         client_id=payload.client_id,
         rep_id=payload.rep_id,
-        catalog_id=catalog.id,
-        catalog_name=catalog.name,
+        catalog_id=catalog.id if catalog else None,
+        catalog_name=catalog.name if catalog else None,
         total_value=total,
         total_ipi=total_ipi,
         total_with_ipi=total_with_ipi,
@@ -1186,7 +1195,7 @@ async def update_order(
             order.rep_id = payload.rep_id
             changes.append("representante alterado")
         if payload.items is None:
-            # DEC-05: o novo representante precisa vender o catálogo do pedido.
+            # DEC-05: o novo representante precisa vender os catálogos do pedido.
             # Com itens, a mesma checagem acontece junto da validação deles.
             client = (await db.execute(select(Client).where(
                 Client.id == order.client_id,
@@ -1197,11 +1206,10 @@ async def update_order(
                     await visible_price_scope(db, current_user, principal.code),
                     client.price_profile,
                 )
-            if not allows(order_catalog_scope(current_user, client, selected_rep), order.catalog_id):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Catálogo não liberado para este cliente ou representante.",
-                )
+            _ensure_catalogs_allowed(
+                order_catalog_scope(current_user, client, selected_rep),
+                await _order_item_catalog_ids(db, order),
+            )
 
     if payload.items is not None:
         old_item_map = {item.id: item for item in order.items}
@@ -1348,12 +1356,16 @@ async def update_order(
                 observacao=product.observacao,
             ))
 
-        await _order_catalog(
+        catalog = await _order_catalog(
             db,
             [product_map[item_in.product_code] for item_in in payload.items],
             order_catalog_scope(current_user, client, rep),
-            current_catalog_id=order.catalog_id,
         )
+        new_catalog_id = catalog.id if catalog else None
+        if new_catalog_id != order.catalog_id:
+            changes.append("catálogo alterado")
+        order.catalog_id = new_catalog_id
+        order.catalog_name = catalog.name if catalog else None
 
         # Tudo validado: agora sim remove os antigos e insere os novos.
         for item in order.items:

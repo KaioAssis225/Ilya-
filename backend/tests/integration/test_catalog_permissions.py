@@ -120,14 +120,16 @@ def _order(client_id: uuid.UUID, *products: Product, rep_id: uuid.UUID | None = 
     return payload
 
 
-async def test_pedido_nao_mistura_catalogos_e_guarda_o_catalogo(
+async def test_pedido_mistura_catalogos_e_guarda_o_catalogo_quando_unico(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     s = await _Scenario().build(db_session)
     admin = await _token(db_session, UserRole.admin)
 
     mixed = await client.post("/api/v1/orders", json=_order(s.client.id, s.prod_a, s.prod_b), headers=_auth(admin))
-    assert mixed.status_code == 422, mixed.text
+    assert mixed.status_code == 201, mixed.text
+    assert mixed.json()["catalog_id"] is None
+    assert mixed.json()["catalog_name"] is None
 
     created = await client.post("/api/v1/orders", json=_order(s.client.id, s.prod_a), headers=_auth(admin))
     assert created.status_code == 201, created.text
@@ -135,20 +137,61 @@ async def test_pedido_nao_mistura_catalogos_e_guarda_o_catalogo(
     assert body["catalog_id"] == str(s.cat_a.id)
     assert body["catalog_name"] == s.cat_a.name
 
-    # A edição não troca o catálogo do pedido.
-    swapped = await client.put(
-        f"/api/v1/orders/{body['id']}",
-        json={"items": [{"product_code": s.prod_b.product_code, "qty": 1}]},
-        headers=_auth(admin),
-    )
-    assert swapped.status_code == 422, swapped.text
-
     listed = await client.get("/api/v1/orders?limit=100", headers=_auth(admin))
     row = next(o for o in listed.json() if o["id"] == body["id"])
     assert row["catalog_name"] == s.cat_a.name
 
     in_use = await client.delete(f"/api/v1/catalogs/{s.cat_a.id}", headers=_auth(admin))
     assert in_use.status_code == 409, in_use.text
+
+    # A edição pode trocar o catálogo ou passar a misturar catálogos.
+    swapped = await client.put(
+        f"/api/v1/orders/{body['id']}",
+        json={"items": [{"product_code": s.prod_b.product_code, "qty": 1}]},
+        headers=_auth(admin),
+    )
+    assert swapped.status_code == 200, swapped.text
+    assert swapped.json()["catalog_id"] == str(s.cat_b.id)
+    widened = await client.put(
+        f"/api/v1/orders/{body['id']}",
+        json={"items": [
+            {"product_code": s.prod_a.product_code, "qty": 1},
+            {"product_code": s.prod_b.product_code, "qty": 1},
+        ]},
+        headers=_auth(admin),
+    )
+    assert widened.status_code == 200, widened.text
+    assert widened.json()["catalog_id"] is None
+
+
+async def test_pedido_misto_exige_permissao_em_cada_catalogo(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    s = await _Scenario().build(db_session)
+    await _restrict(db_session, s.rep, s.cat_a)
+    rep_token = await _token(db_session, UserRole.representante, rep_id=s.rep.id)
+
+    denied = await client.post(
+        "/api/v1/orders", json=_order(s.client.id, s.prod_a, s.prod_b), headers=_auth(rep_token)
+    )
+    assert denied.status_code == 403, denied.text
+
+    # Trocar o representante de um pedido misto exige que o novo venda todos os catálogos.
+    admin = await _token(db_session, UserRole.admin)
+    free_rep = await make_representative(db_session, market_code="BR")
+    await db_session.flush()
+    mixed = await client.post(
+        "/api/v1/orders",
+        json=_order(s.client.id, s.prod_a, s.prod_b, rep_id=free_rep.id),
+        headers=_auth(admin),
+    )
+    assert mixed.status_code == 201, mixed.text
+    moved = await client.put(
+        f"/api/v1/orders/{mixed.json()['id']}",
+        json={"rep_id": str(s.rep.id)},
+        headers=_auth(admin),
+    )
+    assert moved.status_code == 403, moved.text
 
 
 async def test_representante_vende_so_a_intersecao_com_o_cliente(
