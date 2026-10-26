@@ -1,3 +1,5 @@
+import { useLocale } from '../hooks/useLocale'
+import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { Fragment, useCallback, useLayoutEffect, useState, useRef, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useQueryClient } from '@tanstack/react-query'
@@ -789,6 +791,7 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
 }
 
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
+  const english = useLocale().locale === 'en-GB'
   const { user } = useAuth()
   const tx = useCadastroText()
   const isEurope = user?.active_market === 'EU'
@@ -845,7 +848,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const createTypeM = useCreateProductType()
 
   // Categorias de opcionais sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
-  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
+  const catLabel = (code: string) => optionalCategoryLabel(optCategories.find(c => c.code === code)?.name ?? code, english)
 
   const pageItems = products
   const [showForm, setShowForm] = useState(false)
@@ -1770,13 +1773,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-[background-color,color,border-color]"
                                     style={isSel ? { backgroundColor: `${tint(color, 13)}`, borderColor: color, color } : { backgroundColor: 'var(--color-bg)', borderColor: 'var(--color-line)', color: 'var(--color-ink-3)' }}
                                   >
-                                    {opt.photo_url && <img src={opt.photo_url} alt={opt.color_name} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
-                                    <span>{opt.color_name}</span>
+                                    {opt.photo_url && <img src={opt.photo_url} alt={optionalName(opt.color_name, english)} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
+                                    <span>{optionalName(opt.color_name, english)}</span>
                                   </button>
                                 )
                               })}
                             </div>}
-                            {optCategories.find(group => group.code === cat) && <OptionalApplicationGroup
+                            {optCategories.find(group => group.code === cat) && <OptionalApplicationGroup english={english}
                               category={optCategories.find(group => group.code === cat)!}
                               optionals={allOptionals.filter(option => option.category === cat)}
                               applications={compForm.optional_applications ?? []}
@@ -1893,14 +1896,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                           }))
                         }
                       }} />
-                      <span className="text-xs text-ink-2">{category.name}</span>
+                      <span className="text-xs text-ink-2">{optionalCategoryLabel(category.name, english)}</span>
                     </label>)}
                   </div>
                   {activeCategories.map(code => {
                     const category = optCategories.find(candidate => candidate.code === code)
                     if (!category) return null
                     const categoryOptionals = allOptionals.filter(option => option.category === code)
-                    return <OptionalApplicationGroup key={category.id}
+                    return <OptionalApplicationGroup english={english} key={category.id}
                       category={category}
                       optionals={categoryOptionals}
                       applications={form.optional_applications ?? []}
@@ -2015,14 +2018,14 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                   className="w-full border border-line rounded-lg text-xs text-ink bg-white focus:outline-none focus:ring-2 focus:ring-gold/20 focus:border-gold/60 px-2 py-1"
                                 >
                                   {catItems.map(opt => (
-                                    <option key={opt.id} value={opt.id}>{opt.color_name}</option>
+                                    <option key={opt.id} value={opt.id}>{optionalName(opt.color_name, english)}</option>
                                   ))}
                                 </select>
                             )}
                               <p className="text-[10px] text-muted mt-1">{tx('Ctrl+clique para selecionar múltiplas cores.')}</p>
                             </div>
                           )}
-                          {category && <OptionalApplicationGroup
+                          {category && <OptionalApplicationGroup english={english}
                             category={category}
                             optionals={catItems}
                             applications={form.optional_applications ?? []}
@@ -2602,6 +2605,7 @@ function PeopleTab<T extends Client | Representative>({
 const EMPTY_OPT: OptionalColorCreate = { category: '', color_name: '' }
 
 function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: boolean }) {
+  const english = useLocale().locale === 'en-GB'
   const { data: optionals, isLoading } = useOptionals()
   const tx = useCadastroText()
   const { data: categories = [] } = useOptionalCategories()
@@ -2678,8 +2682,8 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
   }
 
   // Categorias sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
-  const catOptions = categories.map(c => ({ value: c.code, label: c.name }))
-  const catLabel = (code: string) => categories.find(c => c.code === code)?.name ?? code
+  const catOptions = categories.map(c => ({ value: c.code, label: optionalCategoryLabel(c.name, english) }))
+  const catLabel = (code: string) => optionalCategoryLabel(categories.find(c => c.code === code)?.name ?? code, english)
 
   // Agrupa por TODA categoria cadastrada (mesmo sem cores ainda, contador 0),
   // mais qualquer código "órfão" achado nos opcionais sem categoria correspondente
@@ -2776,12 +2780,12 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                       <td className="px-4 py-2.5 w-12">
                         {opt.photo_url
                           ? <button onClick={() => setLightboxUrl(opt.photo_url!)} className="cursor-zoom-in">
-                              <img src={opt.photo_url} alt={opt.color_name}
+                              <img src={opt.photo_url} alt={optionalName(opt.color_name, english)}
                                 className="w-8 h-8 rounded-md object-cover border border-line hover:opacity-80 transition-opacity" />
                             </button>
                           : <div className="w-8 h-8 rounded-md bg-bg-2 border border-line" />}
                       </td>
-                      <td className="px-4 py-2.5 text-ink">{opt.color_name}</td>
+                      <td className="px-4 py-2.5 text-ink">{optionalName(opt.color_name, english)}</td>
                       {!readOnly && (
                         <td className="px-4 py-2.5 w-16">
                           <div className="flex gap-2">

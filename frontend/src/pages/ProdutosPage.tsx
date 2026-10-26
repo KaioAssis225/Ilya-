@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn } from 'lucide-react'
 import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
@@ -333,8 +334,8 @@ const CAT_LABEL: Record<string, string> = {
   couro_soleta: 'Couro Soleta', couro_pele: 'Couro Pele',
 }
 
-function categoryLabel(category: string) {
-  return CAT_LABEL[category] ?? CAT_LABEL[category.toLocaleLowerCase('pt-PT')] ?? category
+function categoryLabel(category: string, english = false) {
+  return optionalCategoryLabel(CAT_LABEL[category] ?? CAT_LABEL[category.toLocaleLowerCase('pt-PT')] ?? category, english)
 }
 
 function freeOptionalCategories(product: Product): string[] {
@@ -508,7 +509,7 @@ function OptionalCatalogGroup({
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase(english ? 'en-GB' : 'pt-PT')
   const filtered = normalizedQuery
-    ? options.filter(option => option.color_name.toLocaleLowerCase(english ? 'en-GB' : 'pt-PT').includes(normalizedQuery))
+    ? options.filter(option => optionalMatchesSearch(option.color_name, normalizedQuery, english))
     : options
   const visible = normalizedQuery || expanded ? filtered : filtered.slice(0, 12)
   const hasMany = options.length > 12
@@ -535,7 +536,7 @@ function OptionalCatalogGroup({
         <div className="flex flex-wrap gap-3">
           {visible.map(option => {
             const selected = option.id === selectedId
-            const optionLabel = `${label}: ${option.color_name}`
+            const optionLabel = `${label}: ${optionalName(option.color_name, english)}`
             return (
               <div key={option.id} className="relative w-20">
                 <button
@@ -556,7 +557,7 @@ function OptionalCatalogGroup({
                     )}
                   </span>
                   <span className="min-h-8 w-full overflow-hidden text-xs font-medium leading-4 text-ink-2 [overflow-wrap:anywhere]">
-                    {option.color_name}
+                    {optionalName(option.color_name, english)}
                   </span>
                 </button>
                 {hasOptionalPhoto(option) && (
@@ -777,7 +778,7 @@ function ProductFullView({
                               return (
                                 <div key={cat} className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-line bg-white">
                                   <OptionalSwatchImage optional={opt} variant="thumb" displaySize={12} decorative className="h-3 w-3 rounded" />
-                                  <span className="text-[11px] leading-snug text-ink-2">{CAT_LABEL[cat] ?? cat}: {opt.color_name}</span>
+                                  <span className="text-[11px] leading-snug text-ink-2">{categoryLabel(cat, english)}: {optionalName(opt.color_name, english)}</span>
                                 </div>
                               )
                             })}
@@ -842,7 +843,7 @@ function ProductFullView({
                     <OptionalCatalogGroup
                       key={`category-${category}`}
                       id={`category-${category}`}
-                      label={categoryLabel(category)}
+                      label={categoryLabel(category, english)}
                       options={options}
                       selectedId={categorySelections[category]}
                       canDeselect={options.length > 1}
@@ -865,7 +866,7 @@ function ProductFullView({
                   <OptionalCatalogGroup
                     key={`free-category-${category}`}
                     id={`free-category-${category}`}
-                    label={categoryLabel(category)}
+                    label={categoryLabel(category, english)}
                     options={fetchedOptionals.filter(option => option.category === category)}
                     selectedId={categorySelections[category]}
                     canDeselect
@@ -956,6 +957,7 @@ export default function ProdutosPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { locale, t } = useLocale()
+  const english = locale === 'en-GB'
   const queryClient = useQueryClient()
   const { data: productTypes = [] } = useProductTypes()
   const { data: productGroups = [] } = useProductGroups()
@@ -1368,12 +1370,12 @@ export default function ProdutosPage() {
                             entre opcionais com e sem imagem. */}
                         <div className="grid grid-cols-2 gap-1.5 content-start">
                           {groupOptionalsByCategory(product.optionals).map(opt => {
-                            const label = `${CAT_LABEL[opt.category] ?? opt.category}: ${opt.color_name}`
+                            const label = `${categoryLabel(opt.category, english)}: ${optionalName(opt.color_name, english)}`
                             const swatch = <OptionalSwatchImage optional={opt} variant="thumb" displaySize={20} decorative className="h-5 w-5 flex-shrink-0 rounded border border-line" />
                             const text = (
                               <span className="min-w-0 leading-tight">
-                                <span className="block text-[10px] uppercase tracking-wide text-muted truncate">{CAT_LABEL[opt.category] ?? opt.category}</span>
-                                <span className="block text-[11px] leading-tight font-medium text-ink truncate">{opt.color_name}</span>
+                                <span className="block text-[10px] uppercase tracking-wide text-muted truncate">{categoryLabel(opt.category, english)}</span>
+                                <span className="block text-[11px] leading-tight font-medium text-ink truncate">{optionalName(opt.color_name, english)}</span>
                               </span>
                             )
                             // Só vira botão quando há foto pra ampliar — sem
@@ -1383,7 +1385,7 @@ export default function ProdutosPage() {
                               <button
                                 key={opt.category}
                                 type="button"
-                                onClick={() => setZoomOptional({ optional: opt, type: CAT_LABEL[opt.category] ?? opt.category })}
+                                onClick={() => setZoomOptional({ optional: opt, type: categoryLabel(opt.category, english) })}
                                 aria-label={`Ampliar ${label}`}
                                 style={{ touchAction: 'manipulation' }}
                                 className="flex min-h-11 items-center gap-1.5 min-w-0 rounded-lg border border-line bg-white px-2 py-1.5 text-left

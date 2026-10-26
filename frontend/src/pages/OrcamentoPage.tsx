@@ -26,6 +26,7 @@ import type { Product, Client, Representative, ClientCreate, OptionalColor, Opti
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
+import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -39,11 +40,12 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 // Acabamentos de um componente de conjunto: "Alumínio: Taupe · Teka: Polywood"
 function compFinishes(
   optionals: { category: string; color_name: string }[],
-  catLabel: (code: string) => string
+  catLabel: (code: string) => string,
+  english = false,
 ): string {
   const cats = Array.from(new Set(optionals.map(o => o.category)))
   return cats
-    .map(cat => `${catLabel(cat)}: ${optionals.find(o => o.category === cat)!.color_name}`)
+    .map(cat => `${catLabel(cat)}: ${optionalName(optionals.find(o => o.category === cat)!.color_name, english)}`)
     .join(' · ')
 }
 
@@ -468,10 +470,10 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
                 type="button"
                 onClick={() => {
                   const source = optionalMedia(currentOpt, 'zoom').src
-                  if (source) onPreview(source, currentOpt.color_name)
+                  if (source) onPreview(source, optionalName(currentOpt.color_name, isEnglish))
                 }}
                 className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 lg:h-5 lg:w-5"
-                aria-label={isEnglish ? `View photo of ${currentOpt.color_name}` : `Ver foto de ${currentOpt.color_name}`}
+                aria-label={isEnglish ? `View photo of ${optionalName(currentOpt.color_name, true)}` : `Ver foto de ${currentOpt.color_name}`}
               >
                 <OptionalSwatchImage optional={currentOpt} variant="thumb" displaySize={14} decorative className="h-3.5 w-3.5 rounded" />
               </button>
@@ -484,7 +486,7 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
               placeholder="—"
               options={available.map(option => ({
                 value: option.color_name,
-                label: option.color_name,
+                label: optionalName(option.color_name, isEnglish),
                 photoUrl: option.photo_url,
                 optional: option,
               }))}
@@ -514,7 +516,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
     const existing = groups.get(entry.application.category_code)
     if (existing) existing.entries.push(entry)
     else groups.set(entry.application.category_code, {
-      categoryName: entry.application.category_name,
+      categoryName: optionalCategoryLabel(entry.application.category_name, english),
       entries: [entry],
     })
   }
@@ -548,10 +550,10 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
                 const source = selected.photo_variants
                   ? optionalMedia(selected, 'zoom').src
                   : selected.photo_url ?? selected.thumbnail_url ?? preview
-                if (source) onPreview(source, selected.color_name)
+                if (source) onPreview(source, optionalName(selected.color_name, english))
               }}
               className="ml-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 lg:h-9 lg:w-9"
-              aria-label={english ? `View photo of ${selected.color_name}` : `Ver foto de ${selected.color_name}`}
+              aria-label={english ? `View photo of ${optionalName(selected.color_name, true)}` : `Ver foto de ${selected.color_name}`}
             >
               <OptionalSwatchImage optional={selected} variant="thumb" displaySize={20} decorative className="h-5 w-5 rounded" />
             </button>}
@@ -564,7 +566,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
               invalid={missing}
               options={options.map(option => ({
                 value: option.id,
-                label: option.color_name,
+                label: optionalName(option.color_name, english),
                 photoUrl: option.thumbnail_url ?? option.photo_url,
                 previewUrl: option.photo_url ?? option.thumbnail_url,
                 optional: option,
@@ -695,7 +697,7 @@ function MobileCartCard({
                     <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
                       • {comp.qty}x {comp.description} ({formatDimensions(comp, measurementMarket, measurementLocale)})
                       {comp.optionals.length > 0 && (
-                        <span className="block text-muted pl-2.5 break-words">{compFinishes(comp.optionals, catLabel)}</span>
+                        <span className="block text-muted pl-2.5 break-words">{compFinishes(comp.optionals, catLabel, locale === 'en-GB')}</span>
                       )}
                     </li>
                   ))}
@@ -1138,7 +1140,7 @@ export default function OrcamentoPage() {
     freeOptionalCategories.length > 0,
   )
   const { data: optCategories = [] } = useOptionalCategories()
-  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
+  const catLabel = (code: string) => optionalCategoryLabel(optCategories.find(c => c.code === code)?.name ?? code, locale === 'en-GB')
 
   const targetClientId = (
     (isClientUser ? user?.linked_id : null)
@@ -1794,7 +1796,7 @@ export default function OrcamentoPage() {
                                   <li key={comp.id} className="text-[11px] text-ink-3 leading-snug">
                                     • {comp.qty}x {comp.description} ({formatDimensions(comp, market, locale)})
                                     {comp.optionals.length > 0 && (
-                                      <span className="block text-muted pl-2.5 break-words">{compFinishes(comp.optionals, catLabel)}</span>
+                                      <span className="block text-muted pl-2.5 break-words">{compFinishes(comp.optionals, catLabel, locale === 'en-GB')}</span>
                                     )}
                                   </li>
                                 ))}

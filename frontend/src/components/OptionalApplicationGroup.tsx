@@ -1,6 +1,8 @@
+import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import type { OptionalApplicationInput, OptionalColor } from '../types'
 
 interface Props {
+  english?: boolean
   category: { id: string; code: string; name: string }
   optionals: OptionalColor[]
   applications: OptionalApplicationInput[]
@@ -10,7 +12,7 @@ interface Props {
   initialAllowAll: boolean
 }
 
-export function OptionalApplicationGroup({ category, optionals, applications, onChange, onFirstAdd, initialAllowedIds, initialAllowAll }: Props) {
+export function OptionalApplicationGroup({ english = false, category, optionals, applications, onChange, onFirstAdd, initialAllowedIds, initialAllowAll }: Props) {
   const indexes = applications.map((app, index) => app.category_id === category.id ? index : -1).filter(index => index >= 0)
   const update = (index: number, changes: Partial<OptionalApplicationInput>) =>
     onChange(applications.map((app, current) => current === index ? { ...app, ...changes } : app))
@@ -28,7 +30,7 @@ export function OptionalApplicationGroup({ category, optionals, applications, on
     }])
   }
   return (
-    <section className="mt-3 border-t border-line pt-3" aria-label={`Aplicações do opcional ${category.name}`}>
+    <section className="mt-3 border-t border-line pt-3" aria-label={`Aplicações do opcional ${optionalCategoryLabel(category.name, english)}`}>
       <h4 className="text-xs font-semibold text-ink mb-2">Aplicações do opcional</h4>
       {indexes.map(index => {
         const app = applications[index]
@@ -49,7 +51,7 @@ export function OptionalApplicationGroup({ category, optionals, applications, on
           </div>
           {!app.allow_all && <div className="flex flex-wrap gap-2">
             {optionals.map(option => <label key={option.id} className="text-xs border border-line rounded px-2 py-1">
-              <input type="checkbox" checked={app.allowed_optional_ids.includes(option.id)} onChange={event => update(index, { allowed_optional_ids: event.target.checked ? [...app.allowed_optional_ids, option.id] : app.allowed_optional_ids.filter(id => id !== option.id) })} /> {option.color_name}
+              <input type="checkbox" checked={app.allowed_optional_ids.includes(option.id)} onChange={event => update(index, { allowed_optional_ids: event.target.checked ? [...app.allowed_optional_ids, option.id] : app.allowed_optional_ids.filter(id => id !== option.id) })} /> {optionalName(option.color_name, english)}
             </label>)}
           </div>}
           <button type="button" className="text-xs text-danger" onClick={() => onChange(applications.filter((_, current) => current !== index))}>Remover aplicação</button>

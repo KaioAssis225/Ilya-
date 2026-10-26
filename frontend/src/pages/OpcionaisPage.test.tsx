@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AuthContext } from '../hooks/useAuth'
 import type { AuthContextValue, AuthUser } from '../contexts/AuthContext'
 import { LocaleProvider } from '../contexts/LocaleContext'
+import { useLocale } from '../hooks/useLocale'
 import { server } from '../test/setup'
 import OpcionaisPage from './OpcionaisPage'
 
@@ -27,11 +28,17 @@ const auth: AuthContextValue = {
   switchMarket: vi.fn(),
 }
 
-function renderPage() {
+function LanguageControls() {
+  const { setLocale } = useLocale()
+  return <><button onClick={() => setLocale('pt-PT')}>PT</button><button onClick={() => setLocale('en-GB')}>EN</button></>
+}
+
+function renderPage(activeUser: AuthUser = user) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <AuthContext.Provider value={auth}>
+    <AuthContext.Provider value={{ ...auth, user: activeUser }}>
       <LocaleProvider>
+        <LanguageControls />
         <QueryClientProvider client={client}>
           <OpcionaisPage />
         </QueryClientProvider>
@@ -41,6 +48,40 @@ function renderPage() {
 }
 
 describe('OpcionaisPage', () => {
+  it('traduz nomes, categorias, busca, bancada e zoom no EN e volta aos originais no PT', async () => {
+    const original = { id: 'opt-branco', category: 'MADEIRA', color_name: 'Branco', photo_url: '/branco.jpg' }
+    server.use(
+      http.get('*/optional-categories', () => HttpResponse.json([
+        { id: 'cat-madeira', code: 'MADEIRA', name: 'Madeira', display_order: 1 },
+      ])),
+      http.get('*/optionals', () => HttpResponse.json([original])),
+    )
+    localStorage.removeItem(`ilya-locale:${user.id}:EU`)
+    renderPage({ ...user, active_market: 'EU', allowed_markets: ['EU'] })
+    expect(await screen.findByRole('heading', { name: 'Branco', level: 3 })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'EN' }))
+    expect(screen.getByRole('heading', { name: 'Wood', level: 2 })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'White', level: 3 })).toBeVisible()
+    const search = screen.getByRole('searchbox', { name: 'Search finishes by name' })
+    await userEvent.type(search, 'white')
+    expect(screen.getByRole('heading', { name: 'White', level: 3 })).toBeVisible()
+    await userEvent.clear(search)
+    await userEvent.type(search, 'branco')
+    expect(screen.getByRole('heading', { name: 'White', level: 3 })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Place side by side' }))
+    expect(screen.getByRole('button', { name: 'Remove White' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Enlarge White' }))
+    expect(screen.getByRole('dialog', { name: 'Wood: White' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'PT' }))
+    expect(screen.getByRole('heading', { name: 'Madeira', level: 2 })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Branco', level: 3 })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Remover Branco' })).toBeVisible()
+    expect(original.color_name).toBe('Branco')
+  })
+
   it('ordena categorias do cadastro, busca sem acento e mostra o estado sem foto', async () => {
     server.use(
       http.get('*/optional-categories', () => HttpResponse.json([

@@ -14,6 +14,7 @@ import api from '../lib/api'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
+import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { formatArea } from '../lib/areaProduct'
 
 function fmtDate(s: string) {
@@ -212,6 +213,7 @@ function OrderDetailModal({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const optionalEnglish = useLocale().locale === 'en-GB'
   const {
     data: orderDetail,
     isError: detailError,
@@ -252,7 +254,7 @@ function OrderDetailModal({
     !!orderDetail,
   )
   const { data: optCategories = [] } = useOptionalCategories()
-  const catLabel = (code: string) => optCategories.find(c => c.code === code)?.name ?? code
+  const catLabel = (code: string) => optionalCategoryLabel(optCategories.find(c => c.code === code)?.name ?? code, optionalEnglish)
   const [tab, setTab] = useState<'details' | 'history'>('details')
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   const [expandedOptionalItems, setExpandedOptionalItems] = useState<Set<string>>(() => new Set())
@@ -272,7 +274,7 @@ function OrderDetailModal({
     return Object.entries(cats).map(([cat, color]) => {
       const optional = allOptionals.find(o => o.category === cat && o.color_name === color)
       return {
-        label: `${catLabel(cat)} — ${color}`,
+        label: `${catLabel(cat)} — ${optionalName(color, optionalEnglish)}`,
         swatch: optional?.photo_url ?? optional?.thumbnail_url ?? null,
         thumbnail: optional?.thumbnail_url ?? optional?.photo_url ?? null,
       }
@@ -471,7 +473,7 @@ function OrderDetailModal({
                               const applicationName = isEuOrder && choice.application_name_en
                                 ? choice.application_name_en
                                 : choice.application_name
-                              const label = `${choice.component_name ? `${choice.component_name} — ` : ''}${applicationName}: ${choice.optional_name}`
+                              const label = `${choice.component_name ? `${choice.component_name} — ` : ''}${applicationName}: ${optionalName(choice.optional_name, optionalEnglish)}`
                               const optional = allOptionals.find((candidate) => candidate.id === choice.optional_id)
                               return {
                                 choice,

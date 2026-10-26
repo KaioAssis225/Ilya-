@@ -10,6 +10,7 @@ import { useOptionalBench } from '../hooks/useOptionalBench'
 import { useOptionalCategories, type OptionalCategory } from '../hooks/useOptionalCategories'
 import { useOptionals } from '../hooks/useOptionals'
 import { hasOptionalPhoto } from '../lib/optionalMedia'
+import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
 import type { OptionalColor } from '../types'
 
 function normalizeSearch(value: string) {
@@ -48,7 +49,7 @@ export default function OpcionaisPage() {
     const knownCodes = new Set(sortedCategories.map(category => category.code))
     const registered = sortedCategories.map(category => ({
       code: category.code,
-      label: category.name,
+      label: optionalCategoryLabel(category.name, english),
       category,
       items: optionals.filter(optional => optional.category === category.code),
     }))
@@ -63,10 +64,10 @@ export default function OpcionaisPage() {
     .map(group => ({
       ...group,
       items: normalizedQuery
-        ? group.items.filter(optional => normalizeSearch(optional.color_name).includes(normalizedQuery))
+        ? group.items.filter(optional => optionalMatchesSearch(optional.color_name, normalizedQuery, english))
         : group.items,
     }))
-    .filter(group => !normalizedQuery || group.items.length > 0), [groups, normalizedQuery])
+    .filter(group => !normalizedQuery || group.items.length > 0), [groups, normalizedQuery, english])
   const resultCount = visibleGroups.reduce((total, group) => total + group.items.length, 0)
   const priorityIds = useMemo(() => new Set(
     visibleGroups.flatMap(group => group.items).slice(0, 5).map(optional => optional.id),
@@ -74,8 +75,8 @@ export default function OpcionaisPage() {
   const showType = Boolean(normalizedQuery && visibleGroups.length > 1)
   const isLoading = loadingOptionals || loadingCategories
   const isError = optionalsError || categoriesError
-  const categoryName = (code: string) => categories?.find(category => category.code === code)?.name
-    ?? (english ? 'Other' : 'Outros')
+  const categoryName = (code: string) => optionalCategoryLabel(categories?.find(category => category.code === code)?.name
+    ?? (english ? 'Other' : 'Outros'), english)
 
   function addToBench(optional: OptionalColor) {
     const result = bench.add(optional.id)
@@ -84,8 +85,8 @@ export default function OpcionaisPage() {
       return
     }
     setAnnouncement(result === 'duplicate'
-      ? (english ? `${optional.color_name} is already on the bench.` : `${optional.color_name} já está na bancada.`)
-      : (english ? `${optional.color_name} added to the bench.` : `${optional.color_name} adicionada à bancada.`))
+      ? (english ? `${optionalName(optional.color_name, english)} is already on the bench.` : `${optionalName(optional.color_name, english)} já está na bancada.`)
+      : (english ? `${optionalName(optional.color_name, english)} added to the bench.` : `${optionalName(optional.color_name, english)} adicionada à bancada.`))
   }
 
   if (!user) return null
@@ -181,7 +182,7 @@ export default function OpcionaisPage() {
                             onClick={() => hasPhoto && setZoomed(optional)}
                             disabled={!hasPhoto}
                             className="group block w-full rounded-xl text-left disabled:cursor-default"
-                            aria-label={hasPhoto ? (english ? `Enlarge ${optional.color_name}` : `Ampliar ${optional.color_name}`) : undefined}
+                            aria-label={hasPhoto ? (english ? `Enlarge ${optionalName(optional.color_name, english)}` : `Ampliar ${optionalName(optional.color_name, english)}`) : undefined}
                           >
                             <OptionalSwatchImage
                               optional={optional}
@@ -191,7 +192,7 @@ export default function OpcionaisPage() {
                               className="w-full rounded-xl border border-line transition-[border-color,box-shadow] group-enabled:hover:border-gold/50 group-enabled:hover:shadow-md"
                             />
                           </button>
-                          <h3 className="mt-3 font-sans text-sm font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optional.color_name}</h3>
+                          <h3 className="mt-3 font-sans text-sm font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optionalName(optional.color_name, english)}</h3>
                           {showType && <p className="mt-1 text-xs text-muted">{categoryName(optional.category)}</p>}
                           <button
                             type="button"
@@ -219,7 +220,7 @@ export default function OpcionaisPage() {
         categoryLabel={categoryName}
         onRemove={optional => {
           bench.remove(optional.id)
-          setAnnouncement(english ? `${optional.color_name} removed from the bench.` : `${optional.color_name} removida da bancada.`)
+          setAnnouncement(english ? `${optionalName(optional.color_name, english)} removed from the bench.` : `${optionalName(optional.color_name, english)} removida da bancada.`)
         }}
         onMove={(optional, direction) => bench.move(optional.id, direction)}
         onClear={() => {
@@ -251,13 +252,13 @@ export default function OpcionaisPage() {
                 onClick={() => {
                   bench.replace(optional.id, pendingReplacement.id)
                   setAnnouncement(english
-                    ? `${optional.color_name} replaced by ${pendingReplacement.color_name}.`
-                    : `${optional.color_name} substituída por ${pendingReplacement.color_name}.`)
+                    ? `${optionalName(optional.color_name, english)} replaced by ${optionalName(pendingReplacement.color_name, english)}.`
+                    : `${optionalName(optional.color_name, english)} substituída por ${optionalName(pendingReplacement.color_name, english)}.`)
                   setPendingReplacement(null)
                 }}
               >
                 <OptionalSwatchImage optional={optional} variant="thumb" displaySize={120} decorative className="w-full rounded-lg" />
-                <span className="mt-2 block text-xs font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optional.color_name}</span>
+                <span className="mt-2 block text-xs font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optionalName(optional.color_name, english)}</span>
               </button>
             ))}
           </div>
