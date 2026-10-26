@@ -1,6 +1,7 @@
 import { ImageOff } from 'lucide-react'
 import { useState } from 'react'
 import { useLocale } from '../hooks/useLocale'
+import { optionalName } from '../lib/optionalLabels'
 import { optionalMedia, optionalMediaWidth, type OptionalMediaVariant } from '../lib/optionalMedia'
 import type { OptionalColor } from '../types'
 
@@ -26,6 +27,7 @@ export function OptionalSwatchImage({
   imageClassName = '',
 }: OptionalSwatchImageProps) {
   const { locale } = useLocale()
+  const label = optionalName(optional.color_name, locale === 'en-GB')
   const [failedSources, setFailedSources] = useState<string[]>([])
   const media = optionalMedia(optional, variant, displaySize)
   const primaryFailed = Boolean(media.src && failedSources.includes(media.src))
@@ -42,7 +44,7 @@ export function OptionalSwatchImage({
           src={source}
           srcSet={usingFallback || !responsive ? undefined : media.srcSet}
           sizes={usingFallback || !responsive ? undefined : media.sizes}
-          alt={decorative ? '' : optional.color_name}
+          alt={decorative ? '' : label}
           aria-hidden={decorative || undefined}
           width={displaySize}
           height={displaySize}
@@ -55,13 +57,13 @@ export function OptionalSwatchImage({
       ) : (
         <span
           role={decorative ? undefined : 'img'}
-          aria-label={decorative ? undefined : `${unavailableLabel}: ${optional.color_name}`}
+          aria-label={decorative ? undefined : `${unavailableLabel}: ${label}`}
           className="flex h-full w-full flex-col items-center justify-center gap-1.5 p-2 text-center text-muted"
         >
           <ImageOff className="h-5 w-5 shrink-0" aria-hidden="true" />
           <span className="text-[10px] font-medium leading-tight">
             {unavailableLabel}
-            <span className="block [overflow-wrap:anywhere]">{optional.color_name}</span>
+            <span className="block [overflow-wrap:anywhere]">{label}</span>
           </span>
         </span>
       )}

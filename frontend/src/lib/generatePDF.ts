@@ -1,3 +1,4 @@
+import { optionalName, optionalCategoryLabel } from './optionalLabels'
 import jsPDF from 'jspdf'
 import type { Order, Client, Representative, Product } from '../types'
 import { formatDimensions } from './measurements'
@@ -296,7 +297,7 @@ export async function generateOrderPDF(
       // dos itens internos de um conjunto.
       const compCats = Array.from(new Set(comp.optionals.map((o) => o.category)))
       const finishes = compCats
-        .map((cat) => `${catLabel(cat)}: ${comp.optionals.find((o) => o.category === cat)!.color_name}`)
+        .map((cat) => `${optionalCategoryLabel(catLabel(cat), locale === 'en-GB')}: ${optionalName(comp.optionals.find((o) => o.category === cat)!.color_name, locale === 'en-GB')}`)
         .join(', ')
       const suffix = finishes ? ` — ${finishes}` : ''
       return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})${suffix}`, WRAP_WIDTH)

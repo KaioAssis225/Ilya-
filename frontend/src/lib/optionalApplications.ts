@@ -1,4 +1,5 @@
 import type { OptionalApplication, OptionalChoice, OptionalChoiceInput, OptionalColor, OrderItem, Product } from '../types'
+import { optionalName, optionalCategoryLabel } from './optionalLabels'
 
 export interface ProductApplication {
   application: OptionalApplication
@@ -69,7 +70,7 @@ export function validateApplicationChoices(product: Product, choices: OptionalCh
 
 export function formatChoice(choice: OptionalChoice, english: boolean): string {
   const name = english && choice.application_name_en?.trim() ? choice.application_name_en : choice.application_name
-  return `${choice.component_name ? `${choice.component_name} — ` : ''}${name}: ${choice.optional_name}`
+  return `${choice.component_name ? `${choice.component_name} — ` : ''}${name}: ${optionalName(choice.optional_name, english)}`
 }
 
 export function orderOptionalSlots(
@@ -78,10 +79,12 @@ export function orderOptionalSlots(
   categoryLabel: (code: string) => string,
 ): { label: string; value: string }[] {
   return [
-    ...Object.entries(item.opt_categories ?? {}).map(([category, value]) => ({ label: categoryLabel(category), value })),
+    ...Object.entries(item.opt_categories ?? {}).map(([category, value]) => ({
+      label: optionalCategoryLabel(categoryLabel(category), english), value: optionalName(value, english),
+    })),
     ...(item.optional_choices ?? []).map(choice => ({
       label: `${choice.component_name ? `${choice.component_name} — ` : ''}${english && choice.application_name_en ? choice.application_name_en : choice.application_name}`,
-      value: choice.optional_name,
+      value: optionalName(choice.optional_name, english),
     })),
   ]
 }

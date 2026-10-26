@@ -218,6 +218,25 @@ describe('ProdutosPage de catálogo em DOM', () => {
     await waitFor(() => expect(requests).toContain('en-GB'))
   })
 
+  it('mostra acabamentos em inglês, mas salva o nome português no carrinho EU', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'EU')
+    const charcoal = optional('stone-charcoal', 'PEDRA_SINTERIZADA', 'CARVÃO')
+    const pearl = optional('stone-pearl', 'PEDRA_SINTERIZADA', 'PÉROLA')
+    const product = detailProduct({ market_code: 'EU', currency: 'EUR', optionals: [charcoal, pearl] })
+    installDetailProduct(product)
+    localStorage.setItem(`ilya-locale:${authUser.id}:EU`, 'en-GB')
+    renderProductPage(<ProdutosPage />, authUser)
+
+    await user.click(await screen.findByText(product.description))
+    expect(screen.getByRole('button', { name: 'SINTERED STONE: CHARCOAL' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'SINTERED STONE: PEARL' }))
+    await user.click(screen.getByRole('button', { name: 'Add to quote' }))
+
+    expect(readCart(authUser)[0].opt_categories).toEqual({ PEDRA_SINTERIZADA: 'PÉROLA' })
+    expect(product.optionals.map(option => option.color_name)).toEqual(['CARVÃO', 'PÉROLA'])
+  })
+
   it('seleciona acabamento fixo com foto e só mescla linhas com escolhas iguais', async () => {
     const user = userEvent.setup()
     const authUser = productTestUser('admin', 'BR')

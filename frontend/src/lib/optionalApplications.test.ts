@@ -68,8 +68,10 @@ test('PDF mantém opcionais legados e aplicações independentes na ordem da lin
     ],
   } as unknown as OrderItem
   assert.deepEqual(orderOptionalSlots(item, true, category => category), [
-    { label: 'CORDA', value: 'Natural' },
+    { label: 'ROPE', value: 'Natural' },
     { label: 'Leg paint', value: 'Taupe' },
-    { label: 'Poltrona — Seat leather', value: 'Caramelo' },
+    { label: 'Poltrona — Seat leather', value: 'Caramel' },
   ])
+  assert.equal(orderOptionalSlots(item, false, category => category)[2].value, 'Caramelo')
+  assert.equal(item.optional_choices?.[1].optional_name, 'Caramelo')
 })

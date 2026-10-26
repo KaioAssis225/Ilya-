@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, X } from 'lucide-react'
 import { useLocale } from '../hooks/useLocale'
+import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import type { OptionalColor } from '../types'
 import { OptionalSwatchImage } from './OptionalSwatchImage'
 
@@ -84,21 +85,21 @@ export function OptionalBenchPanel({
                     type="button"
                     onClick={() => onRemove(optional)}
                     className="btn-icon absolute right-1.5 top-1.5 bg-white/95 shadow-sm"
-                    aria-label={english ? `Remove ${optional.color_name}` : `Remover ${optional.color_name}`}
+                    aria-label={english ? `Remove ${optionalName(optional.color_name, english)}` : `Remover ${optionalName(optional.color_name, english)}`}
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
                 <div className="pt-2">
-                  <p className="text-sm font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optional.color_name}</p>
-                  <p className="mt-0.5 text-xs text-muted">{categoryLabel(optional.category)}</p>
+                  <p className="text-sm font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{optionalName(optional.color_name, english)}</p>
+                  <p className="mt-0.5 text-xs text-muted">{optionalCategoryLabel(categoryLabel(optional.category), english)}</p>
                   <div className="mt-1 flex gap-1">
                     <button
                       type="button"
                       onClick={() => onMove(optional, -1)}
                       disabled={index === 0}
                       className="btn-icon"
-                      aria-label={english ? `Move ${optional.color_name} left` : `Mover ${optional.color_name} para a esquerda`}
+                      aria-label={english ? `Move ${optionalName(optional.color_name, english)} left` : `Mover ${optionalName(optional.color_name, english)} para a esquerda`}
                     >
                       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                     </button>
@@ -107,7 +108,7 @@ export function OptionalBenchPanel({
                       onClick={() => onMove(optional, 1)}
                       disabled={index === items.length - 1}
                       className="btn-icon"
-                      aria-label={english ? `Move ${optional.color_name} right` : `Mover ${optional.color_name} para a direita`}
+                      aria-label={english ? `Move ${optionalName(optional.color_name, english)} right` : `Mover ${optionalName(optional.color_name, english)} para a direita`}
                     >
                       <ChevronRight className="h-4 w-4" aria-hidden="true" />
                     </button>

@@ -3,6 +3,7 @@ import { DialogPanel } from './Dialog'
 import { OptionalSwatchImage } from './OptionalSwatchImage'
 import type { OptionalColor } from '../types'
 import { useLocale } from '../hooks/useLocale'
+import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 
 export function OptionalZoomDialog({
   optional,
@@ -14,6 +15,7 @@ export function OptionalZoomDialog({
   onClose: () => void
 }) {
   const { locale } = useLocale()
+  const english = locale === 'en-GB'
 
   return (
     <div
@@ -22,7 +24,7 @@ export function OptionalZoomDialog({
     >
       <DialogPanel
         onClose={onClose}
-        label={`${type}: ${optional.color_name}`}
+        label={`${optionalCategoryLabel(type, english)}: ${optionalName(optional.color_name, english)}`}
         className="modal-panel relative my-auto w-full max-w-[min(90vw,704px)] p-4 sm:p-6"
       >
         <button
@@ -43,8 +45,8 @@ export function OptionalZoomDialog({
           className="mx-auto w-full max-w-[min(80vw,640px)] rounded-xl"
         />
         <div className="px-1 pb-1 pt-4 text-center">
-          <h2 className="text-xl leading-tight text-ink sm:text-2xl">{optional.color_name}</h2>
-          <p className="mt-1 text-sm text-muted">{type}</p>
+          <h2 className="text-xl leading-tight text-ink sm:text-2xl">{optionalName(optional.color_name, english)}</h2>
+          <p className="mt-1 text-sm text-muted">{optionalCategoryLabel(type, english)}</p>
         </div>
       </DialogPanel>
     </div>
