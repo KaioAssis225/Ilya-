@@ -154,7 +154,7 @@ def test_component_application_and_repeat_policy_cross_component():
 def test_history_keeps_application_and_option_names_as_snapshots():
     choice = SimpleNamespace(
         id=uuid.uuid4(), application_name="Pintura dos pés", application_name_en="Leg paint",
-        category_code="PINTURA", category_name="Pintura", optional_name="Taupe",
+        category_code="PINTURA", category_name="Pintura", optional_name="Taupe", custom_text=None,
         component_name="Cadeira", display_order=1,
     )
     snapshot = _items_history_snapshot([SimpleNamespace(

@@ -78,13 +78,17 @@ export interface OptionalChoice {
   category_code: string
   category_name: string
   optional_name: string
+  /** Texto da opção "Customizado"; vazio nas escolhas do cadastro. */
+  custom_text?: string | null
   component_name: string | null
   display_order: number
 }
 
+/** Um opcional do cadastro (optional_id) ou a opção "Customizado" (custom_text). */
 export interface OptionalChoiceInput {
   application_id: string
-  optional_id: string
+  optional_id?: string | null
+  custom_text?: string | null
 }
 
 export interface ProductSetItem {
@@ -311,7 +315,7 @@ export interface OrderHistory {
   user: { id: string; full_name: string } | null
   action: string
   details: string | null
-  items_snapshot?: { product_code: string; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; component_name: string | null }[] }[] | null
+  items_snapshot?: { product_code: string; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; component_name: string | null }[] }[] | null
   created_at: string
 }
 

@@ -235,9 +235,15 @@ def _tax_for_rate(rate: str, mappings: dict[str, int]) -> dict:
     return {"tax_id": mappings[rate], "value": float(value), "order": 1, "cumulative": 0}
 
 
+def _choice_value(choice, locale: str) -> str:
+    if choice.custom_text is None:
+        return choice.optional_name
+    return ("Custom" if locale == "en-GB" else choice.optional_name) + ": " + choice.custom_text
+
+
 def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> str:
     choice_lines = [
-        f"{(choice.component_name + ' — ') if choice.component_name else ''}{(choice.application_name_en if locale == 'en-GB' and choice.application_name_en else choice.application_name)}: {choice.optional_name}"
+        f"{(choice.component_name + ' — ') if choice.component_name else ''}{(choice.application_name_en if locale == 'en-GB' and choice.application_name_en else choice.application_name)}: {_choice_value(choice, locale)}"
         for choice in sorted(item.optional_choices, key=lambda row: (row.display_order, str(row.id)))
     ]
     legacy_lines = [f"{category}: {value}" for category, value in item.opt_categories.items()]

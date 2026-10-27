@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
 import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine } from 'lucide-react'
 import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
@@ -24,6 +24,10 @@ import { hasOptionalPhoto } from '../lib/optionalMedia'
 import {
   allowedForApplication,
   applicationName,
+  CUSTOM_OPTION,
+  customOptionLabel,
+  isCustomChoice,
+  legacyCustomValue,
   productApplications,
   requiredApplicationProgress,
   validateApplicationChoices,
@@ -393,7 +397,8 @@ interface StoredProductLine extends CartSelections {
 function sortedChoices(choices: OptionalChoiceInput[] | undefined) {
   return [...(choices ?? [])].sort((left, right) =>
     left.application_id.localeCompare(right.application_id)
-      || left.optional_id.localeCompare(right.optional_id),
+      || (left.optional_id ?? '').localeCompare(right.optional_id ?? '')
+      || (left.custom_text ?? '').localeCompare(right.custom_text ?? ''),
   )
 }
 
@@ -496,6 +501,8 @@ function OptionalCatalogGroup({
   english,
   onSelect,
   onZoom,
+  customText,
+  onCustomText,
 }: {
   id: string
   label: string
@@ -505,6 +512,10 @@ function OptionalCatalogGroup({
   english: boolean
   onSelect: (optionalId: string | undefined) => void
   onZoom: (optional: OptionalColor, type: string) => void
+  /** Texto da opção "Customizado"; null quando ela não está escolhida. */
+  customText: string | null
+  /** Escolhe (texto) ou desfaz (null) a opção "Customizado". */
+  onCustomText: (text: string | null) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [query, setQuery] = useState('')
@@ -533,7 +544,7 @@ function OptionalCatalogGroup({
           />
         </label>
       )}
-      {visible.length > 0 ? (
+      {visible.length > 0 || !normalizedQuery ? (
         <div className="flex flex-wrap gap-3">
           {visible.map(option => {
             const selected = option.id === selectedId
@@ -575,11 +586,41 @@ function OptionalCatalogGroup({
               </div>
             )
           })}
+          <button
+            type="button"
+            aria-pressed={customText !== null}
+            aria-label={`${label}: ${customOptionLabel(english)}`}
+            onClick={() => onCustomText(customText === null ? '' : null)}
+            className={`flex w-20 flex-col items-center gap-1.5 rounded-xl border bg-white p-1.5 text-center transition-[border-color,box-shadow,transform] active:scale-[0.98] ${
+              customText !== null ? 'border-gold ring-2 ring-gold' : 'border-line hover:border-gold/60'
+            }`}
+          >
+            <span className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-line text-gold">
+              <PenLine className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <span className="min-h-8 w-full text-xs font-medium leading-4 text-ink-2">{customOptionLabel(english)}</span>
+          </button>
         </div>
       ) : (
         <p className="text-sm text-muted">
           {english ? 'No finishes match this search.' : 'Nenhum acabamento corresponde à busca.'}
         </p>
+      )}
+      {customText !== null && (
+        <label className="block space-y-1.5">
+          <span className="text-xs font-semibold text-ink-2">
+            {english ? 'What will be customized?' : 'O que será customizado?'}
+          </span>
+          <textarea
+            value={customText}
+            onChange={event => onCustomText(event.target.value)}
+            maxLength={1000}
+            rows={3}
+            autoFocus={!customText}
+            placeholder={english ? 'Describe the customization for this product' : 'Descreva a customização deste produto'}
+            className={`input w-full resize-y text-base md:text-sm ${customText.trim() ? '' : 'border-warning/60'}`}
+          />
+        </label>
       )}
       {hasMany && !normalizedQuery && (
         <button
@@ -630,7 +671,8 @@ function ProductFullView({
       return first ? [[category, first.id]] : []
     })),
   )
-  const [applicationSelections, setApplicationSelections] = useState<Record<string, string>>({})
+  const [categoryCustomTexts, setCategoryCustomTexts] = useState<Record<string, string>>({})
+  const [applicationSelections, setApplicationSelections] = useState<Record<string, OptionalChoiceInput>>({})
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
   const mobileOptModalRef = useRef(mobileOptModal)
@@ -658,12 +700,48 @@ function ProductFullView({
     }
   }, [])
 
-  const applicationChoices = useMemo<OptionalChoiceInput[]>(() =>
-    Object.entries(applicationSelections).map(([application_id, optional_id]) => ({ application_id, optional_id })),
-  [applicationSelections])
+  const applicationChoices = useMemo<OptionalChoiceInput[]>(() => Object.values(applicationSelections), [applicationSelections])
+
+  function selectCategory(category: string, optionalId: string | undefined) {
+    setValidationAlert(null)
+    setCategorySelections(current => {
+      const next = { ...current }
+      if (optionalId) next[category] = optionalId
+      else delete next[category]
+      return next
+    })
+  }
+
+  function customizeCategory(category: string, text: string | null) {
+    setValidationAlert(null)
+    setCategoryCustomTexts(current => ({ ...current, [category]: text ?? '' }))
+    selectCategory(category, text === null ? undefined : CUSTOM_OPTION)
+  }
+
+  function categoryCustomText(category: string): string | null {
+    return categorySelections[category] === CUSTOM_OPTION ? categoryCustomTexts[category] ?? '' : null
+  }
+
+  function selectApplication(applicationId: string, choice: OptionalChoiceInput | null) {
+    setValidationAlert(null)
+    setApplicationSelections(current => {
+      const next = { ...current }
+      if (choice) next[applicationId] = choice
+      else delete next[applicationId]
+      return next
+    })
+  }
   const progress = requiredApplicationProgress(product, applicationChoices, fetchedOptionals)
 
   function handleAdd() {
+    const emptyCustomization = applicationChoices.some(choice => isCustomChoice(choice) && !choice.custom_text?.trim())
+      || Object.keys(categorySelections).some(category => categoryCustomText(category)?.trim() === '')
+    if (emptyCustomization) {
+      setValidationAlert(english
+        ? 'Describe the customization before adding this product.'
+        : 'Descreva a customização antes de adicionar este produto.')
+      return
+    }
     const errors = validateApplicationChoices(product, applicationChoices, fetchedOptionals)
     if (errors.length > 0 || progress.missing > 0) {
       setValidationAlert(english
@@ -677,6 +755,11 @@ function ProductFullView({
       ...freeCategories.map(category => [category, fetchedOptionals.filter(option => option.category === category)] as const),
     ])
     const opt_categories = Object.entries(categorySelections).reduce<Record<string, string>>((selected, [category, optionalId]) => {
+      const customText = categoryCustomText(category)
+      if (customText !== null) {
+        selected[category] = legacyCustomValue(customText.trim())
+        return selected
+      }
       const option = optionsByCategory.get(category)?.find(candidate => candidate.id === optionalId)
       if (option) selected[category] = option.color_name
       return selected
@@ -850,15 +933,9 @@ function ProductFullView({
                       selectedId={categorySelections[category]}
                       canDeselect={options.length > 1}
                       english={english}
-                      onSelect={optionalId => {
-                        setValidationAlert(null)
-                        setCategorySelections(current => {
-                          const next = { ...current }
-                          if (optionalId) next[category] = optionalId
-                          else delete next[category]
-                          return next
-                        })
-                      }}
+                      onSelect={optionalId => selectCategory(category, optionalId)}
+                      customText={categoryCustomText(category)}
+                      onCustomText={text => customizeCategory(category, text)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )
@@ -873,15 +950,9 @@ function ProductFullView({
                     selectedId={categorySelections[category]}
                     canDeselect
                     english={english}
-                    onSelect={optionalId => {
-                      setValidationAlert(null)
-                      setCategorySelections(current => {
-                        const next = { ...current }
-                        if (optionalId) next[category] = optionalId
-                        else delete next[category]
-                        return next
-                      })
-                    }}
+                    onSelect={optionalId => selectCategory(category, optionalId)}
+                    customText={categoryCustomText(category)}
+                    onCustomText={text => customizeCategory(category, text)}
                     onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                   />
                 ))}
@@ -894,18 +965,12 @@ function ProductFullView({
                       id={`application-${application.id}`}
                       label={label}
                       options={allowedForApplication(application, fetchedOptionals)}
-                      selectedId={applicationSelections[application.id]}
+                      selectedId={applicationSelections[application.id]?.optional_id ?? undefined}
                       canDeselect
                       english={english}
-                      onSelect={optionalId => {
-                        setValidationAlert(null)
-                        setApplicationSelections(current => {
-                          const next = { ...current }
-                          if (optionalId) next[application.id] = optionalId
-                          else delete next[application.id]
-                          return next
-                        })
-                      }}
+                      onSelect={optionalId => selectApplication(application.id, optionalId ? { application_id: application.id, optional_id: optionalId } : null)}
+                      customText={applicationSelections[application.id]?.custom_text ?? null}
+                      onCustomText={text => selectApplication(application.id, text === null ? null : { application_id: application.id, custom_text: text })}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )

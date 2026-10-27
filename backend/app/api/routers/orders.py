@@ -142,6 +142,10 @@ def _order_visibility_filters(current_user: User) -> list:
     return []
 
 
+# Nome gravado na escolha customizada; o texto do usuário vai em custom_text.
+CUSTOM_OPTIONAL_NAME = "Customizado"
+
+
 def _choice_snapshot(item: OrderItem) -> list[dict]:
     return [
         {
@@ -150,6 +154,7 @@ def _choice_snapshot(item: OrderItem) -> list[dict]:
             "category_code": choice.category_code,
             "category_name": choice.category_name,
             "optional_name": choice.optional_name,
+            "custom_text": choice.custom_text,
             "component_name": choice.component_name,
             "display_order": choice.display_order,
         }
@@ -171,16 +176,16 @@ async def _resolve_item_choices(
     # An unchanged historical line is copied as a snapshot, even if the master
     # application or optional was removed after the original order.
     if source is not None and source.product_code == item_in.product_code and source.opt_categories == item_in.opt_categories:
-        old_pairs = {(row.application_id, row.optional_id) for row in source.optional_choices}
-        new_pairs = {(row.application_id, row.optional_id) for row in item_in.optional_choices}
+        old_pairs = {(row.application_id, row.optional_id, row.custom_text) for row in source.optional_choices}
+        new_pairs = {(row.application_id, row.optional_id, row.custom_text) for row in item_in.optional_choices}
         if item_in.preserve_optional_choices or "optional_choices" not in item_in.model_fields_set or new_pairs == old_pairs:
             return [OrderItemOptionalChoice(
                 id=uuid.uuid4(), application_id=row.application_id,
                 optional_id=row.optional_id, application_name=row.application_name,
                 application_name_en=row.application_name_en,
                 category_code=row.category_code, category_name=row.category_name,
-                optional_name=row.optional_name, component_name=row.component_name,
-                display_order=row.display_order,
+                optional_name=row.optional_name, custom_text=row.custom_text,
+                component_name=row.component_name, display_order=row.display_order,
             ) for row in source.optional_choices]
 
     applications = (await db.execute(select(ProductOptionalApplication).where(
@@ -190,13 +195,13 @@ async def _resolve_item_choices(
     category_codes = {row.category.code for row in applications}
     if category_codes.intersection(item_in.opt_categories):
         raise HTTPException(status_code=422, detail="Categoria convertida deve usar aplicações, não o seletor antigo.")
-    chosen = {row.application_id: row.optional_id for row in item_in.optional_choices}
+    chosen = {row.application_id: row for row in item_in.optional_choices}
     if len(chosen) != len(item_in.optional_choices) or any(app_id not in application_map for app_id in chosen):
         raise HTTPException(status_code=422, detail="Aplicação inválida ou repetida neste produto.")
     missing = [row.name for row in applications if row.required and row.id not in chosen]
     if missing:
         raise HTTPException(status_code=422, detail="Preencha as aplicações obrigatórias: " + ", ".join(missing))
-    option_ids = set(chosen.values())
+    option_ids = {row.optional_id for row in chosen.values() if row.optional_id is not None}
     optionals = (await db.execute(select(OptionalColor).where(
         OptionalColor.id.in_(option_ids), OptionalColor.market_code == market_code,
     ))).scalars().all() if option_ids else []
@@ -212,8 +217,22 @@ async def _resolve_item_choices(
         raise HTTPException(status_code=422, detail="Componente inválido na aplicação.")
     used: dict[tuple[str, uuid.UUID], ProductOptionalApplication] = {}
     result = []
-    for app_id, optional_id in chosen.items():
+    for app_id, choice in chosen.items():
         app = application_map[app_id]
+        component_name = component_map[app.component_id].description if app.component_id else None
+        if choice.custom_text is not None:
+            # "Customizado" vale em toda aplicação e não consome opcional do
+            # cadastro, então não passa pela lista de permitidos nem pela regra
+            # de repetição.
+            result.append(OrderItemOptionalChoice(
+                id=uuid.uuid4(), application_id=app.id, optional_id=None,
+                application_name=app.name, application_name_en=app.name_en,
+                category_code=app.category.code, category_name=app.category.name,
+                optional_name=CUSTOM_OPTIONAL_NAME, custom_text=choice.custom_text,
+                component_name=component_name, display_order=app.display_order,
+            ))
+            continue
+        optional_id = choice.optional_id
         optional = option_map[optional_id]
         if optional.category != app.category.code or (not app.allow_all and optional_id not in {row.id for row in app.allowed_optionals}):
             raise HTTPException(status_code=422, detail=f"Opção não autorizada em '{app.name}'.")
@@ -226,7 +245,7 @@ async def _resolve_item_choices(
             application_name=app.name, application_name_en=app.name_en,
             category_code=app.category.code, category_name=app.category.name,
             optional_name=optional.color_name,
-            component_name=component_map[app.component_id].description if app.component_id else None,
+            component_name=component_name,
             display_order=app.display_order,
         ))
     return result

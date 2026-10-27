@@ -15,6 +15,7 @@ import type { Order, OrderHistory, OrderSummary, Product, Client, Representative
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { choiceValue } from '../lib/optionalApplications'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { formatArea } from '../lib/areaProduct'
 
@@ -93,7 +94,7 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
               <strong>{item.product_code}</strong>
               {Object.entries(item.legacy_optionals).map(([category, value]) => <span key={category} className="block">{category}: {value}</span>)}
               {item.applications.map((choice, choiceIndex) => <span key={choiceIndex} className="block">
-                {choice.component_name ? `${choice.component_name} — ` : ''}{choice.application_name}: {choice.optional_name}
+                {choice.component_name ? `${choice.component_name} — ` : ''}{choice.application_name}: {choiceValue(choice, false)}
               </span>)}
             </div>)}
           </div>
@@ -474,7 +475,7 @@ function OrderDetailModal({
                               const applicationName = isEuOrder && choice.application_name_en
                                 ? choice.application_name_en
                                 : choice.application_name
-                              const label = `${choice.component_name ? `${choice.component_name} — ` : ''}${applicationName}: ${optionalName(choice.optional_name, optionalEnglish)}`
+                              const label = `${choice.component_name ? `${choice.component_name} — ` : ''}${applicationName}: ${choiceValue(choice, optionalEnglish)}`
                               const optional = allOptionals.find((candidate) => candidate.id === choice.optional_id)
                               return {
                                 choice,

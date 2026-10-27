@@ -3,12 +3,25 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+CUSTOM_LEGACY_PREFIX = "Customizado:"
 
 
 class OptionalChoiceCreate(BaseModel):
+    """Um opcional do cadastro (`optional_id`) ou a opção "Customizado",
+    descrita em `custom_text` — nunca os dois."""
     application_id: uuid.UUID
-    optional_id: uuid.UUID
+    optional_id: Optional[uuid.UUID] = None
+    custom_text: Optional[str] = Field(None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_single_choice(self) -> "OptionalChoiceCreate":
+        self.custom_text = (self.custom_text or "").strip() or None
+        if (self.optional_id is None) == (self.custom_text is None):
+            raise ValueError("Escolha um opcional ou descreva a customização.")
+        return self
 
 
 class OptionalChoiceRead(BaseModel):
@@ -20,6 +33,7 @@ class OptionalChoiceRead(BaseModel):
     category_code: str
     category_name: str
     optional_name: str
+    custom_text: Optional[str] = None
     component_name: Optional[str] = None
     display_order: int
 
@@ -38,11 +52,17 @@ class OrderItemCreate(BaseModel):
     @field_validator("opt_categories")
     @classmethod
     def validate_optional_values(cls, values: Dict[str, str]) -> Dict[str, str]:
+        # No seletor antigo a opção "Customizado" chega como "Customizado: <texto>".
+        def invalid_color(color: str) -> bool:
+            if color.startswith(CUSTOM_LEGACY_PREFIX):
+                text = color[len(CUSTOM_LEGACY_PREFIX):].strip()
+                return not text or len(text) > 1000
+            return not color or len(color) > 100
+
         if any(
             not category
             or len(category) > 50
-            or not color
-            or len(color) > 100
+            or invalid_color(color)
             for category, color in values.items()
         ):
             raise ValueError("Categoria ou cor opcional fora do tamanho permitido.")

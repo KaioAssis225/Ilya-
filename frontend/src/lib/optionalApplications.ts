@@ -12,6 +12,37 @@ export interface RequiredApplicationProgress {
   missing: number
 }
 
+/** Valor da opção "Customizado" no seletor; não é id de opcional. */
+export const CUSTOM_OPTION = '__custom__'
+/** O seletor antigo (opt_categories) guarda texto livre: a customização vira "Customizado: <texto>". */
+export const CUSTOM_LEGACY_PREFIX = 'Customizado:'
+
+export function customOptionLabel(english: boolean): string {
+  return english ? 'Custom' : 'Customizado'
+}
+
+export function isCustomChoice(choice: Pick<OptionalChoiceInput, 'custom_text'>): boolean {
+  return choice.custom_text != null
+}
+
+/** Texto digitado num valor do seletor antigo, ou null se o valor não for customizado. */
+export function legacyCustomText(value: string | undefined): string | null {
+  return value?.startsWith(CUSTOM_LEGACY_PREFIX) ? value.slice(CUSTOM_LEGACY_PREFIX.length).trimStart() : null
+}
+
+export function legacyCustomValue(text: string): string {
+  return `${CUSTOM_LEGACY_PREFIX} ${text}`
+}
+
+export function choiceValue(choice: Pick<OptionalChoice, 'optional_name' | 'custom_text'>, english: boolean): string {
+  return choice.custom_text ? `${customOptionLabel(english)}: ${choice.custom_text}` : optionalName(choice.optional_name, english)
+}
+
+function legacyValue(value: string, english: boolean): string {
+  const custom = legacyCustomText(value)
+  return custom === null ? optionalName(value, english) : `${customOptionLabel(english)}: ${custom}`
+}
+
 export function productApplications(product: Product): ProductApplication[] {
   return [
     ...(product.optional_applications ?? []).map(application => ({ application, componentName: null })),
@@ -35,10 +66,12 @@ export function requiredApplicationProgress(
   allOptionals: OptionalColor[],
 ): RequiredApplicationProgress {
   const required = productApplications(product).filter(entry => entry.application.required)
-  const choicesByApplication = new Map(choices.map(choice => [choice.application_id, choice.optional_id]))
+  const choicesByApplication = new Map(choices.map(choice => [choice.application_id, choice]))
   const filled = required.filter(({ application }) => {
-    const selectedId = choicesByApplication.get(application.id)
-    return Boolean(selectedId && allowedForApplication(application, allOptionals).some(option => option.id === selectedId))
+    const choice = choicesByApplication.get(application.id)
+    if (!choice) return false
+    if (isCustomChoice(choice)) return Boolean(choice.custom_text?.trim())
+    return allowedForApplication(application, allOptionals).some(option => option.id === choice.optional_id)
   }).length
   return { filled, total: required.length, missing: required.length - filled }
 }
@@ -53,6 +86,10 @@ export function validateApplicationChoices(product: Product, choices: OptionalCh
     const application = byId.get(choice.application_id)
     if (!application || seenApplications.has(choice.application_id)) { errors.push('Aplicação inválida ou repetida'); continue }
     seenApplications.add(choice.application_id)
+    if (isCustomChoice(choice)) {
+      if (!choice.custom_text?.trim()) errors.push(`${application.name}: descreva a customização`)
+      continue
+    }
     if (!allowedForApplication(application, allOptionals).some(option => option.id === choice.optional_id)) {
       errors.push(`${application.name}: opção indisponível`)
       continue
@@ -70,7 +107,7 @@ export function validateApplicationChoices(product: Product, choices: OptionalCh
 
 export function formatChoice(choice: OptionalChoice, english: boolean): string {
   const name = english && choice.application_name_en?.trim() ? choice.application_name_en : choice.application_name
-  return `${choice.component_name ? `${choice.component_name} — ` : ''}${name}: ${optionalName(choice.optional_name, english)}`
+  return `${choice.component_name ? `${choice.component_name} — ` : ''}${name}: ${choiceValue(choice, english)}`
 }
 
 export function orderOptionalSlots(
@@ -80,11 +117,11 @@ export function orderOptionalSlots(
 ): { label: string; value: string }[] {
   return [
     ...Object.entries(item.opt_categories ?? {}).map(([category, value]) => ({
-      label: optionalCategoryLabel(categoryLabel(category), english), value: optionalName(value, english),
+      label: optionalCategoryLabel(categoryLabel(category), english), value: legacyValue(value, english),
     })),
     ...(item.optional_choices ?? []).map(choice => ({
       label: `${choice.component_name ? `${choice.component_name} — ` : ''}${english && choice.application_name_en ? choice.application_name_en : choice.application_name}`,
-      value: optionalName(choice.optional_name, english),
+      value: choiceValue(choice, english),
     })),
   ]
 }

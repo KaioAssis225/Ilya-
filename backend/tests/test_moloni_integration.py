@@ -219,11 +219,11 @@ def test_moloni_line_summary_keeps_every_application_choice():
 
     first = SimpleNamespace(id=uuid.uuid4(), display_order=0, component_name="Assento",
                             application_name="Couro do assento", application_name_en="Seat leather",
-                            optional_name="Caramelo")
+                            optional_name="Caramelo", custom_text=None)
     second = SimpleNamespace(id=uuid.uuid4(), display_order=1, component_name=None,
                              application_name="Pintura dos pés", application_name_en="Leg paint",
-                             optional_name="Taupe")
+                             optional_name="Customizado", custom_text="Pés em latão")
     item = SimpleNamespace(opt_categories={"CORDA": "Natural"}, optional_choices=[second, first])
     assert _line_summary("Resumo", item, "en-GB") == (
-        "Resumo\nCORDA: Natural\nAssento — Seat leather: Caramelo\nLeg paint: Taupe"
+        "Resumo\nCORDA: Natural\nAssento — Seat leather: Caramelo\nLeg paint: Custom: Pés em latão"
     )
