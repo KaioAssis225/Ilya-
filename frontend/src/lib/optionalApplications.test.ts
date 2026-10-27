@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { allowsCustomOption, CUSTOM_LEGACY_VALUE, formatChoice, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
+import { allowsCustomFor, allowsCustomOption, CUSTOM_LEGACY_VALUE, formatChoice, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
 import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'
 
-const option = (id: string, category: string): OptionalColor => ({ id, category, color_name: id }) as OptionalColor
+const option = (id: string, category: string, brand: 'ILYA' | 'IBTW' = 'ILYA'): OptionalColor => ({ id, category, color_name: id, brand }) as OptionalColor
 const application = (id: string, category = 'PINTURA', required = true, allowRepeat = true): OptionalApplication => ({
   id, category_id: category, category_code: category, category_name: category,
   name: id, name_en: `${id} EN`, required, allow_repeat: allowRepeat,
@@ -76,12 +76,22 @@ test('PDF mantém opcionais legados e aplicações independentes na ordem da lin
   assert.equal(item.optional_choices?.[1].optional_name, 'Caramelo')
 })
 
-test('Customizado sem texto preenche a aplicação obrigatória', () => {
-  const app = application('Pés')
-  const available = [option('taupe', 'PINTURA')]
+test('Customizado sem texto preenche a aplicação obrigatória IBTW', () => {
+  const app = { ...application('Pés'), allowed_optionals: [option('taupe', 'PINTURA', 'IBTW')] }
+  const available = [option('taupe', 'PINTURA', 'IBTW')]
   const custom = [{ application_id: app.id, custom_text: '' }]
   assert.deepEqual(validateApplicationChoices(product([app]), custom, available), [])
   assert.deepEqual(requiredApplicationProgress(product([app]), custom, available), { filled: 1, total: 1, missing: 0 })
+})
+
+test('seletor com algum opcional ILYA não aceita Customizado', () => {
+  assert.equal(allowsCustomFor([option('a', 'MADEIRA', 'IBTW')]), true)
+  assert.equal(allowsCustomFor([option('a', 'MADEIRA', 'IBTW'), option('b', 'MADEIRA', 'ILYA')]), false)
+  assert.equal(allowsCustomFor([option('b', 'MADEIRA', 'ILYA')]), false)
+  const app = application('Pés')
+  const custom = [{ application_id: app.id, custom_text: '' }]
+  assert.match(validateApplicationChoices(product([app]), custom, [option('taupe', 'PINTURA')])[0], /Customizado indisponível/)
+  assert.deepEqual(requiredApplicationProgress(product([app]), custom, [option('taupe', 'PINTURA')]), { filled: 0, total: 1, missing: 1 })
 })
 
 test('Customizado aparece no pedido, no PDF e no seletor antigo, com o texto dos pedidos anteriores', () => {

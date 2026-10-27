@@ -1,4 +1,5 @@
 import type { OptionalApplication, OptionalChoice, OptionalChoiceInput, OptionalColor, OrderItem, Product } from '../types'
+import { optionalBrand } from './optionalGroups'
 import { optionalName, optionalCategoryLabel } from './optionalLabels'
 
 export interface ProductApplication {
@@ -21,6 +22,11 @@ export const CUSTOM_LEGACY_VALUE = 'Customizado'
 /** "Customizado" existe só em Portugal; no Brasil o pedido usa apenas opcionais do cadastro. */
 export function allowsCustomOption(market: 'BR' | 'EU'): boolean {
   return market === 'EU'
+}
+
+/** Acabamento ILYA não é personalizado: seletor com algum opcional ILYA não oferece "Customizado". */
+export function allowsCustomFor(options: Pick<OptionalColor, 'brand'>[]): boolean {
+  return !options.some(option => optionalBrand(option) === 'ILYA')
 }
 
 export function customOptionLabel(english: boolean): string {
@@ -76,8 +82,9 @@ export function requiredApplicationProgress(
   const filled = required.filter(({ application }) => {
     const choice = choicesByApplication.get(application.id)
     if (!choice) return false
-    if (isCustomChoice(choice)) return true
-    return allowedForApplication(application, allOptionals).some(option => option.id === choice.optional_id)
+    const options = allowedForApplication(application, allOptionals)
+    if (isCustomChoice(choice)) return allowsCustomFor(options)
+    return options.some(option => option.id === choice.optional_id)
   }).length
   return { filled, total: required.length, missing: required.length - filled }
 }
@@ -92,8 +99,12 @@ export function validateApplicationChoices(product: Product, choices: OptionalCh
     const application = byId.get(choice.application_id)
     if (!application || seenApplications.has(choice.application_id)) { errors.push('Aplicação inválida ou repetida'); continue }
     seenApplications.add(choice.application_id)
-    if (isCustomChoice(choice)) continue
-    if (!allowedForApplication(application, allOptionals).some(option => option.id === choice.optional_id)) {
+    const options = allowedForApplication(application, allOptionals)
+    if (isCustomChoice(choice)) {
+      if (!allowsCustomFor(options)) errors.push(`${application.name}: Customizado indisponível`)
+      continue
+    }
+    if (!options.some(option => option.id === choice.optional_id)) {
       errors.push(`${application.name}: opção indisponível`)
       continue
     }

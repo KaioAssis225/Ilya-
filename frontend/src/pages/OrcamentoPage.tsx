@@ -26,7 +26,7 @@ import {
   writeCartPriceList,
   type PriceListCode,
 } from '../lib/cart'
-import { allowedForApplication, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, isLegacyCustom, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, allowsCustomFor, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, isLegacyCustom, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
@@ -504,7 +504,7 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
                   photoUrl: option.photo_url,
                   optional: option,
                 })),
-                ...(allowCustom ? [{ value: CUSTOM_OPTION, label: customOptionLabel(isEnglish), photoUrl: null }] : []),
+                ...(allowCustom && allowsCustomFor(available) ? [{ value: CUSTOM_OPTION, label: customOptionLabel(isEnglish), photoUrl: null }] : []),
               ]}
               className="min-w-0 max-w-[240px]"
             />
@@ -635,7 +635,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
                   previewUrl: option.photo_url ?? option.thumbnail_url,
                   optional: option,
                 })),
-                ...(allowCustom ? [{ value: CUSTOM_OPTION, label: customOptionLabel(english), photoUrl: null }] : []),
+                ...(allowCustom && allowsCustomFor(options) ? [{ value: CUSTOM_OPTION, label: customOptionLabel(english), photoUrl: null }] : []),
               ]}
               className="min-w-0 flex-1 px-2 py-1 text-[11px] font-medium"
             />

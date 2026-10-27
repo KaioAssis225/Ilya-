@@ -148,6 +148,7 @@ CUSTOM_OPTIONAL_NAME = "Customizado"
 # A opção "Customizado" existe só em Portugal; no Brasil o pedido usa apenas
 # opcionais do cadastro.
 CUSTOM_OPTION_MARKET = "EU"
+CUSTOM_ILYA_DETAIL = "A opção Customizado não está disponível para acabamentos ILYA."
 
 
 def _choice_snapshot(item: OrderItem) -> list[dict]:
@@ -204,6 +205,32 @@ async def _resolve_item_choices(
     category_codes = {row.category.code for row in applications}
     if category_codes.intersection(item_in.opt_categories):
         raise HTTPException(status_code=422, detail="Categoria convertida deve usar aplicações, não o seletor antigo.")
+    # Acabamento ILYA não é personalizado: seletor com algum opcional ILYA não
+    # aceita "Customizado". O que já estava na linha original continua valendo.
+    same_product = source is not None and source.product_code == item_in.product_code
+    legacy_custom = set() if same_product and source.opt_categories == item_in.opt_categories else {
+        category for category, value in item_in.opt_categories.items() if is_legacy_custom(value)
+    }
+    ilya_categories: set[str] = set()
+    if legacy_custom or any(row.custom_text is not None for row in item_in.optional_choices):
+        ilya_categories = set((await db.execute(select(OptionalColor.category).where(
+            OptionalColor.market_code == market_code, OptionalColor.brand == "ILYA",
+        ).distinct())).scalars())
+    if legacy_custom:
+        # O seletor antigo lista os opcionais do produto, ou todos os do
+        # mercado nas categorias livres.
+        free = (await db.execute(select(Product.all_optionals_categories).where(Product.id == product.id))).scalar_one()
+        free_categories = set(filter(None, (free or "").split(",")))
+        product_ilya = set((await db.execute(
+            select(OptionalColor.category)
+            .join(product_optionals, product_optionals.c.optional_id == OptionalColor.id)
+            .where(product_optionals.c.product_id == product.id, OptionalColor.brand == "ILYA")
+        )).scalars())
+        blocked = sorted(category for category in legacy_custom
+                         if category in (ilya_categories if category in free_categories else product_ilya))
+        if blocked:
+            raise HTTPException(status_code=422, detail=f"{CUSTOM_ILYA_DETAIL} ({', '.join(blocked)})")
+    kept_custom = {row.application_id for row in source.optional_choices if row.custom_text is not None} if same_product else set()
     chosen = {row.application_id: row for row in item_in.optional_choices}
     if len(chosen) != len(item_in.optional_choices) or any(app_id not in application_map for app_id in chosen):
         raise HTTPException(status_code=422, detail="Aplicação inválida ou repetida neste produto.")
@@ -230,9 +257,13 @@ async def _resolve_item_choices(
         app = application_map[app_id]
         component_name = component_map[app.component_id].description if app.component_id else None
         if choice.custom_text is not None:
-            # "Customizado" vale em toda aplicação e não consome opcional do
-            # cadastro, então não passa pela lista de permitidos nem pela regra
-            # de repetição.
+            # "Customizado" não consome opcional do cadastro, então não passa
+            # pela lista de permitidos nem pela regra de repetição.
+            has_ilya = app.category.code in ilya_categories if app.allow_all else any(
+                row.brand == "ILYA" for row in app.allowed_optionals
+            )
+            if has_ilya and app_id not in kept_custom:
+                raise HTTPException(status_code=422, detail=f"{CUSTOM_ILYA_DETAIL} ({app.name})")
             result.append(OrderItemOptionalChoice(
                 id=uuid.uuid4(), application_id=app.id, optional_id=None,
                 application_name=app.name, application_name_en=app.name_en,
