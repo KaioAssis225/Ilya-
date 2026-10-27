@@ -1916,7 +1916,8 @@ export default function OrcamentoPage() {
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[520px]">
+                        {/* Em 2xl qtd, preços, subtotal, comentário e excluir cabem numa linha (~540px). */}
+                        <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[600px]">
                           <div>
                             <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{soldByArea ? 'M²' : (isEnglish ? 'Qty' : 'Qtd')}</label>
                             <QuantityInput
