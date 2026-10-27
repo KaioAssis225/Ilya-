@@ -58,6 +58,29 @@ class TestResolveMaxDiscount:
         assert _resolve_max_discount(_user(UserRole.vendedor), client_a, None) == 0.0
         assert _resolve_max_discount(_user(UserRole.vendedor), client_b, None) == 12.0
 
+    @pytest.mark.parametrize(("profile", "expected"), [
+        ("lojista", Decimal("50.00")),
+        ("arquiteto", Decimal("35.00")),
+        ("corporativo", Decimal("25.00")),
+    ])
+    def test_eu_usa_limite_da_lista_de_precos(self, profile, expected):
+        assert _resolve_max_discount(
+            _user(UserRole.vendedor), _client("1.00"), _rep("2.00"), "EU", profile
+        ) == expected
+
+    def test_eu_pvp_permite_dez_por_cento_somente_para_admin(self):
+        assert _resolve_max_discount(
+            _user(UserRole.admin), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("10.00")
+        assert _resolve_max_discount(
+            _user(UserRole.vendedor), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("0")
+
+    def test_eu_lista_desconhecida_nao_concede_desconto(self):
+        assert _resolve_max_discount(
+            _user(UserRole.admin), _client("100.00"), None, "EU", "especial"
+        ) == Decimal("0")
+
 
 class TestValidateDiscount:
     def test_desconto_dentro_do_limite_nao_levanta_erro(self):

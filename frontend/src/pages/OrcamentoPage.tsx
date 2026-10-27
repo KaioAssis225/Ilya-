@@ -28,6 +28,7 @@ import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/a
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
+import { orderMaxDiscount } from '../lib/discountRules'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -1192,6 +1193,21 @@ export default function OrcamentoPage() {
     pvp: 'PVP',
     arquiteto: 'Arquiteto',
   }[priceProfile]
+  const maxDiscount = orderMaxDiscount(
+    market,
+    priceProfile,
+    user?.role,
+    user?.max_discount ?? 0,
+  )
+
+  useEffect(() => {
+    // A troca do cliente pode mudar a tabela e precisa reduzir descontos já
+    // presentes no carrinho antes que o orçamento seja enviado.
+    // oxlint-disable-next-line react/set-state-in-effect
+    setCart(previous => previous.map(item => (
+      item.discount > maxDiscount ? { ...item, discount: maxDiscount } : item
+    )))
+  }, [maxDiscount])
 
   function handleClientChange(client: Client | null) {
     const clientId = client?.id ?? ''
@@ -1746,7 +1762,7 @@ export default function OrcamentoPage() {
                       onQtyChange={updateQty}
                       qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
                       onDiscountChange={updateDiscount}
-                      maxDiscount={user?.max_discount ?? 0}
+                      maxDiscount={maxDiscount}
                       onRemove={removeItem}
                       onPhotoClick={setActivePhotoModal}
                       onPreview={photoUrl => setActivePhotoModal(photoUrl)}
@@ -1841,12 +1857,13 @@ export default function OrcamentoPage() {
                           <div>
                             <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
                             <NumberField
-                              min={0} max={user?.max_discount ?? 0}
+                              min={0} max={maxDiscount}
                               aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
                               className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
                               value={item.discount}
                               placeholder="0"
-                              onValueChange={(v) => updateDiscount(item.line_id, Math.min(user?.max_discount ?? 0, Math.max(0, v)))}
+                              disabled={maxDiscount <= 0}
+                              onValueChange={(v) => updateDiscount(item.line_id, Math.min(maxDiscount, Math.max(0, v)))}
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
