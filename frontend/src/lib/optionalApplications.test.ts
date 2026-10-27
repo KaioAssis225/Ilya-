@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { formatChoice, legacyCustomText, legacyCustomValue, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
+import { allowsCustomOption, formatChoice, legacyCustomText, legacyCustomValue, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
 import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'
 
 const option = (id: string, category: string): OptionalColor => ({ id, category, color_name: id }) as OptionalColor
@@ -95,4 +95,6 @@ test('Customizado aparece com o texto no pedido, no PDF e no seletor antigo', ()
   assert.deepEqual(slots.map(slot => slot.value), ['Custom: Corda azul'])
   assert.equal(legacyCustomText('Customizado: '), '')
   assert.equal(legacyCustomText('Natural'), null)
+  assert.equal(allowsCustomOption('EU'), true)
+  assert.equal(allowsCustomOption('BR'), false)
 })

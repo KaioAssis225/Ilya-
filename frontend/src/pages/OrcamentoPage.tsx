@@ -19,7 +19,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
-import { allowedForApplication, applicationName, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, legacyCustomText, legacyCustomValue, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, allowsCustomOption, applicationName, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, legacyCustomText, legacyCustomValue, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
@@ -443,8 +443,9 @@ function Toast({ message, onDone, variant = 'success' }: { message: string; onDo
 
 // ── Opcionais interativos no carrinho ─────────────────────────────────────────
 
-function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }: {
+function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, allowCustom }: {
   item: CartItem
+  allowCustom: boolean
   allOptionals: OptionalColor[]
   onChange: (cat: string, value: string | null) => void
   onPreview: (photoUrl: string, label: string) => void
@@ -495,7 +496,7 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
                   photoUrl: option.photo_url,
                   optional: option,
                 })),
-                { value: CUSTOM_OPTION, label: customOptionLabel(isEnglish), photoUrl: null },
+                ...(allowCustom ? [{ value: CUSTOM_OPTION, label: customOptionLabel(isEnglish), photoUrl: null }] : []),
               ]}
               className="min-w-0 max-w-[240px]"
             />
@@ -532,8 +533,9 @@ function CustomTextBox({ text, label, english, onChange }: {
   />
 }
 
-function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english }: {
+function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english, allowCustom }: {
   product: Product
+  allowCustom: boolean
   choices: CartItem['optional_choices']
   allOptionals: OptionalColor[]
   onChange: (applicationId: string, choice: OptionalChoiceInput | null) => void
@@ -610,7 +612,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
                   previewUrl: option.photo_url ?? option.thumbnail_url,
                   optional: option,
                 })),
-                { value: CUSTOM_OPTION, label: customOptionLabel(english), photoUrl: null },
+                ...(allowCustom ? [{ value: CUSTOM_OPTION, label: customOptionLabel(english), photoUrl: null }] : []),
               ]}
               className="min-w-0 flex-1 px-2 py-1 text-[11px] font-medium"
             />
@@ -715,6 +717,7 @@ function MobileCartCard({
 }) {
   const isEnglish = useLocale().locale === 'en-GB'
   const measurementMarket = currency === 'EUR' ? 'EU' : 'BR'
+  const allowCustom = allowsCustomOption(measurementMarket)
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
@@ -764,11 +767,11 @@ function MobileCartCard({
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} onPreview={onPreview} catLabel={catLabel} />
+          <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} onPreview={onPreview} catLabel={catLabel} allowCustom={allowCustom} />
           {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
-          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} />}
+          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} />}
         </div>
       </div>
 
@@ -1693,6 +1696,7 @@ export default function OrcamentoPage() {
       )}
       {selectedProduct && <ApplicationSelectors
         product={selectedProduct} choices={selectedChoices} allOptionals={allOptionals} english={isEnglish}
+        allowCustom={allowsCustomOption(market)}
         onPreview={photoUrl => setActivePhotoModal(photoUrl)}
         onChange={(applicationId, choice) => setSelectedChoices(previous => [
           ...previous.filter(candidate => candidate.application_id !== applicationId),
@@ -1878,12 +1882,12 @@ export default function OrcamentoPage() {
                             {dimLabel(item._product, market, locale) && (
                               <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
                             )}
-                            <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} catLabel={catLabel} />
+                            <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} catLabel={catLabel} allowCustom={allowsCustomOption(market)} />
                             {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">
                               {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
-                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} />}
+                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market)} />}
                           </div>
                         </div>
 

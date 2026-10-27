@@ -23,6 +23,7 @@ import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
 import { hasOptionalPhoto } from '../lib/optionalMedia'
 import {
   allowedForApplication,
+  allowsCustomOption,
   applicationName,
   CUSTOM_OPTION,
   customOptionLabel,
@@ -501,6 +502,7 @@ function OptionalCatalogGroup({
   english,
   onSelect,
   onZoom,
+  allowCustom,
   customText,
   onCustomText,
 }: {
@@ -512,6 +514,8 @@ function OptionalCatalogGroup({
   english: boolean
   onSelect: (optionalId: string | undefined) => void
   onZoom: (optional: OptionalColor, type: string) => void
+  /** Mostra a opção "Customizado" (só em Portugal). */
+  allowCustom: boolean
   /** Texto da opção "Customizado"; null quando ela não está escolhida. */
   customText: string | null
   /** Escolhe (texto) ou desfaz (null) a opção "Customizado". */
@@ -544,7 +548,7 @@ function OptionalCatalogGroup({
           />
         </label>
       )}
-      {visible.length > 0 || !normalizedQuery ? (
+      {visible.length > 0 || (allowCustom && !normalizedQuery) ? (
         <div className="flex flex-wrap gap-3">
           {visible.map(option => {
             const selected = option.id === selectedId
@@ -586,7 +590,7 @@ function OptionalCatalogGroup({
               </div>
             )
           })}
-          <button
+          {allowCustom && <button
             type="button"
             aria-pressed={customText !== null}
             aria-label={`${label}: ${customOptionLabel(english)}`}
@@ -599,14 +603,14 @@ function OptionalCatalogGroup({
               <PenLine className="h-6 w-6" aria-hidden="true" />
             </span>
             <span className="min-h-8 w-full text-xs font-medium leading-4 text-ink-2">{customOptionLabel(english)}</span>
-          </button>
+          </button>}
         </div>
       ) : (
         <p className="text-sm text-muted">
           {english ? 'No finishes match this search.' : 'Nenhum acabamento corresponde à busca.'}
         </p>
       )}
-      {customText !== null && (
+      {allowCustom && customText !== null && (
         <label className="block space-y-1.5">
           <span className="text-xs font-semibold text-ink-2">
             {english ? 'What will be customized?' : 'O que será customizado?'}
@@ -934,7 +938,7 @@ function ProductFullView({
                       canDeselect={options.length > 1}
                       english={english}
                       onSelect={optionalId => selectCategory(category, optionalId)}
-                      customText={categoryCustomText(category)}
+                      allowCustom={allowsCustomOption(market)} customText={categoryCustomText(category)}
                       onCustomText={text => customizeCategory(category, text)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
@@ -951,7 +955,7 @@ function ProductFullView({
                     canDeselect
                     english={english}
                     onSelect={optionalId => selectCategory(category, optionalId)}
-                    customText={categoryCustomText(category)}
+                    allowCustom={allowsCustomOption(market)} customText={categoryCustomText(category)}
                     onCustomText={text => customizeCategory(category, text)}
                     onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                   />
@@ -969,6 +973,7 @@ function ProductFullView({
                       canDeselect
                       english={english}
                       onSelect={optionalId => selectApplication(application.id, optionalId ? { application_id: application.id, optional_id: optionalId } : null)}
+                      allowCustom={allowsCustomOption(market)}
                       customText={applicationSelections[application.id]?.custom_text ?? null}
                       onCustomText={text => selectApplication(application.id, text === null ? null : { application_id: application.id, custom_text: text })}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}

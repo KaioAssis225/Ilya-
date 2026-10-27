@@ -318,12 +318,11 @@ async def test_reg_opt_missing_required_application_is_422_without_order(
 
 # ── Opção "Customizado" ────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("market", ["BR", "EU"])
 async def test_custom_choice_fills_required_application_with_user_text(
-    client: AsyncClient, db_session: AsyncSession, market: str
+    client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Customizado vale em qualquer aplicação, inclusive obrigatória, e guarda o texto."""
-    s = await _scenario(db_session, market)
+    """Em Portugal, Customizado vale em qualquer aplicação, inclusive obrigatória, e guarda o texto."""
+    s = await _scenario(db_session, "EU")
 
     response = await _post_order(client, s, [_item(
         s,
@@ -350,12 +349,29 @@ async def test_custom_choice_needs_exactly_text_or_optional(
     client: AsyncClient, db_session: AsyncSession, choice: dict
 ) -> None:
     """Customizado sem texto, ou texto junto de um opcional, é 422 sem gravar nada."""
-    s = await _scenario(db_session, "BR")
+    s = await _scenario(db_session, "EU")
     if choice.get("optional_id") == "taupe":
         choice = {**choice, "optional_id": str(s.opt_taupe)}
 
     response = await _post_order(client, s, [_item(s, {"application_id": str(s.app_feet), **choice})])
     assert response.status_code == 422, response.text
+    await _assert_no_partial_order(db_session, s)
+
+
+@pytest.mark.parametrize("custom", ["application", "legacy"])
+async def test_custom_choice_is_refused_in_brazil(
+    client: AsyncClient, db_session: AsyncSession, custom: str
+) -> None:
+    """No Brasil não existe Customizado: nem na aplicação nem no seletor antigo."""
+    s = await _scenario(db_session, "BR")
+    if custom == "application":
+        item = _item(s, {"application_id": str(s.app_feet), "custom_text": "Pés em latão"})
+    else:
+        item = _item(s, _choice(s.app_feet, s.opt_taupe), opt_categories={"CORDA": "Customizado: corda azul"})
+
+    response = await _post_order(client, s, [item])
+    assert response.status_code == 422, response.text
+    assert "Portugal" in response.json()["detail"]
     await _assert_no_partial_order(db_session, s)
 
 
