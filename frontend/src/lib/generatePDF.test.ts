@@ -293,27 +293,37 @@ test('regressão EU: preserva item.description histórico do snapshot mesmo se p
   )
 })
 
-test('area item hides dimensions, formats square metres and counts one line', async () => {
+test('separa peças de área: tapete não entra no total de itens e soma os m²', async () => {
   const order = makeOrder({
-    items: [makeOrderItem({
-      product_code: 'TAP-001',
-      description: 'Tapete Amazonas',
-      sold_by_area: true,
-      qty: 4.5,
-      altura: 9,
-      largura: 9,
-      profundidade: 9,
-    })],
+    items: [
+      makeOrderItem({ qty: 2 }),
+      makeOrderItem({
+        id: 'item-tapete',
+        product_code: 'TAP-001',
+        description: 'Tapete Amazonas',
+        sold_by_area: true,
+        qty: 4.5,
+        altura: 9,
+        largura: 9,
+        profundidade: 9,
+      }),
+    ],
   })
 
-  await generateOrderPDF(order, makeClient(), null, [makeProduct({
-    product_code: 'TAP-001',
-    description: 'Tapete Amazonas',
-    catalog: { id: 'tapetes', name: 'Tapete' },
-  })])
+  await generateOrderPDF(order, makeClient(), null, [
+    makeProduct(),
+    makeProduct({
+      id: 'prod-tapete',
+      product_code: 'TAP-001',
+      description: 'Tapete Amazonas',
+      catalog: { id: 'tapetes', name: 'Tapete' },
+    }),
+  ])
 
   assert.ok(renderedTexts.includes('4,5 m²'))
   const totalItemsIndex = renderedTexts.indexOf('Total de Itens:')
-  assert.equal(renderedTexts[totalItemsIndex + 1], '1')
+  assert.equal(renderedTexts[totalItemsIndex + 1], '2')
+  const totalAreaIndex = renderedTexts.indexOf('Área total:')
+  assert.equal(renderedTexts[totalAreaIndex + 1], '4,5 m²')
   assert.ok(!renderedTexts.some((text) => text.startsWith('DIMENSÕES:') || text.startsWith('DIMENSIONS:')))
 })

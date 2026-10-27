@@ -63,7 +63,7 @@ export interface OrderDocumentLabels {
   taxId: string; taxIdMissing: string; commercialNotice: string; page: string
   product: string; qty: string; unitPrice: string; total: string
   dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
-  totalItems: string; grandTotal: string; notes: string
+  totalItems: string; totalArea: string; grandTotal: string; notes: string
   repSignature: string; clientSignature: string; footer: string
 }
 
@@ -89,7 +89,7 @@ const PT_LABELS: OrderDocumentLabels = {
   taxId: 'CPF/CNPJ', taxIdMissing: 'não informado', commercialNotice: 'Pedido comercial. Este documento não substitui a nota fiscal.', page: 'Página',
   product: 'PRODUTO', qty: 'QTD', unitPrice: 'VALOR UN.', total: 'TOTAL',
   dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
-  totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
+  totalItems: 'Total de Itens:', totalArea: 'Área total:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
   repSignature: 'Representante / Ilya', clientSignature: 'Cliente / Contratado',
   footer: 'Ilya — Documento gerado automaticamente',
 }
@@ -100,7 +100,7 @@ const EN_LABELS: OrderDocumentLabels = {
   taxId: 'VAT / TAX ID', taxIdMissing: 'not provided', commercialNotice: 'Commercial order confirmation. This document is not an invoice.', page: 'Page',
   product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', total: 'TOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
-  totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
+  totalItems: 'Total items:', totalArea: 'Total area:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
   repSignature: 'Representative / IBTW', clientSignature: 'Client',
   footer: 'IBTW — Automatically generated document',
 }

@@ -506,7 +506,11 @@ export async function generateOrderPDF(
   }
 
   // ── Rodapé de totais ───────────────────────────────────────────────────────
-  if (y + 72 > 278) {
+  const totalItems = order.items.reduce((sum, item) => sum + (item.sold_by_area ? 0 : item.qty), 0)
+  const totalArea = order.items.reduce((sum, item) => sum + (item.sold_by_area ? item.qty : 0), 0)
+  // Reserva o bloco de totais + assinaturas. Com área há uma linha extra de
+  // 8 mm; a assinatura compacta abaixo mantém pedidos curtos numa só página.
+  if (y + (totalArea > 0 ? 67 : 59) > 278) {
     doc.addPage()
     y = drawContinuationHeader()
   }
@@ -516,8 +520,6 @@ export async function generateOrderPDF(
   doc.line(20, y, w - 20, y)
   y += 8
 
-  const totalItems = order.items.reduce((sum, item) => sum + (item.sold_by_area ? 1 : item.qty), 0)
-
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
   doc.setFont('helvetica', 'normal')
@@ -525,6 +527,14 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'bold')
   doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
+
+  if (totalArea > 0) {
+    doc.setFont('helvetica', 'normal')
+    doc.text(L.totalArea, 148, y, { align: 'right' })
+    doc.setFont('helvetica', 'bold')
+    doc.text(formatArea(totalArea, locale), 186, y, { align: 'right' })
+    y += 8
+  }
 
   const finalTotal = Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)
 
@@ -559,36 +569,36 @@ export async function generateOrderPDF(
   // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
   // O PDF mantém apenas as linhas em branco para assinatura manual.
 
-  // O bloco ocupa 34 mm até ao fim das legendas e o rodapé começa em 282 mm.
+  // O bloco ocupa 29 mm até ao fim das legendas e o rodapé começa em 282 mm.
   // Usa a área útil inteira para não isolar assinaturas numa página em branco.
-  if (y + 40 > 276) { doc.addPage(); y = 20 }
-  y += 6
+  if (y + 31 > 278) { doc.addPage(); y = 20 }
+  y += 4
   doc.setDrawColor(...LINE)
   doc.setLineWidth(0.3)
   doc.line(20, y, w - 20, y)
-  y += 8
+  y += 6
 
   const colW = (w - 50) / 2
 
   // Coluna esquerda: assinatura do representante
   doc.setDrawColor(...DARK)
   doc.setLineWidth(0.3)
-  doc.line(20, y + 20, 20 + colW, y + 20)
+  doc.line(20, y + 14, 20 + colW, y + 14)
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'normal')
-  doc.text(L.repSignature, 20 + colW / 2, y + 25, { align: 'center' })
+  doc.text(L.repSignature, 20 + colW / 2, y + 19, { align: 'center' })
 
   // Coluna direita: assinatura do cliente
   const sx = 20 + colW + 10
   doc.setDrawColor(...DARK)
   doc.setLineWidth(0.3)
-  doc.line(sx, y + 20, sx + colW, y + 20)
+  doc.line(sx, y + 14, sx + colW, y + 14)
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
-  doc.text(L.clientSignature, sx + colW / 2, y + 25, { align: 'center' })
+  doc.text(L.clientSignature, sx + colW / 2, y + 19, { align: 'center' })
 
-  y += 30
+  y += 24
 
   // ── Rodapé em todas as páginas ─────────────────────────────────────────────
   const totalPages = doc.getNumberOfPages()
