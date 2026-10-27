@@ -1,7 +1,7 @@
 """Independent uses of a master optional category on a product or set component."""
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Table, Column
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Table, Column, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,6 +54,9 @@ class OrderItemOptionalChoice(Base):
     category_code: Mapped[str] = mapped_column(String(50), nullable=False)
     category_name: Mapped[str] = mapped_column(String(100), nullable=False)
     optional_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Preenchido só na opção "Customizado" (optional_custom_r26): o que o usuário
+    # descreveu no lugar de um opcional do cadastro.
+    custom_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     component_name: Mapped[str | None] = mapped_column(String(20000), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
 

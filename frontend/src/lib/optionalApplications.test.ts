@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { formatChoice, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
+import { formatChoice, legacyCustomText, legacyCustomValue, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
 import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'
 
 const option = (id: string, category: string): OptionalColor => ({ id, category, color_name: id }) as OptionalColor
@@ -74,4 +74,25 @@ test('PDF mantém opcionais legados e aplicações independentes na ordem da lin
   ])
   assert.equal(orderOptionalSlots(item, false, category => category)[2].value, 'Caramelo')
   assert.equal(item.optional_choices?.[1].optional_name, 'Caramelo')
+})
+
+test('Customizado preenche a aplicação obrigatória só com texto descrito', () => {
+  const app = application('Pés')
+  const available = [option('taupe', 'PINTURA')]
+  const empty = [{ application_id: app.id, custom_text: '  ' }]
+  assert.match(validateApplicationChoices(product([app]), empty, available)[0], /descreva a customização/)
+  assert.deepEqual(requiredApplicationProgress(product([app]), empty, available), { filled: 0, total: 1, missing: 1 })
+  const filled = [{ application_id: app.id, custom_text: 'Pés em latão' }]
+  assert.deepEqual(validateApplicationChoices(product([app]), filled, available), [])
+  assert.deepEqual(requiredApplicationProgress(product([app]), filled, available), { filled: 1, total: 1, missing: 0 })
+})
+
+test('Customizado aparece com o texto no pedido, no PDF e no seletor antigo', () => {
+  const choice = { application_name: 'Pintura dos pés', application_name_en: 'Leg paint', component_name: null, optional_name: 'Customizado', custom_text: 'Pés em latão' }
+  assert.equal(formatChoice(choice as Parameters<typeof formatChoice>[0], false), 'Pintura dos pés: Customizado: Pés em latão')
+  assert.equal(formatChoice(choice as Parameters<typeof formatChoice>[0], true), 'Leg paint: Custom: Pés em latão')
+  const slots = orderOptionalSlots({ opt_categories: { CORDA: legacyCustomValue('Corda azul') }, optional_choices: [] }, true, code => code)
+  assert.deepEqual(slots.map(slot => slot.value), ['Custom: Corda azul'])
+  assert.equal(legacyCustomText('Customizado: '), '')
+  assert.equal(legacyCustomText('Natural'), null)
 })

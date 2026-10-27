@@ -316,6 +316,49 @@ async def test_reg_opt_missing_required_application_is_422_without_order(
     await _assert_no_partial_order(db_session, s)
 
 
+# ── Opção "Customizado" ────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("market", ["BR", "EU"])
+async def test_custom_choice_fills_required_application_with_user_text(
+    client: AsyncClient, db_session: AsyncSession, market: str
+) -> None:
+    """Customizado vale em qualquer aplicação, inclusive obrigatória, e guarda o texto."""
+    s = await _scenario(db_session, market)
+
+    response = await _post_order(client, s, [_item(
+        s,
+        {"application_id": str(s.app_feet), "custom_text": "  Pés em latão escovado  "},
+        _choice(s.app_back, s.opt_taupe),
+    )])
+    assert response.status_code == 201, response.text
+    by_application = {
+        choice["application_name"]: (choice["optional_id"], choice["optional_name"], choice["custom_text"])
+        for choice in response.json()["items"][0]["optional_choices"]
+    }
+    assert by_application == {
+        "Pés": (None, "Customizado", "Pés em latão escovado"),
+        "Encosto": (str(s.opt_taupe), "Taupe", None),
+    }
+
+
+@pytest.mark.parametrize("choice", [
+    {"custom_text": "   "},
+    {"custom_text": "Latão", "optional_id": "taupe"},
+    {},
+])
+async def test_custom_choice_needs_exactly_text_or_optional(
+    client: AsyncClient, db_session: AsyncSession, choice: dict
+) -> None:
+    """Customizado sem texto, ou texto junto de um opcional, é 422 sem gravar nada."""
+    s = await _scenario(db_session, "BR")
+    if choice.get("optional_id") == "taupe":
+        choice = {**choice, "optional_id": str(s.opt_taupe)}
+
+    response = await _post_order(client, s, [_item(s, {"application_id": str(s.app_feet), **choice})])
+    assert response.status_code == 422, response.text
+    await _assert_no_partial_order(db_session, s)
+
+
 # ── Repetição permitida × proibida ─────────────────────────────────────────────
 
 async def test_reg_opt_repeat_allowed_when_both_applications_allow(

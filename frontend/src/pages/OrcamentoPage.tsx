@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useId } from 'react'
+import { Fragment, useState, useRef, useEffect, useId } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert } from 'lucide-react'
@@ -19,10 +19,10 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
-import { allowedForApplication, applicationName, formatChoice, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, applicationName, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, legacyCustomText, legacyCustomValue, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
-import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice } from '../types'
+import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
@@ -380,7 +380,7 @@ interface CartItem {
   sold_by_area?: boolean
   discount: number
   opt_categories: Partial<Record<string, string>>
-  optional_choices: { application_id: string; optional_id: string }[]
+  optional_choices: OptionalChoiceInput[]
   source_order_item_id?: string
   preserve_optional_choices?: boolean
   saved_choices?: OptionalChoice[]
@@ -463,9 +463,11 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
           ? allOptionals.filter(o => o.category === cat)
           : item._product.optionals.filter(o => o.category === cat)
         const currentValue = item.opt_categories[cat] ?? ''
+        const customText = legacyCustomText(currentValue)
         const currentOpt = available.find(o => optionalMatchesLegacyName(o, currentValue))
         return (
-          <div key={cat} className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
+          <Fragment key={cat}>
+          <div className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt && hasOptionalPhoto(currentOpt) && (
               <button
@@ -481,31 +483,60 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel }
               </button>
             )}
             <OptionalCombobox
-              value={currentValue}
-              onChange={value => onChange(cat, value || null)}
+              value={customText === null ? currentValue : CUSTOM_OPTION}
+              onChange={value => onChange(cat, value === CUSTOM_OPTION ? legacyCustomValue('') : value || null)}
               onPreview={onPreview}
               label={catLabel(cat)}
               placeholder="—"
-              options={available.map(option => ({
-                value: option.color_name,
-                label: optionalName(option.color_name, isEnglish),
-                photoUrl: option.photo_url,
-                optional: option,
-              }))}
+              options={[
+                ...available.map(option => ({
+                  value: option.color_name,
+                  label: optionalName(option.color_name, isEnglish),
+                  photoUrl: option.photo_url,
+                  optional: option,
+                })),
+                { value: CUSTOM_OPTION, label: customOptionLabel(isEnglish), photoUrl: null },
+              ]}
               className="min-w-0 max-w-[240px]"
             />
           </div>
+          {customText !== null && <CustomTextBox
+            text={customText}
+            label={catLabel(cat)}
+            english={isEnglish}
+            onChange={text => onChange(cat, legacyCustomValue(text))}
+          />}
+          </Fragment>
         )
       })}
     </div>
   )
 }
 
+// Caixa de texto aberta pela opção "Customizado": o usuário descreve o que muda no produto.
+function CustomTextBox({ text, label, english, onChange }: {
+  text: string
+  label: string
+  english: boolean
+  onChange: (text: string) => void
+}) {
+  return <textarea
+    value={text}
+    onChange={event => onChange(event.target.value)}
+    maxLength={1000}
+    rows={2}
+    autoFocus={!text}
+    aria-label={english ? `Customization: ${label}` : `Customização: ${label}`}
+    placeholder={english ? 'Describe what will be customized' : 'Descreva o que será customizado'}
+    className={`basis-full w-full min-w-0 resize-y rounded-md border bg-white px-2 py-1.5 text-[11px] leading-snug text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold/35 ${text.trim() ? 'border-line' : 'border-warning/60'}`}
+  />
+}
+
 function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english }: {
   product: Product
   choices: CartItem['optional_choices']
   allOptionals: OptionalColor[]
-  onChange: (applicationId: string, optionalId: string | null) => void
+  onChange: (applicationId: string, choice: OptionalChoiceInput | null) => void
   onPreview: (photoUrl: string, label: string) => void
   english: boolean
 }) {
@@ -535,13 +566,16 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
     {Array.from(groups.entries()).map(([categoryCode, group]) => <div key={categoryCode} className="space-y-1">
       <h3 className="px-1 text-[10px] font-semibold uppercase tracking-wide text-gold">{group.categoryName}</h3>
       {group.entries.map(({ application, componentName }) => {
-        const value = choices.find(choice => choice.application_id === application.id)?.optional_id ?? ''
-        const missing = application.required && !value
+        const choice = choices.find(candidate => candidate.application_id === application.id)
+        const custom = choice ? isCustomChoice(choice) : false
+        const value = custom ? CUSTOM_OPTION : choice?.optional_id ?? ''
+        const missing = application.required && (custom ? !choice?.custom_text?.trim() : !value)
         const options = allowedForApplication(application, allOptionals)
         const selected = options.find(option => option.id === value)
         const preview = selected ? optionalMedia(selected, 'thumb').src : null
         const areaName = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
-        return <div key={application.id} className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
+        return <div key={application.id} className="space-y-1">
+        <div className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
           <span className="flex min-w-0 items-center border-r border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
             <span className="break-words leading-snug">{areaName}{application.required && <span className="ml-0.5 text-warning" aria-label={english ? 'Required' : 'Obrigatório'}>•</span>}</span>
           </span>
@@ -561,25 +595,37 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
             </button>}
             <OptionalCombobox
               value={value}
-              onChange={optionalId => onChange(application.id, optionalId || null)}
+              onChange={next => onChange(application.id, next === CUSTOM_OPTION
+                ? { application_id: application.id, custom_text: '' }
+                : next ? { application_id: application.id, optional_id: next } : null)}
               onPreview={onPreview}
               label={`${group.categoryName}: ${areaName}`}
               placeholder={english ? 'Choose an option' : 'Escolha uma opção'}
               invalid={missing}
-              options={options.map(option => ({
-                value: option.id,
-                label: optionalName(option.color_name, english),
-                photoUrl: option.thumbnail_url ?? option.photo_url,
-                previewUrl: option.photo_url ?? option.thumbnail_url,
-                optional: option,
-              }))}
+              options={[
+                ...options.map(option => ({
+                  value: option.id,
+                  label: optionalName(option.color_name, english),
+                  photoUrl: option.thumbnail_url ?? option.photo_url,
+                  previewUrl: option.photo_url ?? option.thumbnail_url,
+                  optional: option,
+                })),
+                { value: CUSTOM_OPTION, label: customOptionLabel(english), photoUrl: null },
+              ]}
               className="min-w-0 flex-1 px-2 py-1 text-[11px] font-medium"
             />
           </span>
         </div>
+        {custom && <CustomTextBox
+          text={choice?.custom_text ?? ''}
+          label={areaName}
+          english={english}
+          onChange={text => onChange(application.id, { application_id: application.id, custom_text: text })}
+        />}
+        </div>
       })}
     </div>)}
-    {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
+    {errors.filter(error => !error.endsWith('escolha obrigatória') && !error.endsWith('descreva a customização')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
   </section>
 }
 
@@ -660,7 +706,7 @@ function MobileCartCard({
   onPreview: (photoUrl: string, label: string) => void
   allOptionals: OptionalColor[]
   onOptChange: (cat: string, value: string | null) => void
-  onApplicationChange: (applicationId: string, optionalId: string | null) => void
+  onApplicationChange: (applicationId: string, choice: OptionalChoiceInput | null) => void
   onEditApplications: () => void
   priceProfile: string
   catLabel: (code: string) => string
@@ -1316,7 +1362,9 @@ export default function OrcamentoPage() {
               sold_by_area: item.sold_by_area ?? isAreaProduct(product),
               discount: Number(item.discount),
               opt_categories: item.opt_categories,
-              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && choice.optional_id).map(choice => ({ application_id: choice.application_id!, optional_id: choice.optional_id! })),
+              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || choice.custom_text)).map(choice => choice.custom_text
+                ? { application_id: choice.application_id!, custom_text: choice.custom_text }
+                : { application_id: choice.application_id!, optional_id: choice.optional_id! }),
               source_order_item_id: item.id,
               preserve_optional_choices: true,
               saved_choices: item.optional_choices ?? [],
@@ -1355,13 +1403,13 @@ export default function OrcamentoPage() {
     }))
   }
 
-  function updateApplicationChoice(lineId: string, applicationId: string, optionalId: string | null) {
+  function updateApplicationChoice(lineId: string, applicationId: string, choice: OptionalChoiceInput | null) {
     setCart(previous => previous.map(item => item.line_id !== lineId ? item : {
       ...item,
       preserve_optional_choices: false,
       optional_choices: [
-        ...item.optional_choices.filter(choice => choice.application_id !== applicationId),
-        ...(optionalId ? [{ application_id: applicationId, optional_id: optionalId }] : []),
+        ...item.optional_choices.filter(candidate => candidate.application_id !== applicationId),
+        ...(choice ? [choice] : []),
       ],
     }))
   }
@@ -1477,7 +1525,12 @@ export default function OrcamentoPage() {
 
   async function handleSubmit() {
     if (!cartHydrated || !selectedClient || cart.length === 0) return
-    const error = cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals))[0]
+    const error = [
+      ...cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals)),
+      ...cart.flatMap(item => Object.entries(item.opt_categories)
+        .filter(([, value]) => legacyCustomText(value)?.trim() === '')
+        .map(([category]) => `${catLabel(category)}: descreva a customização`)),
+    ][0]
     if (error) { setToast({ message: error, variant: 'error' }); return }
     setIsGenerating(true)
     try {
@@ -1641,9 +1694,9 @@ export default function OrcamentoPage() {
       {selectedProduct && <ApplicationSelectors
         product={selectedProduct} choices={selectedChoices} allOptionals={allOptionals} english={isEnglish}
         onPreview={photoUrl => setActivePhotoModal(photoUrl)}
-        onChange={(applicationId, optionalId) => setSelectedChoices(previous => [
-          ...previous.filter(choice => choice.application_id !== applicationId),
-          ...(optionalId ? [{ application_id: applicationId, optional_id: optionalId }] : []),
+        onChange={(applicationId, choice) => setSelectedChoices(previous => [
+          ...previous.filter(candidate => candidate.application_id !== applicationId),
+          ...(choice ? [choice] : []),
         ])}
       />}
       <button
@@ -1768,7 +1821,7 @@ export default function OrcamentoPage() {
                       onPreview={photoUrl => setActivePhotoModal(photoUrl)}
                       allOptionals={allOptionals}
                       onOptChange={(cat, val) => updateOptCategory(item.line_id, cat, val)}
-                      onApplicationChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)}
+                      onApplicationChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)}
                       onEditApplications={() => editApplications(item.line_id)}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
@@ -1830,7 +1883,7 @@ export default function OrcamentoPage() {
                               {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
-                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, optId) => updateApplicationChoice(item.line_id, appId, optId)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} />}
+                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} />}
                           </div>
                         </div>
 

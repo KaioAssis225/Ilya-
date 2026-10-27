@@ -775,6 +775,7 @@ def _order_personal_data(order: Order) -> dict:
                         "aplicacao": choice.application_name,
                         "categoria": choice.category_name,
                         "opcao": choice.optional_name,
+                        "customizacao": choice.custom_text,
                         "componente": choice.component_name,
                     }
                     for choice in item.optional_choices
