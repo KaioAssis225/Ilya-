@@ -43,6 +43,7 @@ async def make_optional(
     *,
     color_name: str,
     market_code: str | None = None,
+    brand: str = "ILYA",
 ) -> OptionalColor:
     """Cria uma opção (cor/acabamento) da categoria.
 
@@ -53,6 +54,7 @@ async def make_optional(
         market_code=market_code or category.market_code,
         category=category.code,
         color_name=color_name,
+        brand=brand,
     )
     db.add(optional)
     await db.flush()

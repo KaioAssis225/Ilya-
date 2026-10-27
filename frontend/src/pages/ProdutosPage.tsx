@@ -23,6 +23,7 @@ import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
 import { hasOptionalPhoto } from '../lib/optionalMedia'
 import {
   allowedForApplication,
+  allowsCustomFor,
   allowsCustomOption,
   applicationName,
   CUSTOM_LEGACY_VALUE,
@@ -912,42 +913,46 @@ function ProductFullView({
                       canDeselect={options.length > 1}
                       english={english}
                       onSelect={optionalId => selectCategory(category, optionalId)}
-                      allowCustom={allowsCustomOption(market)} customSelected={categorySelections[category] === CUSTOM_OPTION}
+                      allowCustom={allowsCustomOption(market) && allowsCustomFor(options)} customSelected={categorySelections[category] === CUSTOM_OPTION}
                       onToggleCustom={() => toggleCategoryCustom(category)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )
                 })}
 
-                {freeCategories.map(category => (
-                  <OptionalCatalogGroup
-                    key={`free-category-${category}`}
-                    id={`free-category-${category}`}
-                    label={categoryLabel(category, english)}
-                    options={fetchedOptionals.filter(option => option.category === category)}
-                    selectedId={categorySelections[category]}
-                    canDeselect
-                    english={english}
-                    onSelect={optionalId => selectCategory(category, optionalId)}
-                    allowCustom={allowsCustomOption(market)} customSelected={categorySelections[category] === CUSTOM_OPTION}
-                    onToggleCustom={() => toggleCategoryCustom(category)}
-                    onZoom={(optional, type) => setMobileOptModal({ optional, type })}
-                  />
-                ))}
+                {freeCategories.map(category => {
+                  const options = fetchedOptionals.filter(option => option.category === category)
+                  return (
+                    <OptionalCatalogGroup
+                      key={`free-category-${category}`}
+                      id={`free-category-${category}`}
+                      label={categoryLabel(category, english)}
+                      options={options}
+                      selectedId={categorySelections[category]}
+                      canDeselect
+                      english={english}
+                      onSelect={optionalId => selectCategory(category, optionalId)}
+                      allowCustom={allowsCustomOption(market) && allowsCustomFor(options)} customSelected={categorySelections[category] === CUSTOM_OPTION}
+                      onToggleCustom={() => toggleCategoryCustom(category)}
+                      onZoom={(optional, type) => setMobileOptModal({ optional, type })}
+                    />
+                  )
+                })}
 
                 {applications.map(({ application, componentName }) => {
                   const label = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}${application.required ? ' *' : ''}`
+                  const options = allowedForApplication(application, fetchedOptionals)
                   return (
                     <OptionalCatalogGroup
                       key={`application-${application.id}`}
                       id={`application-${application.id}`}
                       label={label}
-                      options={allowedForApplication(application, fetchedOptionals)}
+                      options={options}
                       selectedId={applicationSelections[application.id]?.optional_id ?? undefined}
                       canDeselect
                       english={english}
                       onSelect={optionalId => selectApplication(application.id, optionalId ? { application_id: application.id, optional_id: optionalId } : null)}
-                      allowCustom={allowsCustomOption(market)}
+                      allowCustom={allowsCustomOption(market) && allowsCustomFor(options)}
                       customSelected={applicationSelections[application.id]?.custom_text != null}
                       onToggleCustom={() => toggleApplicationCustom(application.id)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}

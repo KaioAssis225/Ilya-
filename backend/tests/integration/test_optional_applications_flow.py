@@ -76,6 +76,7 @@ class Scenario:
     category_id: uuid.UUID
     category_code: str
     other_category_id: uuid.UUID
+    other_category_code: str
     app_feet: uuid.UUID          # "Pés": obrigatória
     app_back: uuid.UUID          # "Encosto": opcional
     opt_taupe: uuid.UUID
@@ -102,6 +103,8 @@ async def _scenario(
     *,
     feet_allow_repeat: bool = True,
     back_allow_repeat: bool = True,
+    paint_brand: str = "ILYA",
+    free_fabric: bool = False,
 ) -> Scenario:
     suffix = uuid.uuid4().hex[:8].upper()
     user = await make_user(
@@ -140,10 +143,12 @@ async def _scenario(
     fabric = await make_optional_category(
         db, market_code=market, code=f"TEC{suffix}", name="Tecido",
     )
-    taupe = await make_optional(db, paint, color_name="Taupe")
-    black = await make_optional(db, paint, color_name="Preto")
-    white = await make_optional(db, paint, color_name="Branco")
+    taupe = await make_optional(db, paint, color_name="Taupe", brand=paint_brand)
+    black = await make_optional(db, paint, color_name="Preto", brand=paint_brand)
+    white = await make_optional(db, paint, color_name="Branco", brand=paint_brand)
     linen = await make_optional(db, fabric, color_name="Linho")
+    if free_fabric:
+        product.all_optionals_categories = fabric.code
 
     feet = await make_application(
         db, product, paint, name="Pés", name_en="Legs", required=True,
@@ -158,7 +163,7 @@ async def _scenario(
         market=market, token=token, user_id=user.id, client_id=client.id,
         product_code=product.product_code, product_id=product.id,
         category_id=paint.id, category_code=paint.code, other_category_id=fabric.id,
-        app_feet=feet.id, app_back=back.id,
+        other_category_code=fabric.code, app_feet=feet.id, app_back=back.id,
         opt_taupe=taupe.id, opt_black=black.id,
         opt_white_not_allowed=white.id, opt_linen_other_category=linen.id,
     )
@@ -321,8 +326,8 @@ async def test_reg_opt_missing_required_application_is_422_without_order(
 async def test_custom_choice_fills_required_application_without_text(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Em Portugal, Customizado vale em qualquer aplicação, inclusive obrigatória, sem descrição."""
-    s = await _scenario(db_session, "EU")
+    """Em Portugal, Customizado vale em aplicação IBTW, inclusive obrigatória, sem descrição."""
+    s = await _scenario(db_session, "EU", paint_brand="IBTW")
 
     response = await _post_order(client, s, [_item(
         s,
@@ -371,6 +376,23 @@ async def test_custom_choice_is_refused_in_brazil(
     response = await _post_order(client, s, [item])
     assert response.status_code == 422, response.text
     assert "Portugal" in response.json()["detail"]
+    await _assert_no_partial_order(db_session, s)
+
+
+@pytest.mark.parametrize("custom", ["application", "legacy"])
+async def test_custom_choice_is_refused_for_ilya_finish(
+    client: AsyncClient, db_session: AsyncSession, custom: str
+) -> None:
+    """Em Portugal, seletor com opcional ILYA não aceita Customizado."""
+    s = await _scenario(db_session, "EU", free_fabric=True)
+    if custom == "application":
+        item = _item(s, {"application_id": str(s.app_feet), "custom_text": ""})
+    else:
+        item = _item(s, _choice(s.app_feet, s.opt_taupe), opt_categories={s.other_category_code: "Customizado"})
+
+    response = await _post_order(client, s, [item])
+    assert response.status_code == 422, response.text
+    assert "ILYA" in response.json()["detail"]
     await _assert_no_partial_order(db_session, s)
 
 
