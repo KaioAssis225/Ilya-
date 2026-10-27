@@ -170,17 +170,13 @@ export async function generateOrderPDF(
   if (brandSuffix && brandDescriptor) {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8.5)
-    doc.text(brandSuffix, 20, y + 7)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.text(brandDescriptor, 20, y + 12)
+    doc.text(`${brandDescriptor} ${brandSuffix}`, 20, y + 7)
     doc.setDrawColor(...GOLD)
     doc.setLineWidth(0.3)
-    doc.line(20, y + 15, 60, y + 15)
+    doc.line(20, y + 10, 60, y + 10)
     doc.setFontSize(6.5)
     doc.setTextColor(...MUTED)
-    doc.setFont('helvetica', 'bold')
-    doc.text(L.documentTitle, 20, y + 22)
+    doc.text(L.documentTitle, 20, y + 17)
   } else {
     doc.setDrawColor(...GOLD)
     doc.setLineWidth(0.3)
@@ -212,7 +208,7 @@ export async function generateOrderPDF(
   )
   doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
-  y = brandSuffix ? 60 : 55
+  y = 55
 
   // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2
