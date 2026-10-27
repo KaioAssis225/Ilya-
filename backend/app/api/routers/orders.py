@@ -54,6 +54,12 @@ _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
+_EU_PRICE_LIST_DISCOUNTS = {
+    "lojista": Decimal("50.00"),
+    "arquiteto": Decimal("35.00"),
+    "corporativo": Decimal("25.00"),
+    "pvp": Decimal("10.00"),
+}
 
 
 def _decimal(value: object) -> Decimal:
@@ -403,8 +409,15 @@ def _resolve_max_discount(
     current_user: User,
     client: Client,
     rep: Representative | None,
+    market_code: str = "BR",
+    price_list_code: str | None = None,
 ) -> Decimal:
-    """Bloco 69: teto dinamico por Cliente/Representante em vez de limite fixo por role."""
+    """Resolve o teto por tabela no EU e por cadastro comercial no BR."""
+    if market_code == "EU":
+        code = (price_list_code or "").strip().lower()
+        if code == "pvp" and current_user.role != UserRole.admin:
+            return _ZERO
+        return _EU_PRICE_LIST_DISCOUNTS.get(code, _ZERO)
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO
     if is_client_account(current_user):
@@ -510,7 +523,7 @@ def _validate_discount(
     if discount_value < _ZERO or discount_value > max_discount_value:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Desconto de {discount_value}% no item '{product_code}' excede o limite permitido ({max_discount_value}%) para o seu nível de acesso.",
+            detail=f"Desconto de {discount_value}% no item '{product_code}' excede o limite permitido ({max_discount_value}%).",
         )
 
 
@@ -718,8 +731,6 @@ async def create_order(
             raise HTTPException(status_code=404, detail="Representante não encontrado.")
         require_launch_country(principal.code, rep.country)
 
-    max_discount = _resolve_max_discount(current_user, client, rep)
-
     # Batch-fetch de produtos e tipos — elimina N+1 (V-B1)
     product_map, type_map = await _load_products_and_types(
         db, [i.product_code for i in payload.items], principal.code
@@ -735,6 +746,9 @@ async def create_order(
     )).scalar_one_or_none()
     if not price_list:
         raise HTTPException(status_code=422, detail="Cliente sem lista de preços válida para o mercado ativo.")
+    max_discount = _resolve_max_discount(
+        current_user, client, rep, market_code, price_list.code
+    )
     product_ids = [product.id for product in product_map.values()]
     available_ids = set((await db.execute(
         select(ProductMarket.product_id).where(
@@ -1288,7 +1302,9 @@ async def update_order(
             ).scalar_one_or_none()
         if rep:
             require_launch_country(principal.code, rep.country)
-        max_discount = _resolve_max_discount(current_user, client, rep)
+        max_discount = _resolve_max_discount(
+            current_user, client, rep, order.market_code, price_list.code
+        )
 
         total = _ZERO
         total_ipi = _ZERO
