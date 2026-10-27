@@ -54,8 +54,8 @@ class OrderItemOptionalChoice(Base):
     category_code: Mapped[str] = mapped_column(String(50), nullable=False)
     category_name: Mapped[str] = mapped_column(String(100), nullable=False)
     optional_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    # Preenchido só na opção "Customizado" (optional_custom_r26): o que o usuário
-    # descreveu no lugar de um opcional do cadastro.
+    # Presente só na opção "Customizado" (optional_custom_r26): vazio na escolha
+    # atual; com texto nos pedidos feitos quando havia a caixa de descrição.
     custom_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     component_name: Mapped[str | None] = mapped_column(String(20000), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useEffect, useId } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert } from 'lucide-react'
@@ -19,7 +19,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
 import { cartStorageKey, notifyCartChanged } from '../lib/cart'
-import { allowedForApplication, allowsCustomOption, applicationName, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, legacyCustomText, legacyCustomValue, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, isLegacyCustom, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
@@ -464,11 +464,10 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
           ? allOptionals.filter(o => o.category === cat)
           : item._product.optionals.filter(o => o.category === cat)
         const currentValue = item.opt_categories[cat] ?? ''
-        const customText = legacyCustomText(currentValue)
+        const custom = isLegacyCustom(currentValue)
         const currentOpt = available.find(o => optionalMatchesLegacyName(o, currentValue))
         return (
-          <Fragment key={cat}>
-          <div className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
+          <div key={cat} className="flex max-w-full min-w-0 min-h-11 lg:min-h-0 items-center gap-1 bg-surface-quiet border border-bg-2 rounded-md px-1.5 py-0.5 focus-within:ring-2 focus-within:ring-gold/40 focus-within:border-gold/60">
             <span className="type-label whitespace-nowrap">{catLabel(cat)}:</span>
             {currentOpt && hasOptionalPhoto(currentOpt) && (
               <button
@@ -484,8 +483,8 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
               </button>
             )}
             <OptionalCombobox
-              value={customText === null ? currentValue : CUSTOM_OPTION}
-              onChange={value => onChange(cat, value === CUSTOM_OPTION ? legacyCustomValue('') : value || null)}
+              value={custom ? CUSTOM_OPTION : currentValue}
+              onChange={value => onChange(cat, value === CUSTOM_OPTION ? CUSTOM_LEGACY_VALUE : value || null)}
               onPreview={onPreview}
               label={catLabel(cat)}
               placeholder="—"
@@ -501,36 +500,10 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
               className="min-w-0 max-w-[240px]"
             />
           </div>
-          {customText !== null && <CustomTextBox
-            text={customText}
-            label={catLabel(cat)}
-            english={isEnglish}
-            onChange={text => onChange(cat, legacyCustomValue(text))}
-          />}
-          </Fragment>
         )
       })}
     </div>
   )
-}
-
-// Caixa de texto aberta pela opção "Customizado": o usuário descreve o que muda no produto.
-function CustomTextBox({ text, label, english, onChange }: {
-  text: string
-  label: string
-  english: boolean
-  onChange: (text: string) => void
-}) {
-  return <textarea
-    value={text}
-    onChange={event => onChange(event.target.value)}
-    maxLength={1000}
-    rows={2}
-    autoFocus={!text}
-    aria-label={english ? `Customization: ${label}` : `Customização: ${label}`}
-    placeholder={english ? 'Describe what will be customized' : 'Descreva o que será customizado'}
-    className={`basis-full w-full min-w-0 resize-y rounded-md border bg-white px-2 py-1.5 text-[11px] leading-snug text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold/35 ${text.trim() ? 'border-line' : 'border-warning/60'}`}
-  />
 }
 
 function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english, allowCustom }: {
@@ -571,13 +544,12 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
         const choice = choices.find(candidate => candidate.application_id === application.id)
         const custom = choice ? isCustomChoice(choice) : false
         const value = custom ? CUSTOM_OPTION : choice?.optional_id ?? ''
-        const missing = application.required && (custom ? !choice?.custom_text?.trim() : !value)
+        const missing = application.required && !value
         const options = allowedForApplication(application, allOptionals)
         const selected = options.find(option => option.id === value)
         const preview = selected ? optionalMedia(selected, 'thumb').src : null
         const areaName = `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`
-        return <div key={application.id} className="space-y-1">
-        <div className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
+        return <div key={application.id} className={`grid min-h-11 min-w-0 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border bg-white focus-within:ring-2 focus-within:ring-gold/35 lg:min-h-9 ${missing ? 'border-warning/60' : 'border-line'}`}>
           <span className="flex min-w-0 items-center border-r border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
             <span className="break-words leading-snug">{areaName}{application.required && <span className="ml-0.5 text-warning" aria-label={english ? 'Required' : 'Obrigatório'}>•</span>}</span>
           </span>
@@ -618,16 +590,9 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
             />
           </span>
         </div>
-        {custom && <CustomTextBox
-          text={choice?.custom_text ?? ''}
-          label={areaName}
-          english={english}
-          onChange={text => onChange(application.id, { application_id: application.id, custom_text: text })}
-        />}
-        </div>
       })}
     </div>)}
-    {errors.filter(error => !error.endsWith('escolha obrigatória') && !error.endsWith('descreva a customização')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
+    {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
   </section>
 }
 
@@ -1365,7 +1330,7 @@ export default function OrcamentoPage() {
               sold_by_area: item.sold_by_area ?? isAreaProduct(product),
               discount: Number(item.discount),
               opt_categories: item.opt_categories,
-              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || choice.custom_text)).map(choice => choice.custom_text
+              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice))).map(choice => isCustomChoice(choice)
                 ? { application_id: choice.application_id!, custom_text: choice.custom_text }
                 : { application_id: choice.application_id!, optional_id: choice.optional_id! }),
               source_order_item_id: item.id,
@@ -1528,12 +1493,7 @@ export default function OrcamentoPage() {
 
   async function handleSubmit() {
     if (!cartHydrated || !selectedClient || cart.length === 0) return
-    const error = [
-      ...cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals)),
-      ...cart.flatMap(item => Object.entries(item.opt_categories)
-        .filter(([, value]) => legacyCustomText(value)?.trim() === '')
-        .map(([category]) => `${catLabel(category)}: descreva a customização`)),
-    ][0]
+    const error = cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals))[0]
     if (error) { setToast({ message: error, variant: 'error' }); return }
     setIsGenerating(true)
     try {

@@ -318,15 +318,15 @@ async def test_reg_opt_missing_required_application_is_422_without_order(
 
 # ── Opção "Customizado" ────────────────────────────────────────────────────────
 
-async def test_custom_choice_fills_required_application_with_user_text(
+async def test_custom_choice_fills_required_application_without_text(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Em Portugal, Customizado vale em qualquer aplicação, inclusive obrigatória, e guarda o texto."""
+    """Em Portugal, Customizado vale em qualquer aplicação, inclusive obrigatória, sem descrição."""
     s = await _scenario(db_session, "EU")
 
     response = await _post_order(client, s, [_item(
         s,
-        {"application_id": str(s.app_feet), "custom_text": "  Pés em latão escovado  "},
+        {"application_id": str(s.app_feet), "custom_text": ""},
         _choice(s.app_back, s.opt_taupe),
     )])
     assert response.status_code == 201, response.text
@@ -335,20 +335,19 @@ async def test_custom_choice_fills_required_application_with_user_text(
         for choice in response.json()["items"][0]["optional_choices"]
     }
     assert by_application == {
-        "Pés": (None, "Customizado", "Pés em latão escovado"),
+        "Pés": (None, "Customizado", ""),
         "Encosto": (str(s.opt_taupe), "Taupe", None),
     }
 
 
 @pytest.mark.parametrize("choice", [
-    {"custom_text": "   "},
-    {"custom_text": "Latão", "optional_id": "taupe"},
+    {"custom_text": "", "optional_id": "taupe"},
     {},
 ])
-async def test_custom_choice_needs_exactly_text_or_optional(
+async def test_custom_choice_needs_exactly_custom_or_optional(
     client: AsyncClient, db_session: AsyncSession, choice: dict
 ) -> None:
-    """Customizado sem texto, ou texto junto de um opcional, é 422 sem gravar nada."""
+    """Customizado junto de um opcional, ou escolha vazia, é 422 sem gravar nada."""
     s = await _scenario(db_session, "EU")
     if choice.get("optional_id") == "taupe":
         choice = {**choice, "optional_id": str(s.opt_taupe)}
@@ -365,9 +364,9 @@ async def test_custom_choice_is_refused_in_brazil(
     """No Brasil não existe Customizado: nem na aplicação nem no seletor antigo."""
     s = await _scenario(db_session, "BR")
     if custom == "application":
-        item = _item(s, {"application_id": str(s.app_feet), "custom_text": "Pés em latão"})
+        item = _item(s, {"application_id": str(s.app_feet), "custom_text": ""})
     else:
-        item = _item(s, _choice(s.app_feet, s.opt_taupe), opt_categories={"CORDA": "Customizado: corda azul"})
+        item = _item(s, _choice(s.app_feet, s.opt_taupe), opt_categories={"CORDA": "Customizado"})
 
     response = await _post_order(client, s, [item])
     assert response.status_code == 422, response.text
