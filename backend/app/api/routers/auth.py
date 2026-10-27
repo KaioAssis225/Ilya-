@@ -770,6 +770,7 @@ def _order_personal_data(order: Order) -> dict:
                 "desconto": item.discount,
                 "ipi": item.ipi_rate,
                 "opcionais": item.opt_categories,
+                "comentario": item.comment,
                 "aplicacoes_do_opcional": [
                     {
                         "aplicacao": choice.application_name,

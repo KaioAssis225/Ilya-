@@ -248,7 +248,8 @@ def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> 
         for choice in sorted(item.optional_choices, key=lambda row: (row.display_order, str(row.id)))
     ]
     legacy_lines = [f"{category}: {value}" for category, value in item.opt_categories.items()]
-    return "\n".join(part for part in [product_summary or "", *legacy_lines, *choice_lines] if part)
+    comment_line = f"{'Comment' if locale == 'en-GB' else 'Comentário'}: {item.comment}" if item.comment else ""
+    return "\n".join(part for part in [product_summary or "", *legacy_lines, *choice_lines, comment_line] if part)
 
 async def active_moloni_connection(db: AsyncSession) -> MoloniConnection | None:
     """Conexão ativa única. Com duas ativas o destino dos dados EU seria

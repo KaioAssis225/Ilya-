@@ -285,10 +285,12 @@ export async function generateOrderPDF(
       ? `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
       : null
     const obsText = item.observacao ? `${L.itemNote}: ${item.observacao}` : null
+    const commentText = item.comment ? `${L.itemComment}: ${item.comment}` : null
     const optText = optSlots.length > 0 ? L.options + ': ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ') : null
 
     const dimLines: string[] = dimText ? doc.splitTextToSize(dimText, WRAP_WIDTH) : []
     const obsLines: string[] = obsText ? doc.splitTextToSize(obsText, WRAP_WIDTH) : []
+    const commentLines: string[] = commentText ? doc.splitTextToSize(commentText, WRAP_WIDTH) : []
     const optLines: string[] = optText ? doc.splitTextToSize(optText, WRAP_WIDTH) : []
     const compLineGroups: string[][] = components.map((comp) => {
       const compDim = pdfSafe(formatDimensions(comp, order.market_code, measurementLocale))
@@ -310,7 +312,7 @@ export async function generateOrderPDF(
     const descLines: string[] = doc.splitTextToSize(item.description, WRAP_WIDTH)
     const titleExtraLines = Math.max(0, descLines.length - 1)
 
-    const extraLines = titleExtraLines + dimLines.length + obsLines.length + optLines.length + compLinesTotal
+    const extraLines = titleExtraLines + dimLines.length + obsLines.length + commentLines.length + optLines.length + compLinesTotal
     // Base 18 (antes 13) e mínimo 26 (antes 20): respiro vertical maior entre
     // os itens da tabela, a pedido do usuário — a foto tem 14mm, então o
     // conteúdo não colide com a régua separadora.
@@ -364,6 +366,12 @@ export async function generateOrderPDF(
       doc.setFontSize(6)
       doc.setTextColor(...MUTED)
       for (const line of obsLines) { doc.text(line, 40, lineY); lineY += 4 }
+    }
+
+    if (commentLines.length > 0) {
+      doc.setFontSize(6.5)
+      doc.setTextColor(...MUTED)
+      for (const line of commentLines) { doc.text(line, 40, lineY); lineY += 4 }
     }
 
     if (optLines.length > 0) {

@@ -169,7 +169,7 @@ def _choice_snapshot(item: OrderItem) -> list[dict]:
 def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
     return [
         {"product_code": item.product_code, "legacy_optionals": item.opt_categories,
-         "applications": _choice_snapshot(item)} for item in items
+         "applications": _choice_snapshot(item), "comment": item.comment} for item in items
     ]
 
 
@@ -876,6 +876,7 @@ async def create_order(
             tax_label=context.tax_label,
             currency=context.currency,
             observacao=product.observacao,
+            comment=item_in.comment,
         ))
 
     catalog = await _order_catalog(
@@ -954,7 +955,7 @@ async def create_order_revision(
         items=[OrderItemCreate(
             product_code=item.product_code, qty=item.qty,
             discount=item.discount, opt_categories=item.opt_categories,
-            source_order_item_id=item.id,
+            source_order_item_id=item.id, comment=item.comment,
         ) for item in source.items],
     )
     # O fluxo normal recalcula preços e impostos atuais e cria novo número;
@@ -1263,6 +1264,10 @@ async def update_order(
             changes.append(f"removidos: {', '.join(removed)}")
         if added:
             changes.append(f"adicionados: {', '.join(added)}")
+        old_comments = sorted(item.comment for item in order.items if item.comment)
+        new_comments = sorted(item.comment for item in payload.items if item.comment)
+        if old_comments != new_comments:
+            changes.append("comentários dos itens alterados")
 
         # Valida e calcula TODOS os itens novos ANTES de deletar os antigos (V-B2).
         # Batch-fetch de produtos/tipos elimina N+1 (V-B1).
@@ -1398,6 +1403,7 @@ async def update_order(
                 tax_label="IVA" if order.market_code == "EU" else "IPI",
                 currency=order.currency,
                 observacao=product.observacao,
+                comment=item_in.comment,
             ))
 
         catalog = await _order_catalog(

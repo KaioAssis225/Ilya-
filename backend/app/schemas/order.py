@@ -55,6 +55,12 @@ class OrderItemCreate(BaseModel):
     optional_choices: List[OptionalChoiceCreate] = Field(default_factory=list, max_length=100)
     source_order_item_id: Optional[uuid.UUID] = None
     preserve_optional_choices: bool = False
+    comment: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("comment")
+    @classmethod
+    def normalize_comment(cls, value: Optional[str]) -> Optional[str]:
+        return (value or "").strip() or None
 
     @field_validator("opt_categories")
     @classmethod
@@ -114,6 +120,7 @@ class OrderItemRead(BaseModel):
     tax_label: str = "IPI"
     currency: str = "BRL"
     observacao: Optional[str] = None
+    comment: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

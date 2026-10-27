@@ -374,6 +374,24 @@ async def test_custom_choice_is_refused_in_brazil(
     await _assert_no_partial_order(db_session, s)
 
 
+# ── Comentário por item ────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("market", ["BR", "EU"])
+async def test_each_item_keeps_its_own_comment(
+    client: AsyncClient, db_session: AsyncSession, market: str
+) -> None:
+    """Cada linha guarda o próprio comentário; comentário em branco fica vazio."""
+    s = await _scenario(db_session, market)
+
+    response = await _post_order(client, s, [
+        _item(s, _choice(s.app_feet, s.opt_taupe), qty=1, comment="  Entregar montado  "),
+        _item(s, _choice(s.app_feet, s.opt_black), qty=2, comment="   "),
+    ])
+    assert response.status_code == 201, response.text
+    comments = {item["qty"]: item["comment"] for item in response.json()["items"]}
+    assert comments == {1: "Entregar montado", 2: None}
+
+
 # ── Repetição permitida × proibida ─────────────────────────────────────────────
 
 async def test_reg_opt_repeat_allowed_when_both_applications_allow(

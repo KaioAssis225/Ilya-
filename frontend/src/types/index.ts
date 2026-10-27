@@ -268,6 +268,7 @@ export interface OrderItemCreate {
   optional_choices?: OptionalChoiceInput[]
   source_order_item_id?: string
   preserve_optional_choices?: boolean
+  comment?: string | null
 }
 
 export interface OrderCreate {
@@ -304,6 +305,8 @@ export interface OrderItem {
   tax_label: 'IPI' | 'IVA'
   currency: 'BRL' | 'EUR'
   observacao: string | null
+  /** Comentário livre do usuário sobre o item. */
+  comment?: string | null
   created_at: string
   updated_at: string
 }
@@ -315,7 +318,7 @@ export interface OrderHistory {
   user: { id: string; full_name: string } | null
   action: string
   details: string | null
-  items_snapshot?: { product_code: string; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; component_name: string | null }[] }[] | null
+  items_snapshot?: { product_code: string; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; component_name: string | null }[]; comment?: string | null }[] | null
   created_at: string
 }
 

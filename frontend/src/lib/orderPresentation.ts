@@ -61,7 +61,7 @@ export interface OrderDocumentLabels {
   order: string; date: string; quote: string
   representative: string; client: string; none: string; noEmail: string
   product: string; qty: string; unitPrice: string; total: string
-  dimensions: string; itemNote: string; options: string; noPhoto: string
+  dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
   totalItems: string; grandTotal: string; notes: string
   repSignature: string; clientSignature: string; footer: string
 }
@@ -78,7 +78,7 @@ const PT_LABELS: OrderDocumentLabels = {
   order: 'PEDIDO', date: 'Data', quote: 'Orçamento',
   representative: 'REPRESENTANTE', client: 'CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
   product: 'PRODUTO', qty: 'QTD', unitPrice: 'VALOR UN.', total: 'TOTAL',
-  dimensions: 'Dimensões', itemNote: 'Obs.', options: 'Opcionais', noPhoto: 'sem\nfoto',
+  dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
   totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
   repSignature: 'Representante / Ilya', clientSignature: 'Cliente / Contratado',
   footer: 'Ilya — Documento gerado automaticamente',
@@ -88,7 +88,7 @@ const EN_LABELS: OrderDocumentLabels = {
   order: 'ORDER', date: 'Date', quote: 'Quote',
   representative: 'SALES REPRESENTATIVE', client: 'CLIENT', none: 'None', noEmail: 'No email provided',
   product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', total: 'TOTAL',
-  dimensions: 'Dimensions', itemNote: 'Note', options: 'Options', noPhoto: 'no\nphoto',
+  dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
   totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
   repSignature: 'Representative / IBTW', clientSignature: 'Client',
   footer: 'IBTW — Automatically generated document',
