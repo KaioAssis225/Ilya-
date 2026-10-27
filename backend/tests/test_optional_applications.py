@@ -158,7 +158,7 @@ def test_history_keeps_application_and_option_names_as_snapshots():
         component_name="Cadeira", display_order=1,
     )
     snapshot = _items_history_snapshot([SimpleNamespace(
-        product_code="ABC", opt_categories={}, optional_choices=[choice],
+        product_code="ABC", opt_categories={}, optional_choices=[choice], comment=None,
     )])
     assert snapshot[0]["applications"][0]["component_name"] == "Cadeira"
     assert snapshot[0]["applications"][0]["application_name"] == "Pintura dos pés"

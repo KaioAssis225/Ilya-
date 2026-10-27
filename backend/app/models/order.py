@@ -197,6 +197,8 @@ class OrderItem(Base, TimestampMixin):
     tax_label: Mapped[str] = mapped_column(String(10), nullable=False, default="IPI", server_default="IPI")
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="BRL", server_default="BRL")
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Comentário livre do usuário sobre este item (order_item_comment_r27).
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 

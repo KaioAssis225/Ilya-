@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, MessageSquare } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useClient, useClientsPage, useCreateClient } from '../hooks/useClients'
@@ -384,6 +384,8 @@ interface CartItem {
   source_order_item_id?: string
   preserve_optional_choices?: boolean
   saved_choices?: OptionalChoice[]
+  /** Comentário do item; undefined com a caixa fechada. */
+  comment?: string
   _product: Product
 }
 
@@ -504,6 +506,48 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
       })}
     </div>
   )
+}
+
+// Comentário livre do item no pedido. O botão fica ao lado de excluir; a caixa
+// fecha pelo botão só enquanto está vazia, para não esconder o que foi escrito.
+function ItemCommentToggle({ comment, label, english, onToggle }: {
+  comment: string | undefined
+  label: string
+  english: boolean
+  onToggle: () => void
+}) {
+  const filled = Boolean(comment?.trim())
+  return <button
+    type="button"
+    onClick={onToggle}
+    aria-expanded={comment !== undefined}
+    aria-label={english ? `Comment on ${label}` : `Comentário de ${label}`}
+    title={english ? 'Item comment' : 'Comentário do item'}
+    className={`w-11 h-11 flex items-center justify-center flex-shrink-0 transition-colors ${comment !== undefined ? 'text-gold' : 'text-muted hover:text-gold'}`}
+    style={{ touchAction: 'manipulation' }}
+  >
+    <MessageSquare className="w-4 h-4" fill={filled ? 'currentColor' : 'none'} />
+  </button>
+}
+
+function ItemCommentBox({ comment, english, onChange }: {
+  comment: string | undefined
+  english: boolean
+  onChange: (comment: string) => void
+}) {
+  if (comment === undefined) return null
+  return <label className="mt-2 block">
+    <span className="type-label text-xs block mb-1">{english ? 'Item comment' : 'Comentário do item'}</span>
+    <textarea
+      value={comment}
+      onChange={event => onChange(event.target.value)}
+      maxLength={1000}
+      rows={2}
+      autoFocus={!comment}
+      placeholder={english ? 'Write a comment about this item' : 'Escreva um comentário sobre este item'}
+      className="w-full min-w-0 resize-y rounded-md border border-line bg-white px-2 py-1.5 text-xs leading-snug text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold/35"
+    />
+  </label>
 }
 
 function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english, allowCustom }: {
@@ -661,7 +705,7 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
 function MobileCartCard({
-  item, onQtyChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, onOptChange, onApplicationChange, onEditApplications, priceProfile, catLabel, currency, locale
+  item, onQtyChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -675,6 +719,8 @@ function MobileCartCard({
   onOptChange: (cat: string, value: string | null) => void
   onApplicationChange: (applicationId: string, choice: OptionalChoiceInput | null) => void
   onEditApplications: () => void
+  onToggleComment: () => void
+  onCommentChange: (comment: string) => void
   priceProfile: string
   catLabel: (code: string) => string
   currency: string
@@ -723,20 +769,24 @@ function MobileCartCard({
                 <p className="text-[11px] leading-snug text-gold italic mt-1 line-clamp-2">{item._product.observacao}</p>
               )}
             </div>
-            <button
-              onClick={() => onRemove(item.line_id)}
-              className="text-muted active:text-danger transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
-              style={{ touchAction: 'manipulation' }}
-              aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            <div className="flex flex-shrink-0">
+              <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={onToggleComment} />
+              <button
+                onClick={() => onRemove(item.line_id)}
+                className="text-muted active:text-danger transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
+                style={{ touchAction: 'manipulation' }}
+                aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
           <OptionalSelectors item={item} allOptionals={allOptionals} onChange={onOptChange} onPreview={onPreview} catLabel={catLabel} allowCustom={allowCustom} />
           {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
           </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} />}
+          <ItemCommentBox comment={item.comment} english={isEnglish} onChange={onCommentChange} />
         </div>
       </div>
 
@@ -1336,6 +1386,7 @@ export default function OrcamentoPage() {
               source_order_item_id: item.id,
               preserve_optional_choices: true,
               saved_choices: item.optional_choices ?? [],
+              comment: item.comment ?? undefined,
               _product: product,
             }
           })
@@ -1445,6 +1496,16 @@ export default function OrcamentoPage() {
     setCart((prev) => prev.map((i) => i.line_id === lineId ? { ...i, discount } : i))
   }
 
+  function updateComment(lineId: string, comment: string | undefined) {
+    setCart(previous => previous.map(item => item.line_id === lineId ? { ...item, comment } : item))
+  }
+
+  function toggleComment(lineId: string) {
+    const current = cart.find(item => item.line_id === lineId)?.comment
+    if (current === undefined) updateComment(lineId, '')
+    else if (!current.trim()) updateComment(lineId, undefined)
+  }
+
   function removeItem(lineId: string) {
     setCart((prev) => prev.filter((i) => i.line_id !== lineId))
     setQtyLimitWarnings((current) => {
@@ -1478,7 +1539,7 @@ export default function OrcamentoPage() {
   // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
   const budgetCode = isEnglish ? 'Assigned on save' : 'Gerado ao salvar'
 
-  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, _product }) => ({
+  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, comment, _product }) => ({
     product_code,
     qty: isAreaProduct(_product) ? normalizeAreaQty(qty) : Math.max(1, Math.round(qty)),
     discount: discount || 0,
@@ -1486,6 +1547,7 @@ export default function OrcamentoPage() {
     optional_choices,
     source_order_item_id,
     preserve_optional_choices,
+    comment: comment?.trim() || null,
   }))
   const repIdForSubmit = editId
     ? selectedRep?.id ?? null
@@ -1787,6 +1849,8 @@ export default function OrcamentoPage() {
                       onOptChange={(cat, val) => updateOptCategory(item.line_id, cat, val)}
                       onApplicationChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)}
                       onEditApplications={() => editApplications(item.line_id)}
+                      onToggleComment={() => toggleComment(item.line_id)}
+                      onCommentChange={comment => updateComment(item.line_id, comment)}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
                       currency={currency}
@@ -1848,6 +1912,7 @@ export default function OrcamentoPage() {
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
                             {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market)} />}
+                            <ItemCommentBox comment={item.comment} english={isEnglish} onChange={comment => updateComment(item.line_id, comment)} />
                           </div>
                         </div>
 
@@ -1904,6 +1969,7 @@ export default function OrcamentoPage() {
                                 <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
                               </div>
                             </div>
+                            <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
                             <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                               <Trash2 className="w-4 h-4" />
                             </button>
