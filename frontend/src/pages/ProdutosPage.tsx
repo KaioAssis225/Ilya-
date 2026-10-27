@@ -652,7 +652,10 @@ function ProductFullView({
     ...freeCategories,
     ...applications.map(({ application }) => application.category_code),
   ])), [applications, freeCategories])
-  const { data: fetchedOptionals = [], isLoading: optionalsLoading } = useOptionalsForCategories(fetchedCategories)
+  const { data: fetchedOptionals = [], isLoading: optionalsLoading, isSuccess: optionalsLoaded } = useOptionalsForCategories(fetchedCategories)
+  // Sem a lista do servidor não dá para saber se há acabamento ILYA, então
+  // Customizado só aparece depois que ela carrega.
+  const fetchedCustom = allowsCustomOption(market) && (fetchedCategories.length === 0 || optionalsLoaded)
   const [categorySelections, setCategorySelections] = useState<Record<string, string>>(() =>
     Object.fromEntries(fixedCategories.flatMap(category => {
       const first = product.optionals.find(option => option.category === category)
@@ -932,7 +935,7 @@ function ProductFullView({
                       canDeselect
                       english={english}
                       onSelect={optionalId => selectCategory(category, optionalId)}
-                      allowCustom={allowsCustomOption(market) && allowsCustomFor(options)} customSelected={categorySelections[category] === CUSTOM_OPTION}
+                      allowCustom={fetchedCustom && allowsCustomFor(options)} customSelected={categorySelections[category] === CUSTOM_OPTION}
                       onToggleCustom={() => toggleCategoryCustom(category)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
@@ -952,7 +955,7 @@ function ProductFullView({
                       canDeselect
                       english={english}
                       onSelect={optionalId => selectApplication(application.id, optionalId ? { application_id: application.id, optional_id: optionalId } : null)}
-                      allowCustom={allowsCustomOption(market) && allowsCustomFor(options)}
+                      allowCustom={fetchedCustom && allowsCustomFor(options)}
                       customSelected={applicationSelections[application.id]?.custom_text != null}
                       onToggleCustom={() => toggleApplicationCustom(application.id)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
