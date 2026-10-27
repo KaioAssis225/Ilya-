@@ -6,8 +6,9 @@ teste nunca chama `_calculate_order_line`, `_money` ou qualquer helper de
 orders.py para obter o esperado.
 
 Contrato (regra, não saída):
-* preço unitário = valor do SKU na lista de preço do perfil do cliente
-  (lojista/corporativo no BR; lojista/corporativo/pvp/arquiteto no EU);
+* preço unitário = valor do SKU na lista de preço do perfil do cliente no BR;
+  no EU, a escolha explícita do orçamento prevalece e o perfil do cliente é
+  apenas o fallback legado (lojista/corporativo/pvp/arquiteto);
   sem preço na lista → 422, sem fallback para outra lista;
 * linha: subtotal = ROUND_HALF_UP_2(qty × unit × (100 − desconto%) / 100),
   arredondado uma vez por linha, depois da multiplicação pela quantidade;
@@ -149,11 +150,19 @@ async def _client(db: AsyncSession, market: str, profile: str) -> uuid.UUID:
 
 
 async def _post_order(
-    client: AsyncClient, admin: Admin, client_id: uuid.UUID, items: list[dict]
+    client: AsyncClient,
+    admin: Admin,
+    client_id: uuid.UUID,
+    items: list[dict],
+    *,
+    price_list_code: str | None = None,
 ):
+    payload = {"client_id": str(client_id), "items": items}
+    if price_list_code is not None:
+        payload["price_list_code"] = price_list_code
     return await client.post(
         "/api/v1/orders",
-        json={"client_id": str(client_id), "items": items},
+        json=payload,
         headers=_auth(admin.token),
     )
 
@@ -415,6 +424,88 @@ async def test_reg_price_eu_client_switched_to_architect_is_billed_by_architect_
     )
 
 
+async def test_reg_price_eu_quote_selection_overrides_client_default_and_discount_cap(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A tabela escolhida no catálogo/orçamento é o contrato comercial do pedido.
+
+    O cliente continua com Lojista como padrão para carrinhos antigos. Para um
+    orçamento novo explicitamente Arquiteto, o backend precisa usar o preço
+    Arquiteto e o teto Arquiteto (35%), sem recair silenciosamente em Lojista.
+
+    700.00 × 65% = 455.00; IVA 23% = 104.65; total 559.65.
+    """
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "lojista")
+
+    response = await _post_order(
+        client,
+        admin,
+        client_id,
+        [{"product_code": code, "qty": 1, "discount": "35.00"}],
+        price_list_code="arquiteto",
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+
+    assert body["price_list_code"] == "arquiteto"
+    [item] = body["items"]
+    assert _dec(item["unit_price"]) == D("700.00")
+    assert _dec(item["discount"]) == D("35.00")
+    assert (_dec(body["total_value"]), _dec(body["total_ipi"]), _dec(body["total_with_ipi"])) == (
+        D("455.00"), D("104.65"), D("559.65"),
+    )
+
+    above_cap = await _post_order(
+        client,
+        admin,
+        client_id,
+        [{"product_code": code, "qty": 1, "discount": "35.01"}],
+        price_list_code="arquiteto",
+    )
+    assert above_cap.status_code == 422, above_cap.text
+    assert "35" in above_cap.json()["detail"]
+
+
+async def test_reg_price_eu_quote_edit_reprices_items_when_list_changes(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "lojista")
+    created = await _post_order(
+        client,
+        admin,
+        client_id,
+        [{"product_code": code, "qty": 1}],
+        price_list_code="lojista",
+    )
+    assert created.status_code == 201, created.text
+
+    updated = await client.put(
+        f"/api/v1/orders/{created.json()['id']}",
+        json={
+            "price_list_code": "corporativo",
+            "items": [{"product_code": code, "qty": 1, "discount": "25.00"}],
+        },
+        headers=_auth(admin.token),
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["price_list_code"] == "corporativo"
+    [item] = body["items"]
+    assert _dec(item["unit_price"]) == D("850.00")
+    assert _dec(item["discount"]) == D("25.00")
+    assert (_dec(body["total_value"]), _dec(body["total_ipi"]), _dec(body["total_with_ipi"])) == (
+        D("637.50"), D("146.63"), D("784.13"),
+    )
+
+
 # ── ISO-24: IVA pendente/rejeitado ─────────────────────────────────────────────
 
 @pytest.mark.parametrize(
@@ -558,3 +649,42 @@ async def test_iso24_recalculation_after_vat_revoked_is_422_and_keeps_snapshot(
     assert [(row.ipi_rate, row.ipi_value, row.tax_label) for row in items] == [
         (D("23.00"), D("638.25"), "IVA"),
     ]
+
+
+async def test_reg_price_eu_quote_client_account_cannot_pick_hidden_list(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A escolha da tabela não amplia acesso: conta de cliente restrita ao seu
+    perfil (Lojista) não fatura em PVP só por mandar `price_list_code`."""
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "lojista")
+    account = await make_user(
+        db_session,
+        email=f"p07-price-account-{uuid.uuid4().hex[:10]}@ilya-test.invalid",
+        role=UserRole.cliente, home_market="EU",
+    )
+    account.linked_id = client_id
+    await make_user_market(
+        db_session, account, market_code="EU", role="cliente", linked_client_id=client_id,
+    )
+    await db_session.commit()
+    token = Admin(
+        create_access_token(account.id, "cliente", account.auth_version, "EU"), account.id,
+    )
+
+    hidden = await _post_order(
+        client, token, client_id, [{"product_code": code, "qty": 1}], price_list_code="pvp",
+    )
+    assert hidden.status_code == 403, hidden.text
+    assert "pvp" in hidden.json()["detail"]
+    await _discard_failed_request(db_session)
+    assert await _order_count(db_session, client_id) == 0
+
+    own = await _post_order(
+        client, token, client_id, [{"product_code": code, "qty": 1}], price_list_code="lojista",
+    )
+    assert own.status_code == 201, own.text
+    assert own.json()["price_list_code"] == "lojista"

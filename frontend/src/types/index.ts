@@ -274,6 +274,7 @@ export interface OrderItemCreate {
 export interface OrderCreate {
   client_id: string
   rep_id?: string | null
+  price_list_code?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   notes?: string | null
   items: OrderItemCreate[]
   locale?: 'pt-PT' | 'en-GB'
@@ -281,6 +282,7 @@ export interface OrderCreate {
 
 export interface OrderUpdate {
   rep_id?: string | null
+  price_list_code?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   notes?: string | null
   items?: OrderItemCreate[]
 }

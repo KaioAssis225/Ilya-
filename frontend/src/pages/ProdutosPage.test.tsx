@@ -8,7 +8,7 @@ import { AuthContext } from '../hooks/useAuth'
 import PrivateApp from '../PrivateApp'
 import ProdutosPage from './ProdutosPage'
 import { server } from '../test/setup'
-import { cartStorageKey } from '../lib/cart'
+import { cartStorageKey, readCartPriceList } from '../lib/cart'
 import type { OptionalApplication, OptionalColor, Product } from '../types'
 import {
   installProductHandlers,
@@ -156,6 +156,20 @@ describe('ProdutosPage de catálogo em DOM', () => {
     await user.click(architect)
     expect(architect).toHaveAttribute('aria-pressed', 'true')
     expect(await screen.findByText(/80,00/)).toBeVisible()
+  })
+
+  it('REG-PROD-03: tabela EU selecionada acompanha o produto até o orçamento', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'EU')
+    const product = productFixture('EU')
+    installProductHandlers({ products: [product] })
+    renderProductPage(<ProdutosPage />, authUser)
+
+    await user.click(await screen.findByRole('button', { name: 'Arquiteto' }))
+    await user.click(await screen.findByText(product.description))
+    await user.click(screen.getByRole('button', { name: 'Adicionar ao orçamento' }))
+
+    expect(readCartPriceList(authUser.id, 'EU')).toBe('arquiteto')
   })
 
   it('REG-CAT-01: “Todos os Catálogos” remove o filtro e renderiza mercados distintos', async () => {
