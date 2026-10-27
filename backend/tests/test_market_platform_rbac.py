@@ -30,6 +30,7 @@ from app.schemas.auth import (
     SwitchMarketRequest,
     UserCreate,
     UserMarketAccessInput,
+    UserRead,
     UserUpdate,
 )
 
@@ -262,6 +263,77 @@ def test_market_link_validation_bypasses_session_scope_but_filters_market_explic
     asyncio.run(run())
 
 
+def test_admin_can_have_a_fixed_order_representative_in_the_same_market():
+    async def run():
+        rep_id = uuid.uuid4()
+        db = AsyncMock()
+        db.execute.return_value = _result(scalar=rep_id)
+        links = await _build_market_links(
+            [UserMarketAccessInput(
+                market_code="EU",
+                role=UserRole.admin,
+                status="active",
+                order_rep_id=rep_id,
+            )],
+            db,
+        )
+        statement = db.execute.call_args.args[0]
+        assert statement.get_execution_options()["skip_market_scope"] is True
+        assert "representatives.market_code" in str(statement)
+        assert links[0].role == UserRole.admin.value
+        assert links[0].rep_id is None
+        assert links[0].order_rep_id == rep_id
+
+        with pytest.raises(HTTPException) as invalid_role:
+            await _build_market_links(
+                [UserMarketAccessInput(
+                    market_code="EU",
+                    role=UserRole.vendedor,
+                    status="active",
+                    order_rep_id=rep_id,
+                )],
+                db,
+            )
+        assert invalid_role.value.status_code == 422
+
+        db.execute.return_value = _result(scalar=None)
+        with pytest.raises(HTTPException) as wrong_market:
+            await _build_market_links(
+                [UserMarketAccessInput(
+                    market_code="BR",
+                    role=UserRole.admin,
+                    status="active",
+                    order_rep_id=rep_id,
+                )],
+                db,
+            )
+        assert wrong_market.value.status_code == 422
+    asyncio.run(run())
+
+
+def test_auth_user_serializes_the_active_markets_fixed_order_representative():
+    user = _user(
+        rep_id=None,
+        linked_id=None,
+        can_view_dashboard=False,
+    )
+    fixed_rep_id = uuid.uuid4()
+    access = UserMarket(
+        user_id=user.id,
+        market_code="EU",
+        role="admin",
+        status="active",
+        order_rep_id=fixed_rep_id,
+        can_view_dashboard=False,
+        can_approve_tax=False,
+    )
+    actor = MarketPrincipal(user, MARKETS["EU"], access).actor
+    serialized = UserRead.model_validate(actor)
+    assert serialized.role == UserRole.admin
+    assert serialized.rep_id is None
+    assert serialized.order_rep_id == fixed_rep_id
+
+
 def test_replacing_market_links_updates_each_market_without_reinserting_primary_keys():
     async def run():
         user = _user()
@@ -271,6 +343,7 @@ def test_replacing_market_links_updates_each_market_without_reinserting_primary_
             role="admin",
             status="active",
             can_view_dashboard=True,
+            order_rep_id=uuid.uuid4(),
         )
         eu = UserMarket(
             user_id=user.id,
@@ -281,6 +354,7 @@ def test_replacing_market_links_updates_each_market_without_reinserting_primary_
         )
         user.allowed_market_links = [br, eu]
         new_eu_rep = uuid.uuid4()
+        new_br_order_rep = uuid.uuid4()
         desired = [
             UserMarket(
                 market_code="BR",
@@ -288,6 +362,7 @@ def test_replacing_market_links_updates_each_market_without_reinserting_primary_
                 status="active",
                 can_view_dashboard=False,
                 can_approve_tax=False,
+                order_rep_id=new_br_order_rep,
             ),
             UserMarket(
                 market_code="EU",
@@ -302,6 +377,7 @@ def test_replacing_market_links_updates_each_market_without_reinserting_primary_
         db.delete.assert_not_awaited()
         assert br.role == "admin"
         assert br.can_view_dashboard is False
+        assert br.order_rep_id == new_br_order_rep
         assert eu.role == "representante"
         assert eu.status == "suspended"
         assert eu.rep_id == new_eu_rep

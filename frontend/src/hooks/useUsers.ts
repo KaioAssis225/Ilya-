@@ -9,6 +9,7 @@ export interface UserRead {
   full_name: string
   role: 'admin' | 'vendedor' | 'representante' | 'cadastros' | 'produtos' | 'cliente' | 'executivo'
   rep_id: string | null
+  order_rep_id: string | null
   is_active: boolean
   can_view_dashboard: boolean
   home_market: 'BR' | 'EU'
@@ -24,6 +25,7 @@ export interface UserMarketAccess {
   status: 'pending' | 'active' | 'suspended'
   linked_client_id: string | null
   rep_id: string | null
+  order_rep_id: string | null
   can_view_dashboard: boolean
   can_approve_tax: boolean
 }
@@ -91,6 +93,7 @@ export function useCreateUser() {
           status: 'active',
           linked_client_id: null,
           rep_id: body.role === 'representante' ? (body.rep_id ?? null) : null,
+          order_rep_id: null,
           can_view_dashboard: false,
           can_approve_tax: false,
         })),
@@ -121,6 +124,7 @@ export function useUpdateUser() {
             status: 'active' as const,
             linked_client_id: null,
             rep_id: null,
+            order_rep_id: null,
             can_view_dashboard: false,
             can_approve_tax: false,
           }),
@@ -131,6 +135,7 @@ export function useUpdateUser() {
           rep_id: role === 'representante'
             ? (isEditedHome ? (body.rep_id ?? existing?.rep_id ?? null) : (existing?.rep_id ?? null))
             : null,
+          order_rep_id: role === 'admin' ? (existing?.order_rep_id ?? null) : null,
           can_view_dashboard: isEditedHome
             ? (body.can_view_dashboard ?? existing?.can_view_dashboard ?? false)
             : (existing?.can_view_dashboard ?? false),

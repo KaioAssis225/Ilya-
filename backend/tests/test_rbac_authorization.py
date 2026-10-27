@@ -24,6 +24,7 @@ from app.api.deps import (
     is_internal_operator,
 )
 from app.api.routers.orders import (
+    _apply_order_rep_assignment,
     _can_create_order,
     _can_operate_order,
     create_order,
@@ -214,6 +215,28 @@ class TestCriacaoDePedido:
     @pytest.mark.parametrize("user", [CADASTROS, PRODUTOS, EXECUTIVO])
     def test_papeis_sem_decisao_comercial_bloqueados(self, user):
         assert _can_create_order(user) is False
+
+    def test_admin_vinculado_usa_representante_fixo_so_em_pedido_novo(self):
+        fixed_rep_id = uuid.uuid4()
+        admin = SimpleNamespace(
+            role=UserRole.admin,
+            rep_id=None,
+            order_rep_id=fixed_rep_id,
+        )
+        new_order = SimpleNamespace(
+            rep_id=uuid.uuid4(),
+            supersedes_order_id=None,
+        )
+        _apply_order_rep_assignment(admin, new_order)
+        assert new_order.rep_id == fixed_rep_id
+
+        original_rep_id = uuid.uuid4()
+        revision = SimpleNamespace(
+            rep_id=original_rep_id,
+            supersedes_order_id=uuid.uuid4(),
+        )
+        _apply_order_rep_assignment(admin, revision)
+        assert revision.rep_id == original_rep_id
 
 
 class TestProdutosNaoCriaPedidos:

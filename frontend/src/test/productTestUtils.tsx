@@ -12,14 +12,14 @@ import { server } from './setup'
 export function productTestUser(role: UserRole = 'admin', market: 'BR' | 'EU' = 'BR'): AuthUser {
   return {
     id: `p05-${role}-${market}`, email: `${role}@example.test`, username: role,
-    full_name: `Pessoa ${role}`, role, rep_id: null, linked_id: null,
+    full_name: `Pessoa ${role}`, role, rep_id: null, order_rep_id: null, linked_id: null,
     is_active: true, must_change_password: false, max_discount: 10,
     can_view_dashboard: false, home_market: market, active_market: market,
     allowed_markets: [market],
   }
 }
 
-export function renderProductPage(node: ReactNode, user: AuthUser) {
+export function renderProductPage(node: ReactNode, user: AuthUser, initialEntries: string[] = ['/']) {
   localStorage.removeItem('cadastros_ui_state')
   if (user.active_market === 'EU' && localStorage.getItem(`ilya-locale:${user.id}:EU`) == null) {
     localStorage.setItem(`ilya-locale:${user.id}:EU`, 'pt-PT')
@@ -34,7 +34,7 @@ export function renderProductPage(node: ReactNode, user: AuthUser) {
   return render(
     <AuthContext.Provider value={auth}>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={initialEntries}>
           <LocaleProvider>{node}</LocaleProvider>
         </MemoryRouter>
       </QueryClientProvider>

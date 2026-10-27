@@ -40,6 +40,7 @@ class UserMarketAccessInput(BaseModel):
     status: Literal["pending", "active", "suspended"]
     linked_client_id: uuid.UUID | None = None
     rep_id: uuid.UUID | None = None
+    order_rep_id: uuid.UUID | None = None
     can_view_dashboard: bool = False
     can_approve_tax: bool = False
 
@@ -53,6 +54,7 @@ class UserRead(BaseModel):
     full_name: str
     role: UserRole
     rep_id: uuid.UUID | None
+    order_rep_id: uuid.UUID | None = None
     linked_id: uuid.UUID | None
     is_active: bool
     must_change_password: bool

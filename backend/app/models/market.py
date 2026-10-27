@@ -55,6 +55,9 @@ class UserMarket(Base, TimestampMixin):
     rep_id: Mapped[uuid.UUID | None] = mapped_column(
         nullable=True
     )
+    order_rep_id: Mapped[uuid.UUID | None] = mapped_column(
+        nullable=True
+    )
     can_view_dashboard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_approve_tax: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
@@ -69,6 +72,12 @@ class UserMarket(Base, TimestampMixin):
             ["rep_id", "market_code"],
             ["representatives.id", "representatives.market_code"],
             name="fk_user_markets_rep_same_market",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["order_rep_id", "market_code"],
+            ["representatives.id", "representatives.market_code"],
+            name="fk_user_markets_order_rep_same_market",
             ondelete="RESTRICT",
         ),
         CheckConstraint(
@@ -92,6 +101,10 @@ class UserMarket(Base, TimestampMixin):
             "(role IN ('admin', 'vendedor', 'cadastros', 'produtos', 'executivo', 'benchmark_readonly') "
             "AND linked_client_id IS NULL AND rep_id IS NULL)",
             name="ck_user_markets_role_links",
+        ),
+        CheckConstraint(
+            "order_rep_id IS NULL OR role = 'admin'",
+            name="ck_user_markets_order_rep_admin",
         ),
         Index(
             "uq_user_markets_client_per_market",

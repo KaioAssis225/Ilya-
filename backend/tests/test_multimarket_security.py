@@ -164,7 +164,13 @@ def test_deleting_eu_representative_retires_links_without_breaking_history():
         access_result = MagicMock()
         access_result.scalars.return_value.all.return_value = [linked_access]
         db = AsyncMock()
-        db.execute.side_effect = [rep_result, access_result, MagicMock(), MagicMock()]
+        db.execute.side_effect = [
+            rep_result,
+            access_result,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        ]
         user = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
         principal = MarketPrincipal(user=user, market=MARKETS["EU"])
 
@@ -182,7 +188,10 @@ def test_deleting_eu_representative_retires_links_without_breaking_history():
         commercial_refresh_revoke = db.execute.await_args_list[2].args[0]
         assert "refresh_tokens.scope" in str(commercial_refresh_revoke)
         assert "market" in commercial_refresh_revoke.compile().params.values()
-        client_unlink = db.execute.await_args_list[3].args[0]
+        fixed_rep_unlink = db.execute.await_args_list[3].args[0]
+        assert "user_markets.order_rep_id" in str(fixed_rep_unlink)
+        assert "EU" in fixed_rep_unlink.compile().params.values()
+        client_unlink = db.execute.await_args_list[4].args[0]
         assert "clients.market_code" in str(client_unlink)
         assert "EU" in client_unlink.compile().params.values()
         db.commit.assert_awaited_once()

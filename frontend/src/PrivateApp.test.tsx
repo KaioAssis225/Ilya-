@@ -14,7 +14,7 @@ const markets = ['BR', 'EU'] as const
 function userFor(role: UserRole, market: 'BR' | 'EU' = 'BR'): AuthUser {
   return {
     id: `user-${role}`, email: `${role}@example.test`, username: role,
-    full_name: `Pessoa ${role}`, role, rep_id: null, linked_id: role === 'cliente' ? 'client-1' : null,
+    full_name: `Pessoa ${role}`, role, rep_id: null, order_rep_id: null, linked_id: role === 'cliente' ? 'client-1' : null,
     is_active: true, must_change_password: false, max_discount: 10,
     can_view_dashboard: false, home_market: market, active_market: market, allowed_markets: [market],
   }
