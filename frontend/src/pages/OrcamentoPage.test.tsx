@@ -403,6 +403,32 @@ describe('OrcamentoPage', () => {
     })
   })
 
+  it('orçamento EU mostra o IVA aprovado do produto na coluna e no total', async () => {
+    const user = productTestUser('admin', 'EU')
+    const product = buildProduct('EU', { optional_applications: [], vat_rate: '23.00' })
+    localStorage.setItem(
+      cartStorageKey(user.id, 'EU'),
+      JSON.stringify([{
+        line_id: 'line-eu-vat',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [],
+      }]),
+    )
+    writeCartPriceList(user.id, 'EU', 'arquiteto')
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
+    expect(within(item).getByText('23%')).toBeInTheDocument()
+    const totalWithVat = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(80 * 1.23)
+    expect(item.textContent).toContain(totalWithVat)
+    expect(screen.getByText('Total do Orçamento:').parentElement?.textContent).toContain(totalWithVat)
+  })
+
   it('recalcula o subtotal do item ao alterar a quantidade', async () => {
     const user = productTestUser('admin', 'BR')
     const price = 1234.56
