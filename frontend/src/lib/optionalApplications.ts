@@ -17,6 +17,11 @@ export const CUSTOM_OPTION = '__custom__'
 /** O seletor antigo (opt_categories) guarda texto livre: a customização vira "Customizado: <texto>". */
 export const CUSTOM_LEGACY_PREFIX = 'Customizado:'
 
+/** "Customizado" existe só em Portugal; no Brasil o pedido usa apenas opcionais do cadastro. */
+export function allowsCustomOption(market: 'BR' | 'EU'): boolean {
+  return market === 'EU'
+}
+
 export function customOptionLabel(english: boolean): string {
   return english ? 'Custom' : 'Customizado'
 }
