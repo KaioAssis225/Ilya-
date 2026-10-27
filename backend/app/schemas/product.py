@@ -226,6 +226,8 @@ class ProductRead(ProductBase):
     market_prices: dict[str, Decimal] = Field(default_factory=dict)
     description_pt_pt: Optional[str] = None
     description_en: Optional[str] = None
+    # IVA aprovado do produto em Portugal; null no Brasil ou enquanto pendente.
+    vat_rate: Optional[Decimal] = None
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     catalog: Optional[CatalogRead] = None

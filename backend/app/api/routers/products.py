@@ -18,7 +18,7 @@ from app.models.optional_category import OptionalCategory
 from app.models.optional_application import ProductOptionalApplication
 from app.models.catalog import Catalog
 from app.models.user import User, UserRole
-from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket
+from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket, VAT_APPROVED
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
@@ -157,20 +157,27 @@ async def _to_market_reads(
         if allows_price(price_scope, code):
             prices.setdefault(product_id, {})[code] = amount
     localized_names: dict[uuid.UUID, tuple[str | None, str | None]] = {}
+    approved_vat: dict[uuid.UUID, Decimal] = {}
     if market == "EU" and ids:
         localized_rows = (await db.execute(
             select(
                 ProductMarket.product_id,
                 ProductMarket.description_pt_pt,
                 ProductMarket.description_en,
+                ProductMarket.vat_rate,
+                ProductMarket.vat_status,
             ).where(
                 ProductMarket.market_code == "EU",
                 ProductMarket.product_id.in_(ids),
             )
         )).all()
         localized_names = {
-            product_id: (description_pt_pt, description_en)
-            for product_id, description_pt_pt, description_en in localized_rows
+            row.product_id: (row.description_pt_pt, row.description_en) for row in localized_rows
+        }
+        # Mesmo critério do pedido: só o IVA aprovado vale para o orçamento.
+        approved_vat = {
+            row.product_id: row.vat_rate for row in localized_rows
+            if row.vat_status == VAT_APPROVED and row.vat_rate is not None
         }
     result = []
     for product in products:
@@ -199,6 +206,7 @@ async def _to_market_reads(
         item.currency = context.currency
         item.market_prices = prices.get(product.id, {})
         if market == "EU":
+            item.vat_rate = approved_vat.get(product.id)
             descriptions = localized_names.get(product.id)
             if descriptions:
                 item.description_pt_pt, item.description_en = descriptions

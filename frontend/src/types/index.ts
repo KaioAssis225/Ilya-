@@ -137,6 +137,8 @@ export interface Product {
   article_category_path?: string | null
   description_pt_pt?: string | null
   description_en?: string | null
+  /** IVA aprovado do produto em Portugal; null no Brasil ou enquanto pendente. */
+  vat_rate?: string | number | null
   type: string
   catalog_id: string | null
   catalog: { id: string; name: string } | null

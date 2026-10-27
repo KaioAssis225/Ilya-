@@ -1551,9 +1551,14 @@ export default function OrcamentoPage() {
     return sum + i.qty * effectivePrice(i._product, priceProfile) * (1 - (i.discount || 0) / 100)
   }, 0)
 
+  // Brasil: IPI do grupo do tipo. Portugal: IVA aprovado do próprio produto,
+  // o mesmo que o servidor grava no pedido (o grupo EU tem IPI 0).
+  const taxRate = (product: Product) => product.market_code === 'EU'
+    ? Number(product.vat_rate ?? 0)
+    : Number(productTypes.find(t => t.name === product.type)?.group?.ipi ?? 0)
+
   const ipiTotal = cart.reduce((sum, i) => {
-    const pt = productTypes.find(t => t.name === i._product.type)
-    const rate = Number(pt?.group?.ipi ?? 0)
+    const rate = taxRate(i._product)
     const subtotal = i.qty * effectivePrice(i._product, priceProfile) * (1 - (i.discount || 0) / 100)
     return sum + subtotal * rate / 100
   }, 0)
@@ -1913,8 +1918,7 @@ export default function OrcamentoPage() {
                 {/* ── Desktop item list ────────────────────────── */}
                 <ul className="hidden lg:block divide-y divide-line">
                   {filteredCart.map((item) => {
-                    const pt = productTypes.find(t => t.name === item._product.type)
-                    const ipiRate = Number(pt?.group?.ipi ?? 0)
+                    const ipiRate = taxRate(item._product)
                     const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
                     const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
                     const soldByArea = isAreaProduct(item._product)
