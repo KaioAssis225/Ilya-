@@ -39,7 +39,7 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
-from app.schemas.order import CUSTOM_LEGACY_PREFIX, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
+from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.services.area_products import is_area_product
 
@@ -142,7 +142,8 @@ def _order_visibility_filters(current_user: User) -> list:
     return []
 
 
-# Nome gravado na escolha customizada; o texto do usuário vai em custom_text.
+# Nome gravado na escolha customizada. custom_text marca a escolha: vazio na
+# opção atual, com texto nos pedidos feitos quando havia a caixa de descrição.
 CUSTOM_OPTIONAL_NAME = "Customizado"
 # A opção "Customizado" existe só em Portugal; no Brasil o pedido usa apenas
 # opcionais do cadastro.
@@ -178,7 +179,7 @@ async def _resolve_item_choices(
 ) -> list[OrderItemOptionalChoice]:
     if market_code != CUSTOM_OPTION_MARKET and (
         any(row.custom_text is not None for row in item_in.optional_choices)
-        or any(value.startswith(CUSTOM_LEGACY_PREFIX) for value in item_in.opt_categories.values())
+        or any(is_legacy_custom(value) for value in item_in.opt_categories.values())
     ):
         raise HTTPException(status_code=422, detail="A opção Customizado só está disponível em Portugal.")
     # An unchanged historical line is copied as a snapshot, even if the master

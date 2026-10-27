@@ -238,7 +238,8 @@ def _tax_for_rate(rate: str, mappings: dict[str, int]) -> dict:
 def _choice_value(choice, locale: str) -> str:
     if choice.custom_text is None:
         return choice.optional_name
-    return ("Custom" if locale == "en-GB" else choice.optional_name) + ": " + choice.custom_text
+    label = "Custom" if locale == "en-GB" else choice.optional_name
+    return f"{label}: {choice.custom_text}" if choice.custom_text else label
 
 
 def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> str:

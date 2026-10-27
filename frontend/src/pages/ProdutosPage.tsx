@@ -25,10 +25,9 @@ import {
   allowedForApplication,
   allowsCustomOption,
   applicationName,
+  CUSTOM_LEGACY_VALUE,
   CUSTOM_OPTION,
   customOptionLabel,
-  isCustomChoice,
-  legacyCustomValue,
   productApplications,
   requiredApplicationProgress,
   validateApplicationChoices,
@@ -503,8 +502,8 @@ function OptionalCatalogGroup({
   onSelect,
   onZoom,
   allowCustom,
-  customText,
-  onCustomText,
+  customSelected,
+  onToggleCustom,
 }: {
   id: string
   label: string
@@ -516,10 +515,8 @@ function OptionalCatalogGroup({
   onZoom: (optional: OptionalColor, type: string) => void
   /** Mostra a opção "Customizado" (só em Portugal). */
   allowCustom: boolean
-  /** Texto da opção "Customizado"; null quando ela não está escolhida. */
-  customText: string | null
-  /** Escolhe (texto) ou desfaz (null) a opção "Customizado". */
-  onCustomText: (text: string | null) => void
+  customSelected: boolean
+  onToggleCustom: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [query, setQuery] = useState('')
@@ -592,11 +589,11 @@ function OptionalCatalogGroup({
           })}
           {allowCustom && <button
             type="button"
-            aria-pressed={customText !== null}
+            aria-pressed={customSelected}
             aria-label={`${label}: ${customOptionLabel(english)}`}
-            onClick={() => onCustomText(customText === null ? '' : null)}
+            onClick={onToggleCustom}
             className={`flex w-20 flex-col items-center gap-1.5 rounded-xl border bg-white p-1.5 text-center transition-[border-color,box-shadow,transform] active:scale-[0.98] ${
-              customText !== null ? 'border-gold ring-2 ring-gold' : 'border-line hover:border-gold/60'
+              customSelected ? 'border-gold ring-2 ring-gold' : 'border-line hover:border-gold/60'
             }`}
           >
             <span className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-line text-gold">
@@ -609,22 +606,6 @@ function OptionalCatalogGroup({
         <p className="text-sm text-muted">
           {english ? 'No finishes match this search.' : 'Nenhum acabamento corresponde à busca.'}
         </p>
-      )}
-      {allowCustom && customText !== null && (
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-ink-2">
-            {english ? 'What will be customized?' : 'O que será customizado?'}
-          </span>
-          <textarea
-            value={customText}
-            onChange={event => onCustomText(event.target.value)}
-            maxLength={1000}
-            rows={3}
-            autoFocus={!customText}
-            placeholder={english ? 'Describe the customization for this product' : 'Descreva a customização deste produto'}
-            className={`input w-full resize-y text-base md:text-sm ${customText.trim() ? '' : 'border-warning/60'}`}
-          />
-        </label>
       )}
       {hasMany && !normalizedQuery && (
         <button
@@ -675,7 +656,6 @@ function ProductFullView({
       return first ? [[category, first.id]] : []
     })),
   )
-  const [categoryCustomTexts, setCategoryCustomTexts] = useState<Record<string, string>>({})
   const [applicationSelections, setApplicationSelections] = useState<Record<string, OptionalChoiceInput>>({})
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
@@ -716,14 +696,14 @@ function ProductFullView({
     })
   }
 
-  function customizeCategory(category: string, text: string | null) {
-    setValidationAlert(null)
-    setCategoryCustomTexts(current => ({ ...current, [category]: text ?? '' }))
-    selectCategory(category, text === null ? undefined : CUSTOM_OPTION)
+  function toggleCategoryCustom(category: string) {
+    selectCategory(category, categorySelections[category] === CUSTOM_OPTION ? undefined : CUSTOM_OPTION)
   }
 
-  function categoryCustomText(category: string): string | null {
-    return categorySelections[category] === CUSTOM_OPTION ? categoryCustomTexts[category] ?? '' : null
+  function toggleApplicationCustom(applicationId: string) {
+    selectApplication(applicationId, applicationSelections[applicationId]?.custom_text != null
+      ? null
+      : { application_id: applicationId, custom_text: '' })
   }
 
   function selectApplication(applicationId: string, choice: OptionalChoiceInput | null) {
@@ -738,14 +718,6 @@ function ProductFullView({
   const progress = requiredApplicationProgress(product, applicationChoices, fetchedOptionals)
 
   function handleAdd() {
-    const emptyCustomization = applicationChoices.some(choice => isCustomChoice(choice) && !choice.custom_text?.trim())
-      || Object.keys(categorySelections).some(category => categoryCustomText(category)?.trim() === '')
-    if (emptyCustomization) {
-      setValidationAlert(english
-        ? 'Describe the customization before adding this product.'
-        : 'Descreva a customização antes de adicionar este produto.')
-      return
-    }
     const errors = validateApplicationChoices(product, applicationChoices, fetchedOptionals)
     if (errors.length > 0 || progress.missing > 0) {
       setValidationAlert(english
@@ -759,9 +731,8 @@ function ProductFullView({
       ...freeCategories.map(category => [category, fetchedOptionals.filter(option => option.category === category)] as const),
     ])
     const opt_categories = Object.entries(categorySelections).reduce<Record<string, string>>((selected, [category, optionalId]) => {
-      const customText = categoryCustomText(category)
-      if (customText !== null) {
-        selected[category] = legacyCustomValue(customText.trim())
+      if (optionalId === CUSTOM_OPTION) {
+        selected[category] = CUSTOM_LEGACY_VALUE
         return selected
       }
       const option = optionsByCategory.get(category)?.find(candidate => candidate.id === optionalId)
@@ -938,8 +909,8 @@ function ProductFullView({
                       canDeselect={options.length > 1}
                       english={english}
                       onSelect={optionalId => selectCategory(category, optionalId)}
-                      allowCustom={allowsCustomOption(market)} customText={categoryCustomText(category)}
-                      onCustomText={text => customizeCategory(category, text)}
+                      allowCustom={allowsCustomOption(market)} customSelected={categorySelections[category] === CUSTOM_OPTION}
+                      onToggleCustom={() => toggleCategoryCustom(category)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )
@@ -955,8 +926,8 @@ function ProductFullView({
                     canDeselect
                     english={english}
                     onSelect={optionalId => selectCategory(category, optionalId)}
-                    allowCustom={allowsCustomOption(market)} customText={categoryCustomText(category)}
-                    onCustomText={text => customizeCategory(category, text)}
+                    allowCustom={allowsCustomOption(market)} customSelected={categorySelections[category] === CUSTOM_OPTION}
+                    onToggleCustom={() => toggleCategoryCustom(category)}
                     onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                   />
                 ))}
@@ -974,8 +945,8 @@ function ProductFullView({
                       english={english}
                       onSelect={optionalId => selectApplication(application.id, optionalId ? { application_id: application.id, optional_id: optionalId } : null)}
                       allowCustom={allowsCustomOption(market)}
-                      customText={applicationSelections[application.id]?.custom_text ?? null}
-                      onCustomText={text => selectApplication(application.id, text === null ? null : { application_id: application.id, custom_text: text })}
+                      customSelected={applicationSelections[application.id]?.custom_text != null}
+                      onToggleCustom={() => toggleApplicationCustom(application.id)}
                       onZoom={(optional, type) => setMobileOptModal({ optional, type })}
                     />
                   )

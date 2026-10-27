@@ -14,8 +14,9 @@ export interface RequiredApplicationProgress {
 
 /** Valor da opção "Customizado" no seletor; não é id de opcional. */
 export const CUSTOM_OPTION = '__custom__'
-/** O seletor antigo (opt_categories) guarda texto livre: a customização vira "Customizado: <texto>". */
-export const CUSTOM_LEGACY_PREFIX = 'Customizado:'
+/** Valor da escolha customizada no seletor antigo (opt_categories). Pedidos
+ *  anteriores podem trazer "Customizado: <texto>", da época da caixa de texto. */
+export const CUSTOM_LEGACY_VALUE = 'Customizado'
 
 /** "Customizado" existe só em Portugal; no Brasil o pedido usa apenas opcionais do cadastro. */
 export function allowsCustomOption(market: 'BR' | 'EU'): boolean {
@@ -26,26 +27,26 @@ export function customOptionLabel(english: boolean): string {
   return english ? 'Custom' : 'Customizado'
 }
 
+/** Customizado é marcado por custom_text presente: vazio na escolha nova, com texto em pedidos anteriores. */
 export function isCustomChoice(choice: Pick<OptionalChoiceInput, 'custom_text'>): boolean {
   return choice.custom_text != null
 }
 
-/** Texto digitado num valor do seletor antigo, ou null se o valor não for customizado. */
-export function legacyCustomText(value: string | undefined): string | null {
-  return value?.startsWith(CUSTOM_LEGACY_PREFIX) ? value.slice(CUSTOM_LEGACY_PREFIX.length).trimStart() : null
+export function isLegacyCustom(value: string | undefined): boolean {
+  return value === CUSTOM_LEGACY_VALUE || Boolean(value?.startsWith(`${CUSTOM_LEGACY_VALUE}:`))
 }
 
-export function legacyCustomValue(text: string): string {
-  return `${CUSTOM_LEGACY_PREFIX} ${text}`
+function customValue(text: string | null | undefined, english: boolean): string {
+  return text ? `${customOptionLabel(english)}: ${text}` : customOptionLabel(english)
 }
 
 export function choiceValue(choice: Pick<OptionalChoice, 'optional_name' | 'custom_text'>, english: boolean): string {
-  return choice.custom_text ? `${customOptionLabel(english)}: ${choice.custom_text}` : optionalName(choice.optional_name, english)
+  return isCustomChoice(choice) ? customValue(choice.custom_text, english) : optionalName(choice.optional_name, english)
 }
 
 function legacyValue(value: string, english: boolean): string {
-  const custom = legacyCustomText(value)
-  return custom === null ? optionalName(value, english) : `${customOptionLabel(english)}: ${custom}`
+  if (!isLegacyCustom(value)) return optionalName(value, english)
+  return customValue(value.slice(CUSTOM_LEGACY_VALUE.length).replace(/^:\s*/, ''), english)
 }
 
 export function productApplications(product: Product): ProductApplication[] {
@@ -75,7 +76,7 @@ export function requiredApplicationProgress(
   const filled = required.filter(({ application }) => {
     const choice = choicesByApplication.get(application.id)
     if (!choice) return false
-    if (isCustomChoice(choice)) return Boolean(choice.custom_text?.trim())
+    if (isCustomChoice(choice)) return true
     return allowedForApplication(application, allOptionals).some(option => option.id === choice.optional_id)
   }).length
   return { filled, total: required.length, missing: required.length - filled }
@@ -91,10 +92,7 @@ export function validateApplicationChoices(product: Product, choices: OptionalCh
     const application = byId.get(choice.application_id)
     if (!application || seenApplications.has(choice.application_id)) { errors.push('Aplicação inválida ou repetida'); continue }
     seenApplications.add(choice.application_id)
-    if (isCustomChoice(choice)) {
-      if (!choice.custom_text?.trim()) errors.push(`${application.name}: descreva a customização`)
-      continue
-    }
+    if (isCustomChoice(choice)) continue
     if (!allowedForApplication(application, allOptionals).some(option => option.id === choice.optional_id)) {
       errors.push(`${application.name}: opção indisponível`)
       continue
