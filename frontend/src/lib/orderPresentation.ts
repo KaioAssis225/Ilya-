@@ -75,7 +75,8 @@ export interface OrderDocumentSeller {
 
 export interface OrderDocument {
   brand: 'ILYA' | 'IBTW'
-  displayBrand: string
+  brandSuffix?: 'LDA.' | 'LTD.'
+  brandDescriptor?: 'LIVING'
   locale: string
   currency: CurrencyCode
   taxLabel: string
@@ -96,7 +97,7 @@ const PT_LABELS: OrderDocumentLabels = {
 
 const PT_PT_LABELS: OrderDocumentLabels = {
   ...PT_LABELS,
-  seller: 'VENDEDOR / ENTIDADE LEGAL', representative: 'CONTACTO COMERCIAL', client: 'FATURAR A',
+  seller: 'EMPRESA', representative: 'CONTACTO', client: 'FATURAR A',
   none: 'Nenhum', noEmail: 'E-mail não indicado', taxId: 'NIF / VAT', taxIdMissing: 'não indicado',
   commercialNotice: 'Confirmação de pedido comercial. Este documento não é uma fatura.',
   itemNote: 'Nota', repSignature: 'Representante / IBTW', clientSignature: 'Cliente',
@@ -105,7 +106,7 @@ const PT_PT_LABELS: OrderDocumentLabels = {
 
 const EN_LABELS: OrderDocumentLabels = {
   documentTitle: 'ORDER CONFIRMATION', order: 'ORDER', date: 'Date', quote: 'Quote', continued: 'CONTINUED',
-  seller: 'SELLER / LEGAL ENTITY', representative: 'SALES CONTACT', client: 'BILL TO', none: 'None', noEmail: 'No email provided',
+  seller: 'COMPANY', representative: 'CONTACT', client: 'BILL TO', none: 'None', noEmail: 'No email provided',
   taxId: 'VAT / TAX ID', taxIdMissing: 'not provided', commercialNotice: 'Commercial order confirmation. This document is not an invoice.', page: 'Page',
   product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', total: 'TOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
@@ -120,7 +121,8 @@ export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
     const english = presentation.locale === 'en-GB'
     return {
       brand: 'IBTW',
-      displayBrand: english ? 'IBTW LTD.' : 'IBTW LDA.',
+      brandSuffix: english ? 'LTD.' : 'LDA.',
+      brandDescriptor: 'LIVING',
       locale: english ? 'en-GB' : 'pt-PT',
       currency: presentation.currency,
       taxLabel: english && presentation.taxLabel === 'IVA' ? 'VAT' : presentation.taxLabel,
@@ -138,7 +140,6 @@ export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
   }
   return {
     brand: 'ILYA',
-    displayBrand: 'ILYA',
     locale: presentation.locale,
     currency: presentation.currency,
     taxLabel: presentation.taxLabel,

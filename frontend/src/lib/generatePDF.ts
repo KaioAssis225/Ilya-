@@ -137,7 +137,7 @@ export async function generateOrderPDF(
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
   // do mercado em que o usuário está agora.
   const orderDocument = resolveOrderDocument(documentLocale ? { ...order, locale: documentLocale } : order)
-  const { currency, locale, taxLabel, displayBrand, labels: L, seller } = orderDocument
+  const { currency, locale, taxLabel, brand, brandSuffix, brandDescriptor, labels: L, seller } = orderDocument
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -165,17 +165,31 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(28)
   doc.setTextColor(...GOLD)
-  doc.text(displayBrand, 20, y)
-  y += 5
+  doc.text(brand, 20, y)
 
-  doc.setDrawColor(...GOLD)
-  doc.setLineWidth(0.3)
-  doc.line(20, y, 60, y)
-
-  doc.setFontSize(6.5)
-  doc.setTextColor(...MUTED)
-  doc.setFont('helvetica', 'bold')
-  doc.text(L.documentTitle, 20, y + 7)
+  if (brandSuffix && brandDescriptor) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.text(brandSuffix, 20, y + 7)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.text(brandDescriptor, 20, y + 12)
+    doc.setDrawColor(...GOLD)
+    doc.setLineWidth(0.3)
+    doc.line(20, y + 15, 60, y + 15)
+    doc.setFontSize(6.5)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.documentTitle, 20, y + 22)
+  } else {
+    doc.setDrawColor(...GOLD)
+    doc.setLineWidth(0.3)
+    doc.line(20, y + 5, 60, y + 5)
+    doc.setFontSize(6.5)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.documentTitle, 20, y + 12)
+  }
 
   // ── Número do pedido (canto direito) ───────────────────────────────────────
   doc.setFontSize(9)
@@ -198,7 +212,7 @@ export async function generateOrderPDF(
   )
   doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
-  y = 55
+  y = brandSuffix ? 60 : 55
 
   // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2
@@ -310,7 +324,7 @@ export async function generateOrderPDF(
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(13)
     doc.setTextColor(...GOLD)
-    doc.text(displayBrand, 20, 23)
+    doc.text(brand, 20, 23)
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
     doc.text(`${order.code} · ${L.continued}`, w - 20, 23, { align: 'right' })
