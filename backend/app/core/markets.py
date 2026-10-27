@@ -45,6 +45,10 @@ class MarketActor:
         return self.access.rep_id
 
     @property
+    def order_rep_id(self):
+        return self.access.order_rep_id
+
+    @property
     def can_view_dashboard(self) -> bool:
         return self.access.can_view_dashboard
 

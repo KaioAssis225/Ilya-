@@ -1076,7 +1076,8 @@ export default function OrcamentoPage() {
   const isRep = user?.role === 'representante'
   // cliente-final: role própria `cliente` (ou legado `vendedor`+linked_id)
   const isClientUser = user?.role === 'cliente' || (user?.role === 'vendedor' && !!user?.linked_id)
-  const repLocked = isRep || isClientUser
+  const fixedOrderRepId = !editId && user?.role === 'admin' ? user.order_rep_id : null
+  const repLocked = isRep || isClientUser || !!fixedOrderRepId
   const clientLocked = isClientUser
 
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
@@ -1236,6 +1237,7 @@ export default function OrcamentoPage() {
   const targetRepId = (
     (isRep ? user?.rep_id : null)
     || editOrder?.rep_id
+    || fixedOrderRepId
     || (
       !editId && !repLocked
         ? (

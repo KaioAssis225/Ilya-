@@ -50,13 +50,33 @@ async def _linked_ids(
     if not ids:
         return set()
     result = await db.execute(
-        select(UserMarket.rep_id).where(
+        select(UserMarket.rep_id, UserMarket.order_rep_id).where(
             UserMarket.market_code == market,
-            UserMarket.role == UserRole.representante.value,
-            UserMarket.rep_id.in_(ids),
+            or_(
+                UserMarket.rep_id.in_(ids),
+                UserMarket.order_rep_id.in_(ids),
+            ),
         )
     )
-    return {row[0] for row in result.fetchall() if row[0] is not None}
+    return {
+        linked_id
+        for row in result.fetchall()
+        for linked_id in row
+        if linked_id is not None
+    }
+
+
+async def _clear_order_rep_links(
+    db: AsyncSession, *, market: str, rep_id: uuid.UUID
+) -> None:
+    await db.execute(
+        update(UserMarket)
+        .where(
+            UserMarket.market_code == market,
+            UserMarket.order_rep_id == rep_id,
+        )
+        .values(order_rep_id=None)
+    )
 
 
 async def _creator_names(
@@ -476,6 +496,7 @@ async def delete_representative(
         market_code=market,
         rep_id=rep_id,
     )
+    await _clear_order_rep_links(db, market=market, rep_id=rep_id)
 
     await db.execute(
         update(Client)
@@ -519,6 +540,7 @@ async def anonymize_representative(
         market_code=market,
         rep_id=rep_id,
     )
+    await _clear_order_rep_links(db, market=market, rep_id=rep_id)
 
     record_privacy_event(
         db,

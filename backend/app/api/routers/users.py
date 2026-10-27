@@ -157,7 +157,12 @@ async def _build_market_links(
     if len(codes) != len(set(codes)):
         raise HTTPException(422, "Cada mercado pode aparecer apenas uma vez.")
     if any(item.role == UserRole.benchmark_readonly for item in items):
-        if len(items) != 1 or items[0].can_view_dashboard or items[0].can_approve_tax:
+        if (
+            len(items) != 1
+            or items[0].can_view_dashboard
+            or items[0].can_approve_tax
+            or items[0].order_rep_id is not None
+        ):
             raise HTTPException(422, "Identidade técnica exige um mercado e nenhuma capacidade extra.")
     links: list[UserMarket] = []
     for item in items:
@@ -177,7 +182,11 @@ async def _build_market_links(
             UserRole.benchmark_readonly,
         }
         if item.role == UserRole.cliente:
-            if item.linked_client_id is None or item.rep_id is not None:
+            if (
+                item.linked_client_id is None
+                or item.rep_id is not None
+                or item.order_rep_id is not None
+            ):
                 raise HTTPException(422, "Papel cliente exige somente linked_client_id.")
             valid = (await db.execute(select(Client.id).where(
                 Client.id == item.linked_client_id,
@@ -186,7 +195,11 @@ async def _build_market_links(
             if valid is None:
                 raise HTTPException(422, "Cliente não pertence ao mercado informado.")
         elif item.role == UserRole.representante:
-            if item.rep_id is None or item.linked_client_id is not None:
+            if (
+                item.rep_id is None
+                or item.linked_client_id is not None
+                or item.order_rep_id is not None
+            ):
                 raise HTTPException(422, "Papel representante exige somente rep_id.")
             valid = (await db.execute(select(Representative.id).where(
                 Representative.id == item.rep_id,
@@ -197,12 +210,25 @@ async def _build_market_links(
         elif direct_role:
             if item.linked_client_id is not None or item.rep_id is not None:
                 raise HTTPException(422, "Este papel não aceita vínculo comercial.")
+            if item.order_rep_id is not None:
+                if item.role != UserRole.admin:
+                    raise HTTPException(
+                        422,
+                        "Somente administrador aceita representante fixo de pedidos.",
+                    )
+                valid = (await db.execute(select(Representative.id).where(
+                    Representative.id == item.order_rep_id,
+                    Representative.market_code == item.market_code,
+                ).execution_options(skip_market_scope=True))).scalar_one_or_none()
+                if valid is None:
+                    raise HTTPException(422, "Representante de pedidos não pertence ao mercado informado.")
         links.append(UserMarket(
             market_code=item.market_code,
             role=item.role.value,
             status=item.status,
             linked_client_id=item.linked_client_id,
             rep_id=item.rep_id,
+            order_rep_id=item.order_rep_id,
             can_view_dashboard=item.can_view_dashboard,
             can_approve_tax=item.can_approve_tax,
         ))
@@ -225,7 +251,7 @@ async def _replace_market_links(
             user.allowed_market_links.append(incoming)
             continue
         for field in (
-            "role", "status", "linked_client_id", "rep_id",
+            "role", "status", "linked_client_id", "rep_id", "order_rep_id",
             "can_view_dashboard", "can_approve_tax",
         ):
             setattr(current, field, getattr(incoming, field))
@@ -849,8 +875,10 @@ async def create_user_from_rep(
     linked_result = await db.execute(
         select(UserMarket.user_id).where(
             UserMarket.market_code == rep.market_code,
-            UserMarket.role == UserRole.representante.value,
-            UserMarket.rep_id == rep_id,
+            or_(
+                UserMarket.rep_id == rep_id,
+                UserMarket.order_rep_id == rep_id,
+            ),
         ).limit(1)
     )
     if linked_result.scalar_one_or_none():

@@ -106,6 +106,25 @@ def _can_create_order(current_user: User) -> bool:
     )
 
 
+def _apply_order_rep_assignment(current_user: User, payload: OrderCreate) -> None:
+    """Fixa a autoria comercial sem transformar o administrador em representante."""
+    if current_user.role == UserRole.representante:
+        if not current_user.rep_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="O usuário representante não possui um registro de representante associado."
+            )
+        payload.rep_id = current_user.rep_id
+        return
+    fixed_rep_id = getattr(current_user, "order_rep_id", None)
+    if (
+        current_user.role == UserRole.admin
+        and payload.supersedes_order_id is None
+        and fixed_rep_id is not None
+    ):
+        payload.rep_id = fixed_rep_id
+
+
 def _representative_cannot_access_order(
     current_user: User,
     order: Order,
@@ -742,13 +761,7 @@ async def create_order(
         if successor is not None:
             raise HTTPException(status_code=409, detail="Este pedido já possui uma revisão. Revise a versão mais recente.")
 
-    if current_user.role == UserRole.representante:
-        if not current_user.rep_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="O usuário representante não possui um registro de representante associado."
-            )
-        payload.rep_id = current_user.rep_id
+    _apply_order_rep_assignment(current_user, payload)
 
     if is_client_account(current_user) and payload.client_id != current_user.linked_id:
         # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.

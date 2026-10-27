@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import OrcamentoPage from './OrcamentoPage'
 import { cartStorageKey, writeCartPriceList } from '../lib/cart'
-import type { Client, Product, OptionalColor, OptionalApplication } from '../types'
+import type { Client, Product, OptionalColor, OptionalApplication, Representative } from '../types'
 import {
   renderProductPage,
   productFixture,
@@ -80,6 +80,40 @@ function buildPhotoProduct(): Product {
       allowed_optionals: PHOTO_OPTIONALS,
     })),
   })
+}
+
+function buildClient(id: string, repId: string | null = null): Client {
+  return {
+    id,
+    name: 'Cliente Portugal',
+    phone: '+351 912 345 678',
+    email: null,
+    cpf_cnpj: null,
+    cep: '1000-001',
+    numero: null,
+    address: 'Rua de Teste',
+    city: 'Lisboa',
+    state: 'Lisboa',
+    country: 'PT',
+    region: null,
+    tax_id: 'PT123456789',
+    market_code: 'EU',
+    price_profile: 'lojista',
+    max_discount: 0,
+    rep_id: repId,
+    created_at: '2026-10-27T12:00:00Z',
+    updated_at: '2026-10-27T12:00:00Z',
+    last_activity_at: '2026-10-27T12:00:00Z',
+  }
+}
+
+function buildRepresentative(id: string, name: string): Representative {
+  return {
+    ...buildClient(`client-${id}`),
+    id,
+    name,
+    relationship_ended_at: null,
+  }
 }
 
 function installOrcamentoHandlers(products: Product[]) {
@@ -369,6 +403,101 @@ describe('OrcamentoPage', () => {
       client_id: quoteClient.id,
       price_list_code: 'corporativo',
     })
+  })
+
+  it('mantém o administrador e fixa seu representante nos pedidos novos', async () => {
+    const fixedRep = buildRepresentative('rep-james', 'James IBTW')
+    const user = {
+      ...productTestUser('admin', 'EU'),
+      order_rep_id: fixedRep.id,
+    }
+    const product = buildProduct('EU', { optional_applications: [] })
+    const client = buildClient('client-james')
+    localStorage.setItem(
+      cartStorageKey(user.id, 'EU'),
+      JSON.stringify([{
+        line_id: 'line-james',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [],
+      }]),
+    )
+    sessionStorage.setItem(`orcamento_client_id:${user.id}:EU`, client.id)
+    installOrcamentoHandlers([product])
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.get(`*/clients/${client.id}`, () => HttpResponse.json(client)),
+      http.get(`*/representatives/${fixedRep.id}`, () => HttpResponse.json(fixedRep)),
+      http.post('*/orders', async ({ request }) => {
+        posted = await request.json() as Record<string, unknown>
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    expect((await screen.findAllByText('James IBTW — Lisboa/Lisboa')).length).toBeGreaterThan(0)
+    expect(screen.queryAllByPlaceholderText('Buscar representante...')).toHaveLength(0)
+    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({
+      client_id: client.id,
+      rep_id: fixedRep.id,
+    })
+  })
+
+  it('ao editar, preserva o representante do pedido em vez do vínculo fixo do administrador', async () => {
+    const fixedRep = buildRepresentative('rep-james', 'James IBTW')
+    const orderRep = buildRepresentative('rep-original', 'Representante do pedido')
+    const user = {
+      ...productTestUser('admin', 'EU'),
+      order_rep_id: fixedRep.id,
+    }
+    const product = buildProduct('EU', { optional_applications: [] })
+    const client = buildClient('client-edit', orderRep.id)
+    const orderId = 'order-edit-fixed-rep'
+    installOrcamentoHandlers([product])
+    let updated: Record<string, unknown> | null = null
+    server.use(
+      http.get(`*/orders/${orderId}`, () => HttpResponse.json({
+        id: orderId,
+        code: 'PED-EU-0001',
+        client_id: client.id,
+        rep_id: orderRep.id,
+        price_list_code: 'lojista',
+        notes: null,
+        items: [{
+          id: 'item-edit',
+          product_code: product.product_code,
+          qty: 1,
+          sold_by_area: false,
+          discount: 0,
+          opt_categories: {},
+          optional_choices: [],
+          comment: null,
+        }],
+      })),
+      http.get(`*/clients/${client.id}`, () => HttpResponse.json(client)),
+      http.get(`*/representatives/${orderRep.id}`, () => HttpResponse.json(orderRep)),
+      http.put(`*/orders/${orderId}`, async ({ request }) => {
+        updated = await request.json() as Record<string, unknown>
+        return HttpResponse.json({}, { status: 200 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user, [`/orcamentos?edit=${orderId}`])
+
+    expect((await screen.findAllByText('Representante do pedido — Lisboa/Lisboa')).length).toBeGreaterThan(0)
+    expect(screen.getAllByPlaceholderText('Buscar representante...').length).toBeGreaterThan(0)
+    const submit = await screen.findByRole('button', { name: 'Salvar Alterações' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+    await waitFor(() => expect(updated).not.toBeNull())
+    expect(updated).toMatchObject({ rep_id: orderRep.id })
   })
 
   it('mantém subtotal e remoção no mesmo item e remove a linha do orçamento', async () => {

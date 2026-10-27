@@ -12,7 +12,7 @@ import OpcionaisPage from './OpcionaisPage'
 
 const user: AuthUser = {
   id: 'user-1', email: 'user@example.test', username: 'user', full_name: 'Pessoa Teste',
-  role: 'representante', rep_id: 'rep-1', linked_id: null, is_active: true,
+  role: 'representante', rep_id: 'rep-1', order_rep_id: null, linked_id: null, is_active: true,
   must_change_password: false, max_discount: 10, can_view_dashboard: false,
   home_market: 'BR', active_market: 'BR', allowed_markets: ['BR'],
 }
