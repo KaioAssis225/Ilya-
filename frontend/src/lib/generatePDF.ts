@@ -130,12 +130,13 @@ export async function generateOrderPDF(
   rep: Representative | null,
   products: Product[],
   catLabel: (code: string) => string = (c) => c,
+  documentLocale?: 'pt-PT' | 'en-GB',
 ): Promise<void> {
   const doc = new jsPDF('p', 'mm', 'a4')
   // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
   // do mercado em que o usuário está agora.
-  const orderDocument = resolveOrderDocument(order)
+  const orderDocument = resolveOrderDocument(documentLocale ? { ...order, locale: documentLocale } : order)
   const { currency, locale, taxLabel, brand, labels: L, seller } = orderDocument
   const w = doc.internal.pageSize.getWidth()
 

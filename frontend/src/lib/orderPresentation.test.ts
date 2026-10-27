@@ -78,13 +78,24 @@ test('formata o valor na moeda e no locale do pedido', () => {
   assert.notEqual(br, eu)
 })
 
-test('PDF de Portugal sai em inglês com a marca IBTW', () => {
-  const doc = resolveOrderDocument({ market_code: 'EU', currency: 'EUR', locale: 'pt-PT', items: [{ tax_label: 'IVA' }] })
+test('PDF de Portugal sai em inglês quando en-GB está selecionado', () => {
+  const doc = resolveOrderDocument({ market_code: 'EU', currency: 'EUR', locale: 'en-GB', items: [{ tax_label: 'IVA' }] })
   assert.equal(doc.brand, 'IBTW')
   assert.equal(doc.locale, 'en-GB')
   assert.equal(doc.taxLabel, 'VAT')
   assert.equal(doc.labels.order, 'ORDER')
   assert.equal(doc.labels.grandTotal, 'GRAND TOTAL:')
+  assert.match(doc.labels.footer, /^IBTW/)
+  assert.match(doc.labels.repSignature, /IBTW/)
+})
+
+test('PDF de Portugal sai em português quando pt-PT está selecionado', () => {
+  const doc = resolveOrderDocument({ market_code: 'EU', currency: 'EUR', locale: 'pt-PT', items: [{ tax_label: 'IVA' }] })
+  assert.equal(doc.brand, 'IBTW')
+  assert.equal(doc.locale, 'pt-PT')
+  assert.equal(doc.taxLabel, 'IVA')
+  assert.equal(doc.labels.order, 'PEDIDO')
+  assert.equal(doc.labels.seller, 'VENDEDOR / ENTIDADE LEGAL')
   assert.match(doc.labels.footer, /^IBTW/)
   assert.match(doc.labels.repSignature, /IBTW/)
 })

@@ -793,12 +793,13 @@ function BatchPhotoUpload({ color, title = 'Upload de Fotos em Lote', collapsibl
 }
 
 function ProductsTab({ color, page, onPage }: { color: string; page: number; onPage: (p: number) => void }) {
-  const english = useLocale().locale === 'en-GB'
+  const { locale: appLocale } = useLocale()
+  const english = appLocale === 'en-GB'
   const { user } = useAuth()
   const tx = useCadastroText()
   const isEurope = user?.active_market === 'EU'
   const canClassifyBr = !isEurope && user?.role === 'admin'
-  const locale = isEurope ? 'pt-PT' : 'pt-BR'
+  const locale = isEurope ? appLocale : 'pt-BR'
   const currency = isEurope ? 'EUR' : 'BRL'
   const money = (value: number | null | undefined) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value ?? 0))
   const marketPrice = (product: Product, key: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto') =>

@@ -237,6 +237,36 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   assert.deepEqual(savedFiles, ['ORD-0002_Client_Europe.pdf'])
 })
 
+test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', async () => {
+  const client = makeClient({
+    name: 'Cliente Portugal', country: 'PT', city: 'Porto', state: 'Porto',
+    region: 'Norte', cep: '4000-001', market_code: 'EU', price_profile: 'pvp',
+    tax_id: 'PT509876543',
+  })
+  const products = [makeProduct({
+    market_code: 'EU', currency: 'EUR', description: 'Cadeira',
+    altura: 0.8, largura: 0.75, profundidade: 0.82,
+  })]
+  const order = makeOrder({
+    code: 'ORD-PT-0001', market_code: 'EU', price_list_code: 'EU_PVP',
+    currency: 'EUR', locale: 'en-GB',
+    items: [makeOrderItem({
+      description: 'Cadeira', altura: 0.8, largura: 0.75, profundidade: 0.82,
+      qty: 1, unit_price: 1000, ipi_rate: 23, ipi_value: 230,
+      tax_label: 'IVA', currency: 'EUR',
+    })],
+  })
+
+  await generateOrderPDF(order, client, null, products, (code) => code, 'pt-PT')
+
+  assert.ok(renderedTexts.includes('CONFIRMAÇÃO DE PEDIDO'))
+  assert.ok(renderedTexts.includes('PEDIDO'))
+  assert.ok(renderedTexts.includes('IVA'))
+  assert.ok(renderedTexts.includes('VENDEDOR / ENTIDADE LEGAL'))
+  assert.ok(renderedTexts.includes('Dimensões: L 750 mm × P 820 mm × A 800 mm'))
+  assert.ok(!renderedTexts.some((text) => text.includes('″')))
+})
+
 test('regressão EU: preserva item.description histórico do snapshot mesmo se product.description_en mudou', async () => {
   const client = makeClient({
     name: 'Client Snapshot',

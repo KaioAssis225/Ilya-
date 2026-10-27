@@ -216,7 +216,8 @@ function OrderDetailModal({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const optionalEnglish = useLocale().locale === 'en-GB'
+  const { locale } = useLocale()
+  const optionalEnglish = locale === 'en-GB'
   const {
     data: orderDetail,
     isError: detailError,
@@ -233,11 +234,9 @@ function OrderDetailModal({
     history: [],
     updated_at: orderLight.created_at,
   }
-  // A tela "Visualizar" é sempre em português (pt-PT em Portugal); o idioma do
-  // documento (order.locale / PDF em inglês) não muda a leitura interna.
-  const viewLocale = order.market_code === 'EU' ? 'en-GB' : 'pt-BR'
+  const viewLocale = order.market_code === 'EU' ? locale : 'pt-BR'
   const isEuOrder = order.market_code === 'EU'
-  const viewText = (br: string, en: string) => isEuOrder ? en : br
+  const viewText = (pt: string, en: string) => isEuOrder && locale === 'en-GB' ? en : pt
   const { data: products = [] } = useProductsByCodes(
     orderDetail?.items.map((item) => item.product_code) ?? [],
     !!orderDetail,
@@ -730,7 +729,14 @@ export default function PedidosPage() {
       const client = clientResponse.data
       const rep = repResponse?.data ?? null
       const products = productsResponses.flatMap((response) => response.data)
-      await pdfModule.generateOrderPDF(order, client, rep, products, pdfCatLabel)
+      await pdfModule.generateOrderPDF(
+        order,
+        client,
+        rep,
+        products,
+        pdfCatLabel,
+        order.market_code === 'EU' ? locale : undefined,
+      )
     } catch {
       setPdfError('Não foi possível gerar o PDF. Tente novamente.')
     } finally {

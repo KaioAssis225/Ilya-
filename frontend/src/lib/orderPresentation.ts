@@ -53,9 +53,8 @@ export function formatOrderMoney(
 }
 
 // ── Documento (PDF) ───────────────────────────────────────────────────────────
-// Portugal opera com a marca IBTW e envia o pedido ao cliente em inglês; o
-// Brasil segue ILYA em português. A tela interna "Visualizar" continua em
-// português — este idioma vale só para o documento entregue ao cliente.
+// Portugal opera com a marca IBTW e respeita o idioma selecionado (pt-PT ou
+// en-GB); o Brasil segue ILYA em português.
 
 export interface OrderDocumentLabels {
   documentTitle: string; order: string; date: string; quote: string; continued: string
@@ -94,6 +93,15 @@ const PT_LABELS: OrderDocumentLabels = {
   footer: 'Ilya — Documento gerado automaticamente',
 }
 
+const PT_PT_LABELS: OrderDocumentLabels = {
+  ...PT_LABELS,
+  seller: 'VENDEDOR / ENTIDADE LEGAL', representative: 'CONTACTO COMERCIAL', client: 'FATURAR A',
+  none: 'Nenhum', noEmail: 'E-mail não indicado', taxId: 'NIF / VAT', taxIdMissing: 'não indicado',
+  commercialNotice: 'Confirmação de pedido comercial. Este documento não é uma fatura.',
+  itemNote: 'Nota', repSignature: 'Representante / IBTW', clientSignature: 'Cliente',
+  footer: 'IBTW — Documento gerado automaticamente',
+}
+
 const EN_LABELS: OrderDocumentLabels = {
   documentTitle: 'ORDER CONFIRMATION', order: 'ORDER', date: 'Date', quote: 'Quote', continued: 'CONTINUED',
   seller: 'SELLER / LEGAL ENTITY', representative: 'SALES CONTACT', client: 'BILL TO', none: 'None', noEmail: 'No email provided',
@@ -108,12 +116,13 @@ const EN_LABELS: OrderDocumentLabels = {
 export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
   const presentation = resolveOrderPresentation(order)
   if ((order.market_code ?? 'BR') === 'EU') {
+    const english = presentation.locale === 'en-GB'
     return {
       brand: 'IBTW',
-      locale: 'en-GB',
+      locale: english ? 'en-GB' : 'pt-PT',
       currency: presentation.currency,
-      taxLabel: presentation.taxLabel === 'IVA' ? 'VAT' : presentation.taxLabel,
-      labels: EN_LABELS,
+      taxLabel: english && presentation.taxLabel === 'IVA' ? 'VAT' : presentation.taxLabel,
+      labels: english ? EN_LABELS : PT_PT_LABELS,
       seller: {
         legalName: 'IBTW LIVING LDA',
         taxIdLabel: 'NIF',
