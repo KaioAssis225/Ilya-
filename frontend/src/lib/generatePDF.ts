@@ -137,7 +137,7 @@ export async function generateOrderPDF(
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
   // do mercado em que o usuário está agora.
   const orderDocument = resolveOrderDocument(documentLocale ? { ...order, locale: documentLocale } : order)
-  const { currency, locale, taxLabel, brand, labels: L, seller } = orderDocument
+  const { currency, locale, taxLabel, displayBrand, labels: L, seller } = orderDocument
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -165,7 +165,7 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(28)
   doc.setTextColor(...GOLD)
-  doc.text(brand, 20, y)
+  doc.text(displayBrand, 20, y)
   y += 5
 
   doc.setDrawColor(...GOLD)
@@ -310,7 +310,7 @@ export async function generateOrderPDF(
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(13)
     doc.setTextColor(...GOLD)
-    doc.text(brand, 20, 23)
+    doc.text(displayBrand, 20, 23)
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
     doc.text(`${order.code} · ${L.continued}`, w - 20, 23, { align: 'right' })

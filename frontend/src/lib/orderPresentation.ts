@@ -75,6 +75,7 @@ export interface OrderDocumentSeller {
 
 export interface OrderDocument {
   brand: 'ILYA' | 'IBTW'
+  displayBrand: string
   locale: string
   currency: CurrencyCode
   taxLabel: string
@@ -119,6 +120,7 @@ export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
     const english = presentation.locale === 'en-GB'
     return {
       brand: 'IBTW',
+      displayBrand: english ? 'IBTW LTD.' : 'IBTW LDA.',
       locale: english ? 'en-GB' : 'pt-PT',
       currency: presentation.currency,
       taxLabel: english && presentation.taxLabel === 'IVA' ? 'VAT' : presentation.taxLabel,
@@ -136,6 +138,7 @@ export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
   }
   return {
     brand: 'ILYA',
+    displayBrand: 'ILYA',
     locale: presentation.locale,
     currency: presentation.currency,
     taxLabel: presentation.taxLabel,
