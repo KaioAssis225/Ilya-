@@ -2,8 +2,8 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import OrcamentoPage from './OrcamentoPage'
-import { cartStorageKey } from '../lib/cart'
-import type { Product, OptionalColor, OptionalApplication } from '../types'
+import { cartStorageKey, writeCartPriceList } from '../lib/cart'
+import type { Client, Product, OptionalColor, OptionalApplication } from '../types'
 import {
   renderProductPage,
   productFixture,
@@ -280,6 +280,95 @@ describe('OrcamentoPage', () => {
         ),
       ).toBe(false)
     }
+  })
+
+  it('REG-PROD-03: orçamento EU restaura a tabela escolhida no catálogo e usa seu preço', async () => {
+    const user = productTestUser('admin', 'EU')
+    const product = buildProduct('EU', { optional_applications: [] })
+    localStorage.setItem(
+      cartStorageKey(user.id, 'EU'),
+      JSON.stringify([{
+        line_id: 'line-eu-arquiteto',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [],
+      }]),
+    )
+    writeCartPriceList(user.id, 'EU', 'arquiteto')
+    installOrcamentoHandlers([product])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const selector = await screen.findByRole('combobox', { name: 'Tabela de preço do orçamento' })
+    expect(selector).toHaveValue('arquiteto')
+    const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
+    const expectedSubtotal = new Intl.NumberFormat('pt-PT', {
+      style: 'currency',
+      currency: 'EUR',
+    }).format(80)
+    expectItemSubtotal(item, expectedSubtotal)
+  })
+
+  it('REG-PROD-03: envia a tabela EU escolhida no contrato de criação do pedido', async () => {
+    const user = productTestUser('admin', 'EU')
+    const product = buildProduct('EU', { optional_applications: [] })
+    const quoteClient: Client = {
+      id: 'client-eu-price-list',
+      name: 'Cliente Portugal',
+      phone: '+351 912 345 678',
+      email: null,
+      cpf_cnpj: null,
+      cep: '1000-001',
+      numero: null,
+      address: 'Rua de Teste',
+      city: 'Lisboa',
+      state: 'Lisboa',
+      country: 'PT',
+      region: null,
+      tax_id: 'PT123456789',
+      market_code: 'EU',
+      price_profile: 'lojista',
+      max_discount: 0,
+      rep_id: null,
+      created_at: '2026-10-27T12:00:00Z',
+      updated_at: '2026-10-27T12:00:00Z',
+      last_activity_at: '2026-10-27T12:00:00Z',
+    }
+    localStorage.setItem(
+      cartStorageKey(user.id, 'EU'),
+      JSON.stringify([{
+        line_id: 'line-eu-contract',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [],
+      }]),
+    )
+    writeCartPriceList(user.id, 'EU', 'corporativo')
+    sessionStorage.setItem(`orcamento_client_id:${user.id}:EU`, quoteClient.id)
+    installOrcamentoHandlers([product])
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.get(`*/clients/${quoteClient.id}`, () => HttpResponse.json(quoteClient)),
+      http.post('*/orders', async ({ request }) => {
+        posted = await request.json() as Record<string, unknown>
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({
+      client_id: quoteClient.id,
+      price_list_code: 'corporativo',
+    })
   })
 
   it('mantém subtotal e remoção no mesmo item e remove a linha do orçamento', async () => {

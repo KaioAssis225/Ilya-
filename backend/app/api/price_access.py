@@ -125,5 +125,5 @@ def ensure_price_visible(scope: PriceScope, code: str) -> None:
     if not allows_price(scope, code):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Este cliente usa a tabela de preço {code}, que você não pode ver.",
+            detail=f"Você não pode usar a tabela de preço {code} neste orçamento.",
         )

@@ -9,7 +9,9 @@
 // OUTRAS abas, nunca na aba que fez a escrita. Daí o CustomEvent próprio.
 
 const CART_KEY_PREFIX = 'carrinho_orcamento'
+const CART_PRICE_LIST_KEY_PREFIX = 'carrinho_orcamento_tabela_preco'
 export const CART_EVENT = 'ilya:cart-changed'
+export type PriceListCode = 'lojista' | 'arquiteto' | 'corporativo' | 'pvp'
 
 type StoredCartItem = { product_code: string; qty: number; sold_by_area?: boolean }
 export type CartQuantity = { qty: number; sold_by_area: boolean }
@@ -17,6 +19,26 @@ export type CartQuantity = { qty: number; sold_by_area: boolean }
 /** Quantidade por SKU: `{ IAC0000: 2 }`. Vazio se não houver carrinho ou o JSON estiver corrompido. */
 export function cartStorageKey(userId: string, market: 'BR' | 'EU' = 'BR'): string {
   return `${CART_KEY_PREFIX}:${userId}:${market}`
+}
+
+export function cartPriceListStorageKey(userId: string, market: 'BR' | 'EU'): string {
+  return `${CART_PRICE_LIST_KEY_PREFIX}:${userId}:${market}`
+}
+
+export function readCartPriceList(userId?: string | null, market: 'BR' | 'EU' = 'BR'): PriceListCode | null {
+  if (!userId) return null
+  const value = localStorage.getItem(cartPriceListStorageKey(userId, market))
+  return value === 'lojista' || value === 'arquiteto' || value === 'corporativo' || value === 'pvp'
+    ? value
+    : null
+}
+
+export function writeCartPriceList(userId: string, market: 'BR' | 'EU', value: PriceListCode): void {
+  localStorage.setItem(cartPriceListStorageKey(userId, market), value)
+}
+
+export function removeCartPriceList(userId: string, market: 'BR' | 'EU'): void {
+  localStorage.removeItem(cartPriceListStorageKey(userId, market))
 }
 
 /**
@@ -39,6 +61,7 @@ export function configureProductPath(productCode: string): string {
 /** Remove o formato antigo, que era compartilhado entre todas as contas. */
 export function removeUnsafeLegacyCart(): void {
   localStorage.removeItem(CART_KEY_PREFIX)
+  localStorage.removeItem(CART_PRICE_LIST_KEY_PREFIX)
 }
 
 export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' = 'BR'): Record<string, CartQuantity> {

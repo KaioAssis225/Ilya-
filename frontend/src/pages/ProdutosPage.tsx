@@ -4,7 +4,7 @@ import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../l
 import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine } from 'lucide-react'
-import { cartStorageKey, configureProductPath, notifyCartChanged } from '../lib/cart'
+import { cartStorageKey, configureProductPath, notifyCartChanged, writeCartPriceList } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
@@ -177,8 +177,8 @@ function FullProductImage({ product }: { product: Product }) {
 //
 // Quem recebe mais de uma tabela escolhe qual fica na tela: o representante em
 // visita nunca deixa vários preços visíveis ao mesmo tempo na frente do cliente.
-// A escolha é só de EXIBIÇÃO — o valor aplicado no orçamento segue resolvido no
-// servidor pelo perfil do cliente, nunca por esse seletor.
+// No EU, a escolha acompanha o carrinho e passa a ser o contrato comercial do
+// orçamento. O backend continua sendo a autoridade sobre acesso e descontos.
 
 type PriceKey = 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
 type PriceTable = PriceKey
@@ -414,9 +414,11 @@ function addToCart(
   product: Product,
   userId: string,
   market: 'BR' | 'EU',
+  priceTable: PriceTable,
   configure: (code: string) => void,
   selected?: CartSelections,
 ) {
+  if (market === 'EU') writeCartPriceList(userId, market, priceTable)
   if (!selected && productApplications(product).length > 0) {
     configure(product.product_code)
     return
@@ -744,6 +746,7 @@ function ProductFullView({
       product,
       userId,
       market,
+      priceTable,
       code => navigate(configureProductPath(code)),
       { opt_categories, optional_choices: applicationChoices },
     )
@@ -1498,7 +1501,7 @@ export default function ProdutosPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => user && addToCart(product, user.id, user.active_market, code => navigate(configureProductPath(code)))}
+                  onClick={() => user && addToCart(product, user.id, user.active_market, activePriceTable, code => navigate(configureProductPath(code)))}
                   aria-label={locale === 'en-GB' ? `Add ${product.description} to quote` : `Adicionar ${product.description} ao orçamento`}
                   style={{ touchAction: 'manipulation' }}
                   className="w-11 h-11 rounded-full bg-gold text-white shadow-md shadow-ink/15

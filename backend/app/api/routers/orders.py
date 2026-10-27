@@ -730,11 +730,6 @@ async def create_order(
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
     require_launch_country(principal.code, client.country)
-    if current_user.role == UserRole.representante:
-        ensure_price_visible(
-            await visible_price_scope(db, current_user, principal.code),
-            client.price_profile,
-        )
     if is_client_account(current_user):
         # O vínculo comercial é definido pelo cadastro do cliente; a API não
         # aceita que uma conta de cliente atribua o pedido a outro representante.
@@ -765,15 +760,37 @@ async def create_order(
     )
     market_code = principal.code
     context = principal.market
+    # Portugal escolhe a tabela por orçamento. A ausência mantém o contrato
+    # antigo (perfil padrão do cliente), de modo que carrinhos e integrações
+    # anteriores continuem funcionando. Revisões preservam a tabela de origem.
+    requested_price_list_code = client.price_profile
+    if market_code == "EU":
+        requested_price_list_code = (
+            payload.price_list_code
+            or (source_order.price_list_code if source_order else None)
+            or client.price_profile
+        )
+    price_list_selector = (
+        PriceList.code == requested_price_list_code
+        if market_code == "EU"
+        else PriceList.id == client.price_list_id
+    )
     price_list = (await db.execute(
         select(PriceList).where(
-            PriceList.id == client.price_list_id,
             PriceList.market_code == market_code,
+            price_list_selector,
             PriceList.is_active.is_(True),
         )
     )).scalar_one_or_none()
     if not price_list:
-        raise HTTPException(status_code=422, detail="Cliente sem lista de preços válida para o mercado ativo.")
+        raise HTTPException(
+            status_code=422,
+            detail=f"A tabela de preço '{requested_price_list_code}' não está disponível no mercado ativo.",
+        )
+    ensure_price_visible(
+        await visible_price_scope(db, current_user, principal.code),
+        price_list.code,
+    )
     max_discount = _resolve_max_discount(
         current_user, client, rep, market_code, price_list.code
     )
@@ -950,6 +967,7 @@ async def create_order_revision(
         raise HTTPException(status_code=409, detail="Somente pedido finalizado pode receber revisão.")
     payload = OrderCreate(
         client_id=source.client_id, rep_id=source.rep_id, notes=source.notes,
+        price_list_code=source.price_list_code,
         locale=source.locale if source.market_code == "EU" else None,
         supersedes_order_id=source.id,
         items=[OrderItemCreate(
@@ -1198,6 +1216,15 @@ async def update_order(
         raise HTTPException(status_code=409, detail="Pedido já finalizado e não pode ser editado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado e não pode ser editado.")
+    if (
+        payload.price_list_code is not None
+        and payload.price_list_code != order.price_list_code
+        and payload.items is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Alterar a tabela de preço exige reenviar os itens para recalcular o orçamento.",
+        )
     # Migration/01: toda edição aceita incrementa o frescor para consumidores
     # externos (leitura cross-database do Ilya Estoque).
     order.source_version += 1
@@ -1247,7 +1274,7 @@ async def update_order(
             if current_user.role == UserRole.representante:
                 ensure_price_visible(
                     await visible_price_scope(db, current_user, principal.code),
-                    client.price_profile,
+                    order.price_list_code,
                 )
             _ensure_catalogs_allowed(
                 order_catalog_scope(current_user, client, selected_rep),
@@ -1281,19 +1308,23 @@ async def update_order(
             Client.id == order.client_id,
             Client.market_code == principal.code,
         ))).scalar_one_or_none()
+        requested_price_list_code = (
+            payload.price_list_code
+            if order.market_code == "EU" and payload.price_list_code is not None
+            else order.price_list_code
+        )
         price_list = (await db.execute(select(PriceList).where(
             PriceList.market_code == order.market_code,
-            PriceList.code == order.price_list_code,
+            PriceList.code == requested_price_list_code,
             PriceList.is_active.is_(True),
         ))).scalar_one_or_none()
         if not client or not price_list:
             raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
         require_launch_country(principal.code, client.country)
-        if current_user.role == UserRole.representante:
-            ensure_price_visible(
-                await visible_price_scope(db, current_user, principal.code),
-                client.price_profile,
-            )
+        ensure_price_visible(
+            await visible_price_scope(db, current_user, principal.code),
+            price_list.code,
+        )
         product_ids = [product.id for product in product_map.values()]
         available_ids = set((await db.execute(select(ProductMarket.product_id).where(
             ProductMarket.market_code == order.market_code,
@@ -1416,6 +1447,9 @@ async def update_order(
             changes.append("catálogo alterado")
         order.catalog_id = new_catalog_id
         order.catalog_name = catalog.name if catalog else None
+        if price_list.code != order.price_list_code:
+            changes.append(f"tabela de preço: {order.price_list_code} → {price_list.code}")
+            order.price_list_code = price_list.code
 
         # Tudo validado: agora sim remove os antigos e insere os novos.
         for item in order.items:

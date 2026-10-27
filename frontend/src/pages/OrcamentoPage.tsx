@@ -18,7 +18,14 @@ import { QuantityInput } from '../components/QuantityInput'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { isConjuntoType } from '../lib/productType'
-import { cartStorageKey, notifyCartChanged } from '../lib/cart'
+import {
+  cartStorageKey,
+  notifyCartChanged,
+  readCartPriceList,
+  removeCartPriceList,
+  writeCartPriceList,
+  type PriceListCode,
+} from '../lib/cart'
 import { allowedForApplication, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, isLegacyCustom, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
@@ -1078,6 +1085,9 @@ export default function OrcamentoPage() {
   const [persistedCart] = useState<PersistedCartItem[]>(
     () => readPersistedCart(user?.id, user?.active_market),
   )
+  const [selectedEuPriceList, setSelectedEuPriceList] = useState<PriceListCode | null>(
+    () => editId ? null : readCartPriceList(user?.id, user?.active_market),
+  )
   // sessionStorage (não localStorage): sobrevive a trocar de aba dentro do app
   // e a um F5, mas some quando a aba fecha — não volta pré-preenchido amanhã.
   const [savedClientId, setSavedClientId] = useState(
@@ -1244,13 +1254,15 @@ export default function OrcamentoPage() {
   const createClientM = useCreateClient()
   const createRepM = useCreateRepresentative()
 
-  // Perfil de faturamento do cliente selecionado; sem cliente, usa lojista (Bloco 62).
-  // A proteção adicional impede que um perfil exclusivo de Portugal no Brasil anuncie
-  // uma tabela inexistente enquanto o cálculo faz fallback para lojista.
-  const requestedPriceProfile = selectedClient?.price_profile ?? 'lojista'
-  const priceProfile = market === 'BR' && (requestedPriceProfile === 'pvp' || requestedPriceProfile === 'arquiteto')
-    ? 'lojista'
-    : requestedPriceProfile
+  // No EU a tabela escolhida no catálogo/orçamento é parte do orçamento. O
+  // perfil do cliente é apenas o fallback para carrinhos antigos sem escolha.
+  // BR conserva o contrato histórico baseado no cadastro do cliente.
+  const clientDefaultPriceProfile = selectedClient?.price_profile ?? 'lojista'
+  const priceProfile: PriceListCode = market === 'EU'
+    ? (selectedEuPriceList ?? (editOrder?.price_list_code as PriceListCode | undefined) ?? clientDefaultPriceProfile)
+    : (clientDefaultPriceProfile === 'pvp' || clientDefaultPriceProfile === 'arquiteto'
+        ? 'lojista'
+        : clientDefaultPriceProfile)
   const priceProfileLabel = {
     lojista: 'Lojista',
     corporativo: 'Corporativo',
@@ -1263,6 +1275,16 @@ export default function OrcamentoPage() {
     user?.role,
     user?.max_discount ?? 0,
   )
+
+  function selectEuPriceList(next: PriceListCode) {
+    setSelectedEuPriceList(next)
+    if (!editId) writeCartPriceList(userId, market, next)
+  }
+
+  function clearDraftPriceList() {
+    setSelectedEuPriceList(null)
+    removeCartPriceList(userId, market)
+  }
 
   useEffect(() => {
     // A troca do cliente pode mudar a tabela e precisa reduzir descontos já
@@ -1565,6 +1587,7 @@ export default function OrcamentoPage() {
             id: editId,
             data: {
               rep_id: repIdForSubmit,
+              price_list_code: market === 'EU' ? priceProfile : undefined,
               notes: notes || null,
               items: itemsPayload,
             },
@@ -1578,6 +1601,7 @@ export default function OrcamentoPage() {
           createOrderM.mutateAsync({
             client_id: selectedClient.id,
             rep_id: repIdForSubmit,
+            price_list_code: market === 'EU' ? priceProfile : undefined,
             notes: notes || null,
             items: itemsPayload,
             locale: market === 'EU' ? europeanLocale : undefined,
@@ -1588,6 +1612,7 @@ export default function OrcamentoPage() {
       }
       setCart([])
       localStorage.removeItem(cartKey)
+      clearDraftPriceList()
       notifyCartChanged()
       resetSavedSelections()
       setNotes('')
@@ -1754,6 +1779,7 @@ export default function OrcamentoPage() {
               resetSavedSelections()
               setNotes('')
               localStorage.removeItem(cartKey)
+              clearDraftPriceList()
               notifyCartChanged()
             }}
             className="ml-auto min-h-11 lg:min-h-0 px-2 text-white/70 hover:text-white text-xs underline"
@@ -1774,24 +1800,44 @@ export default function OrcamentoPage() {
               <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4" /> {isEnglish ? 'Quote Items' : 'Itens do Orçamento'}
               </h2>
-              <output
-                aria-live="polite"
-                aria-label={isEnglish ? `Price checked: ${priceProfileLabel}` : `Preço consultado: ${priceProfileLabel}`}
-                title={selectedClient
-                  ? (isEnglish ? `Price list for ${selectedClient.name}` : `Tabela de preço de ${selectedClient.name}`)
-                  : (isEnglish ? 'Default price list until a client is selected' : 'Tabela padrão até selecionar um cliente')}
-                className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
-              >
-                <span className="px-2.5 text-muted">{isEnglish ? 'Price checked' : 'Preço consultado'}</span>
-                <strong className="self-stretch border-l border-line bg-white px-2.5 inline-flex items-center font-semibold text-gold">
-                  {priceProfileLabel}
-                </strong>
-              </output>
+              {market === 'EU' ? (
+                <label className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider">
+                  <span className="px-2.5 text-muted">{isEnglish ? 'Price list' : 'Tabela de preço'}</span>
+                  <select
+                    aria-label={isEnglish ? 'Quote price list' : 'Tabela de preço do orçamento'}
+                    value={priceProfile}
+                    onChange={(event) => selectEuPriceList(event.target.value as PriceListCode)}
+                    className="self-stretch border-0 border-l border-line bg-white px-2.5 font-semibold text-gold outline-none"
+                  >
+                    {/* A API omite o preço das tabelas que a conta não vê; só
+                        oferece as que os itens trazem (e a já escolhida). */}
+                    {(['lojista', 'arquiteto', 'corporativo', 'pvp'] as const)
+                      .filter(code => code === priceProfile || cart.length === 0
+                        || cart.some(item => item._product.market_prices?.[code] != null))
+                      .map(code => (
+                        <option key={code} value={code}>
+                          {{ lojista: 'Lojista', arquiteto: 'Arquiteto', corporativo: 'Corporativo', pvp: 'PVP' }[code]}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              ) : (
+                <output
+                  aria-live="polite"
+                  aria-label={isEnglish ? `Price checked: ${priceProfileLabel}` : `Preço consultado: ${priceProfileLabel}`}
+                  className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
+                >
+                  <span className="px-2.5 text-muted">{isEnglish ? 'Price checked' : 'Preço consultado'}</span>
+                  <strong className="self-stretch border-l border-line bg-white px-2.5 inline-flex items-center font-semibold text-gold">
+                    {priceProfileLabel}
+                  </strong>
+                </output>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
-                  onClick={() => { setCart([]); localStorage.removeItem(cartKey); notifyCartChanged() }}
+                  onClick={() => { setCart([]); localStorage.removeItem(cartKey); clearDraftPriceList(); notifyCartChanged() }}
                   className="min-h-11 lg:min-h-0 text-xs text-terracotta hover:text-terracotta-700 border border-terracotta-soft hover:border-terracotta px-2.5 py-1.5 rounded-lg transition-colors"
                   style={{ touchAction: 'manipulation' }}
                 >
