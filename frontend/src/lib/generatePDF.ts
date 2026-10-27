@@ -135,7 +135,8 @@ export async function generateOrderPDF(
   // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
   // do mercado em que o usuário está agora.
-  const { currency, locale, taxLabel, brand, labels: L } = resolveOrderDocument(order)
+  const orderDocument = resolveOrderDocument(order)
+  const { currency, locale, taxLabel, brand, labels: L, seller } = orderDocument
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -170,6 +171,11 @@ export async function generateOrderPDF(
   doc.setLineWidth(0.3)
   doc.line(20, y, 60, y)
 
+  doc.setFontSize(6.5)
+  doc.setTextColor(...MUTED)
+  doc.setFont('helvetica', 'bold')
+  doc.text(L.documentTitle, 20, y + 7)
+
   // ── Número do pedido (canto direito) ───────────────────────────────────────
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
@@ -193,69 +199,125 @@ export async function generateOrderPDF(
 
   y = 55
 
-  // ── Boxes cliente + representante ──────────────────────────────────────────
+  // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2
   doc.setFillColor(...LIGHT)
-  doc.roundedRect(20, y, boxW, 35, 2, 2, 'F')
-  doc.roundedRect(20 + boxW + 10, y, boxW, 35, 2, 2, 'F')
+  const partyBoxH = seller ? 44 : 35
+  doc.roundedRect(20, y, boxW, partyBoxH, 2, 2, 'F')
+  doc.roundedRect(20 + boxW + 10, y, boxW, partyBoxH, 2, 2, 'F')
 
-  // Esquerda: Representante
   const bx = 24
-  doc.setFontSize(7)
-  doc.setTextColor(...MUTED)
-  doc.setFont('helvetica', 'bold')
-  doc.text(L.representative, bx, y + 6)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(...DARK)
-  doc.text(rep ? rep.name : L.none, bx, y + 12)
-  if (rep) {
-    doc.setFontSize(8)
+  const rx = 20 + boxW + 14
+
+  if (seller) {
+    // Entidade legal vendedora: denominação, NIF e sede do comprovativo da AT.
+    doc.setFontSize(7)
     doc.setTextColor(...MUTED)
-    doc.text(rep.phone, bx, y + 17)
-    doc.text(rep.email || L.noEmail, bx, y + 22)
-    const repAddr = formatAddress(rep, order.market_code)
-    doc.text(doc.splitTextToSize(repAddr, boxW - 8).slice(0, 2), bx, y + 27)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.seller, bx, y + 6)
+    doc.setFontSize(10)
+    doc.setTextColor(...DARK)
+    doc.text(seller.legalName, bx, y + 13)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...MUTED)
+    doc.text(`${seller.taxIdLabel}: ${seller.taxId}`, bx, y + 20)
+    seller.addressLines.forEach((line, index) => doc.text(line, bx, y + 27 + index * 5))
+  } else {
+    // No mercado BR ainda não há uma entidade legal configurada; preserva o
+    // bloco original do representante, sem inventar dados fiscais.
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.representative, bx, y + 6)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...DARK)
+    doc.text(rep ? rep.name : L.none, bx, y + 12)
+    if (rep) {
+      doc.setFontSize(8)
+      doc.setTextColor(...MUTED)
+      doc.text(rep.phone, bx, y + 17)
+      doc.text(rep.email || L.noEmail, bx, y + 22)
+      const repAddr = formatAddress(rep, order.market_code)
+      doc.text(doc.splitTextToSize(repAddr, boxW - 8).slice(0, 2), bx, y + 27)
+    }
   }
 
-  // Direita: Cliente
-  const rx = 20 + boxW + 14
+  // Cliente / adquirente, incluindo a identificação fiscal disponível.
   doc.setFontSize(7)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
   doc.text(L.client, rx, y + 6)
-  doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
   doc.text(client.name, rx, y + 12)
-  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
   doc.setTextColor(...MUTED)
-  doc.text(client.phone, rx, y + 17)
-  doc.text(client.email || L.noEmail, rx, y + 22)
+  const clientTaxId = order.market_code === 'EU' ? client.tax_id : client.cpf_cnpj
+  doc.text(`${L.taxId}: ${clientTaxId || L.taxIdMissing}`, rx, y + 18)
+  doc.text(client.phone, rx, y + 23)
+  doc.text(client.email || L.noEmail, rx, y + 28)
   const clientAddr = formatAddress(client, order.market_code)
-  doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 27)
+  doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 34)
 
-  y += 42
+  y += partyBoxH + 7
+
+  // O vendedor continua identificado como contacto comercial, separado da
+  // entidade legal que efetivamente celebra o pedido.
+  if (seller) {
+    doc.setFillColor(...LIGHT)
+    doc.roundedRect(20, y, w - 40, 17, 2, 2, 'F')
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.representative, 24, y + 6)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...DARK)
+    doc.text(rep ? rep.name : L.none, 24, y + 12)
+    if (rep) {
+      doc.setFontSize(7.5)
+      doc.setTextColor(...MUTED)
+      doc.text([rep.phone, rep.email || L.noEmail].filter(Boolean).join('  ·  '), w - 24, y + 12, { align: 'right' })
+    }
+    y += 24
+  } else {
+    y += 7
+  }
+
+  const drawTableHeader = (top: number): number => {
+    doc.setDrawColor(...LINE)
+    doc.setLineWidth(0.3)
+    doc.line(20, top, w - 20, top)
+    const labelY = top + 8
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.product, 22, labelY)
+    doc.text(L.qty, 125, labelY, { align: 'right' })
+    doc.text(L.unitPrice, 150, labelY, { align: 'right' })
+    doc.text(taxLabel, 167, labelY, { align: 'right' })
+    doc.text(L.total, 186, labelY, { align: 'right' })
+    doc.setDrawColor(...LINE)
+    doc.line(20, labelY + 4, w - 20, labelY + 4)
+    return labelY + 11
+  }
+
+  const drawContinuationHeader = (): number => {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(13)
+    doc.setTextColor(...GOLD)
+    doc.text(brand, 20, 23)
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.text(`${order.code} · ${L.continued}`, w - 20, 23, { align: 'right' })
+    return 30
+  }
 
   // ── Cabeçalho da tabela de itens ───────────────────────────────────────────
-  doc.setDrawColor(...LINE)
-  doc.setLineWidth(0.3)
-  doc.line(20, y, w - 20, y)
-  y += 8
-
-  doc.setFontSize(7)
-  doc.setTextColor(...MUTED)
-  doc.setFont('helvetica', 'bold')
-  doc.text(L.product, 22, y)
-  doc.text(L.qty, 125, y, { align: 'right' })
-  doc.text(L.unitPrice, 150, y, { align: 'right' })
-  doc.text(taxLabel, 167, y, { align: 'right' })
-  doc.text(L.total, 186, y, { align: 'right' })
-
-  y += 4
-  doc.setDrawColor(...LINE)
-  doc.line(20, y, w - 20, y)
-  y += 7
+  y = drawTableHeader(y)
 
   // ── Linhas de itens ────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
@@ -319,7 +381,7 @@ export async function generateOrderPDF(
     const rowH = Math.max(26, 18 + extraLines * 4)
     if (y + rowH > 265) {
       doc.addPage()
-      y = 20
+      y = drawTableHeader(drawContinuationHeader())
     }
 
     // Foto (box 14×14mm, x=22 — imagem proporcional e centralizada dentro do box, sem distorcer)
@@ -444,6 +506,10 @@ export async function generateOrderPDF(
   }
 
   // ── Rodapé de totais ───────────────────────────────────────────────────────
+  if (y + 72 > 278) {
+    doc.addPage()
+    y = drawContinuationHeader()
+  }
   y += 4
   doc.setDrawColor(...GOLD)
   doc.setLineWidth(0.5)
@@ -487,12 +553,15 @@ export async function generateOrderPDF(
     doc.setTextColor(...DARK)
     const obsLines = doc.splitTextToSize(order.notes, w - 48)
     doc.text(obsLines, 24, y)
+    y += obsLines.length * 4 + 3
   }
 
   // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
   // O PDF mantém apenas as linhas em branco para assinatura manual.
 
-  if (y + 40 > 265) { doc.addPage(); y = 20 }
+  // O bloco ocupa 34 mm até ao fim das legendas e o rodapé começa em 282 mm.
+  // Usa a área útil inteira para não isolar assinaturas numa página em branco.
+  if (y + 40 > 276) { doc.addPage(); y = 20 }
   y += 6
   doc.setDrawColor(...LINE)
   doc.setLineWidth(0.3)
@@ -521,16 +590,24 @@ export async function generateOrderPDF(
 
   y += 30
 
-  // ── Rodapé da página ───────────────────────────────────────────────────────
-  y = 285
-  doc.setDrawColor(...GOLD)
-  doc.setLineWidth(0.3)
-  doc.line(20, y, w - 20, y)
-  y += 5
-  doc.setFontSize(7)
-  doc.setTextColor(...MUTED)
-  doc.setFont('helvetica', 'normal')
-  doc.text(L.footer, w / 2, y, { align: 'center' })
+  // ── Rodapé em todas as páginas ─────────────────────────────────────────────
+  const totalPages = doc.getNumberOfPages()
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page)
+    doc.setDrawColor(...GOLD)
+    doc.setLineWidth(0.3)
+    doc.line(20, 282, w - 20, 282)
+    doc.setFontSize(6.5)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'normal')
+    const legalFooter = seller
+      ? `${seller.legalName} · ${seller.taxIdLabel} ${seller.taxId} · ${seller.addressLines[1]}`
+      : L.footer
+    doc.text(legalFooter, 20, 287)
+    doc.text(`${L.page} ${page}/${totalPages}`, w - 20, 287, { align: 'right' })
+    doc.setFontSize(6)
+    doc.text(L.commercialNotice, 20, 291)
+  }
 
   // ── Salva ──────────────────────────────────────────────────────────────────
   const filename = `${order.code}_${client.name.replace(/\s+/g, '_')}.pdf`

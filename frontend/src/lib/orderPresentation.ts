@@ -58,12 +58,20 @@ export function formatOrderMoney(
 // português — este idioma vale só para o documento entregue ao cliente.
 
 export interface OrderDocumentLabels {
-  order: string; date: string; quote: string
-  representative: string; client: string; none: string; noEmail: string
+  documentTitle: string; order: string; date: string; quote: string; continued: string
+  seller: string; representative: string; client: string; none: string; noEmail: string
+  taxId: string; taxIdMissing: string; commercialNotice: string; page: string
   product: string; qty: string; unitPrice: string; total: string
   dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
   totalItems: string; grandTotal: string; notes: string
   repSignature: string; clientSignature: string; footer: string
+}
+
+export interface OrderDocumentSeller {
+  legalName: string
+  taxIdLabel: string
+  taxId: string
+  addressLines: string[]
 }
 
 export interface OrderDocument {
@@ -72,11 +80,13 @@ export interface OrderDocument {
   currency: CurrencyCode
   taxLabel: string
   labels: OrderDocumentLabels
+  seller?: OrderDocumentSeller
 }
 
 const PT_LABELS: OrderDocumentLabels = {
-  order: 'PEDIDO', date: 'Data', quote: 'Orçamento',
-  representative: 'REPRESENTANTE', client: 'CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
+  documentTitle: 'CONFIRMAÇÃO DE PEDIDO', order: 'PEDIDO', date: 'Data', quote: 'Orçamento', continued: 'CONTINUAÇÃO',
+  seller: 'EMPRESA VENDEDORA', representative: 'REPRESENTANTE', client: 'CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
+  taxId: 'CPF/CNPJ', taxIdMissing: 'não informado', commercialNotice: 'Pedido comercial. Este documento não substitui a nota fiscal.', page: 'Página',
   product: 'PRODUTO', qty: 'QTD', unitPrice: 'VALOR UN.', total: 'TOTAL',
   dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
   totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
@@ -85,8 +95,9 @@ const PT_LABELS: OrderDocumentLabels = {
 }
 
 const EN_LABELS: OrderDocumentLabels = {
-  order: 'ORDER', date: 'Date', quote: 'Quote',
-  representative: 'SALES REPRESENTATIVE', client: 'CLIENT', none: 'None', noEmail: 'No email provided',
+  documentTitle: 'ORDER CONFIRMATION', order: 'ORDER', date: 'Date', quote: 'Quote', continued: 'CONTINUED',
+  seller: 'SELLER / LEGAL ENTITY', representative: 'SALES CONTACT', client: 'BILL TO', none: 'None', noEmail: 'No email provided',
+  taxId: 'VAT / TAX ID', taxIdMissing: 'not provided', commercialNotice: 'Commercial order confirmation. This document is not an invoice.', page: 'Page',
   product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', total: 'TOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
   totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
@@ -103,6 +114,15 @@ export function resolveOrderDocument(order: PresentableOrder): OrderDocument {
       currency: presentation.currency,
       taxLabel: presentation.taxLabel === 'IVA' ? 'VAT' : presentation.taxLabel,
       labels: EN_LABELS,
+      seller: {
+        legalName: 'IBTW LIVING LDA',
+        taxIdLabel: 'NIF',
+        taxId: '519635698',
+        addressLines: [
+          'Rua do Multipark I, n.º 43, fração D',
+          '4595-542 Seroa, Paços de Ferreira, Portugal',
+        ],
+      },
     }
   }
   return {

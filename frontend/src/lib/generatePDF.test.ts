@@ -23,6 +23,8 @@ vi.mock('jspdf', () => {
     roundedRect() {}
     rect() {}
     addPage() {}
+    getNumberOfPages() { return 1 }
+    setPage() {}
     addImage() {}
     splitTextToSize(text: string) {
       return [String(text)]
@@ -221,8 +223,15 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   await generateOrderPDF(order, client, null, products)
 
   assert.ok(renderedTexts.includes('IBTW'))
+  assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
   assert.ok(renderedTexts.includes('ORDER'))
   assert.ok(renderedTexts.includes('VAT'))
+  assert.ok(renderedTexts.includes('IBTW LIVING LDA'))
+  assert.ok(renderedTexts.includes('NIF: 519635698'))
+  assert.ok(renderedTexts.includes('Rua do Multipark I, n.º 43, fração D'))
+  assert.ok(renderedTexts.includes('4595-542 Seroa, Paços de Ferreira, Portugal'))
+  assert.ok(renderedTexts.includes('VAT / TAX ID: not provided'))
+  assert.ok(renderedTexts.includes('Commercial order confirmation. This document is not an invoice.'))
   assert.ok(renderedTexts.includes('Ilya Armchair'))
   assert.ok(renderedTexts.some((t) => /€/.test(t)))
   assert.deepEqual(savedFiles, ['ORD-0002_Client_Europe.pdf'])
