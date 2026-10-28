@@ -575,7 +575,7 @@ describe('OrcamentoPage', () => {
     })
   })
 
-  it('orçamento EU mostra o IVA na coluna e só o soma no fecho (Subtotal → IVA → Total)', async () => {
+  it('orçamento EU oculta o IVA por item e só o mostra no fecho (Subtotal → IVA → Total)', async () => {
     const user = productTestUser('admin', 'EU')
     const product = buildProduct('EU', { optional_applications: [], vat_rate: '23.00' })
     localStorage.setItem(
@@ -595,7 +595,7 @@ describe('OrcamentoPage', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expect(within(item).getByText('23%')).toBeInTheDocument()
+    expect(within(item).queryByText('23%')).not.toBeInTheDocument()
     const eur = (value: number) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value)
     // A linha mostra o valor sem IVA; o imposto não é embutido item a item.
     expect(item.textContent).toContain(eur(80))
