@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
 import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine, SlidersHorizontal } from 'lucide-react'
 import { cartStorageKey, configureProductPath, notifyCartChanged, writeCartPriceList } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
@@ -33,6 +33,15 @@ import {
   requiredApplicationProgress,
   validateApplicationChoices,
 } from '../lib/optionalApplications'
+
+type CatalogSort = 'description_asc' | 'description_desc' | 'code_asc' | 'code_desc'
+
+const CATALOG_SORTS: Record<CatalogSort, { sort_by: 'description' | 'product_code'; sort_dir: 'asc' | 'desc'; pt: string; en: string }> = {
+  description_asc: { sort_by: 'description', sort_dir: 'asc', pt: 'Descrição A–Z', en: 'Description A–Z' },
+  description_desc: { sort_by: 'description', sort_dir: 'desc', pt: 'Descrição Z–A', en: 'Description Z–A' },
+  code_asc: { sort_by: 'product_code', sort_dir: 'asc', pt: 'Código crescente', en: 'Code ascending' },
+  code_desc: { sort_by: 'product_code', sort_dir: 'desc', pt: 'Código decrescente', en: 'Code descending' },
+}
 
 const PAGE_SIZE = 24
 const FULL_IMAGE_WARMUP_COUNT = 4
@@ -1021,6 +1030,8 @@ export default function ProdutosPage() {
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('')
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [sort, setSort] = useState<CatalogSort>('description_asc')
   const [selected, setSelected] = useState<Product | null>(null)
   const [priceTable, setPriceTable] = useState<PriceTable>(readPriceTable)
   // Só quem recebe as duas tabelas do servidor vê o seletor. Uma vez detectado,
@@ -1049,8 +1060,8 @@ export default function ProdutosPage() {
     catalog_id: selectedCatalogId || undefined,
     group_id: selectedGroupId || undefined,
     type: selectedTypeName || undefined,
-    sort_by: 'product_code',
-    sort_dir: 'asc',
+    sort_by: CATALOG_SORTS[sort].sort_by,
+    sort_dir: CATALOG_SORTS[sort].sort_dir,
     language: locale,
   })
   const products = useMemo(() => productsPage?.items ?? [], [productsPage])
@@ -1125,8 +1136,8 @@ export default function ProdutosPage() {
       catalog_id: selectedCatalogId || undefined,
       group_id: selectedGroupId || undefined,
       type: selectedTypeName || undefined,
-      sort_by: 'product_code',
-      sort_dir: 'asc',
+      sort_by: CATALOG_SORTS[sort].sort_by,
+      sort_dir: CATALOG_SORTS[sort].sort_dir,
       language: locale,
     })
     const timer = window.setTimeout(() => {
@@ -1152,6 +1163,7 @@ export default function ProdutosPage() {
     selectedTypeName,
     totalPages,
     locale,
+    sort,
   ])
 
   function handleGroupChange(groupId: string) {
@@ -1187,6 +1199,7 @@ export default function ProdutosPage() {
   }, [locale, productTypes, selectedGroupId])
 
   const hasFilters = searchTerm || selectedCatalogId || selectedGroupId || selectedTypeName
+  const activeFilterCount = [selectedCatalogId, selectedGroupId, selectedTypeName].filter(Boolean).length
 
   function clearFilters() {
     setSearchTerm('')
@@ -1213,7 +1226,7 @@ export default function ProdutosPage() {
 
   return (
     <div className="min-h-screen bg-bg pb-24 md:pb-8">
-      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="mb-5 md:mb-6">
           <h1 className="text-xl md:text-2xl font-semibold text-ink text-balance">
             {t('catalogTitle')}
@@ -1221,97 +1234,201 @@ export default function ProdutosPage() {
           <p className="text-sm text-muted mt-1">{t('catalogSubtitle')}</p>
         </div>
 
-        {/* ── Barra de Filtros ─────────────────────────────────────────────── */}
-        <div className="bg-white border border-line rounded-xl px-3 py-3 mb-5 md:mb-6 shadow-sm space-y-2 md:space-y-0 md:flex md:items-center md:gap-3">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
-            <input
-              type="text"
-              aria-label={t('searchProducts')}
-              placeholder={t('searchPlaceholder')}
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-                setPage(1)
-              }}
-              className="w-full min-h-11 lg:min-h-0 pl-9 pr-12 lg:pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder:text-muted-3 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
-            />
-            {searchTerm && (
-              <button aria-label={t('clearSearch')} onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-0 top-1/2 h-11 w-11 lg:right-1 lg:h-8 lg:w-8 -translate-y-1/2 flex items-center justify-center text-muted hover:text-ink">
-                <X className="w-3.5 h-3.5" />
+        <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-8 lg:items-start">
+          <aside
+            id="catalog-filters"
+            aria-label={english ? 'Filters' : 'Filtros'}
+            className={`${filtersOpen ? 'block' : 'hidden'} lg:block lg:sticky lg:top-20 mb-4 lg:mb-0 bg-white border border-line rounded-xl p-4 shadow-sm space-y-4`}
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              {english ? 'Filters' : 'Filtros'}
+            </p>
+
+            <div>
+              <label className="block text-xs font-medium text-muted mb-1" htmlFor="filter-catalog">
+                {english ? 'Catalogue' : 'Catálogo'}
+              </label>
+              <select
+                id="filter-catalog"
+                value={selectedCatalogId}
+                onChange={(e) => {
+                  setSelectedCatalogId(e.target.value)
+                  setPage(1)
+                }}
+                className="w-full min-h-11 lg:min-h-0 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+              >
+                <option value="">{english ? 'All catalogues' : 'Todos os catálogos'}</option>
+                {catalogs.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted mb-1" htmlFor="filter-group">
+                {english ? 'Group' : 'Grupo'}
+              </label>
+              <select
+                id="filter-group"
+                value={selectedGroupId}
+                onChange={(e) => handleGroupChange(e.target.value)}
+                className="w-full min-h-11 lg:min-h-0 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+              >
+                <option value="">{t('allGroups').toLocaleUpperCase(locale)}</option>
+                {availableGroups.map(g => (
+                  <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale).toLocaleUpperCase(locale)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted mb-1" htmlFor="filter-type">
+                {english ? 'Subgroup' : 'Subgrupo'}
+              </label>
+              <select
+                id="filter-type"
+                value={selectedTypeName}
+                onChange={(e) => {
+                  setSelectedTypeName(e.target.value)
+                  setPage(1)
+                }}
+                className="w-full min-h-11 lg:min-h-0 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
+                disabled={availableTypes.length === 0}
+              >
+                <option value="">{t('allSubgroups').toLocaleUpperCase(locale)}</option>
+                {availableTypes.map(t => (
+                  <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale).toLocaleUpperCase(locale)}</option>
+                ))}
+              </select>
+            </div>
+
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className="w-full min-h-11 lg:min-h-0 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gold border border-gold-soft rounded-lg hover:bg-gold-wash transition-colors"
+                style={{ touchAction: 'manipulation' }}
+              >
+                <X className="w-3 h-3" /> {t('clear')}
               </button>
             )}
-          </div>
+          </aside>
 
-          {/* Catálogo — dimensão independente de Grupo/Subgrupo (linha comercial) */}
-          <select
-            value={selectedCatalogId}
-            onChange={(e) => {
-              setSelectedCatalogId(e.target.value)
-              setPage(1)
-            }}
-            className="w-full md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
-          >
-            <option value="">Todos os Catálogos</option>
-            {catalogs.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          <div className="min-w-0">
+            <div className="bg-white border border-line rounded-xl px-3 py-3 mb-4 shadow-sm space-y-3">
+              {/* Busca */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-3" />
+                <input
+                  type="text"
+                  aria-label={t('searchProducts')}
+                  placeholder={t('searchPlaceholder')}
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setPage(1)
+                  }}
+                  className="w-full min-h-11 lg:min-h-0 pl-9 pr-12 lg:pr-8 py-2 text-sm bg-bg border border-line rounded-lg text-ink placeholder:text-muted-3 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+                />
+                {searchTerm && (
+                  <button aria-label={t('clearSearch')} onClick={() => { setSearchTerm(''); setPage(1) }} className="absolute right-0 top-1/2 h-11 w-11 lg:right-1 lg:h-8 lg:w-8 -translate-y-1/2 flex items-center justify-center text-muted hover:text-ink">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-          {/* Group dropdown */}
-          <select
-            value={selectedGroupId}
-            onChange={(e) => handleGroupChange(e.target.value)}
-            className="w-full min-h-11 lg:min-h-0 md:w-44 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
-          >
-            <option value="">{t('allGroups').toLocaleUpperCase(locale)}</option>
-            {availableGroups.map(g => (
-              <option key={g.id} value={g.id}>{localizeFurnitureTerm(g.name, locale).toLocaleUpperCase(locale)}</option>
-            ))}
-          </select>
+              <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                <button
+                  type="button"
+                  aria-expanded={filtersOpen}
+                  aria-controls="catalog-filters"
+                  onClick={() => setFiltersOpen(current => !current)}
+                  className="lg:hidden min-h-11 lg:min-h-0 inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-ink border border-line rounded-lg hover:bg-bg transition-colors"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
+                  {english ? 'Filters' : 'Filtros'}
+                  {activeFilterCount > 0 && (
+                    <span className="rounded-full bg-gold text-white px-1.5 py-0.5 text-[10px] leading-none">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
 
-          {/* Subgroup dropdown — cascades from group */}
-          <select
-            value={selectedTypeName}
-            onChange={(e) => {
-              setSelectedTypeName(e.target.value)
-              setPage(1)
-            }}
-            className="w-full min-h-11 lg:min-h-0 md:w-48 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all disabled:opacity-50"
-            disabled={availableTypes.length === 0}
-          >
-            <option value="">{t('allSubgroups').toLocaleUpperCase(locale)}</option>
-            {availableTypes.map(t => (
-              <option key={t.id} value={t.name}>{localizeFurnitureTerm(t.name, locale).toLocaleUpperCase(locale)}</option>
-            ))}
-          </select>
+                {!isLoading && (
+                  <p className="text-xs text-muted" aria-live="polite">
+                    {totalProducts === 0
+                      ? t('noProducts')
+                      : locale === 'en-GB'
+                        ? `${totalProducts} product${totalProducts !== 1 ? 's' : ''} found`
+                        : `${totalProducts} produto${totalProducts !== 1 ? 's' : ''} encontrado${totalProducts !== 1 ? 's' : ''}`}
+                  </p>
+                )}
 
-          {/* Seletor de tabela: fica sempre à vista para o representante
-              conferir o estado de relance ANTES de virar a tela para o cliente. */}
-          {availablePriceTables.length > 1 && <PriceTableToggle value={activePriceTable} onChange={setPriceTable} available={availablePriceTables} />}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-muted" htmlFor="catalog-sort">
+                    {english ? 'Sort by' : 'Ordenar por'}
+                  </label>
+                  <select
+                    id="catalog-sort"
+                    value={sort}
+                    onChange={(e) => {
+                      setSort(e.target.value as CatalogSort)
+                      setPage(1)
+                    }}
+                    className="min-h-11 lg:min-h-0 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
+                  >
+                    {Object.entries(CATALOG_SORTS).map(([value, option]) => (
+                      <option key={value} value={value}>{english ? option.en : option.pt}</option>
+                    ))}
+                  </select>
+                  {availablePriceTables.length > 1 && <PriceTableToggle value={activePriceTable} onChange={setPriceTable} available={availablePriceTables} />}
+                </div>
+              </div>
 
-          {hasFilters && (
-            <button
-              onClick={clearFilters}
-              className="min-h-11 lg:min-h-0 flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gold border border-gold-soft rounded-lg hover:bg-gold-wash transition-colors"
-              style={{ touchAction: 'manipulation' }}
-            >
-              <X className="w-3 h-3" /> {t('clear')}
-            </button>
-          )}
-        </div>
-
-        {/* Result count */}
-        {hasFilters && !isLoading && (
-          <p className="text-xs text-muted mb-3">
-            {totalProducts === 0
-              ? t('noProducts')
-              : locale === 'en-GB'
-                ? `${totalProducts} product${totalProducts !== 1 ? 's' : ''} found`
-                : `${totalProducts} produto${totalProducts !== 1 ? 's' : ''} encontrado${totalProducts !== 1 ? 's' : ''}`}
-          </p>
-        )}
+              {activeFilterCount > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedCatalogId && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedCatalogId(''); setPage(1) }}
+                      className="inline-flex min-h-11 lg:min-h-0 items-center gap-1 rounded-full border border-gold-soft bg-gold-wash px-3 py-1 text-xs text-ink hover:border-gold transition-colors"
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      {english ? 'Catalogue: ' : 'Catálogo: '}
+                      {catalogs.find(c => c.id === selectedCatalogId)?.name ?? ''}
+                      <span className="sr-only">{english ? '(remove filter)' : '(remover filtro)'}</span>
+                      <X className="w-3 h-3 text-muted" aria-hidden="true" />
+                    </button>
+                  )}
+                  {selectedGroupId && (
+                    <button
+                      type="button"
+                      onClick={() => handleGroupChange('')}
+                      className="inline-flex min-h-11 lg:min-h-0 items-center gap-1 rounded-full border border-gold-soft bg-gold-wash px-3 py-1 text-xs text-ink hover:border-gold transition-colors"
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      {english ? 'Group: ' : 'Grupo: '}
+                      {localizeFurnitureTerm(productGroups.find(g => g.id === selectedGroupId)?.name ?? '', locale).toLocaleUpperCase(locale)}
+                      <span className="sr-only">{english ? '(remove filter)' : '(remover filtro)'}</span>
+                      <X className="w-3 h-3 text-muted" aria-hidden="true" />
+                    </button>
+                  )}
+                  {selectedTypeName && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedTypeName(''); setPage(1) }}
+                      className="inline-flex min-h-11 lg:min-h-0 items-center gap-1 rounded-full border border-gold-soft bg-gold-wash px-3 py-1 text-xs text-ink hover:border-gold transition-colors"
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      {english ? 'Subgroup: ' : 'Subgrupo: '}
+                      {localizeFurnitureTerm(selectedTypeName, locale).toLocaleUpperCase(locale)}
+                      <span className="sr-only">{english ? '(remove filter)' : '(remover filtro)'}</span>
+                      <X className="w-3 h-3 text-muted" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
         {isLoading ? (
           // Esqueleto no formato da grade final: sem salto de layout ao carregar.
@@ -1550,6 +1667,8 @@ export default function ProdutosPage() {
             </button>
           </div>
         )}
+          </div>
+        </div>
       </div>
 
       {selected && user && (
