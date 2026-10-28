@@ -5,6 +5,7 @@ import { generateOrderPDF } from './generatePDF.ts'
 
 const renderedTexts: string[] = []
 const savedFiles: string[] = []
+const wrappedTexts: Array<{ text: string; width: number }> = []
 
 vi.mock('jspdf', () => {
   class MockJsPDF {
@@ -26,7 +27,8 @@ vi.mock('jspdf', () => {
     getNumberOfPages() { return 1 }
     setPage() {}
     addImage() {}
-    splitTextToSize(text: string) {
+    splitTextToSize(text: string, width: number) {
+      wrappedTexts.push({ text: String(text), width })
       return [String(text)]
     }
     text(content: string | string[]) {
@@ -161,6 +163,7 @@ function makeOrder(overrides: Partial<Order> = {}): Order {
 beforeEach(() => {
   renderedTexts.length = 0
   savedFiles.length = 0
+  wrappedTexts.length = 0
 })
 
 test('gera PDF BR com marca ILYA, rótulos PEDIDO/IPI e valores em BRL', async () => {
@@ -330,7 +333,7 @@ test('regressão EU: preserva item.description histórico do snapshot mesmo se p
   )
 })
 
-test('separa peças de área: tapete não entra no total de itens e soma os m²', async () => {
+test('tapete mostra m² apenas na linha do produto e não entra no total de itens', async () => {
   const order = makeOrder({
     items: [
       makeOrderItem({ qty: 2 }),
@@ -360,7 +363,8 @@ test('separa peças de área: tapete não entra no total de itens e soma os m²'
   assert.ok(renderedTexts.includes('4,5 m²'))
   const totalItemsIndex = renderedTexts.indexOf('Total de Itens:')
   assert.equal(renderedTexts[totalItemsIndex + 1], '2')
-  const totalAreaIndex = renderedTexts.indexOf('Área total:')
-  assert.equal(renderedTexts[totalAreaIndex + 1], '4,5 m²')
+  assert.ok(!renderedTexts.includes('Área total:'))
+  assert.ok(!renderedTexts.includes('Total area:'))
+  assert.ok(wrappedTexts.some(({ text, width }) => text === 'Tapete Amazonas' && width === 70))
   assert.ok(!renderedTexts.some((text) => text.startsWith('DIMENSÕES:') || text.startsWith('DIMENSIONS:')))
 })

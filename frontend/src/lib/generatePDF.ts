@@ -352,10 +352,10 @@ export async function generateOrderPDF(
     // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
     const hasDims = !item.sold_by_area && !isSetProduct && (item.largura !== 0 || item.altura !== 0)
     const optSlots = orderOptionalSlots(item, locale === 'en-GB', catLabel)
-    // Bloco 82: quebra de linha (80mm) para textos longos de opcionais, observação
-    // e componentes — o rowH soma as linhas físicas reais para não colidir com a
-    // próxima linha da tabela nem com as colunas numéricas (QTD/VALOR/IPI/TOTAL).
-    const WRAP_WIDTH = 80
+    // Bloco textual limitado a 70 mm: partindo de x=40, termina em x=110 e
+    // preserva 15 mm de respiro antes da coluna QTD em x=125. O rowH soma as
+    // linhas físicas reais para não colidir com o próximo item.
+    const PRODUCT_TEXT_WIDTH = 70
     const dimText = hasDims
       ? `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
       : null
@@ -363,10 +363,10 @@ export async function generateOrderPDF(
     const commentText = item.comment ? `${L.itemComment}: ${item.comment}` : null
     const optText = optSlots.length > 0 ? L.options + ': ' + optSlots.map((s) => `${s.label}: ${s.value}`).join(', ') : null
 
-    const dimLines: string[] = dimText ? doc.splitTextToSize(dimText, WRAP_WIDTH) : []
-    const obsLines: string[] = obsText ? doc.splitTextToSize(obsText, WRAP_WIDTH) : []
-    const commentLines: string[] = commentText ? doc.splitTextToSize(commentText, WRAP_WIDTH) : []
-    const optLines: string[] = optText ? doc.splitTextToSize(optText, WRAP_WIDTH) : []
+    const dimLines: string[] = dimText ? doc.splitTextToSize(dimText, PRODUCT_TEXT_WIDTH) : []
+    const obsLines: string[] = obsText ? doc.splitTextToSize(obsText, PRODUCT_TEXT_WIDTH) : []
+    const commentLines: string[] = commentText ? doc.splitTextToSize(commentText, PRODUCT_TEXT_WIDTH) : []
+    const optLines: string[] = optText ? doc.splitTextToSize(optText, PRODUCT_TEXT_WIDTH) : []
     const compLineGroups: string[][] = components.map((comp) => {
       const compDim = pdfSafe(formatDimensions(comp, order.market_code, measurementLocale))
       // Acabamentos do componente ("Alumínio: Taupe, Teka: Polywood") — mesma
@@ -377,14 +377,12 @@ export async function generateOrderPDF(
         .map((cat) => `${optionalCategoryLabel(catLabel(cat), locale === 'en-GB')}: ${optionalName(comp.optionals.find((o) => o.category === cat)!.color_name, locale === 'en-GB')}`)
         .join(', ')
       const suffix = finishes ? ` — ${finishes}` : ''
-      return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})${suffix}`, WRAP_WIDTH)
+      return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})${suffix}`, PRODUCT_TEXT_WIDTH)
     })
     const compLinesTotal = compLineGroups.reduce((sum, lines) => sum + lines.length, 0)
 
-    // Nome do produto: também quebrado em WRAP_WIDTH (o espaço real até a coluna
-    // QTD é ~85mm a partir de x=40) — antes usava 95mm e a 1ª linha invadia o
-    // valor unitário em nomes longos. Agora todas as linhas são impressas.
-    const descLines: string[] = doc.splitTextToSize(item.description, WRAP_WIDTH)
+    // O nome usa o mesmo limite e quebra antes da zona de segurança da QTD.
+    const descLines: string[] = doc.splitTextToSize(item.description, PRODUCT_TEXT_WIDTH)
     const titleExtraLines = Math.max(0, descLines.length - 1)
 
     const extraLines = titleExtraLines + dimLines.length + obsLines.length + commentLines.length + optLines.length + compLinesTotal
@@ -520,10 +518,9 @@ export async function generateOrderPDF(
 
   // ── Rodapé de totais ───────────────────────────────────────────────────────
   const totalItems = order.items.reduce((sum, item) => sum + (item.sold_by_area ? 0 : item.qty), 0)
-  const totalArea = order.items.reduce((sum, item) => sum + (item.sold_by_area ? item.qty : 0), 0)
-  // Reserva o bloco de totais + assinaturas. Com área há uma linha extra de
-  // 8 mm; a assinatura compacta abaixo mantém pedidos curtos numa só página.
-  if (y + (totalArea > 0 ? 67 : 59) > 278) {
+  // Reserva o bloco de totais + assinaturas. A área do tapete permanece apenas
+  // na linha do produto e não gera um total separado no resumo.
+  if (y + 59 > 278) {
     doc.addPage()
     y = drawContinuationHeader()
   }
@@ -540,14 +537,6 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'bold')
   doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
-
-  if (totalArea > 0) {
-    doc.setFont('helvetica', 'normal')
-    doc.text(L.totalArea, 148, y, { align: 'right' })
-    doc.setFont('helvetica', 'bold')
-    doc.text(formatArea(totalArea, locale), 186, y, { align: 'right' })
-    y += 8
-  }
 
   const finalTotal = Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)
 
