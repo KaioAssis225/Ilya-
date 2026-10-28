@@ -10,7 +10,7 @@ import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const ILYA_GOLD: [number, number, number] = [198, 157, 48]
-const IBTW_GREEN: [number, number, number] = [71, 124, 104]
+const IBTW_GREEN: [number, number, number] = [69, 88, 66]
 const DARK: [number, number, number] = [44, 36, 32]
 const MUTED: [number, number, number] = [117, 107, 97]
 const LIGHT: [number, number, number] = [245, 240, 235]
