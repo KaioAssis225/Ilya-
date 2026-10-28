@@ -507,3 +507,81 @@ async def test_reg_prod_04_delete_role_matrix_is_market_scoped_and_non_destructi
     assert response.status_code == (204 if allowed else 403), response.text
     stored = await _product(db_session, product["id"], market)
     assert stored.is_active is (not allowed)
+
+
+async def test_eu_sort_by_description_follows_localized_name(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A ordenação por descrição no EU usa a designação localizada do mercado."""
+    token = await _token(db_session, "admin", "EU")
+    prefix = f"P05-SORT-{uuid4().hex[:10]}"
+    products = []
+    for suffix in ("A", "B", "C"):
+        products.append(await _create(
+            client, db_session, market="EU", token=token,
+            code=f"{prefix}-{suffix}",
+        ))
+
+    base_descriptions = ("A", "B", "C")
+    pt_descriptions = ("Zebra", "Mesa", "Abacate")
+    en_descriptions = ("Apple", "Zulu", "Mango")
+
+    for product, base, pt, en in zip(
+        products, base_descriptions, pt_descriptions, en_descriptions
+    ):
+        orm = await _product(db_session, product["id"], "EU")
+        pm = (await db_session.execute(
+            select(ProductMarket).where(
+                ProductMarket.product_id == orm.id,
+                ProductMarket.market_code == "EU",
+            ).execution_options(skip_market_scope=True)
+        )).scalar_one()
+        orm.description = base
+        pm.description_pt_pt = pt
+        pm.description_en = en
+    await db_session.commit()
+
+    pt_asc = await client.get(
+        "/api/v1/products",
+        params={
+            "q": prefix,
+            "sort_by": "description",
+            "sort_dir": "asc",
+            "language": "pt-PT",
+        },
+        headers=_auth(token),
+    )
+    assert pt_asc.status_code == 200, pt_asc.text
+    assert [p["product_code"] for p in pt_asc.json()] == [
+        f"{prefix}-C", f"{prefix}-B", f"{prefix}-A"
+    ]
+
+    en_asc = await client.get(
+        "/api/v1/products",
+        params={
+            "q": prefix,
+            "sort_by": "description",
+            "sort_dir": "asc",
+            "language": "en-GB",
+        },
+        headers=_auth(token),
+    )
+    assert en_asc.status_code == 200, en_asc.text
+    assert [p["product_code"] for p in en_asc.json()] == [
+        f"{prefix}-A", f"{prefix}-C", f"{prefix}-B"
+    ]
+
+    pt_desc = await client.get(
+        "/api/v1/products",
+        params={
+            "q": prefix,
+            "sort_by": "description",
+            "sort_dir": "desc",
+            "language": "pt-PT",
+        },
+        headers=_auth(token),
+    )
+    assert pt_desc.status_code == 200, pt_desc.text
+    assert [p["product_code"] for p in pt_desc.json()] == [
+        f"{prefix}-A", f"{prefix}-B", f"{prefix}-C"
+    ]

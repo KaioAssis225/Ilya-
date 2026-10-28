@@ -561,15 +561,39 @@ async def list_products(
         sort_by = "product_code"
     elif sort_by == "price_corporativo" and not allows_price(price_scope, "corporativo"):
         sort_by = "product_code"
+    if active_market == "EU":
+        localized_description_column = (
+            ProductMarket.description_en if language == "en-GB"
+            else ProductMarket.description_pt_pt
+        )
+        localized_description_subquery = (
+            select(localized_description_column)
+            .where(
+                ProductMarket.product_id == Product.id,
+                ProductMarket.market_code == active_market,
+            )
+            .correlate(Product)
+            .scalar_subquery()
+        )
+        description_sort = func.left(
+            func.coalesce(
+                func.nullif(localized_description_subquery, ""),
+                Product.description,
+            ),
+            literal_column("512"),
+        )
+    else:
+        description_sort = func.left(
+            Product.description,
+            literal_column("512"),
+        )
+
     sort_column = {
         "product_code": Product.product_code,
         # Evita um índice B-tree inseguro sobre textos de até 20 mil caracteres.
         # Os primeiros 512 caracteres cobrem a ordenação visual do catálogo e
         # permitem um índice pequeno e previsível.
-        "description": func.left(
-            Product.description,
-            literal_column("512"),
-        ),
+        "description": description_sort,
         "type": Product.type,
         "price_lojista": Product.price_lojista,
         "price_corporativo": Product.price_corporativo,
