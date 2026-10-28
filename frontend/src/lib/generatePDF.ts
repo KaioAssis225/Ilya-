@@ -161,25 +161,33 @@ export async function generateOrderPDF(
   doc.line(20, y, w - 20, y)
   y += 8
 
-  // ── Logo ILYA ──────────────────────────────────────────────────────────────
-  doc.setFont('helvetica', 'normal')
+  // ── Logo ILYA / IBTW ───────────────────────────────────────────────────────
   doc.setTextColor(...GOLD)
   if (brandSuffix && brandDescriptor) {
-    // Portugal: nome da empresa por extenso numa linha só.
-    doc.setFontSize(24)
-    doc.text(`${brand} ${brandDescriptor} ${brandSuffix}`, 20, y)
+    // Portugal: assinatura visual em duas linhas, seguindo o logo oficial.
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(32)
+    doc.text(brand, 20, y)
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.text(`${brandDescriptor} ${brandSuffix.replace(/\.$/, '')}`, 20, y + 10, {
+      charSpace: 1.6,
+    })
   } else {
+    doc.setFont('helvetica', 'normal')
     doc.setFontSize(28)
     doc.text(brand, 20, y)
   }
 
   doc.setDrawColor(...GOLD)
   doc.setLineWidth(0.3)
-  doc.line(20, y + 5, 60, y + 5)
+  const logoRuleY = brandSuffix && brandDescriptor ? y + 15 : y + 5
+  doc.line(20, logoRuleY, 60, logoRuleY)
   doc.setFontSize(6.5)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text(L.documentTitle, 20, y + 12)
+  doc.text(L.documentTitle, 20, logoRuleY + 7)
 
   // ── Número do pedido (canto direito) ───────────────────────────────────────
   doc.setFontSize(9)
@@ -202,7 +210,7 @@ export async function generateOrderPDF(
   )
   doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
-  y = 55
+  y = brandSuffix && brandDescriptor ? 60 : 55
 
   // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2

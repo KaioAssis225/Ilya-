@@ -222,8 +222,9 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
 
   await generateOrderPDF(order, client, null, products)
 
-  assert.ok(renderedTexts.includes('IBTW LIVING LTD.'))
-  assert.ok(!renderedTexts.includes('LIVING LTD.'))
+  assert.ok(renderedTexts.includes('IBTW'))
+  assert.ok(renderedTexts.includes('LIVING LTD'))
+  assert.ok(!renderedTexts.includes('IBTW LIVING LTD.'))
   assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
   assert.ok(renderedTexts.includes('ORDER'))
   assert.ok(renderedTexts.includes('VAT'))
@@ -263,8 +264,9 @@ test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', 
   await generateOrderPDF(order, client, null, products, (code) => code, 'pt-PT')
 
   assert.ok(renderedTexts.includes('CONFIRMAÇÃO DE PEDIDO'))
-  assert.ok(renderedTexts.includes('IBTW LIVING LDA.'))
-  assert.ok(!renderedTexts.includes('LIVING LDA.'))
+  assert.ok(renderedTexts.includes('IBTW'))
+  assert.ok(renderedTexts.includes('LIVING LDA'))
+  assert.ok(!renderedTexts.includes('IBTW LIVING LDA.'))
   assert.ok(renderedTexts.includes('PEDIDO'))
   assert.ok(renderedTexts.includes('IVA'))
   assert.ok(renderedTexts.includes('EMPRESA'))
