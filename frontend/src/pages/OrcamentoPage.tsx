@@ -727,40 +727,43 @@ function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDim
   const legacyNoMeasurements = Boolean(item.source_order_item_id && width == null && depth == null)
   const warning = qtyLimitWarning || (preview != null && maximumArea != null && preview > maximumArea)
 
+  // Mesmo desenho das outras colunas da linha (rótulo em cima, campo compacto
+  // embaixo): dois campos estreitos sem as setas do input numérico.
+  const dimensionInput = 'input w-14 text-center text-xs border border-line rounded-lg px-1 py-1 bg-white text-ink [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="type-label text-xs" aria-hidden="true">L (m)</span>
+      <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'W × D (m)' : 'L × P (m)'}</span>
+      <div className="flex items-center gap-1">
         <NumberField
           value={width}
           step="0.01"
           min="0.01"
           aria-label={english ? 'Width in metres' : 'Largura em metros'}
-          className="input w-20 text-xs text-center border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
+          className={dimensionInput}
           onValueChange={(value) => onAreaDimensionsChange(item.line_id, value > 0 ? value : null, depth)}
         />
-        <span className="text-xs text-muted">×</span>
-        <span className="type-label text-xs" aria-hidden="true">P (m)</span>
+        <span className="text-xs text-muted" aria-hidden="true">×</span>
         <NumberField
           value={depth}
           step="0.01"
           min="0.01"
           aria-label={english ? 'Depth in metres' : 'Profundidade em metros'}
-          className="input w-20 text-xs text-center border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
+          className={dimensionInput}
           onValueChange={(value) => onAreaDimensionsChange(item.line_id, width, value > 0 ? value : null)}
         />
       </div>
       {preview != null ? (
-        <p className="mt-1 text-xs font-semibold text-ink" aria-live="polite">= {formatArea(preview, locale)}</p>
+        <p className="mt-0.5 text-[10px] text-muted whitespace-nowrap" aria-live="polite">= {formatArea(preview, locale)}</p>
       ) : legacyNoMeasurements ? (
-        <p className="mt-1 text-xs font-semibold text-muted">
-          {formatArea(item.qty, locale)} <span className="text-warning font-medium">({english ? 'no measurements on record' : 'medidas não registradas'})</span>
+        <p className="mt-0.5 text-[10px] text-muted whitespace-nowrap">
+          {formatArea(item.qty, locale)} <span className="text-warning">({english ? 'no measurements on record' : 'medidas não registradas'})</span>
         </p>
       ) : (
-        <p className="mt-1 text-xs font-semibold text-warning" aria-live="polite">{english ? 'Enter W × D' : 'Informe L × P'}</p>
+        <p className="mt-0.5 text-[10px] font-semibold text-warning whitespace-nowrap" aria-live="polite">{english ? 'Enter W × D' : 'Informe L × P'}</p>
       )}
       {maximumArea !== null && (
-        <p className={`mt-1 text-center text-[10px] ${warning ? 'text-warning font-semibold' : 'text-muted'}`}>
+        <p className={`mt-0.5 text-[10px] whitespace-nowrap ${warning ? 'text-warning font-semibold' : 'text-muted'}`}>
           {english ? 'max.' : 'máx.'} {formatArea(maximumArea, locale)}
         </p>
       )}
