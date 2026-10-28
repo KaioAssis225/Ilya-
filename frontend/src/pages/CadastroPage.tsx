@@ -1,6 +1,7 @@
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { optionalBrand, optionalGroup } from '../lib/optionalGroups'
+import { optionalMedia } from '../lib/optionalMedia'
 import type { OptionalBrand } from '../types'
 import { Fragment, useCallback, useLayoutEffect, useState, useRef, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
@@ -1193,7 +1194,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
             {pageItems.map((p) => (
               <div key={p.id} className="bg-surface-quiet border border-line rounded-xl p-3.5 flex gap-3">
                 {p.photo_url
-                  ? <img src={p.photo_url} alt="" className="w-14 h-14 object-cover rounded-lg border border-line flex-shrink-0" />
+                  ? <img src={p.thumbnail_url ?? p.photo_url} alt="" loading="lazy" decoding="async" className="w-14 h-14 object-cover rounded-lg border border-line flex-shrink-0" />
                   : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
                 }
                 <div className="flex-1 min-w-0">
@@ -1364,7 +1365,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         <tr id={detailsId} className="border-b border-line bg-surface-2">
                           <td colSpan={visibleColumnKeys.length} className="px-5 py-4">
                             <div className="flex items-start gap-5">
-                              {p.photo_url && <img src={p.photo_url} alt={tx('Foto de {code}', { code: p.product_code })} className="h-24 w-24 flex-shrink-0 rounded-xl border border-line bg-white object-cover" />}
+                              {p.photo_url && <img src={p.thumbnail_url ?? p.photo_url} alt={tx('Foto de {code}', { code: p.product_code })} loading="lazy" decoding="async" className="h-24 w-24 flex-shrink-0 rounded-xl border border-line bg-white object-cover" />}
                               <dl className="grid min-w-0 flex-1 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
                                 <div>
                                   <dt className="text-xs font-semibold text-muted">{tx(isAreaProduct(p) ? 'Venda' : 'Dimensões')}</dt>
@@ -1776,7 +1777,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-[background-color,color,border-color]"
                                     style={isSel ? { backgroundColor: `${tint(color, 13)}`, borderColor: color, color } : { backgroundColor: 'var(--color-bg)', borderColor: 'var(--color-line)', color: 'var(--color-ink-3)' }}
                                   >
-                                    {opt.photo_url && <img src={opt.photo_url} alt={optionalName(opt.color_name, english)} className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
+                                    {opt.photo_url && <img src={optionalMedia(opt).src ?? opt.photo_url} alt={optionalName(opt.color_name, english)} loading="lazy" decoding="async" className="w-3.5 h-3.5 rounded object-cover flex-shrink-0" />}
                                     <span>{optionalName(opt.color_name, english)}</span>
                                   </button>
                                 )
@@ -2802,7 +2803,7 @@ function OptionaisTab({ color, readOnly = false }: { color: string; readOnly?: b
                       <td className="px-4 py-2.5 w-12">
                         {opt.photo_url
                           ? <button onClick={() => setLightboxUrl(opt.photo_url!)} className="cursor-zoom-in">
-                              <img src={opt.photo_url} alt={optionalName(opt.color_name, english)}
+                              <img src={optionalMedia(opt).src ?? opt.photo_url} alt={optionalName(opt.color_name, english)} loading="lazy" decoding="async"
                                 className="w-8 h-8 rounded-md object-cover border border-line hover:opacity-80 transition-opacity" />
                             </button>
                           : <div className="w-8 h-8 rounded-md bg-bg-2 border border-line" />}
