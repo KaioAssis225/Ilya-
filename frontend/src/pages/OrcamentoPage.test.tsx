@@ -532,7 +532,7 @@ describe('OrcamentoPage', () => {
     })
   })
 
-  it('orçamento EU mostra o IVA aprovado do produto na coluna e no total', async () => {
+  it('orçamento EU mostra o IVA na coluna e só o soma no fecho (Subtotal → IVA → Total)', async () => {
     const user = productTestUser('admin', 'EU')
     const product = buildProduct('EU', { optional_applications: [], vat_rate: '23.00' })
     localStorage.setItem(
@@ -553,9 +553,14 @@ describe('OrcamentoPage', () => {
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
     expect(within(item).getByText('23%')).toBeInTheDocument()
-    const totalWithVat = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(80 * 1.23)
-    expect(item.textContent).toContain(totalWithVat)
-    expect(screen.getByText('Total do Orçamento:').parentElement?.textContent).toContain(totalWithVat)
+    const eur = (value: number) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value)
+    // A linha mostra o valor sem IVA; o imposto não é embutido item a item.
+    expect(item.textContent).toContain(eur(80))
+    expect(item.textContent).not.toContain(eur(80 * 1.23))
+    const summary = screen.getByText('Total do Orçamento:').parentElement?.textContent
+    expect(summary).toContain(`Subtotal: ${eur(80)}`)
+    expect(summary).toContain(`IVA: ${eur(80 * 0.23)}`)
+    expect(summary).toContain(eur(80 * 1.23))
   })
 
   it('recalcula o subtotal do item ao alterar a quantidade', async () => {

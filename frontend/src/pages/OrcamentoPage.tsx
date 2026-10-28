@@ -1922,7 +1922,9 @@ export default function OrcamentoPage() {
                   {filteredCart.map((item) => {
                     const ipiRate = taxRate(item._product)
                     const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
-                    const subtotalWithIpi = subtotal * (1 + ipiRate / 100)
+                    // Brasil: IPI entra na linha. Portugal: IVA só no fecho
+                    // (Subtotal → IVA → Total), como numa fatura.
+                    const lineTotal = market === 'EU' ? subtotal : subtotal * (1 + ipiRate / 100)
                     const soldByArea = isAreaProduct(item._product)
                     const maximumArea = areaLimit(item._product)
                     return (
@@ -2024,7 +2026,7 @@ export default function OrcamentoPage() {
                             <div>
                               <span className="type-label text-xs block mb-1 whitespace-nowrap">Subtotal</span>
                               <div className="min-h-11 flex items-center text-xs font-bold text-ink tabular-nums whitespace-nowrap">
-                                <SafePrice value={subtotalWithIpi} currency={currency} locale={locale} />
+                                <SafePrice value={lineTotal} currency={currency} locale={locale} />
                               </div>
                             </div>
                             <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
@@ -2049,6 +2051,12 @@ export default function OrcamentoPage() {
                 <div><span>{isEnglish ? 'Products: ' : 'Produtos: '}</span><span className="font-semibold text-ink">{cart.length}</span></div>
               </div>
               <div className="flex items-center gap-2">
+                {market === 'EU' && ipiTotal > 0 && (
+                  <div className="flex items-center gap-4 mr-4 text-xs text-muted-2">
+                    <div><span>Subtotal: </span><span className="font-semibold text-ink tabular-nums"><SafePrice value={total} currency={currency} locale={locale} /></span></div>
+                    <div><span>{taxLabel}: </span><span className="font-semibold text-ink tabular-nums"><SafePrice value={ipiTotal} currency={currency} locale={locale} /></span></div>
+                  </div>
+                )}
                 <span className="text-ink font-semibold text-xs uppercase tracking-wider">{isEnglish ? 'Quote Total:' : 'Total do Orçamento:'}</span>
                 <span className="text-gold font-bold text-base"><SafePrice value={totalWithIpi} currency={currency} locale={locale} /></span>
               </div>
