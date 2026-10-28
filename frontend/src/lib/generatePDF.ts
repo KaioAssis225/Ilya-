@@ -163,29 +163,23 @@ export async function generateOrderPDF(
 
   // ── Logo ILYA ──────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(28)
   doc.setTextColor(...GOLD)
-  doc.text(brand, 20, y)
-
   if (brandSuffix && brandDescriptor) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.text(`${brandDescriptor} ${brandSuffix}`, 20, y + 7)
-    doc.setDrawColor(...GOLD)
-    doc.setLineWidth(0.3)
-    doc.line(20, y + 10, 60, y + 10)
-    doc.setFontSize(6.5)
-    doc.setTextColor(...MUTED)
-    doc.text(L.documentTitle, 20, y + 17)
+    // Portugal: nome da empresa por extenso numa linha só.
+    doc.setFontSize(24)
+    doc.text(`${brand} ${brandDescriptor} ${brandSuffix}`, 20, y)
   } else {
-    doc.setDrawColor(...GOLD)
-    doc.setLineWidth(0.3)
-    doc.line(20, y + 5, 60, y + 5)
-    doc.setFontSize(6.5)
-    doc.setTextColor(...MUTED)
-    doc.setFont('helvetica', 'bold')
-    doc.text(L.documentTitle, 20, y + 12)
+    doc.setFontSize(28)
+    doc.text(brand, 20, y)
   }
+
+  doc.setDrawColor(...GOLD)
+  doc.setLineWidth(0.3)
+  doc.line(20, y + 5, 60, y + 5)
+  doc.setFontSize(6.5)
+  doc.setTextColor(...MUTED)
+  doc.setFont('helvetica', 'bold')
+  doc.text(L.documentTitle, 20, y + 12)
 
   // ── Número do pedido (canto direito) ───────────────────────────────────────
   doc.setFontSize(9)
