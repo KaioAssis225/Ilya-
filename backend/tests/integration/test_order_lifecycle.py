@@ -783,13 +783,127 @@ async def test_area_product_order_reads_limit_fields_without_lazy_load(client, d
     db_session.expunge_all()
 
     within_limit = await _post_order(
-        client, admin, client_id, [{"product_code": product_code, "qty": "2.5", "discount": "0"}]
+        client, admin, client_id,
+        [{"product_code": product_code, "area_width_m": "2.5", "area_depth_m": "1", "discount": "0"}],
     )
     assert within_limit.status_code == 201, within_limit.text
 
     db_session.expunge_all()
     over_limit = await _post_order(
-        client, admin, client_id, [{"product_code": product_code, "qty": "12", "discount": "0"}]
+        client, admin, client_id,
+        [{"product_code": product_code, "area_width_m": "4", "area_depth_m": "3", "discount": "0"}],
     )
     assert over_limit.status_code == 422, over_limit.text
     assert "10 m²" in over_limit.json()["detail"]
+
+
+async def _create_rug_product(db_session, price_list, *, area_limit_enabled=False, max_area_m2=None):
+    from app.models.catalog import Catalog
+
+    market = price_list.market_code
+    suffix = uuid.uuid4().hex[:6].upper()
+    catalog = (await db_session.execute(select(Catalog).where(
+        Catalog.market_code == market, Catalog.name == "Tapete"
+    ).execution_options(**_SKIP_SCOPE))).scalar_one()
+    group = await make_product_group(db_session, market_code=market, name=f"Tapete grupo {suffix}", ipi=Decimal("0"))
+    product_type = await make_product_type(db_session, market_code=market, name=f"Tapete tipo {suffix}", group=group)
+    product = await make_product(db_session, market_code=market, product_code=f"TAP-{suffix}", description="Tapete sintético", catalog=catalog)
+    product.type = product_type.name
+    product.area_limit_enabled = area_limit_enabled
+    product.max_area_m2 = max_area_m2
+    await make_product_market(db_session, product)
+    await make_product_price(db_session, product, price_list, amount=Decimal("100"))
+    await db_session.flush()
+    return product
+
+
+async def test_rug_order_charges_area_from_width_and_depth(client, db_session):
+    """Tapete cobra a área calculada no servidor e ignora qty forjado."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(db_session, price_list)
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    response = await _post_order(
+        client,
+        admin,
+        client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2.05",
+            "area_depth_m": "2.05",
+            "qty": "999",
+            "discount": "0",
+        }],
+    )
+    assert response.status_code == 201, response.text
+    item = response.json()["items"][0]
+    assert Decimal(str(item["qty"])) == Decimal("4.20")
+    assert Decimal(str(item["area_width_m"])) == Decimal("2.05")
+    assert Decimal(str(item["area_depth_m"])) == Decimal("2.05")
+    assert item["sold_by_area"] is True
+    assert Decimal(str(response.json()["total_value"])) == Decimal("420.00")
+
+
+async def test_rug_order_without_dimensions_is_rejected(client, db_session):
+    """Tapete sem largura/profundidade não pode usar qty do payload."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(db_session, price_list)
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    response = await _post_order(
+        client, admin, client_id,
+        [{"product_code": product.product_code, "qty": "2.5", "discount": "0"}],
+    )
+    assert response.status_code == 422, response.text
+    assert "Informe largura × profundidade do tapete" in response.json()["detail"]
+
+
+async def test_rug_dimensions_on_regular_product_are_rejected(client, db_session):
+    """Produto comum rejeita largura/profundidade de tapete."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_product_with_price(db_session, "BR", price_list, Decimal("50.00"))
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    response = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "qty": "1",
+            "area_width_m": "1.5",
+            "area_depth_m": "1.5",
+            "discount": "0",
+        }],
+    )
+    assert response.status_code == 422, response.text
+    assert "não é vendido por área" in response.json()["detail"]
+
+
+async def test_rug_area_limit_uses_width_times_depth(client, db_session):
+    """Limite de tapete deve comparar a área bruta L×P, não a quantidade."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(
+        db_session, price_list,
+        area_limit_enabled=True, max_area_m2=Decimal("4"),
+    )
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    response = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2.01",
+            "area_depth_m": "2",
+            "qty": "999",
+            "discount": "0",
+        }],
+    )
+    assert response.status_code == 422, response.text
+    assert "4 m²" in response.json()["detail"]

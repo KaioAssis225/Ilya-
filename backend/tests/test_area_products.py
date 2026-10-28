@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.services.area_products import is_area_catalog, is_area_product
+from app.services.area_products import area_from_dimensions, is_area_catalog, is_area_product
 from app.api.routers.orders import (
     _format_area,
     _validate_item_quantity,
@@ -187,3 +187,18 @@ def test_order_item_create_qty_zero_rejeitado():
     """Quantidade zero viola gt=0."""
     with pytest.raises(ValidationError):
         OrderItemCreate(product_code="TP-1", qty=Decimal("0"))
+
+
+# ---------- area_from_dimensions ----------
+
+@pytest.mark.parametrize(
+    "width, depth, expected",
+    [
+        (Decimal("2.05"), Decimal("2.05"), Decimal("4.20")),
+        (Decimal("1.5"), Decimal("2.003"), Decimal("3.00")),
+        (Decimal("0.05"), Decimal("0.05"), Decimal("0.01")),
+    ],
+)
+def test_area_from_dimensions(width, depth, expected):
+    """Área cobrada deve ser L×P arredondada a 2 casas com ROUND_HALF_UP."""
+    assert area_from_dimensions(width, depth) == expected

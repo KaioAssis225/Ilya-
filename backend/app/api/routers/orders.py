@@ -41,7 +41,7 @@ from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROV
 from app.core.markets import MarketPrincipal, require_launch_country
 from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
-from app.services.area_products import is_area_product
+from app.services.area_products import area_from_dimensions, is_area_product
 
 logger = logging.getLogger("ilya.orders")
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -641,6 +641,45 @@ def _validate_item_quantity(product: Product, qty: Decimal) -> bool:
     return True
 
 
+def _resolve_item_measurement(
+    product: Product,
+    item_in: OrderItemCreate,
+    source: OrderItem | None,
+) -> tuple[Decimal, bool, Decimal | None, Decimal | None]:
+    """Resolve qty, sold_by_area e dimensões; tapete calcula área no servidor."""
+    sold_by_area = is_area_product(product)
+    if not sold_by_area:
+        if item_in.area_width_m is not None or item_in.area_depth_m is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"O item '{item_in.product_code}' não é vendido por área.",
+            )
+        if item_in.qty is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Informe a quantidade do item '{item_in.product_code}'.",
+            )
+        _validate_item_quantity(product, item_in.qty)
+        return item_in.qty, False, None, None
+    if item_in.area_width_m is not None and item_in.area_depth_m is not None:
+        width_m = _decimal(item_in.area_width_m)
+        depth_m = _decimal(item_in.area_depth_m)
+        raw_area = width_m * depth_m
+        _validate_item_quantity(product, raw_area)
+        qty = area_from_dimensions(width_m, depth_m)
+        return qty, True, width_m, depth_m
+    if (
+        source is not None
+        and source.product_code == item_in.product_code
+        and source.sold_by_area
+    ):
+        return source.qty, True, source.area_width_m, source.area_depth_m
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=f"Informe largura × profundidade do tapete '{item_in.product_code}'.",
+    )
+
+
 def _calculate_order_line(
     *,
     unit_price: Decimal | float,
@@ -900,11 +939,13 @@ async def create_order(
             )
         else:
             ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-        sold_by_area = _validate_item_quantity(product, item_in.qty)
+        qty, sold_by_area, width_m, depth_m = _resolve_item_measurement(
+            product, item_in, source_items.get(item_in.source_order_item_id)
+        )
         unit_price, discount, subtotal, ipi_rate, ipi_value = (
             _calculate_order_line(
                 unit_price=price_map[product.id],
-                qty=item_in.qty,
+                qty=qty,
                 discount=item_in.discount or _ZERO,
                 max_discount=max_discount,
                 product_code=product.product_code,
@@ -928,8 +969,10 @@ async def create_order(
             profundidade=product.profundidade,
             opt_categories=item_in.opt_categories,
             optional_choices=optional_choices,
-            qty=item_in.qty,
+            qty=qty,
             sold_by_area=sold_by_area,
+            area_width_m=width_m,
+            area_depth_m=depth_m,
             unit_price=unit_price,
             discount=discount,
             ipi_rate=ipi_rate,
@@ -1016,6 +1059,7 @@ async def create_order_revision(
         supersedes_order_id=source.id,
         items=[OrderItemCreate(
             product_code=item.product_code, qty=item.qty,
+            area_width_m=item.area_width_m, area_depth_m=item.area_depth_m,
             discount=item.discount, opt_categories=item.opt_categories,
             source_order_item_id=item.id, comment=item.comment,
         ) for item in source.items],
@@ -1440,11 +1484,13 @@ async def update_order(
                 )
             else:
                 ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-            sold_by_area = _validate_item_quantity(product, item_in.qty)
+            qty, sold_by_area, width_m, depth_m = _resolve_item_measurement(
+                product, item_in, old_item_map.get(item_in.source_order_item_id)
+            )
             unit_price, discount, subtotal, ipi_rate, ipi_value = (
                 _calculate_order_line(
                     unit_price=price_map[product.id],
-                    qty=item_in.qty,
+                    qty=qty,
                     discount=item_in.discount or _ZERO,
                     max_discount=max_discount,
                     product_code=product.product_code,
@@ -1469,8 +1515,10 @@ async def update_order(
                 profundidade=product.profundidade,
                 opt_categories=item_in.opt_categories,
                 optional_choices=optional_choices,
-                qty=item_in.qty,
+                qty=qty,
                 sold_by_area=sold_by_area,
+                area_width_m=width_m,
+                area_depth_m=depth_m,
                 unit_price=unit_price,
                 discount=discount,
                 ipi_rate=ipi_rate,
