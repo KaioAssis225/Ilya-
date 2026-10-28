@@ -8,7 +8,7 @@ import { orderOptionalSlots } from './optionalApplications'
 import { formatArea } from './areaProduct'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
-const GOLD: [number, number, number] = [139, 105, 20]
+const GOLD: [number, number, number] = [198, 157, 48]
 const DARK: [number, number, number] = [44, 36, 32]
 const MUTED: [number, number, number] = [117, 107, 97]
 const LIGHT: [number, number, number] = [245, 240, 235]
@@ -171,8 +171,8 @@ export async function generateOrderPDF(
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8.5)
-    doc.text(`${brandDescriptor} ${brandSuffix.replace(/\.$/, '')}`, 20, y + 10, {
-      charSpace: 1.6,
+    doc.text(`${brandDescriptor} ${brandSuffix.replace(/\.$/, '')}`, 20, y + 6.5, {
+      charSpace: 1.1,
     })
   } else {
     doc.setFont('helvetica', 'normal')
@@ -182,7 +182,7 @@ export async function generateOrderPDF(
 
   doc.setDrawColor(...GOLD)
   doc.setLineWidth(0.3)
-  const logoRuleY = brandSuffix && brandDescriptor ? y + 15 : y + 5
+  const logoRuleY = brandSuffix && brandDescriptor ? y + 11.5 : y + 5
   doc.line(20, logoRuleY, 60, logoRuleY)
   doc.setFontSize(6.5)
   doc.setTextColor(...MUTED)
@@ -210,7 +210,7 @@ export async function generateOrderPDF(
   )
   doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
-  y = brandSuffix && brandDescriptor ? 60 : 55
+  y = brandSuffix && brandDescriptor ? 57 : 55
 
   // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2
