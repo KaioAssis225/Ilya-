@@ -9,7 +9,8 @@ import { formatArea, formatRugSize } from './areaProduct'
 import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
-const GOLD: [number, number, number] = [198, 157, 48]
+const ILYA_GOLD: [number, number, number] = [198, 157, 48]
+const IBTW_GREEN: [number, number, number] = [71, 124, 104]
 const DARK: [number, number, number] = [44, 36, 32]
 const MUTED: [number, number, number] = [117, 107, 97]
 const LIGHT: [number, number, number] = [245, 240, 235]
@@ -124,11 +125,11 @@ function formatAddress(person: AddressParty, market: 'BR' | 'EU'): string {
   const street = `${person.address}${person.numero ? `, ${person.numero}` : ''}`
   if (market === 'BR') {
     const cityState = [person.city, person.state].filter(Boolean).join('/')
-    return [street, cityState, person.cep].filter(Boolean).join(' — ')
+    return [street, cityState, person.cep].filter(Boolean).join(' - ')
   }
   const locality = [person.cep, person.city].filter(Boolean).join(' ')
   const regionCountry = [person.region, person.country].filter(Boolean).join(', ')
-  return [street, locality, regionCountry].filter(Boolean).join(' — ')
+  return [street, locality, regionCountry].filter(Boolean).join(' - ')
 }
 
 // ── Gerador principal ─────────────────────────────────────────────────────────
@@ -148,6 +149,7 @@ export async function generateOrderPDF(
   const { currency, locale, taxLabel, brand, brandSuffix, labels: L, seller } = orderDocument
   // IVA (Portugal) vai no fecho do documento; IPI (Brasil) segue embutido na linha.
   const taxOnTotal = order.market_code === 'EU'
+  const accentColor = taxOnTotal ? IBTW_GREEN : ILYA_GOLD
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -165,14 +167,14 @@ export async function generateOrderPDF(
 
   let y = 20
 
-  // ── Linha dourada superior ──────────────────────────────────────────────────
-  doc.setDrawColor(...GOLD)
+  // ── Linha de marca superior ─────────────────────────────────────────────────
+  doc.setDrawColor(...accentColor)
   doc.setLineWidth(0.5)
   doc.line(20, y, w - 20, y)
   y += 8
 
   // ── Logo ILYA / IBTW ───────────────────────────────────────────────────────
-  doc.setTextColor(...GOLD)
+  doc.setTextColor(...accentColor)
   if (brandSuffix) {
     drawIbtwLogo(doc, brandSuffix === 'LTD.' ? IBTW_LOGO_LTD : IBTW_LOGO_LDA, 20, 22)
   } else {
@@ -181,7 +183,7 @@ export async function generateOrderPDF(
     doc.text(brand, 20, y)
   }
 
-  doc.setDrawColor(...GOLD)
+  doc.setDrawColor(...accentColor)
   doc.setLineWidth(0.3)
   const logoRuleY = brandSuffix ? 47 : y + 5
   doc.line(20, logoRuleY, 60, logoRuleY)
@@ -198,7 +200,7 @@ export async function generateOrderPDF(
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(14)
-  doc.setTextColor(...GOLD)
+  doc.setTextColor(...accentColor)
   doc.text(order.code, w - 20, 35, { align: 'right' })
 
   doc.setFontSize(8)
@@ -322,7 +324,7 @@ export async function generateOrderPDF(
   const drawContinuationHeader = (): number => {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(13)
-    doc.setTextColor(...GOLD)
+    doc.setTextColor(...accentColor)
     doc.text(brand, 20, 23)
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
@@ -389,7 +391,7 @@ export async function generateOrderPDF(
       const finishes = compCats
         .map((cat) => `${optionalCategoryLabel(catLabel(cat), locale === 'en-GB')}: ${optionalName(comp.optionals.find((o) => o.category === cat)!.color_name, locale === 'en-GB')}`)
         .join(', ')
-      const suffix = finishes ? ` — ${finishes}` : ''
+      const suffix = finishes ? ` - ${finishes}` : ''
       return doc.splitTextToSize(`• ${comp.qty}x ${comp.description} (${compDim})${suffix}`, PRODUCT_TEXT_WIDTH)
     })
     const compLinesTotal = compLineGroups.reduce((sum, lines) => sum + lines.length, 0)
@@ -507,20 +509,20 @@ export async function generateOrderPDF(
     // Portugal mostra o desconto; Brasil mantém a coluna histórica de IPI.
     if (taxOnTotal) {
       doc.setFontSize(7.5)
-      doc.setTextColor(...(discount > 0 ? GOLD : MUTED))
+      doc.setTextColor(...(discount > 0 ? accentColor : MUTED))
       doc.setFont('helvetica', discount > 0 ? 'bold' : 'normal')
       const discountText = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(discount)
       doc.text(`${discountText}%`, 167, y, { align: 'right' })
     } else if (ipiRate > 0) {
       doc.setFontSize(7.5)
-      doc.setTextColor(...GOLD)
+      doc.setTextColor(...accentColor)
       doc.setFont('helvetica', 'bold')
       doc.text(`${ipiRate}%`, 167, y, { align: 'right' })
     } else {
       doc.setFontSize(7.5)
       doc.setTextColor(...MUTED)
       doc.setFont('helvetica', 'normal')
-      doc.text('—', 167, y, { align: 'right' })
+      doc.text('-', 167, y, { align: 'right' })
     }
 
     // Total da linha (com IPI no Brasil, sem IVA em Portugal)
@@ -549,7 +551,7 @@ export async function generateOrderPDF(
     y = drawContinuationHeader()
   }
   y += 4
-  doc.setDrawColor(...GOLD)
+  doc.setDrawColor(...accentColor)
   doc.setLineWidth(0.5)
   doc.line(20, y, w - 20, y)
   y += 8
@@ -578,7 +580,7 @@ export async function generateOrderPDF(
   const finalTotal = Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)
 
   doc.setFontSize(12)
-  doc.setTextColor(...GOLD)
+  doc.setTextColor(...accentColor)
   doc.setFont('helvetica', 'normal')
   doc.text(L.grandTotal, 148, y, { align: 'right' })
   doc.setFont('helvetica', 'bold')
@@ -643,7 +645,7 @@ export async function generateOrderPDF(
   const totalPages = doc.getNumberOfPages()
   for (let page = 1; page <= totalPages; page += 1) {
     doc.setPage(page)
-    doc.setDrawColor(...GOLD)
+    doc.setDrawColor(...accentColor)
     doc.setLineWidth(0.3)
     doc.line(20, 282, w - 20, 282)
     doc.setFontSize(6.5)
