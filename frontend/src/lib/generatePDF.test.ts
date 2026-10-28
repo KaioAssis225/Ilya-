@@ -6,6 +6,7 @@ import { generateOrderPDF } from './generatePDF.ts'
 const renderedTexts: string[] = []
 const savedFiles: string[] = []
 const wrappedTexts: Array<{ text: string; width: number }> = []
+const addedImages: string[] = []
 
 vi.mock('jspdf', () => {
   class MockJsPDF {
@@ -23,10 +24,14 @@ vi.mock('jspdf', () => {
     setFillColor() {}
     roundedRect() {}
     rect() {}
+    saveGraphicsState() {}
+    restoreGraphicsState() {}
+    clip() {}
+    discardPath() {}
     addPage() {}
     getNumberOfPages() { return 1 }
     setPage() {}
-    addImage() {}
+    addImage(data: string) { addedImages.push(data) }
     splitTextToSize(text: string, width: number) {
       wrappedTexts.push({ text: String(text), width })
       return [String(text)]
@@ -164,6 +169,7 @@ beforeEach(() => {
   renderedTexts.length = 0
   savedFiles.length = 0
   wrappedTexts.length = 0
+  addedImages.length = 0
 })
 
 test('gera PDF BR com marca ILYA, rótulos PEDIDO/IPI e valores em BRL', async () => {
@@ -225,12 +231,13 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
 
   await generateOrderPDF(order, client, null, products)
 
-  assert.ok(renderedTexts.includes('IBTW'))
-  assert.ok(renderedTexts.includes('LIVING LTD'))
-  assert.ok(!renderedTexts.includes('IBTW LIVING LTD.'))
+  assert.equal(addedImages.length, 1)
+  assert.ok(addedImages[0].startsWith('data:image/jpeg;base64,'))
   assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
   assert.ok(renderedTexts.includes('ORDER'))
-  assert.ok(renderedTexts.includes('VAT'))
+  assert.ok(renderedTexts.includes('DISCOUNT'))
+  assert.ok(renderedTexts.includes('0%'))
+  assert.ok(!renderedTexts.includes('VAT'))
   assert.ok(renderedTexts.includes('COMPANY'))
   assert.ok(!renderedTexts.includes('SELLER / LEGAL ENTITY'))
   assert.ok(renderedTexts.includes('IBTW LIVING LDA'))
@@ -267,7 +274,7 @@ test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', 
     currency: 'EUR', locale: 'en-GB',
     items: [makeOrderItem({
       description: 'Cadeira', altura: 0.8, largura: 0.75, profundidade: 0.82,
-      qty: 1, unit_price: 1000, ipi_rate: 23, ipi_value: 230,
+      qty: 1, unit_price: 1000, discount: 10, ipi_rate: 23, ipi_value: 230,
       tax_label: 'IVA', currency: 'EUR',
     })],
   })
@@ -275,11 +282,12 @@ test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', 
   await generateOrderPDF(order, client, null, products, (code) => code, 'pt-PT')
 
   assert.ok(renderedTexts.includes('CONFIRMAÇÃO DE PEDIDO'))
-  assert.ok(renderedTexts.includes('IBTW'))
-  assert.ok(renderedTexts.includes('LIVING LDA'))
-  assert.ok(!renderedTexts.includes('IBTW LIVING LDA.'))
+  assert.equal(addedImages.length, 1)
+  assert.ok(addedImages[0].startsWith('data:image/jpeg;base64,'))
   assert.ok(renderedTexts.includes('PEDIDO'))
-  assert.ok(renderedTexts.includes('IVA'))
+  assert.ok(renderedTexts.includes('DESCONTO'))
+  assert.ok(renderedTexts.includes('10%'))
+  assert.ok(!renderedTexts.includes('IVA'))
   assert.ok(renderedTexts.includes('EMPRESA'))
   assert.ok(renderedTexts.includes('Dimensões: L 750 mm × P 820 mm × A 800 mm'))
   assert.ok(!renderedTexts.some((text) => text.includes('″')))

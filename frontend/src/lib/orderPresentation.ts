@@ -60,7 +60,7 @@ export interface OrderDocumentLabels {
   documentTitle: string; order: string; date: string; quote: string; continued: string
   seller: string; representative: string; client: string; none: string; noEmail: string
   taxId: string; taxIdMissing: string; commercialNotice: string; page: string
-  product: string; qty: string; unitPrice: string; total: string
+  product: string; qty: string; unitPrice: string; discount: string; total: string
   dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
   totalItems: string; grandTotal: string; notes: string
   repSignature: string; clientSignature: string; footer: string
@@ -88,7 +88,7 @@ const PT_LABELS: OrderDocumentLabels = {
   documentTitle: 'CONFIRMAÇÃO DE PEDIDO', order: 'PEDIDO', date: 'Data', quote: 'Orçamento', continued: 'CONTINUAÇÃO',
   seller: 'EMPRESA VENDEDORA', representative: 'REPRESENTANTE', client: 'CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
   taxId: 'CPF/CNPJ', taxIdMissing: 'não informado', commercialNotice: 'Pedido comercial. Este documento não substitui a nota fiscal.', page: 'Página',
-  product: 'PRODUTO', qty: 'QTD', unitPrice: 'VALOR UN.', total: 'TOTAL',
+  product: 'PRODUTO', qty: 'QTD', unitPrice: 'VALOR UN.', discount: 'DESCONTO', total: 'TOTAL',
   dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
   totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
   repSignature: 'Representante / Ilya', clientSignature: 'Cliente / Contratado',
@@ -108,7 +108,7 @@ const EN_LABELS: OrderDocumentLabels = {
   documentTitle: 'ORDER CONFIRMATION', order: 'ORDER', date: 'Date', quote: 'Quote', continued: 'CONTINUED',
   seller: 'COMPANY', representative: 'CONTACT', client: 'BILL TO', none: 'None', noEmail: 'No email provided',
   taxId: 'VAT / TAX ID', taxIdMissing: 'not provided', commercialNotice: 'Commercial order confirmation. This document is not an invoice.', page: 'Page',
-  product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', total: 'TOTAL',
+  product: 'PRODUCT', qty: 'QTY', unitPrice: 'UNIT PRICE', discount: 'DISCOUNT', total: 'TOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
   totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
   repSignature: 'Representative / IBTW', clientSignature: 'Client',

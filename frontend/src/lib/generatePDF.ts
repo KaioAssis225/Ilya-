@@ -6,6 +6,7 @@ import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
 import { formatArea } from './areaProduct'
+import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const GOLD: [number, number, number] = [198, 157, 48]
@@ -100,6 +101,13 @@ function containBox(width: number, height: number, box: number): { w: number; h:
   return { w, h, dx: (box - w) / 2, dy: (box - h) / 2 }
 }
 
+// Recortes exatos das artes oficiais LDA/LTD, sem redesenhar letras ou cores.
+function drawIbtwLogo(doc: jsPDF, dataUrl: string, x: number, y: number): void {
+  const outputWidth = 45
+  const outputHeight = outputWidth * 249 / 497
+  doc.addImage(dataUrl, 'JPEG', x, y, outputWidth, outputHeight, undefined, 'FAST')
+}
+
 // A Helvetica embutida do jsPDF só cobre WinAnsi: o "″" das polegadas (EU)
 // forçava a linha inteira para UTF-16 e as dimensões saíam ilegíveis.
 function pdfSafe(text: string): string {
@@ -137,7 +145,7 @@ export async function generateOrderPDF(
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
   // do mercado em que o usuário está agora.
   const orderDocument = resolveOrderDocument(documentLocale ? { ...order, locale: documentLocale } : order)
-  const { currency, locale, taxLabel, brand, brandSuffix, brandDescriptor, labels: L, seller } = orderDocument
+  const { currency, locale, taxLabel, brand, brandSuffix, labels: L, seller } = orderDocument
   // IVA (Portugal) vai no fecho do documento; IPI (Brasil) segue embutido na linha.
   const taxOnTotal = order.market_code === 'EU'
   const w = doc.internal.pageSize.getWidth()
@@ -165,17 +173,8 @@ export async function generateOrderPDF(
 
   // ── Logo ILYA / IBTW ───────────────────────────────────────────────────────
   doc.setTextColor(...GOLD)
-  if (brandSuffix && brandDescriptor) {
-    // Portugal: assinatura visual em duas linhas, seguindo o logo oficial.
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(32)
-    doc.text(brand, 20, y)
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
-    doc.text(`${brandDescriptor} ${brandSuffix.replace(/\.$/, '')}`, 20, y + 6.5, {
-      charSpace: 1.1,
-    })
+  if (brandSuffix) {
+    drawIbtwLogo(doc, brandSuffix === 'LTD.' ? IBTW_LOGO_LTD : IBTW_LOGO_LDA, 20, 22)
   } else {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(28)
@@ -184,7 +183,7 @@ export async function generateOrderPDF(
 
   doc.setDrawColor(...GOLD)
   doc.setLineWidth(0.3)
-  const logoRuleY = brandSuffix && brandDescriptor ? y + 11.5 : y + 5
+  const logoRuleY = brandSuffix ? 47 : y + 5
   doc.line(20, logoRuleY, 60, logoRuleY)
   doc.setFontSize(6.5)
   doc.setTextColor(...MUTED)
@@ -212,7 +211,7 @@ export async function generateOrderPDF(
   )
   doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
-  y = brandSuffix && brandDescriptor ? 57 : 55
+  y = brandSuffix ? 60 : 55
 
   // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2
@@ -313,7 +312,7 @@ export async function generateOrderPDF(
     doc.text(L.product, 22, labelY)
     doc.text(L.qty, 125, labelY, { align: 'right' })
     doc.text(L.unitPrice, 150, labelY, { align: 'right' })
-    doc.text(taxLabel, 167, labelY, { align: 'right' })
+    doc.text(taxOnTotal ? L.discount : taxLabel, 167, labelY, { align: 'right' })
     doc.text(L.total, 186, labelY, { align: 'right' })
     doc.setDrawColor(...LINE)
     doc.line(20, labelY + 4, w - 20, labelY + 4)
@@ -484,15 +483,23 @@ export async function generateOrderPDF(
       doc.setFontSize(7.5)
       doc.setTextColor(...DARK)
       doc.text(formatMoney(effectivePrice, currency, locale), 150, y + 2.5, { align: 'right' })
-      doc.setFontSize(5.5)
-      doc.setTextColor(...MUTED)
-      doc.text(`-${discount}%`, 150, y + 6.5, { align: 'right' })
+      if (!taxOnTotal) {
+        doc.setFontSize(5.5)
+        doc.setTextColor(...MUTED)
+        doc.text(`-${discount}%`, 150, y + 6.5, { align: 'right' })
+      }
     } else {
       doc.text(formatMoney(unitPrice, currency, locale), 150, y, { align: 'right' })
     }
 
-    // IPI %
-    if (ipiRate > 0) {
+    // Portugal mostra o desconto; Brasil mantém a coluna histórica de IPI.
+    if (taxOnTotal) {
+      doc.setFontSize(7.5)
+      doc.setTextColor(...(discount > 0 ? GOLD : MUTED))
+      doc.setFont('helvetica', discount > 0 ? 'bold' : 'normal')
+      const discountText = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(discount)
+      doc.text(`${discountText}%`, 167, y, { align: 'right' })
+    } else if (ipiRate > 0) {
       doc.setFontSize(7.5)
       doc.setTextColor(...GOLD)
       doc.setFont('helvetica', 'bold')
