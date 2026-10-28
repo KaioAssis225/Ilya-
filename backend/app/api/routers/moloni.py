@@ -1,5 +1,6 @@
 """Conexão OAuth do Moloni, restrita à sessão de plataforma."""
 import secrets
+import uuid
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 
@@ -121,9 +122,11 @@ async def save_tax_mappings(payload: TaxMappingsRequest, db: AsyncSession = Depe
     return {"saved": len(payload.mappings)}
 
 @router.post("/orders/{order_id}/enqueue", status_code=202)
-async def enqueue_existing(order_id: str, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):
+async def enqueue_existing(order_id: uuid.UUID, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):
     order = (await db.execute(select(Order).where(Order.id == order_id))).scalar_one_or_none()
-    if not order or order.market_code != "EU" or not order.is_finalized:
+    if not order:
+        raise HTTPException(404, "Pedido não encontrado.")
+    if order.market_code != "EU" or not order.is_finalized:
         raise HTTPException(422, "Somente pedido EU finalizado pode ser exportado.")
     await enqueue_finalized_eu_order(db, order.id)
     await db.commit()

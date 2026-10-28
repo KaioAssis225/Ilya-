@@ -6,20 +6,25 @@ JOB-02  lease vencido (worker morreu no meio) volta a ser reclamado.
 JOB-03  falha num job não desfaz a entrega anterior e não grava token.
 CONN-01 duas conexões ativas: o exportador recusa escolher.
 CONN-02 conectar outra empresa desativa a conexão anterior.
+ENQ-01  enqueue manual: ID malformado → 422, inexistente → 404, pedido BR ou
+        não finalizado → 422, EU finalizado → 202 com um job pendente.
 
 PostgreSQL real; cada teste roda dentro da transação revertida da fixture.
 """
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from cryptography.fernet import Fernet
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import create_access_token
 from app.models.moloni import MoloniConnection, MoloniExportJob, MoloniOAuthState
 from app.services.moloni_exporter import MoloniError, active_moloni_connection
 from app.workers.moloni_sender import claim_next_job, process_due_jobs
-from tests.factories import make_client, make_price_list, make_user
+from tests.factories import make_client, make_platform_permission, make_price_list, make_user
 from tests.factories.orders import make_order
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -152,3 +157,41 @@ async def test_conn02_connecting_another_company_deactivates_previous(
     await db_session.refresh(previous)
     assert previous.is_active is False
     assert (await active_moloni_connection(db_session)).company_id == 9102
+
+
+async def test_enq01_manual_enqueue_validates_order_id_and_state(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    platform = await make_user(db_session)
+    await make_platform_permission(db_session, platform)
+    headers = {"Authorization": "Bearer " + create_access_token(
+        platform.id, None, platform.auth_version, None, scope="platform"
+    )}
+    url = "/api/v1/integrations/moloni/orders/{}/enqueue"
+
+    malformed = await client.post(url.format("nao-e-uuid"), headers=headers)
+    assert malformed.status_code == 422, malformed.text
+    assert malformed.json()["detail"][0]["loc"] == ["path", "order_id"]
+
+    missing = await client.post(url.format(uuid.uuid4()), headers=headers)
+    assert missing.status_code == 404, missing.text
+
+    eu_prices = await make_price_list(db_session, market_code="EU")
+    eu_order = await make_order(db_session, await make_client(db_session, eu_prices, market_code="EU"), platform.id)
+    br_prices = await make_price_list(db_session, market_code="BR")
+    br_order = await make_order(db_session, await make_client(db_session, br_prices, market_code="BR"), platform.id)
+    br_order.is_finalized, br_order.finalized_at = True, datetime.now(timezone.utc)
+    await db_session.flush()
+
+    for order in (eu_order, br_order):
+        refused = await client.post(url.format(order.id), headers=headers)
+        assert refused.status_code == 422, refused.text
+
+    eu_order.is_finalized, eu_order.finalized_at = True, datetime.now(timezone.utc)
+    await db_session.flush()
+    queued = await client.post(url.format(eu_order.id), headers=headers)
+    assert queued.status_code == 202, queued.text
+    jobs = (await db_session.execute(
+        select(MoloniExportJob).where(MoloniExportJob.order_id == eu_order.id)
+    )).scalars().all()
+    assert [job.status for job in jobs] == ["pending"]
