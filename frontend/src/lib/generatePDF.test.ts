@@ -7,6 +7,8 @@ const renderedTexts: string[] = []
 const savedFiles: string[] = []
 const wrappedTexts: Array<{ text: string; width: number }> = []
 const addedImages: string[] = []
+const drawColors: number[][] = []
+const textColors: number[][] = []
 
 vi.mock('jspdf', () => {
   class MockJsPDF {
@@ -15,12 +17,12 @@ vi.mock('jspdf', () => {
         getWidth: () => 210,
       },
     }
-    setDrawColor() {}
+    setDrawColor(...color: number[]) { drawColors.push(color) }
     setLineWidth() {}
     line() {}
     setFont() {}
     setFontSize() {}
-    setTextColor() {}
+    setTextColor(...color: number[]) { textColors.push(color) }
     setFillColor() {}
     roundedRect() {}
     rect() {}
@@ -170,6 +172,8 @@ beforeEach(() => {
   savedFiles.length = 0
   wrappedTexts.length = 0
   addedImages.length = 0
+  drawColors.length = 0
+  textColors.length = 0
 })
 
 test('gera PDF BR com marca ILYA, rótulos PEDIDO/IPI e valores em BRL', async () => {
@@ -184,6 +188,8 @@ test('gera PDF BR com marca ILYA, rótulos PEDIDO/IPI e valores em BRL', async (
   assert.ok(renderedTexts.includes('IPI'))
   assert.ok(renderedTexts.includes('Poltrona Ilya'))
   assert.ok(renderedTexts.some((t) => /R\$/.test(t)))
+  assert.ok(drawColors.some((color) => color.join(',') === '198,157,48'))
+  assert.ok(!drawColors.some((color) => color.join(',') === '71,124,104'))
   assert.deepEqual(savedFiles, ['PED-0001_Cliente_Teste.pdf'])
 })
 
@@ -233,6 +239,9 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
 
   assert.equal(addedImages.length, 1)
   assert.ok(addedImages[0].startsWith('data:image/jpeg;base64,'))
+  assert.ok(drawColors.some((color) => color.join(',') === '71,124,104'))
+  assert.ok(textColors.some((color) => color.join(',') === '71,124,104'))
+  assert.ok(!drawColors.some((color) => color.join(',') === '198,157,48'))
   assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
   assert.ok(renderedTexts.includes('ORDER'))
   assert.ok(renderedTexts.includes('DISCOUNT'))
