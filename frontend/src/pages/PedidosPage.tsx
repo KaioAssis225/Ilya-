@@ -126,13 +126,13 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
     <div className="modal-overlay" onClick={onClose}>
       <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-ink">Finalizar Pedido</h3>
+          <h3 className="text-base font-semibold text-ink">Finalizar Orçamento</h3>
           <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
         </div>
         <p className="text-sm text-ink-2 mb-4">
-          Pedido <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como finalizado e não poderá mais ser editado.
+          Orçamento <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como finalizado e não poderá mais ser editado.
         </p>
         <label className="block space-y-1 mb-5">
           <span className="text-xs text-muted font-medium">Código Externo (opcional)</span>
@@ -146,7 +146,7 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
         <div className="flex gap-3 justify-end">
           <button className="btn-secondary" onClick={onClose}>Cancelar</button>
           <button className="btn-primary" disabled={loading} onClick={handleSubmit}>
-            {loading ? 'Finalizando...' : 'Finalizar Pedido'}
+            {loading ? 'Finalizando...' : 'Finalizar Orçamento'}
           </button>
         </div>
       </DialogPanel>
@@ -175,13 +175,13 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
     <div className="modal-overlay" onClick={onClose}>
       <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-ink">Cancelar Pedido</h3>
+          <h3 className="text-base font-semibold text-ink">Cancelar Orçamento</h3>
           <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
         </div>
         <p className="text-sm text-ink-2 mb-4">
-          Pedido <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como cancelado e não poderá mais ser editado ou finalizado.
+          Orçamento <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como cancelado e não poderá mais ser editado ou finalizado.
         </p>
         <label className="block space-y-1 mb-5">
           <span className="text-xs text-muted font-medium">Motivo (opcional)</span>
@@ -195,7 +195,7 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
         <div className="flex gap-3 justify-end">
           <button className="btn-secondary" onClick={onClose}>Voltar</button>
           <button className="flex items-center gap-1.5 px-4 py-2 bg-terracotta text-white rounded-lg text-sm font-semibold hover:bg-terracotta-700 transition-colors disabled:opacity-60" disabled={loading} onClick={handleSubmit}>
-            {loading ? 'Cancelando...' : 'Cancelar Pedido'}
+            {loading ? 'Cancelando...' : 'Cancelar Orçamento'}
           </button>
         </div>
       </DialogPanel>
@@ -307,7 +307,7 @@ function OrderDetailModal({
       <div className="modal-overlay" onClick={onClose}>
         <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-8">
           <p className="text-sm text-terracotta text-center">
-            Não foi possível carregar os detalhes deste pedido.
+            Não foi possível carregar os detalhes deste orçamento.
           </p>
           <div className="flex justify-center gap-3 mt-5">
             <button className="btn-secondary" onClick={onClose}>Fechar</button>
@@ -326,7 +326,7 @@ function OrderDetailModal({
         <DialogPanel onClose={onClose} className="modal-panel w-full max-w-2xl p-10">
           <div className="flex items-center justify-center gap-3 text-sm text-muted" role="status">
             <span className="w-5 h-5 rounded-full border-2 border-gold/25 border-t-gold animate-spin" />
-            Carregando detalhes do pedido…
+            Carregando detalhes do orçamento…
           </div>
         </DialogPanel>
       </div>
@@ -386,7 +386,7 @@ function OrderDetailModal({
           </div>
         </div>
         {revisionError && <p role="alert" className="text-xs font-medium text-danger mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}
-        {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um pedido anterior.</p>}
+        {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um orçamento anterior.</p>}
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-line mb-4">
@@ -645,7 +645,7 @@ function MobileOrderCard({
         <button onClick={onView} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Visualizar"><Eye className="w-4 h-4 text-gold" /> Ver</button>
         <button disabled={pdfLoading} onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors disabled:opacity-50" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> {pdfLoading ? 'Gerando…' : 'PDF'}</button>
         {onFinalize && (
-          <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar pedido"><CheckCircle className="w-4 h-4" /> Finalizar</button>
+          <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar orçamento"><CheckCircle className="w-4 h-4" /> Finalizar</button>
         )}
         {onDelete && (
           <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-danger-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
@@ -782,14 +782,14 @@ export default function PedidosPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl text-ink font-medium">
-              {isAuditActive ? (isEnglish ? 'General audit' : 'Auditoria Geral') : (isEnglish ? 'Orders' : 'Pedidos')}
+              {isAuditActive ? (isEnglish ? 'General audit' : 'Auditoria Geral') : (isEnglish ? 'Quotes' : 'Orçamentos')}
               <span className="ml-2 text-xs bg-bg-2 text-gold px-2 py-0.5 rounded-full">
                 {isEnglish ? 'On this page' : 'Nesta página'}: {isAuditActive ? globalHistory.length : orders.length}
               </span>
             </h1>
             {canViewGlobalAudit && (
               <div className="flex gap-1 border border-line rounded-lg p-0.5 bg-white">
-                <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>{isEnglish ? 'Orders' : 'Pedidos'}</button>
+                <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>{isEnglish ? 'Quotes' : 'Orçamentos'}</button>
                 <button onClick={() => setActiveTab('audit')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${activeTab === 'audit' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>
                   <History className="w-3 h-3" /> {isEnglish ? 'Audit' : 'Auditoria'}
                 </button>
@@ -801,7 +801,7 @@ export default function PedidosPage() {
             <div className="flex items-center gap-2">
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-                <input aria-label={isEnglish ? 'Filter orders by client or number' : 'Filtrar pedidos por cliente ou número'} className="input pl-9" placeholder={isEnglish ? 'Filter by client, order...' : 'Filtrar por cliente, pedido...'} value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <input aria-label={isEnglish ? 'Filter quotes by client or number' : 'Filtrar orçamentos por cliente ou número'} className="input pl-9" placeholder={isEnglish ? 'Filter by client, quote...' : 'Filtrar por cliente, orçamento...'} value={filter} onChange={(e) => setFilter(e.target.value)} />
               </div>
               <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors ${hasFilters ? 'border-gold text-gold bg-gold-wash' : 'border-line text-muted hover:border-faint'}`}>
                 <Filter className="w-3.5 h-3.5" /> {isEnglish ? 'Filters' : 'Filtros'}{hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-gold" />}
@@ -912,7 +912,7 @@ export default function PedidosPage() {
         {/* Orders tab */}
         {!isAuditActive && (
           isLoading ? (
-            <div aria-busy="true" aria-label="Carregando pedidos">
+            <div aria-busy="true" aria-label="Carregando orçamentos">
               {/* Esqueleto no mesmo formato do conteúdo final de cada viewport:
                   cartões no mobile, linhas de tabela a partir de md (sem CLS). */}
               <div className="flex flex-col gap-3 md:hidden">
@@ -959,11 +959,11 @@ export default function PedidosPage() {
                 {filtered.length === 0 && (
                   <div className="rounded-xl border border-line bg-white px-4 py-12 text-center">
                     {filter || hasFilters ? (
-                      <p className="text-ink-3 text-sm">Nenhum pedido encontrado com este filtro.</p>
+                      <p className="text-ink-3 text-sm">Nenhum orçamento encontrado com este filtro.</p>
                     ) : (
                       <>
-                        <p className="text-ink-3 text-sm">{isEnglish ? 'No orders yet.' : 'Nenhum pedido ainda.'}</p>
-                        {canManage && <button onClick={() => navigate('/orcamentos')} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'Create first order' : 'Criar primeiro pedido'}</button>}
+                        <p className="text-ink-3 text-sm">{isEnglish ? 'No quotes yet.' : 'Nenhum orçamento ainda.'}</p>
+                        {canManage && <button onClick={() => navigate('/orcamentos')} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'Create first quote' : 'Criar primeiro orçamento'}</button>}
                       </>
                     )}
                   </div>
@@ -976,7 +976,7 @@ export default function PedidosPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-surface-2">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Order' : 'Pedido'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Code' : 'Código'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Quote' : 'Orçamento'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Client' : 'Cliente'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Representative' : 'Representante'}</th>
@@ -1005,19 +1005,19 @@ export default function PedidosPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-0.5 items-center">
-                            <button type="button" title="Ver detalhes" aria-label={`Ver detalhes do pedido ${order.code}`} className="btn-icon" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
-                            <button type="button" disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} aria-label={`Gerar PDF do pedido ${order.code}`} className="btn-icon hover:text-mineral" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
+                            <button type="button" title="Ver detalhes" aria-label={`Ver detalhes do orçamento ${order.code}`} className="btn-icon" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
+                            <button type="button" disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} aria-label={`Gerar PDF do orçamento ${order.code}`} className="btn-icon hover:text-mineral" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
                             {canManage && !order.is_finalized && !order.is_cancelled && (
-                              <button type="button" title="Finalizar pedido" aria-label={`Finalizar pedido ${order.code}`} className="btn-icon hover:text-success" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
+                              <button type="button" title="Finalizar orçamento" aria-label={`Finalizar orçamento ${order.code}`} className="btn-icon hover:text-success" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
                             )}
                             {canManage && !order.is_finalized && !order.is_cancelled && (
                               <>
-                                <button type="button" title="Editar" aria-label={`Editar pedido ${order.code}`} className="btn-icon" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
-                                <button type="button" title="Cancelar" aria-label={`Cancelar pedido ${order.code}`} className="btn-icon hover:text-terracotta" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
+                                <button type="button" title="Editar" aria-label={`Editar orçamento ${order.code}`} className="btn-icon" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
+                                <button type="button" title="Cancelar" aria-label={`Cancelar orçamento ${order.code}`} className="btn-icon hover:text-terracotta" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
                               </>
                             )}
                             {canDelete && (
-                              <button type="button" title="Excluir" aria-label={`Excluir pedido ${order.code}`} className="btn-icon hover:text-danger" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
+                              <button type="button" title="Excluir" aria-label={`Excluir orçamento ${order.code}`} className="btn-icon hover:text-danger" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
                             )}
                           </div>
                         </td>
@@ -1026,11 +1026,11 @@ export default function PedidosPage() {
                     {filtered.length === 0 && (
                       <tr><td colSpan={9} className="px-4 py-12 text-center">
                         {filter || hasFilters ? (
-                          <span className="text-ink-3">Nenhum pedido encontrado com este filtro.</span>
+                          <span className="text-ink-3">Nenhum orçamento encontrado com este filtro.</span>
                         ) : (
                           <div className="flex flex-col items-center gap-3">
-                            <span className="text-ink-3">{isEnglish ? 'No orders yet.' : 'Nenhum pedido ainda.'}</span>
-                            {canManage && <button onClick={() => navigate('/orcamentos')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'Create first order' : 'Criar primeiro pedido'}</button>}
+                            <span className="text-ink-3">{isEnglish ? 'No quotes yet.' : 'Nenhum orçamento ainda.'}</span>
+                            {canManage && <button onClick={() => navigate('/orcamentos')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'Create first quote' : 'Criar primeiro orçamento'}</button>}
                           </div>
                         )}
                       </td></tr>
@@ -1089,7 +1089,7 @@ export default function PedidosPage() {
         <div className="modal-overlay" onClick={() => setDeleting(null)}>
           <DialogPanel onClose={() => setDeleting(null)} className="modal-panel w-full max-w-md p-6">
             <h3 className="text-lg font-semibold text-ink mb-2">Confirmar exclusão</h3>
-            <p className="text-ink-2 mb-6">Excluir pedido <span className="text-gold font-mono">{deleting.code}</span>? Esta ação não pode ser desfeita.</p>
+            <p className="text-ink-2 mb-6">Excluir orçamento <span className="text-gold font-mono">{deleting.code}</span>? Esta ação não pode ser desfeita.</p>
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={() => setDeleting(null)}>Cancelar</button>
               <button className="btn-danger" onClick={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}>Excluir</button>

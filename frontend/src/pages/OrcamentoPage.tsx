@@ -2120,15 +2120,17 @@ export default function OrcamentoPage() {
                               </p>
                             )}
                           </div>
-                          <div>
-                            <span className="type-label text-xs block mb-1 whitespace-nowrap">{taxLabel}</span>
-                            <div className="min-h-8 flex items-center whitespace-nowrap">
-                              {ipiRate > 0
-                                ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
-                                : <span className="text-xs text-muted">—</span>
-                              }
+                          {market === 'BR' && (
+                            <div>
+                              <span className="type-label text-xs block mb-1 whitespace-nowrap">IPI</span>
+                              <div className="min-h-8 flex items-center whitespace-nowrap">
+                                {ipiRate > 0
+                                  ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
+                                  : <span className="text-xs text-muted">—</span>
+                                }
+                              </div>
                             </div>
-                          </div>
+                          )}
                           <div className="flex items-end gap-2">
                             <div>
                               <span className="type-label text-xs block mb-1 whitespace-nowrap">Subtotal</span>

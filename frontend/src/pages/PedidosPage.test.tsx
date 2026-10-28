@@ -55,10 +55,11 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
-    expect(screen.getAllByLabelText(`Editar pedido ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Finalizar pedido ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Cancelar pedido ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Excluir pedido ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: /Orçamentos/ })).toBeInTheDocument()
+    expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Excluir orçamento ${summary.code}`).length).toBeGreaterThan(0)
   })
 
   it('admin with finalized order hides Editar/Finalizar/Cancelar but keeps Excluir', async () => {
@@ -72,10 +73,10 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
-    expect(screen.queryAllByLabelText(`Editar pedido ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Finalizar pedido ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Cancelar pedido ${summary.code}`)).toHaveLength(0)
-    expect(screen.getAllByLabelText(`Excluir pedido ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.getAllByLabelText(`Excluir orçamento ${summary.code}`).length).toBeGreaterThan(0)
   })
 
   it('produtos role sees Editar/Finalizar/Cancelar but not Excluir; cliente linked does not see mutation actions', async () => {
@@ -86,10 +87,10 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
-    expect(screen.getAllByLabelText(`Editar pedido ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Finalizar pedido ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Cancelar pedido ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.queryAllByLabelText(`Excluir pedido ${summary.code}`)).toHaveLength(0)
+    expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.queryAllByLabelText(`Excluir orçamento ${summary.code}`)).toHaveLength(0)
 
     unmount()
 
@@ -100,10 +101,10 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
-    expect(screen.queryAllByLabelText(`Editar pedido ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Finalizar pedido ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Cancelar pedido ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Excluir pedido ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Excluir orçamento ${summary.code}`)).toHaveLength(0)
   })
 
   it('keeps item options collapsed with photo thumbnails and supports item and global expansion', async () => {
@@ -206,7 +207,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     await screen.findAllByText(summary.code)
-    await user.click(screen.getByLabelText(`Ver detalhes do pedido ${summary.code}`))
+    await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
 
     const itemToggle = await screen.findByRole('button', { name: '3 opcionais' })
     const labels = [
@@ -264,7 +265,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     expect((await screen.findAllByText('TAP-001(4,5 m²)')).length).toBeGreaterThan(0)
-    await user.click(screen.getByLabelText(`Ver detalhes do pedido ${summary.code}`))
+    await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
 
     const code = await screen.findByText('TAP-001')
     const row = code.closest('tr')!

@@ -106,7 +106,7 @@ export default function DashboardFab({
           navegação e some sobre a tela de Pedidos (bridge, não corte seco). */}
       {returnVisible && (
         <BrandLoadingOverlay
-          label="Voltando aos Pedidos"
+          label="Voltando aos Orçamentos"
           progressDuration={1}
           className={`bg-bg! transition-opacity ease-out ${
             returnPhase === 'out' ? 'opacity-0 pointer-events-none' : 'opacity-100'
