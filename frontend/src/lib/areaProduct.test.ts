@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { areaLimit, formatArea, isAreaCatalogName, isAreaProduct, normalizeAreaQty } from './areaProduct.ts'
+import { areaLimit, formatArea, formatRugSize, isAreaCatalogName, isAreaProduct, normalizeAreaQty, previewArea } from './areaProduct.ts'
 
 test('reconhece somente os nomes normalizados do catálogo de tapetes', () => {
   assert.equal(isAreaCatalogName(' Tapete '), true)
@@ -33,4 +33,27 @@ test('formata área em português e inglês com zero a duas casas', () => {
   assert.equal(formatArea(4.5, 'pt-PT'), '4,5 m²')
   assert.equal(formatArea(4.5, 'en-GB'), '4.5 m²')
   assert.equal(formatArea(4, 'pt-BR'), '4 m²')
+})
+
+test('prévia de área calcula área mínima e ignora medidas inválidas', () => {
+  assert.equal(previewArea(2.05, 2.05), 4.2)
+  assert.equal(previewArea(0.05, 0.05), 0.01)
+  assert.equal(previewArea(null, 2), null)
+  assert.equal(previewArea(0, 3), null)
+  assert.equal(previewArea(undefined, 1), null)
+})
+
+test('formatRugSize mostra medidas e área quando há dimensões válidas', () => {
+  assert.equal(
+    formatRugSize(2.05, 2.05, 4.2, 'pt-BR'),
+    '2,05 × 2,05 m = 4,2 m²',
+  )
+  assert.equal(
+    formatRugSize(null, undefined, 4.2, 'pt-BR'),
+    '4,2 m²',
+  )
+  assert.equal(
+    formatRugSize(0, 2, 4.2, 'pt-BR'),
+    '4,2 m²',
+  )
 })

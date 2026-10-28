@@ -5,7 +5,7 @@ import { formatDimensions } from './measurements'
 import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
-import { formatArea } from './areaProduct'
+import { formatArea, formatRugSize } from './areaProduct'
 import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
@@ -351,14 +351,26 @@ export async function generateOrderPDF(
     const isSetProduct = !!product && (product.is_set || isConjuntoType(product.type) || components.length > 0)
     // O conjunto é apenas o agregador. Suas dimensões pertencem aos componentes,
     // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
-    const hasDims = !item.sold_by_area && !isSetProduct && (item.largura !== 0 || item.altura !== 0)
+    // Tapetes com medidas vendidas por área também ganham uma linha de dimensões,
+    // pois o servidor informa a largura/profundidade em metros do item.
+    const hasRugDims = item.sold_by_area
+      && item.area_width_m != null
+      && item.area_depth_m != null
+      && Number(item.area_width_m) > 0
+      && Number(item.area_depth_m) > 0
+    const hasDims = !isSetProduct && (
+      (!item.sold_by_area && (item.largura !== 0 || item.altura !== 0))
+      || hasRugDims
+    )
     const optSlots = orderOptionalSlots(item, locale === 'en-GB', catLabel)
     // Bloco textual limitado a 70 mm: partindo de x=40, termina em x=110 e
     // preserva 15 mm de respiro antes da coluna QTD em x=125. O rowH soma as
     // linhas físicas reais para não colidir com o próximo item.
     const PRODUCT_TEXT_WIDTH = 70
     const dimText = hasDims
-      ? `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
+      ? item.sold_by_area
+        ? `${L.dimensions}: ${pdfSafe(formatRugSize(item.area_width_m, item.area_depth_m, item.qty, measurementLocale))}`
+        : `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
       : null
     const obsText = item.observacao ? `${L.itemNote}: ${item.observacao}` : null
     const commentText = item.comment ? `${L.itemComment}: ${item.comment}` : null

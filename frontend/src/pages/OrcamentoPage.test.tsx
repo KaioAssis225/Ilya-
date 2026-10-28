@@ -405,6 +405,49 @@ describe('OrcamentoPage', () => {
     })
   })
 
+  it('envia L × P do tapete sem qty e bloqueia tapete sem medidas', async () => {
+    const user = productTestUser('admin', 'EU')
+    const rug = buildProduct('EU', {
+      product_code: 'TAP-EU', description: 'Tapete PT',
+      catalog_id: 'tapetes', catalog: { id: 'tapetes', name: 'Tapete' },
+      optional_applications: [],
+    })
+    const quoteClient = {
+      id: 'client-eu-rug', name: 'Cliente Tapete', phone: '+351 912 345 678', email: null, cpf_cnpj: null,
+      cep: '1000-001', numero: null, address: 'Rua de Teste', city: 'Lisboa', state: 'Lisboa', country: 'PT',
+      region: null, tax_id: 'PT123456789', market_code: 'EU', price_profile: 'lojista', max_discount: 0,
+      rep_id: null, created_at: '2026-10-28T12:00:00Z', updated_at: '2026-10-28T12:00:00Z',
+      last_activity_at: '2026-10-28T12:00:00Z',
+    } as Client
+    localStorage.setItem(cartStorageKey(user.id, 'EU'), JSON.stringify([
+      { line_id: 'rug-sized', product_code: 'TAP-EU', qty: 4.2, sold_by_area: true, area_width_m: 2.05, area_depth_m: 2.05, discount: 0, opt_categories: {}, optional_choices: [] },
+      { line_id: 'rug-empty', product_code: 'TAP-EU', qty: 1, sold_by_area: true, area_width_m: null, area_depth_m: null, discount: 0, opt_categories: {}, optional_choices: [] },
+    ]))
+    sessionStorage.setItem(`orcamento_client_id:${user.id}:EU`, quoteClient.id)
+    installOrcamentoHandlers([rug])
+    let posted: { items: Array<Record<string, unknown>> } | null = null
+    server.use(
+      http.get(`*/clients/${quoteClient.id}`, () => HttpResponse.json(quoteClient)),
+      http.post('*/orders', async ({ request }) => {
+        posted = await request.json() as { items: Array<Record<string, unknown>> }
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    // A segunda linha ainda não tem L × P: o servidor recusaria, então o botão trava.
+    await waitFor(() => expect(submit).toBeDisabled())
+    fireEvent.click(screen.getAllByRole('button', { name: /Remover Tapete PT do orçamento/ })[1])
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+    await waitFor(() => expect(posted).not.toBeNull())
+    const [line] = posted!.items
+    expect(line).toMatchObject({ product_code: 'TAP-EU', area_width_m: 2.05, area_depth_m: 2.05 })
+    expect(line).not.toHaveProperty('qty')
+  })
+
   it('mantém o administrador e fixa seu representante nos pedidos novos', async () => {
     const fixedRep = buildRepresentative('rep-james', 'James IBTW')
     const user = {
@@ -726,7 +769,7 @@ describe('OrcamentoPage', () => {
     expect(dialog.querySelector(`img[src="${OPTIONAL_PHOTO_URL}"]`)).toBeTruthy()
   })
 
-  it('area product uses decimal m², clamps the limit and counts one cart line', async () => {
+  it('tapete pede L × P em metros, mostra a área e avisa acima do limite', async () => {
     const user = productTestUser('admin', 'BR')
     const product = buildProduct('BR', {
       product_code: 'TAP-001',
@@ -748,23 +791,28 @@ describe('OrcamentoPage', () => {
 
     const item = await screen.findByRole('listitem', { name: 'TAP-001 Tapete Amazonas' })
     expect(within(item).queryByText(/L 9/)).not.toBeInTheDocument()
-    const areaInputs = screen.getAllByLabelText('M² — Tapete Amazonas') as HTMLInputElement[]
-    fireEvent.change(areaInputs[0], { target: { value: '4.5' } })
-    await waitFor(() => expect(areaInputs[0]).toHaveValue(4.5))
+    // Sem medidas a linha pede L × P e o orçamento não pode ser salvo.
+    expect(within(item).getByText('Informe L × P')).toBeInTheDocument()
+    const widthInput = within(item).getByLabelText('Largura em metros')
+    const depthInput = within(item).getByLabelText('Profundidade em metros')
+    fireEvent.change(widthInput, { target: { value: '2.05' } })
+    fireEvent.change(depthInput, { target: { value: '2.05' } })
 
+    // Prévia arredondada (4,2025 → 4,20 m²); o valor final vem do servidor.
+    expect(await within(item).findByText('= 4,2 m²')).toBeInTheDocument()
     const expectedSubtotal = new Intl.NumberFormat('pt-BR', {
       style: 'currency', currency: 'BRL',
-    }).format(450)
+    }).format(420)
     expectItemSubtotal(item, expectedSubtotal)
     expect(Array.from(document.querySelectorAll('div')).some((node) => node.textContent === 'Itens: 1')).toBe(true)
 
-    fireEvent.change(areaInputs[0], { target: { value: '20' } })
-    await waitFor(() => expect(areaInputs[0]).toHaveValue(12.5))
-    expect(screen.getAllByText('máx. 12,5 m²').some((node) => node.className.includes('text-warning'))).toBe(true)
+    fireEvent.change(widthInput, { target: { value: '5' } })
+    fireEvent.change(depthInput, { target: { value: '3' } })
+    await waitFor(() => expect(within(item).getAllByText('máx. 12,5 m²').some((node) => node.className.includes('text-warning'))).toBe(true))
 
     await waitFor(() => {
-      const saved = JSON.parse(localStorage.getItem(cartStorageKey(user.id, 'BR')) ?? '[]') as Array<{ sold_by_area?: boolean }>
-      expect(saved[0]?.sold_by_area).toBe(true)
+      const saved = JSON.parse(localStorage.getItem(cartStorageKey(user.id, 'BR')) ?? '[]') as Array<{ sold_by_area?: boolean; area_width_m?: number; area_depth_m?: number }>
+      expect(saved[0]).toMatchObject({ sold_by_area: true, area_width_m: 5, area_depth_m: 3 })
     })
   })
 })
