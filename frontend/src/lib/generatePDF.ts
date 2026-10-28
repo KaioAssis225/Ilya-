@@ -138,6 +138,8 @@ export async function generateOrderPDF(
   // do mercado em que o usuário está agora.
   const orderDocument = resolveOrderDocument(documentLocale ? { ...order, locale: documentLocale } : order)
   const { currency, locale, taxLabel, brand, brandSuffix, brandDescriptor, labels: L, seller } = orderDocument
+  // IVA (Portugal) vai no fecho do documento; IPI (Brasil) segue embutido na linha.
+  const taxOnTotal = order.market_code === 'EU'
   const w = doc.internal.pageSize.getWidth()
 
   // Cada produto é rasterizado uma vez. Thumbnails já têm resolução suficiente
@@ -466,7 +468,8 @@ export async function generateOrderPDF(
     const discount = Number(item.discount || 0)
     const ipiRate = Number(item.ipi_rate || 0)
     const effectivePrice = unitPrice * (1 - discount / 100)
-    const subtotalWithIpi = effectivePrice * item.qty * (1 + ipiRate / 100)
+    // Brasil: IPI entra na linha. Portugal: IVA só no fecho (Subtotal → IVA → Total).
+    const lineTotal = effectivePrice * item.qty * (taxOnTotal ? 1 : 1 + ipiRate / 100)
 
     doc.setTextColor(...DARK)
     doc.setFontSize(8)
@@ -501,11 +504,11 @@ export async function generateOrderPDF(
       doc.text('—', 167, y, { align: 'right' })
     }
 
-    // Total com IPI
+    // Total da linha (com IPI no Brasil, sem IVA em Portugal)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     doc.setTextColor(...DARK)
-    doc.text(formatMoney(subtotalWithIpi, currency, locale), 186, y, { align: 'right' })
+    doc.text(formatMoney(lineTotal, currency, locale), 186, y, { align: 'right' })
 
     // Linha separadora leve
     doc.setFont('helvetica', 'normal')
@@ -519,8 +522,10 @@ export async function generateOrderPDF(
   // ── Rodapé de totais ───────────────────────────────────────────────────────
   const totalItems = order.items.reduce((sum, item) => sum + (item.sold_by_area ? 0 : item.qty), 0)
   // Reserva o bloco de totais + assinaturas. A área do tapete permanece apenas
-  // na linha do produto e não gera um total separado no resumo.
-  if (y + 59 > 278) {
+  // na linha do produto e não gera um total separado no resumo. Em Portugal
+  // entram mais duas linhas (Subtotal e IVA) antes do total.
+  const showTaxBreakdown = taxOnTotal && Number(order.total_ipi) > 0
+  if (y + 59 + (showTaxBreakdown ? 16 : 0) > 278) {
     doc.addPage()
     y = drawContinuationHeader()
   }
@@ -537,6 +542,19 @@ export async function generateOrderPDF(
   doc.setFont('helvetica', 'bold')
   doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
+
+  if (showTaxBreakdown) {
+    doc.setFont('helvetica', 'normal')
+    doc.text('Subtotal:', 148, y, { align: 'right' })
+    doc.setFont('helvetica', 'bold')
+    doc.text(formatMoney(Number(order.total_value), currency, locale), 186, y, { align: 'right' })
+    y += 8
+    doc.setFont('helvetica', 'normal')
+    doc.text(`${taxLabel}:`, 148, y, { align: 'right' })
+    doc.setFont('helvetica', 'bold')
+    doc.text(formatMoney(Number(order.total_ipi), currency, locale), 186, y, { align: 'right' })
+    y += 8
+  }
 
   const finalTotal = Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)
 
