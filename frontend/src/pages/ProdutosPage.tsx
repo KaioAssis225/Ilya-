@@ -1257,9 +1257,9 @@ export default function ProdutosPage() {
                 }}
                 className="w-full min-h-11 lg:min-h-0 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"
               >
-                <option value="">{english ? 'All catalogues' : 'Todos os catálogos'}</option>
+                <option value="">{(english ? 'All catalogues' : 'Todos os catálogos').toLocaleUpperCase(locale)}</option>
                 {catalogs.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>{c.name.toLocaleUpperCase(locale)}</option>
                 ))}
               </select>
             </div>
@@ -1395,7 +1395,7 @@ export default function ProdutosPage() {
                       style={{ touchAction: 'manipulation' }}
                     >
                       {english ? 'Catalogue: ' : 'Catálogo: '}
-                      {catalogs.find(c => c.id === selectedCatalogId)?.name ?? ''}
+                      {(catalogs.find(c => c.id === selectedCatalogId)?.name ?? '').toLocaleUpperCase(locale)}
                       <span className="sr-only">{english ? '(remove filter)' : '(remover filtro)'}</span>
                       <X className="w-3 h-3 text-muted" aria-hidden="true" />
                     </button>

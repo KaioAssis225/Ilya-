@@ -199,7 +199,8 @@ describe('ProdutosPage de catálogo em DOM', () => {
     }))
     renderProductPage(<ProdutosPage />, productTestUser('admin', 'EU'))
 
-    await screen.findByRole('option', { name: firstCatalog.name })
+    // O seletor exibe os catálogos em maiúsculas, como Grupo e Subgrupo.
+    await screen.findByRole('option', { name: 'CATÁLOGO PRIMEIRO' })
     const catalogFilter = screen.getAllByRole('combobox')[0]
     await user.selectOptions(catalogFilter, firstCatalog.id)
     expect(await screen.findByText('P05-FILTER-ONE')).toBeVisible()
