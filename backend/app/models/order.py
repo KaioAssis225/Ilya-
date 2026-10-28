@@ -190,6 +190,9 @@ class OrderItem(Base, TimestampMixin):
     sold_by_area: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Medidas do tapete em metros; NULL para itens antigos (rug_dimensions_r29).
+    area_width_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    area_depth_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     discount: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     ipi_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
@@ -203,5 +206,9 @@ class OrderItem(Base, TimestampMixin):
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 
     __table_args__ = (
+        CheckConstraint(
+            "(area_width_m IS NULL AND area_depth_m IS NULL) OR (area_width_m > 0 AND area_depth_m > 0)",
+            name="ck_order_items_area_dims_pair",
+        ),
         Index("ix_order_items_order_id", "order_id"),
     )

@@ -264,7 +264,10 @@ export interface RepresentativeUpdate extends Partial<RepresentativeCreate> {}
 
 export interface OrderItemCreate {
   product_code: string
-  qty: number
+  // Tapete com medidas não envia qty: o servidor calcula L × P.
+  qty?: number
+  area_width_m?: number
+  area_depth_m?: number
   discount?: number
   opt_categories?: Record<string, string>
   optional_choices?: OptionalChoiceInput[]
@@ -295,6 +298,8 @@ export interface OrderItem {
   product_code: string
   description: string
   sold_by_area?: boolean
+  area_width_m?: number | string | null
+  area_depth_m?: number | string | null
   is_circular: boolean
   altura: number
   largura: number

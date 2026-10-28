@@ -31,7 +31,7 @@ import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
 import { formatDimensions } from '../lib/measurements'
-import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty } from '../lib/areaProduct'
+import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, previewArea } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
@@ -385,6 +385,8 @@ interface CartItem {
   product_code: string
   qty: number
   sold_by_area?: boolean
+  area_width_m?: number | null
+  area_depth_m?: number | null
   discount: number
   opt_categories: Partial<Record<string, string>>
   optional_choices: OptionalChoiceInput[]
@@ -711,11 +713,67 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
+function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDimensionsChange }: {
+  item: CartItem
+  english: boolean
+  locale: string
+  qtyLimitWarning: boolean
+  onAreaDimensionsChange: (lineId: string, width: number | null, depth: number | null) => void
+}) {
+  const width = item.area_width_m ?? null
+  const depth = item.area_depth_m ?? null
+  const preview = previewArea(width, depth)
+  const maximumArea = areaLimit(item._product)
+  const legacyNoMeasurements = Boolean(item.source_order_item_id && width == null && depth == null)
+  const warning = qtyLimitWarning || (preview != null && maximumArea != null && preview > maximumArea)
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="type-label text-xs" aria-hidden="true">L (m)</span>
+        <NumberField
+          value={width}
+          step="0.01"
+          min="0.01"
+          aria-label={english ? 'Width in metres' : 'Largura em metros'}
+          className="input w-20 text-xs text-center border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
+          onValueChange={(value) => onAreaDimensionsChange(item.line_id, value > 0 ? value : null, depth)}
+        />
+        <span className="text-xs text-muted">×</span>
+        <span className="type-label text-xs" aria-hidden="true">P (m)</span>
+        <NumberField
+          value={depth}
+          step="0.01"
+          min="0.01"
+          aria-label={english ? 'Depth in metres' : 'Profundidade em metros'}
+          className="input w-20 text-xs text-center border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
+          onValueChange={(value) => onAreaDimensionsChange(item.line_id, width, value > 0 ? value : null)}
+        />
+      </div>
+      {preview != null ? (
+        <p className="mt-1 text-xs font-semibold text-ink" aria-live="polite">= {formatArea(preview, locale)}</p>
+      ) : legacyNoMeasurements ? (
+        <p className="mt-1 text-xs font-semibold text-muted">
+          {formatArea(item.qty, locale)} <span className="text-warning font-medium">({english ? 'no measurements on record' : 'medidas não registradas'})</span>
+        </p>
+      ) : (
+        <p className="mt-1 text-xs font-semibold text-warning" aria-live="polite">{english ? 'Enter W × D' : 'Informe L × P'}</p>
+      )}
+      {maximumArea !== null && (
+        <p className={`mt-1 text-center text-[10px] ${warning ? 'text-warning font-semibold' : 'text-muted'}`}>
+          {english ? 'max.' : 'máx.'} {formatArea(maximumArea, locale)}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function MobileCartCard({
-  item, onQtyChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onAreaDimensionsChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
+  onAreaDimensionsChange: (lineId: string, width: number | null, depth: number | null) => void
   qtyLimitWarning: boolean
   onDiscountChange: (code: string, discount: number) => void
   maxDiscount: number
@@ -741,7 +799,6 @@ function MobileCartCard({
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
   const soldByArea = isAreaProduct(item._product)
-  const maximumArea = areaLimit(item._product)
 
   return (
     <div className="bg-white border border-line rounded-xl p-3.5 shadow-sm">
@@ -802,46 +859,39 @@ function MobileCartCard({
           o representante no showroom concede desconto pelo tablet/celular. O
           teto é o do usuário; o servidor revalida contra cliente/representante. */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mt-3 pt-3 border-t border-bg-2">
-        {/* Qty stepper */}
-        <div>
-          {soldByArea && <label htmlFor={`mobile-area-${item.line_id}`} className="type-label block mb-1 text-center">M²</label>}
-          <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
-            <button
-              // Botões andam em inteiros: 5,02 → 5. Abaixo de 1 m² só digitando.
-              onClick={() => onQtyChange(item.line_id, soldByArea
-                ? (item.qty <= 1 ? item.qty : Math.max(1, Math.ceil(item.qty) - 1))
-                : Math.max(1, item.qty - 1))}
-              className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
-              style={{ touchAction: 'manipulation' }}
-              aria-label={isEnglish ? `Decrease ${soldByArea ? 'area' : 'quantity'} of ${item._product.description}` : `Diminuir ${soldByArea ? 'área' : 'quantidade'} de ${item._product.description}`}
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-            {soldByArea ? (
-              <QuantityInput
-                id={`mobile-area-${item.line_id}`}
-                value={item.qty}
-                allowDecimal
-                max={maximumArea}
-                ariaLabel={`M² — ${item._product.description}`}
-                className="h-11 w-16 border-x border-line bg-white text-center text-sm font-semibold text-ink focus:outline-none focus:ring-1 focus:ring-gold"
-                onCommit={(qty) => onQtyChange(item.line_id, qty)}
-              />
-            ) : (
+        {/* Qty stepper ou dimensões do tapete */}
+        {soldByArea ? (
+          <AreaDimensionFields
+            item={item}
+            english={isEnglish}
+            locale={measurementLocale}
+            qtyLimitWarning={qtyLimitWarning}
+            onAreaDimensionsChange={onAreaDimensionsChange}
+          />
+        ) : (
+          <div>
+            <label htmlFor={`mobile-qty-${item.line_id}`} className="type-label block mb-1 text-center">{isEnglish ? 'Qty' : 'Qtd'}</label>
+            <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
+              <button
+                onClick={() => onQtyChange(item.line_id, Math.max(1, item.qty - 1))}
+                className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+                style={{ touchAction: 'manipulation' }}
+                aria-label={isEnglish ? `Decrease quantity of ${item._product.description}` : `Diminuir quantidade de ${item._product.description}`}
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
               <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
-            )}
-            <button
-              // 5,02 → 6 (próximo inteiro); o limite do item é aplicado no updateQty.
-              onClick={() => onQtyChange(item.line_id, soldByArea ? Math.floor(item.qty) + 1 : item.qty + 1)}
-              className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
-              style={{ touchAction: 'manipulation' }}
-              aria-label={isEnglish ? `Increase ${soldByArea ? 'area' : 'quantity'} of ${item._product.description}` : `Aumentar ${soldByArea ? 'área' : 'quantidade'} de ${item._product.description}`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+              <button
+                onClick={() => onQtyChange(item.line_id, item.qty + 1)}
+                className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+                style={{ touchAction: 'manipulation' }}
+                aria-label={isEnglish ? `Increase quantity of ${item._product.description}` : `Aumentar quantidade de ${item._product.description}`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-          {maximumArea !== null && <p className={`mt-1 text-center text-[10px] ${qtyLimitWarning ? 'text-warning font-semibold' : 'text-muted'}`}>{isEnglish ? 'max.' : 'máx.'} {formatArea(maximumArea, measurementLocale)}</p>}
-        </div>
+        )}
 
         {/* Desconto percentual */}
         <div className="flex items-center gap-1.5">
@@ -920,6 +970,7 @@ function OrderForm({
   editMode?: boolean; editCode?: string
   isEnglish?: boolean
 }) {
+  const missingAreaDimensions = cart.some(item => isAreaProduct(item._product) && !item.source_order_item_id && (item.area_width_m == null || item.area_depth_m == null))
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between pb-3 border-b border-line-soft">
@@ -997,7 +1048,7 @@ function OrderForm({
       )}
       <button
         onClick={onSubmit}
-        disabled={!selectedClient || cart.length === 0 || isGenerating}
+        disabled={!selectedClient || cart.length === 0 || missingAreaDimensions || isGenerating}
         style={{ touchAction: 'manipulation' }}
         className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-gold hover:bg-gold-600 active:bg-gold-700 disabled:bg-faint disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
       >
@@ -1148,8 +1199,9 @@ export default function OrcamentoPage() {
       setCart(previous => [...previous, {
         line_id: crypto.randomUUID(),
         product_code: configureProduct.product_code,
-        qty: isAreaProduct(configureProduct) ? Math.min(areaLimit(configureProduct) ?? 1, 1) : 1,
+        qty: 1,
         sold_by_area: isAreaProduct(configureProduct),
+        ...(isAreaProduct(configureProduct) ? { area_width_m: null, area_depth_m: null } : {}),
         discount: 0,
         opt_categories: initialLegacyOptionCategories(configureProduct),
         optional_choices: [],
@@ -1406,6 +1458,8 @@ export default function OrcamentoPage() {
               line_id: item.id,
               qty: item.qty,
               sold_by_area: item.sold_by_area ?? isAreaProduct(product),
+              area_width_m: item.area_width_m == null ? null : Number(item.area_width_m),
+              area_depth_m: item.area_depth_m == null ? null : Number(item.area_depth_m),
               discount: Number(item.discount),
               opt_categories: item.opt_categories,
               optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice))).map(choice => isCustomChoice(choice)
@@ -1470,22 +1524,20 @@ export default function OrcamentoPage() {
     const errors = validateApplicationChoices(selectedProduct, selectedChoices, allOptionals)
     if (errors.length) { setToast({ message: errors[0], variant: 'error' }); return }
     const auto_categories = initialLegacyOptionCategories(selectedProduct)
+    const areaProduct = isAreaProduct(selectedProduct)
     setCart((prev) => {
       const signature = JSON.stringify({ legacy: auto_categories, choices: [...selectedChoices].sort((a, b) => a.application_id.localeCompare(b.application_id)) })
       const existing = prev.find((i) => i.product_code === selectedProduct.product_code && i.discount === 0 &&
         JSON.stringify({ legacy: i.opt_categories, choices: [...i.optional_choices].sort((a, b) => a.application_id.localeCompare(b.application_id)) }) === signature)
-      if (existing) {
-        const maximumArea = areaLimit(selectedProduct)
-        const nextQty = isAreaProduct(selectedProduct)
-          ? Math.min(maximumArea ?? Number.POSITIVE_INFINITY, normalizeAreaQty(existing.qty + 1))
-          : existing.qty + 1
-        return prev.map((i) => i.line_id === existing.line_id ? { ...i, qty: nextQty, sold_by_area: isAreaProduct(selectedProduct) } : i)
+      if (existing && !areaProduct) {
+        return prev.map((i) => i.line_id === existing.line_id ? { ...i, qty: i.qty + 1 } : i)
       }
       return [...prev, {
         line_id: crypto.randomUUID(),
         product_code: selectedProduct.product_code,
-        qty: isAreaProduct(selectedProduct) ? Math.min(areaLimit(selectedProduct) ?? 1, 1) : 1,
-        sold_by_area: isAreaProduct(selectedProduct),
+        qty: 1,
+        sold_by_area: areaProduct,
+        ...(areaProduct ? { area_width_m: null, area_depth_m: null } : {}),
         discount: 0,
         opt_categories: auto_categories,
         optional_choices: selectedChoices,
@@ -1516,6 +1568,31 @@ export default function OrcamentoPage() {
       return next
     })
     setCart((prev) => prev.map((candidate) => candidate.line_id === lineId ? { ...candidate, qty: normalized, sold_by_area: soldByArea } : candidate))
+  }
+
+  function updateAreaDimensions(lineId: string, width: number | null, depth: number | null) {
+    const item = cart.find((candidate) => candidate.line_id === lineId)
+    if (!item) return
+
+    const nextWidth = width != null && width > 0 ? width : null
+    const nextDepth = depth != null && depth > 0 ? depth : null
+    const nextQty = previewArea(nextWidth, nextDepth) ?? item.qty
+    const maximumArea = areaLimit(item._product)
+    const overLimit = nextQty != null && maximumArea !== null && nextQty > maximumArea
+
+    setQtyLimitWarnings((current) => {
+      const next = new Set(current)
+      if (overLimit) next.add(lineId)
+      else next.delete(lineId)
+      return next
+    })
+    setCart((previous) => previous.map((candidate) => candidate.line_id === lineId ? {
+      ...candidate,
+      area_width_m: nextWidth,
+      area_depth_m: nextDepth,
+      qty: nextQty,
+      sold_by_area: true,
+    } : candidate))
   }
 
   // Desconto por item — mesmo caminho para tabela desktop e cartão mobile. O
@@ -1572,16 +1649,26 @@ export default function OrcamentoPage() {
   // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
   const budgetCode = isEnglish ? 'Assigned on save' : 'Gerado ao salvar'
 
-  const itemsPayload = cart.map(({ product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, comment, _product }) => ({
-    product_code,
-    qty: isAreaProduct(_product) ? normalizeAreaQty(qty) : Math.max(1, Math.round(qty)),
-    discount: discount || 0,
-    opt_categories: opt_categories as Record<string, string>,
-    optional_choices,
-    source_order_item_id,
-    preserve_optional_choices,
-    comment: comment?.trim() || null,
-  }))
+  const itemsPayload = cart.map((item) => {
+    const { product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, comment, _product } = item
+    const areaProduct = isAreaProduct(_product)
+    const width = item.area_width_m
+    const depth = item.area_depth_m
+    const base = {
+      product_code,
+      discount: discount || 0,
+      opt_categories: opt_categories as Record<string, string>,
+      optional_choices,
+      source_order_item_id,
+      preserve_optional_choices,
+      comment: comment?.trim() || null,
+    }
+    // Tapete com medidas não manda qty: o servidor calcula L × P.
+    if (areaProduct && width != null && depth != null) {
+      return { ...base, area_width_m: width, area_depth_m: depth }
+    }
+    return { ...base, qty: areaProduct ? normalizeAreaQty(qty) : Math.max(1, Math.round(qty)) }
+  })
   const repIdForSubmit = editId
     ? selectedRep?.id ?? null
     : selectedRep?.id ?? (targetRepId || null)
@@ -1590,6 +1677,14 @@ export default function OrcamentoPage() {
     if (!cartHydrated || !selectedClient || cart.length === 0) return
     const error = cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals))[0]
     if (error) { setToast({ message: error, variant: 'error' }); return }
+    const missingAreaDimensions = cart.some(item => isAreaProduct(item._product) && !item.source_order_item_id && (item.area_width_m == null || item.area_depth_m == null))
+    if (missingAreaDimensions) {
+      setToast({
+        message: isEnglish ? 'Enter width × depth for every rug.' : 'Informe largura × profundidade de todos os tapetes.',
+        variant: 'error',
+      })
+      return
+    }
     setIsGenerating(true)
     try {
       if (editId) {
@@ -1896,6 +1991,7 @@ export default function OrcamentoPage() {
                       key={item.line_id}
                       item={item}
                       onQtyChange={updateQty}
+                      onAreaDimensionsChange={updateAreaDimensions}
                       qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
                       onDiscountChange={updateDiscount}
                       maxDiscount={maxDiscount}
@@ -1926,7 +2022,6 @@ export default function OrcamentoPage() {
                     // (Subtotal → IVA → Total), como numa fatura.
                     const lineTotal = market === 'EU' ? subtotal : subtotal * (1 + ipiRate / 100)
                     const soldByArea = isAreaProduct(item._product)
-                    const maximumArea = areaLimit(item._product)
                     return (
                       <li
                         key={item.line_id}
@@ -1977,19 +2072,28 @@ export default function OrcamentoPage() {
 
                         {/* Em 2xl qtd, preços, subtotal, comentário e excluir cabem numa linha (~540px). */}
                         <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[600px]">
-                          <div>
-                            <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{soldByArea ? 'M²' : (isEnglish ? 'Qty' : 'Qtd')}</label>
-                            <QuantityInput
-                              id={`desktop-qty-${item.line_id}`}
-                              value={item.qty}
-                              allowDecimal={soldByArea}
-                              max={soldByArea ? maximumArea : null}
-                              ariaLabel={soldByArea ? `M² — ${item._product.description}` : (isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`)}
-                              className="input w-20 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
-                              onCommit={(qty) => updateQty(item.line_id, qty)}
+                          {soldByArea ? (
+                            <AreaDimensionFields
+                              item={item}
+                              english={isEnglish}
+                              locale={locale}
+                              qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
+                              onAreaDimensionsChange={updateAreaDimensions}
                             />
-                            {maximumArea !== null && <p className={`text-[9px] mt-0.5 text-center whitespace-nowrap ${qtyLimitWarnings.has(item.line_id) ? 'text-warning font-semibold' : 'text-muted'}`}>{isEnglish ? 'max.' : 'máx.'} {formatArea(maximumArea, locale)}</p>}
-                          </div>
+                          ) : (
+                            <div>
+                              <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
+                              <QuantityInput
+                                id={`desktop-qty-${item.line_id}`}
+                                value={item.qty}
+                                allowDecimal={false}
+                                max={null}
+                                ariaLabel={isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`}
+                                className="input w-20 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
+                                onCommit={(qty) => updateQty(item.line_id, qty)}
+                              />
+                            </div>
+                          )}
                           <div>
                             <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Base Price' : 'Preço base'}</span>
                             <div className="text-ink-2 text-xs font-semibold whitespace-nowrap min-h-8 flex items-center">

@@ -17,7 +17,7 @@ import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { choiceValue } from '../lib/optionalApplications'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
-import { formatArea } from '../lib/areaProduct'
+import { formatArea, formatRugSize } from '../lib/areaProduct'
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
@@ -467,7 +467,14 @@ function OrderDetailModal({
                           </div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs min-w-[120px]">
-                          {item.sold_by_area ? '—' : formatDimensions(item, order.market_code, viewLocale)}
+                          {item.sold_by_area
+                            ? item.area_width_m != null
+                                && item.area_depth_m != null
+                                && Number(item.area_width_m) > 0
+                                && Number(item.area_depth_m) > 0
+                              ? formatRugSize(item.area_width_m, item.area_depth_m, item.qty, viewLocale)
+                              : '—'
+                            : formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
                           {(() => {

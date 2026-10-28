@@ -400,6 +400,8 @@ interface StoredProductLine extends CartSelections {
   qty: number
   discount: number
   sold_by_area?: boolean
+  area_width_m?: number | null
+  area_depth_m?: number | null
   line_id?: string
   _product: Product
 }
@@ -450,28 +452,40 @@ function addToCart(
     }, {}),
     optional_choices: [],
   }
-  const existing = cart.find(line =>
-    line.product_code === product.product_code
-      && line.discount === 0
-      && sameSelections(line, selections),
-  )
-  const maximumArea = areaLimit(product)
-  if (existing) {
-    existing.qty = isAreaProduct(product)
-      ? Math.min(maximumArea ?? Number.POSITIVE_INFINITY, existing.qty + 1)
-      : existing.qty + 1
-    existing.sold_by_area = isAreaProduct(product)
-  } else {
+  const areaProduct = isAreaProduct(product)
+  if (areaProduct) {
     cart.push({
       line_id: crypto.randomUUID(),
       product_code: product.product_code,
-      qty: isAreaProduct(product) ? Math.min(maximumArea ?? 1, 1) : 1,
+      qty: 1,
       discount: 0,
-      sold_by_area: isAreaProduct(product),
+      sold_by_area: true,
+      area_width_m: null,
+      area_depth_m: null,
       opt_categories: selections.opt_categories,
       optional_choices: sortedChoices(selections.optional_choices),
       _product: product,
     })
+  } else {
+    const existing = cart.find(line =>
+      line.product_code === product.product_code
+        && line.discount === 0
+        && sameSelections(line, selections),
+    )
+    if (existing) {
+      existing.qty = existing.qty + 1
+    } else {
+      cart.push({
+        line_id: crypto.randomUUID(),
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        sold_by_area: false,
+        opt_categories: selections.opt_categories,
+        optional_choices: sortedChoices(selections.optional_choices),
+        _product: product,
+      })
+    }
   }
   localStorage.setItem(storageKey, JSON.stringify(cart))
   notifyCartChanged()

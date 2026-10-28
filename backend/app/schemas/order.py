@@ -49,7 +49,9 @@ class OptionalChoiceRead(BaseModel):
 
 class OrderItemCreate(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
-    qty: Decimal = Field(..., gt=0, le=1_000_000, decimal_places=2)
+    qty: Optional[Decimal] = Field(None, gt=0, le=1_000_000, decimal_places=2)
+    area_width_m: Optional[Decimal] = Field(None, gt=0, le=1000, decimal_places=3)
+    area_depth_m: Optional[Decimal] = Field(None, gt=0, le=1000, decimal_places=3)
     discount: Decimal = Field(Decimal("0"), ge=0, le=100, decimal_places=2)
     opt_categories: Dict[str, str] = Field(default_factory=dict, max_length=50)
     optional_choices: List[OptionalChoiceCreate] = Field(default_factory=list, max_length=100)
@@ -79,6 +81,16 @@ class OrderItemCreate(BaseModel):
         ):
             raise ValueError("Categoria ou cor opcional fora do tamanho permitido.")
         return values
+
+    @model_validator(mode="after")
+    def validate_area_dimensions(self) -> "OrderItemCreate":
+        has_width = self.area_width_m is not None
+        has_depth = self.area_depth_m is not None
+        if has_width != has_depth:
+            raise ValueError("Informe largura e profundidade do tapete.")
+        if not has_width and not has_depth and self.qty is None:
+            raise ValueError("Informe a quantidade do item.")
+        return self
 
 
 class OrderCreate(BaseModel):
@@ -118,6 +130,8 @@ class OrderItemRead(BaseModel):
     optional_choices: List[OptionalChoiceRead] = Field(default_factory=list)
     qty: float
     sold_by_area: bool = False
+    area_width_m: Optional[Decimal] = None
+    area_depth_m: Optional[Decimal] = None
     unit_price: Decimal
     discount: Decimal = Decimal("0")
     ipi_rate: Decimal = Decimal("0")
@@ -187,6 +201,8 @@ class OrderRead(BaseModel):
 class OrderListItemRead(BaseModel):
     product_code: str
     qty: float
+    area_width_m: Optional[Decimal] = None
+    area_depth_m: Optional[Decimal] = None
 
 
 class OrderListRead(BaseModel):

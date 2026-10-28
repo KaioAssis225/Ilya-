@@ -384,3 +384,33 @@ test('tapete mostra m² apenas na linha do produto e não entra no total de iten
   assert.ok(wrappedTexts.some(({ text, width }) => text === 'Tapete Amazonas' && width === 70))
   assert.ok(!renderedTexts.some((text) => text.startsWith('DIMENSÕES:') || text.startsWith('DIMENSIONS:')))
 })
+
+test('tapete com medidas imprime dimensões formatadas em m (BR)', async () => {
+  const order = makeOrder({
+    items: [
+      makeOrderItem({
+        id: 'item-tapete-dimensoes',
+        product_code: 'TAP-001',
+        description: 'Tapete Amazonas',
+        sold_by_area: true,
+        qty: 4.2,
+        area_width_m: 2.05,
+        area_depth_m: 2.05,
+        altura: 9,
+        largura: 9,
+        profundidade: 9,
+      }),
+    ],
+  })
+
+  await generateOrderPDF(order, makeClient(), null, [
+    makeProduct({
+      id: 'prod-tapete',
+      product_code: 'TAP-001',
+      description: 'Tapete Amazonas',
+      catalog: { id: 'tapetes', name: 'Tapete' },
+    }),
+  ])
+
+  assert.ok(renderedTexts.some((text) => text.includes('2,05 × 2,05 m = 4,2 m²')))
+})

@@ -22,6 +22,37 @@ export function areaLimit(product: AreaProduct | null | undefined): number | nul
   return Number.isFinite(maximum) && maximum > 0 ? maximum : null
 }
 
+export function previewArea(width: number | null | undefined, depth: number | null | undefined): number | null {
+  if (width == null || depth == null) return null
+  const numericWidth = Number(width)
+  const numericDepth = Number(depth)
+  if (!Number.isFinite(numericWidth) || !Number.isFinite(numericDepth) || numericWidth <= 0 || numericDepth <= 0) return null
+  return Math.max(0.01, Math.round((numericWidth * numericDepth + Number.EPSILON) * 100) / 100)
+}
+
+export function formatMeters(value: number | string, locale = 'pt-BR'): string {
+  const numeric = Number(value)
+  const safe = Number.isFinite(numeric) ? numeric : 0
+  return `${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(safe)} m`
+}
+
+export function formatRugSize(
+  width: number | string | null | undefined,
+  depth: number | string | null | undefined,
+  area: number | string,
+  locale = 'pt-BR',
+): string {
+  const numericWidth = width == null ? 0 : Number(width)
+  const numericDepth = depth == null ? 0 : Number(depth)
+  if (!Number.isFinite(numericWidth) || !Number.isFinite(numericDepth) || numericWidth <= 0 || numericDepth <= 0) {
+    return formatArea(area, locale)
+  }
+  return `${formatMeters(numericWidth, locale).replace(/ m$/, '')} × ${formatMeters(numericDepth, locale)} = ${formatArea(area, locale)}`
+}
+
 export function normalizeAreaQty(value: number | string): number {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0.01
