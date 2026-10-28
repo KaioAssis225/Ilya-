@@ -557,13 +557,26 @@ function OrderDetailModal({
                             : <span className="text-xs text-muted">—</span>}
                         </td>
                         <td className="px-3 py-2 text-right font-bold text-ink whitespace-nowrap">
-                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={viewLocale} />
+                          {/* Portugal: IVA só no fecho da tabela; Brasil: IPI na linha. */}
+                          <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (order.market_code === 'EU' ? 1 : 1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={viewLocale} />
                         </td>
                       </tr>
                     )
                   })}
                 </tbody>
                 <tfoot>
+                  {order.market_code === 'EU' && Number(order.total_ipi) > 0 && (
+                    <>
+                      <tr className="border-t border-line bg-bg">
+                        <td colSpan={8} className="px-3 pt-2.5 pb-1 text-right text-xs text-muted uppercase tracking-wider">Subtotal</td>
+                        <td className="px-3 pt-2.5 pb-1 text-right text-sm text-ink whitespace-nowrap"><SafePrice value={Number(order.total_value)} currency={order.currency} locale={viewLocale} /></td>
+                      </tr>
+                      <tr className="bg-bg">
+                        <td colSpan={8} className="px-3 py-1 text-right text-xs text-muted uppercase tracking-wider">{viewText('IVA', 'VAT')}</td>
+                        <td className="px-3 py-1 text-right text-sm text-ink whitespace-nowrap"><SafePrice value={Number(order.total_ipi)} currency={order.currency} locale={viewLocale} /></td>
+                      </tr>
+                    </>
+                  )}
                   <tr className="border-t border-line bg-bg">
                     <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">{viewText('Valor Total', 'Total value')}</td>
                     <td className="px-3 py-2.5 text-right text-gold font-bold text-base">
