@@ -1,5 +1,5 @@
 import { ImageOff } from 'lucide-react'
-import { useState } from 'react'
+import { useImageRetry } from '../hooks/useImageRetry'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName } from '../lib/optionalLabels'
 import { optionalMedia, optionalMediaWidth, type OptionalMediaVariant } from '../lib/optionalMedia'
@@ -28,22 +28,20 @@ export function OptionalSwatchImage({
 }: OptionalSwatchImageProps) {
   const { locale } = useLocale()
   const label = optionalName(optional.color_name, locale === 'en-GB')
-  const [failedSources, setFailedSources] = useState<string[]>([])
   const media = optionalMedia(optional, variant, displaySize)
-  const primaryFailed = Boolean(media.src && failedSources.includes(media.src))
-  const fallback = optional.photo_url && optional.photo_url !== media.src ? optional.photo_url : null
-  const fallbackFailed = Boolean(fallback && failedSources.includes(fallback))
-  const source = primaryFailed && fallback && !fallbackFailed ? fallback : primaryFailed ? null : media.src
-  const usingFallback = source === fallback
+  const image = useImageRetry(media.src)
+  // Na nova tentativa o srcSet sai: o navegador poderia escolher de novo a
+  // mesma candidata que falhou, sem o parâmetro que força o novo pedido.
+  const withSrcSet = responsive && !image.retried
   const unavailableLabel = locale === 'en-GB' ? 'Image being updated' : 'Imagem em atualização'
 
   return (
     <span aria-hidden={decorative || undefined} className={`relative flex aspect-square items-center justify-center overflow-hidden bg-swatch-bg ${className}`}>
-      {source ? (
+      {image.src ? (
         <img
-          src={source}
-          srcSet={usingFallback || !responsive ? undefined : media.srcSet}
-          sizes={usingFallback || !responsive ? undefined : media.sizes}
+          src={image.src}
+          srcSet={withSrcSet ? media.srcSet : undefined}
+          sizes={withSrcSet ? media.sizes : undefined}
           alt={decorative ? '' : label}
           aria-hidden={decorative || undefined}
           width={displaySize}
@@ -51,8 +49,8 @@ export function OptionalSwatchImage({
           loading={priority ? 'eager' : 'lazy'}
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
-          onError={() => setFailedSources(current => current.includes(source) ? current : [...current, source])}
-          className={`h-full w-full object-contain ${imageClassName}`}
+          onError={image.onError}
+          className={`h-full w-full object-contain ${image.waiting ? 'opacity-0' : ''} ${imageClassName}`}
         />
       ) : (
         <span

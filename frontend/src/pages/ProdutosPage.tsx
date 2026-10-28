@@ -7,6 +7,7 @@ import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, Zo
 import { cartStorageKey, configureProductPath, notifyCartChanged, writeCartPriceList } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
+import { useImageRetry } from '../hooks/useImageRetry'
 import { useLocale } from '../hooks/useLocale'
 import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
@@ -79,12 +80,11 @@ function warmProductImage(product: Product, priority: 'high' | 'low' = 'high') {
 }
 
 function CatalogImage({ product }: { product: Product }) {
+  const { locale } = useLocale()
   const frameRef = useRef<HTMLDivElement>(null)
   const [nearViewport, setNearViewport] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [thumbnailFailed, setThumbnailFailed] = useState(false)
-  const thumbnail = product.thumbnail_url ?? product.photo_url
-  const source = thumbnailFailed ? product.photo_url : thumbnail
+  const image = useImageRetry(product.thumbnail_url ?? product.photo_url)
 
   useEffect(() => {
     const frame = frameRef.current
@@ -103,20 +103,21 @@ function CatalogImage({ product }: { product: Product }) {
 
   return (
     <div ref={frameRef} className="relative w-full h-full">
-      {!loaded && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-bg via-white to-bg-2" />}
-      {nearViewport && source && (
+      {!loaded && !image.failed && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-bg via-white to-bg-2" />}
+      {image.failed && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-muted text-[11px] uppercase tracking-widest">{locale === 'en-GB' ? 'Image being updated' : 'Imagem em atualização'}</span>
+        </div>
+      )}
+      {nearViewport && image.src && (
         <img
-          src={source}
+          src={image.src}
           alt={product.description}
           width={320}
           height={320}
           decoding="async"
           onLoad={() => setLoaded(true)}
-          onError={() => {
-            if (!thumbnailFailed && product.photo_url && source !== product.photo_url) {
-              setThumbnailFailed(true)
-            }
-          }}
+          onError={image.onError}
           className={`w-full h-full object-contain transition-[opacity,transform] duration-500 ease-out group-hover:scale-[1.04] ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
       )}

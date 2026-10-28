@@ -6,7 +6,7 @@ import time
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ResponseStreamingError
 from fastapi import HTTPException
 from PIL import Image
 import pytest
@@ -163,3 +163,56 @@ def test_imagem_legada_gera_thumbnail_sob_demanda(monkeypatch):
     assert stored["product-thumbnails/legacy.png.webp"][0] == content
     with Image.open(io.BytesIO(content)) as image:
         assert image.size == (320, 320)
+
+
+class _FlakyBody:
+    def __init__(self, value: bytes, failures: list[bool]):
+        self.value = value
+        self.failures = failures
+
+    def read(self) -> bytes:
+        if self.failures and self.failures.pop(0):
+            raise ResponseStreamingError(error=ConnectionResetError("reset"))
+        return self.value
+
+
+class _FlakyStorage:
+    def __init__(self, failures: list[bool]):
+        self.failures = failures
+        self.calls = 0
+
+    def get_object(self, *, Bucket: str, Key: str):
+        del Bucket, Key
+        self.calls += 1
+        return {"Body": _FlakyBody(b"foto", self.failures), "ContentType": "image/webp"}
+
+
+def test_leitura_que_cai_no_meio_do_corpo_e_refeita(monkeypatch):
+    storage = _FlakyStorage([True, False])
+    monkeypatch.setattr(uploads, "_object_storage_client", lambda: storage)
+    monkeypatch.setattr(uploads.time, "sleep", lambda _seconds: None)
+
+    content, content_type = uploads._read_object_upload("product-thumbnails/x.png.webp")
+
+    assert (content, content_type) == (b"foto", "image/webp")
+    assert storage.calls == 2
+
+
+def test_leitura_que_sempre_cai_desiste_apos_tres_tentativas(monkeypatch):
+    storage = _FlakyStorage([True, True, True, True])
+    monkeypatch.setattr(uploads, "_object_storage_client", lambda: storage)
+    monkeypatch.setattr(uploads.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(ResponseStreamingError):
+        uploads._read_object_upload("product-thumbnails/x.png.webp")
+
+    assert storage.calls == 3
+
+
+def test_cliente_do_storage_tem_pool_maior_que_o_teto_de_leituras_e_retry():
+    config = uploads._storage_client_config("path")
+
+    assert config.max_pool_connections == 32
+    assert uploads._MEDIA_READ_SEMAPHORE._value < config.max_pool_connections
+    assert config.retries == {"mode": "standard", "max_attempts": 4}
+    assert config.tcp_keepalive is True

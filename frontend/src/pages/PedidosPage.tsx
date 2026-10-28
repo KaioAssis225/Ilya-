@@ -272,13 +272,16 @@ function OrderDetailModal({
   const canRevise = userRole === 'admin' || userRole === 'representante'
     || userRole === 'vendedor'
 
-  function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null }[] {
+  // Amostras de 16–28 px usam a miniatura; o original só abre no modal.
+  function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null; photo: string | null }[] {
     return Object.entries(cats).map(([cat, color]) => {
       const optional = allOptionals.find(o => o.category === cat && optionalMatchesLegacyName(o, color))
+      const thumbnail = optional?.thumbnail_url ?? optional?.photo_url ?? null
       return {
         label: `${catLabel(cat)} — ${optionalName(color, optionalEnglish)}`,
-        swatch: optional?.photo_url ?? optional?.thumbnail_url ?? null,
-        thumbnail: optional?.thumbnail_url ?? optional?.photo_url ?? null,
+        swatch: thumbnail,
+        thumbnail,
+        photo: optional?.photo_url ?? optional?.thumbnail_url ?? null,
       }
     })
   }
@@ -449,12 +452,14 @@ function OrderDetailModal({
                 </thead>
                 <tbody>
                   {order.items.map((item) => {
-                    const photoUrl = products.find(p => p.product_code === item.product_code)?.photo_url ?? null
+                    const product = products.find(p => p.product_code === item.product_code)
+                    const photoUrl = product?.photo_url ?? null
+                    const thumbnailUrl = product?.thumbnail_url ?? photoUrl
                     return (
                       <tr key={item.id} className="border-t border-line">
                         <td className="px-2 py-2" style={{ width: '40px', minWidth: '40px' }}>
                           {photoUrl
-                            ? <img src={photoUrl} alt="" onClick={() => setActivePhotoModal(photoUrl)} className="object-cover rounded-lg border border-line cursor-pointer hover:opacity-80 transition-opacity" style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px' }} />
+                            ? <img src={thumbnailUrl ?? photoUrl} alt="" loading="lazy" decoding="async" onClick={() => setActivePhotoModal(photoUrl)} className="object-cover rounded-lg border border-line cursor-pointer hover:opacity-80 transition-opacity" style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px' }} />
                             : <div className="bg-bg-2 rounded-lg flex items-center justify-center" style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px' }}><ImageIcon className="w-4 h-4 text-faint" /></div>
                           }
                         </td>
@@ -495,7 +500,7 @@ function OrderDetailModal({
                               }
                             })
                             const optionals = [
-                              ...parsed.map((optional) => ({ key: `legacy-${optional.label}`, label: optional.label, thumbnail: optional.thumbnail, photo: optional.swatch })),
+                              ...parsed.map((optional) => ({ key: `legacy-${optional.label}`, label: optional.label, thumbnail: optional.thumbnail, photo: optional.photo })),
                               ...choiceDetails.map(({ choice, label, thumbnail, photo }) => ({ key: `choice-${choice.id}`, label, thumbnail, photo })),
                             ]
                             const isExpanded = expandedOptionalItems.has(item.id)
@@ -516,7 +521,7 @@ function OrderDetailModal({
                                         className="relative w-7 h-7 flex-shrink-0 overflow-hidden rounded border border-line bg-white text-[10px] font-semibold text-muted disabled:cursor-default"
                                       >
                                         {optional.thumbnail
-                                          ? <img src={optional.thumbnail} alt={optional.label} className="w-full h-full rounded object-cover" />
+                                          ? <img src={optional.thumbnail} alt={optional.label} loading="lazy" decoding="async" className="w-full h-full rounded object-cover" />
                                           : <span className="flex w-full h-full items-center justify-center bg-bg-2" aria-hidden="true">{optional.label.trim().charAt(0).toUpperCase()}</span>
                                         }
                                       </button>

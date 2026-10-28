@@ -15,7 +15,12 @@ from urllib.parse import quote, urlencode
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    IncompleteReadError,
+    ResponseStreamingError,
+)
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageCms, ImageOps, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
@@ -28,6 +33,16 @@ logger = logging.getLogger("ilya.uploads")
 _CHUNK_SIZE = 64 * 1024
 _FORMAT_TO_EXTENSION = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 _IMAGE_PROCESSING_SEMAPHORE = asyncio.Semaphore(2)
+# Uma página de catálogo pede dezenas de fotos de uma vez. Sem teto, cada uma
+# ocupa uma thread e uma conexão com o bucket; acima do pool do urllib3 as
+# conexões são descartadas e a leitura do corpo cai no meio (503 em rajada).
+# O teto de leituras fica abaixo do pool para nunca disputar conexão.
+_STORAGE_MAX_POOL_CONNECTIONS = 32
+_MEDIA_READ_SEMAPHORE = asyncio.Semaphore(16)
+# O retry do botocore cobre a requisição, não a leitura do corpo: uma conexão
+# que cai no meio do download só se recupera pedindo o objeto de novo.
+_STORAGE_READ_ATTEMPTS = 3
+_STORAGE_STREAM_ERRORS = (ResponseStreamingError, IncompleteReadError)
 _OBJECT_REFERENCE_PREFIX = "object://"
 # O prefixo da chave decide o bucket: `eu-*` mora no bucket europeu, o resto no
 # principal. A chave já é assinada na URL de mídia, então o roteamento não
@@ -154,6 +169,18 @@ def _normalized_addressing_style(style: str) -> str:
     return "virtual" if style == "virtual-host" else style
 
 
+def _storage_client_config(addressing_style: str) -> Config:
+    return Config(
+        signature_version="s3v4",
+        s3={"addressing_style": _normalized_addressing_style(addressing_style)},
+        max_pool_connections=_STORAGE_MAX_POOL_CONNECTIONS,
+        retries={"mode": "standard", "max_attempts": 4},
+        connect_timeout=5,
+        read_timeout=20,
+        tcp_keepalive=True,
+    )
+
+
 @lru_cache(maxsize=1)
 def _object_storage_client():
     return boto3.client(
@@ -162,14 +189,7 @@ def _object_storage_client():
         aws_access_key_id=settings.OBJECT_STORAGE_ACCESS_KEY_ID,
         aws_secret_access_key=settings.OBJECT_STORAGE_SECRET_ACCESS_KEY,
         region_name=settings.OBJECT_STORAGE_REGION,
-        config=Config(
-            signature_version="s3v4",
-            s3={
-                "addressing_style": _normalized_addressing_style(
-                    settings.OBJECT_STORAGE_ADDRESSING_STYLE
-                )
-            },
-        ),
+        config=_storage_client_config(settings.OBJECT_STORAGE_ADDRESSING_STYLE),
     )
 
 
@@ -185,10 +205,7 @@ def _eu_object_storage_client():
         aws_access_key_id=settings.OBJECT_STORAGE_EU_ACCESS_KEY_ID,
         aws_secret_access_key=settings.OBJECT_STORAGE_EU_SECRET_ACCESS_KEY,
         region_name=settings.OBJECT_STORAGE_EU_REGION,
-        config=Config(
-            signature_version="s3v4",
-            s3={"addressing_style": _normalized_addressing_style(style)},
-        ),
+        config=_storage_client_config(style),
     )
 
 
@@ -771,17 +788,26 @@ def _storage_error_code(exc: Exception) -> str | None:
     return None
 
 
+def _get_object_bytes(client, bucket: str, key: str) -> tuple[bytes, str]:
+    """GET com nova tentativa quando a conexão cai durante a leitura do corpo."""
+    for attempt in range(1, _STORAGE_READ_ATTEMPTS + 1):
+        result = client.get_object(Bucket=bucket, Key=key)
+        try:
+            return result["Body"].read(), result.get(
+                "ContentType",
+                "application/octet-stream",
+            )
+        except _STORAGE_STREAM_ERRORS:
+            if attempt == _STORAGE_READ_ATTEMPTS:
+                raise
+            time.sleep(0.1 * attempt)
+    raise AssertionError("unreachable")
+
+
 def _read_object_upload(object_key: str) -> tuple[bytes, str]:
     client, bucket = _storage_for_key(object_key)
     try:
-        result = client.get_object(
-            Bucket=bucket,
-            Key=object_key,
-        )
-        return result["Body"].read(), result.get(
-            "ContentType",
-            "application/octet-stream",
-        )
+        return _get_object_bytes(client, bucket, object_key)
     except ClientError as exc:
         error_code = exc.response.get("Error", {}).get("Code")
         if error_code in {"NoSuchKey", "404", "NotFound"}:
@@ -794,10 +820,7 @@ def _read_object_upload(object_key: str) -> tuple[bytes, str]:
                 original_key, variant = parsed_variant
                 make_derived = lambda data: _make_variant_bytes(data, variant)  # noqa: E731
             try:
-                original = client.get_object(
-                    Bucket=bucket,
-                    Key=original_key,
-                )["Body"].read()
+                original, _ = _get_object_bytes(client, bucket, original_key)
             except ClientError as original_exc:
                 original_error = original_exc.response.get("Error", {}).get("Code")
                 if original_error in {"NoSuchKey", "404", "NotFound"}:
@@ -836,7 +859,8 @@ async def read_object_upload(object_key: str) -> tuple[bytes, str]:
         raise FileNotFoundError(object_key)
     if not _storage_configured_for_key(object_key):
         raise FileNotFoundError(object_key)
-    return await run_in_threadpool(_read_object_upload, object_key)
+    async with _MEDIA_READ_SEMAPHORE:
+        return await run_in_threadpool(_read_object_upload, object_key)
 
 
 def _read_local_upload(local_key: str) -> tuple[bytes, str]:

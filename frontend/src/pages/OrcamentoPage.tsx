@@ -809,7 +809,7 @@ function MobileCartCard({
       <div className="flex gap-3">
         {item._product.photo_url
           ? <button type="button" onClick={() => onPhotoClick(item._product.photo_url!)} className="w-14 h-14 rounded-lg flex-shrink-0" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
-              <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line active:opacity-70 transition-opacity" />
+              <img src={item._product.thumbnail_url ?? item._product.photo_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover rounded-lg border border-line active:opacity-70 transition-opacity" />
             </button>
           : <div className="w-14 h-14 bg-bg-2 rounded-lg flex items-center justify-center flex-shrink-0">
               <ImageIcon className="w-5 h-5 text-faint" />
@@ -1814,7 +1814,7 @@ export default function OrcamentoPage() {
                 onMouseDown={() => { setSelectedProduct(p); setSelectedChoices([]); setProductQuery(''); setProductOpen(false) }}
               >
                 {p.photo_url
-                  ? <img src={p.photo_url} alt="" className="w-8 h-8 rounded object-cover border border-line flex-shrink-0" />
+                  ? <img src={p.thumbnail_url ?? p.photo_url} alt="" loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover border border-line flex-shrink-0" />
                   : <ImageIcon className="w-8 h-8 text-faint flex-shrink-0" />}
                 <div className="truncate">
                   <span className="text-gold font-mono font-medium">{p.product_code}</span>
@@ -1839,7 +1839,7 @@ export default function OrcamentoPage() {
           </button>
           {selectedProduct.photo_url
             ? <button type="button" onClick={() => setActivePhotoModal(selectedProduct.photo_url!)} className="w-12 h-12 rounded flex-shrink-0" aria-label={isEnglish ? `Enlarge photo of ${selectedProduct.description}` : `Ampliar foto de ${selectedProduct.description}`}>
-                <img src={selectedProduct.photo_url} alt="" className="w-full h-full object-cover rounded border border-line hover:opacity-80 transition-opacity" />
+                <img src={selectedProduct.thumbnail_url ?? selectedProduct.photo_url} alt="" decoding="async" className="w-full h-full object-cover rounded border border-line hover:opacity-80 transition-opacity" />
               </button>
             : <div className="w-12 h-12 bg-bg-2 rounded flex items-center justify-center flex-shrink-0"><ImageIcon className="w-5 h-5 text-faint" /></div>
           }
@@ -2034,7 +2034,7 @@ export default function OrcamentoPage() {
                         <div className="flex min-w-0 gap-3">
                           {item._product.photo_url
                             ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
-                                <img src={item._product.photo_url} alt="" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
+                                <img src={item._product.thumbnail_url ?? item._product.photo_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
                               </button>
                             : <div className="bg-bg-2 rounded-lg flex items-center justify-center"
                                 style={{ width: '48px', height: '48px', minWidth: '48px', minHeight: '48px' }}>
