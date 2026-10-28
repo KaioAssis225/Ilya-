@@ -145,9 +145,19 @@ def verify_media_signature(
     )
 
 
+def _media_url_expires(current: int) -> int:
+    """Fim da validade arredondado para uma janela do tamanho do TTL.
+
+    Com `now + TTL` cada resposta da API gerava outra URL para a mesma foto e
+    o navegador nunca reaproveitava o cache. Arredondando, a URL fica igual
+    durante a janela; a validade passa a ficar entre 1x e 2x o TTL."""
+    window = max(1, settings.MEDIA_URL_TTL_SECONDS)
+    return (current // window + 1) * window + settings.MEDIA_URL_TTL_SECONDS
+
+
 def _signed_media_url(object_key: str, *, now: int | None = None) -> str:
     current = int(time.time()) if now is None else now
-    expires = current + settings.MEDIA_URL_TTL_SECONDS
+    expires = _media_url_expires(current)
     query = urlencode({
         "expires": expires,
         "signature": _media_signature(object_key, expires),

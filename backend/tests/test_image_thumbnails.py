@@ -209,6 +209,41 @@ def test_leitura_que_sempre_cai_desiste_apos_tres_tentativas(monkeypatch):
     assert storage.calls == 3
 
 
+def test_url_assinada_e_estavel_dentro_da_janela_e_valida_entre_1x_e_2x_ttl(monkeypatch):
+    monkeypatch.setattr(settings, "MEDIA_URL_TTL_SECONDS", 900)
+    key = "product-thumbnails/abc.jpg.webp"
+    inicio_da_janela = 1_800_000_000 - (1_800_000_000 % 900)
+
+    primeira = uploads._signed_media_url(key, now=inicio_da_janela)
+    mesma_janela = uploads._signed_media_url(key, now=inicio_da_janela + 899)
+    proxima_janela = uploads._signed_media_url(key, now=inicio_da_janela + 900)
+
+    assert primeira == mesma_janela
+    assert proxima_janela != primeira
+    for now in (inicio_da_janela, inicio_da_janela + 899):
+        expires = int(parse_qs(urlparse(primeira).query)["expires"][0])
+        assert 900 < expires - now <= 1800
+        assert uploads.verify_media_signature(
+            key, expires, parse_qs(urlparse(primeira).query)["signature"][0], now=now
+        )
+
+
+def test_resposta_de_midia_e_cacheavel_sem_revalidar():
+    async def run():
+        key = "products/abc.jpg"
+        expires = int(time.time()) + 600
+        with patch(
+            "app.api.routers.media.read_media_upload",
+            AsyncMock(return_value=(b"image", "image/jpeg")),
+        ):
+            response = await get_media(key, expires, uploads._media_signature(key, expires))
+        cache_control = response.headers["cache-control"]
+        assert cache_control.startswith("private, max-age=")
+        assert cache_control.endswith(", immutable")
+
+    asyncio.run(run())
+
+
 def test_cliente_do_storage_tem_pool_maior_que_o_teto_de_leituras_e_retry():
     config = uploads._storage_client_config("path")
 

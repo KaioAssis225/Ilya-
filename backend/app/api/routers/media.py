@@ -44,7 +44,9 @@ async def get_media(object_key: str, expires: int, signature: str) -> Response:
         content=content,
         media_type=content_type,
         headers={
-            "Cache-Control": f"private, max-age={max(0, expires - int(time.time()))}",
+            # A chave do objeto nunca é reescrita (foto nova = chave nova) e a
+            # URL é estável dentro da janela de validade: sem revalidar.
+            "Cache-Control": f"private, max-age={max(0, expires - int(time.time()))}, immutable",
             "Referrer-Policy": "no-referrer",
         },
     )
