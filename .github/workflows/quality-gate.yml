@@ -52,7 +52,7 @@ jobs:
 
       - name: Publicar resultados Vitest (JUnit e cobertura)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: frontend-test-results
           path: |
@@ -120,7 +120,7 @@ jobs:
 
       - name: Publicar resultados de testes (JUnit)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backend-test-results
           path: backend/test-results/pytest.xml
@@ -129,7 +129,7 @@ jobs:
 
       - name: Publicar cobertura
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backend-coverage
           path: backend/coverage.xml
@@ -225,7 +225,7 @@ jobs:
 
       - name: Publicar resultados JUnit
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backend-integration-results
           path: backend/test-results/integration-results.xml
@@ -234,7 +234,7 @@ jobs:
 
       - name: Publicar cobertura de integração
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backend-integration-coverage
           path: backend/test-results/integration-coverage.xml
@@ -243,7 +243,7 @@ jobs:
 
       - name: Publicar log de integração
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backend-integration-log
           path: backend/test-results/integration.log
