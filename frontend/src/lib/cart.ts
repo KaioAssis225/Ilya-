@@ -8,6 +8,8 @@
 // O evento `storage` do navegador NÃO cobre isso sozinho: ele só dispara em
 // OUTRAS abas, nunca na aba que fez a escrita. Daí o CustomEvent próprio.
 
+import { normalizeAreaQty, normalizeRugPieces, previewArea } from './areaProduct'
+
 const CART_KEY_PREFIX = 'carrinho_orcamento'
 const CART_PRICE_LIST_KEY_PREFIX = 'carrinho_orcamento_tabela_preco'
 export const CART_EVENT = 'ilya:cart-changed'
@@ -78,11 +80,23 @@ export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' =
       const qty = Number(item.qty)
       if (!Number.isFinite(qty) || qty <= 0) continue
       const areaPieces = Number(item.area_pieces)
-      const validAreaPieces = Number.isFinite(areaPieces) && areaPieces >= 1 ? areaPieces : undefined
-      quantities[item.product_code] = {
-        qty,
-        sold_by_area: item.sold_by_area === true,
-        ...(validAreaPieces !== undefined ? { area_pieces: validAreaPieces } : {}),
+      const validAreaPieces = Number.isFinite(areaPieces) && areaPieces >= 1 ? areaPieces : 1
+      const isArea = item.sold_by_area === true
+      const existing = quantities[item.product_code]
+
+      if (!existing) {
+        quantities[item.product_code] = {
+          qty,
+          sold_by_area: isArea,
+          ...(isArea ? { area_pieces: validAreaPieces } : {}),
+        }
+      } else {
+        // Mesmo SKU em várias linhas (outra medida ou outro acabamento) soma.
+        existing.qty += qty
+        if (isArea) {
+          existing.sold_by_area = true
+          existing.area_pieces = (existing.area_pieces ?? 0) + validAreaPieces
+        }
       }
     }
     return quantities
@@ -91,12 +105,26 @@ export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' =
   }
 }
 
+/** Unidades exibidas/contadas para uma entrada do carrinho. */
+export function cartEntryUnits(entry: number | CartQuantity): number {
+  if (typeof entry === 'number') return entry
+  return entry.sold_by_area ? (entry.area_pieces ?? 1) : entry.qty
+}
+
+/** Recalcula qty de uma linha de tapete a partir do número de peças. */
+export function withRugPieces<T extends { qty: number; area_width_m?: number | null; area_depth_m?: number | null; area_pieces?: number }>(line: T, pieces: number): T {
+  const safePieces = normalizeRugPieces(pieces)
+  const areaPerPiece = previewArea(line.area_width_m, line.area_depth_m) ?? normalizeAreaQty(line.qty / (line.area_pieces ?? 1))
+  return {
+    ...line,
+    area_pieces: safePieces,
+    qty: normalizeAreaQty(areaPerPiece * safePieces),
+  }
+}
+
 /** Total de UNIDADES (não de produtos distintos), igual à barra do orçamento. */
 export function countCartUnits(quantities: Record<string, number | CartQuantity>): number {
-  return Object.values(quantities).reduce<number>((total, entry) => {
-    if (typeof entry === 'number') return total + entry
-    return total + (entry.sold_by_area ? (entry.area_pieces ?? 1) : entry.qty)
-  }, 0)
+  return Object.values(quantities).reduce<number>((total, entry) => total + cartEntryUnits(entry), 0)
 }
 
 export function notifyCartChanged() {
