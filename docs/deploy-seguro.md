@@ -1,5 +1,29 @@
 # Implantação segura do Projeto Ilya
 
+## E-mail do PDF do pedido
+
+A publicação do backend mantém esta integração inerte enquanto
+`ORDER_EMAIL_MODE` não for configurado. Variáveis previstas, todas somente no
+ambiente (nunca grave os valores no repositório):
+
+```dotenv
+# ORDER_EMAIL_MODE=
+# ORDER_EMAIL_TEST_ALLOWLIST=
+# RESEND_API_KEY=
+# RESEND_API_BASE_URL=
+# RESEND_WEBHOOK_SECRET=
+# ORDER_EMAIL_FROM=
+# ORDER_EMAIL_REPLY_TO=
+# ORDER_EMAIL_TIMEOUT_SECONDS=
+# ORDER_EMAIL_POLL_SECONDS=
+# ORDER_EMAIL_LOCAL_DIR=
+```
+
+O worker é um processo separado (`python -m app.workers.order_email_sender`);
+o processo web não consome esta fila. Em produção os PDFs exigem o bucket do
+mercado correspondente, e o diretório local serve apenas a desenvolvimento e
+testes.
+
 Este documento define o processo mínimo para publicar mudanças sem repetir a indisponibilidade ocorrida em 17 de julho de 2026.
 
 ## Base validada

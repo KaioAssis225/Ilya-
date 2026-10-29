@@ -18,5 +18,7 @@ from app.api.routers.integrations import router as integrations_router
 from app.api.routers.privacy import router as privacy_router
 from app.api.routers.markets import router as markets_router
 from app.api.routers.moloni import router as moloni_router
+from app.api.routers.order_emails import router as order_emails_router
+from app.api.routers.resend_webhooks import router as resend_webhooks_router
 
-__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "catalogs_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router", "privacy_router", "markets_router", "moloni_router"]
+__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "catalogs_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router", "privacy_router", "markets_router", "moloni_router", "order_emails_router", "resend_webhooks_router"]

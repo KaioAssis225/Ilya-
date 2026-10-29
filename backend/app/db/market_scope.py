@@ -16,6 +16,7 @@ from app.models.optional_category import OptionalCategory
 from app.models.optional_color import OptionalColor
 from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
+from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
 
 
 MARKET_SCOPED_MODELS = (
@@ -31,6 +32,8 @@ MARKET_SCOPED_MODELS = (
     OptionalColor,
     ProductType,
     ProductGroup,
+    OrderEmailDocument,
+    OrderEmailDelivery,
 )
 
 
