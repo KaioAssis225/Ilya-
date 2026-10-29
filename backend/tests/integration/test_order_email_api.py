@@ -80,13 +80,15 @@ async def _ready_document(db, order, monkeypatch, tmp_path):
         status="ready",
         attempts=1,
         snapshot={
-            "schema_version": 1,
+            "schema_version": 2,
             "locale": order.locale,
             "order": {
                 "code": order.code,
                 "market_code": order.market_code,
                 "locale": order.locale,
             },
+            "products": [],
+            "category_labels": {},
         },
         storage_key=key,
         sha256=digest,

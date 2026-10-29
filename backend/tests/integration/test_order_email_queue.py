@@ -8,18 +8,33 @@ from app.core.config import settings
 from app.core.order_documents import OrderDocumentStorageError, put_document
 from app.core.security import create_access_token
 from app.models.market import PriceList
+from app.models.optional_category import OptionalCategory
+from app.models.optional_color import OptionalColor
+from app.models.order import OrderItem
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
+from app.models.product import Product, ProductSetComponent
 from app.models.user import UserRole
 from app.services.order_email_jobs import enqueue_order_emails
 from app.services.pdf_renderer import PdfRendererUnavailable
 from app.services.resend_client import TemporaryEmailError
 from app.workers.order_email_sender import claim_next_delivery, process_due
 from tests.factories import make_client, make_representative, make_user, make_user_market
-from tests.factories.orders import make_order
+from tests.factories.orders import make_order, make_order_item
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 _PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF"
+
+
+def _is_number(value):
+    """A API serializa Decimal como string ("100.00"); o snapshot espelha a API."""
+    if isinstance(value, bool):
+        return False
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 class _Renderer:
@@ -45,6 +60,7 @@ async def _order(db, *, market="BR", client_email="client@example.com", rep_emai
     client = await make_client(db, await _price_list(db, market), market_code=market)
     client.email = client_email
     order = await make_order(db, client, owner.id, market_code=market)
+    await make_order_item(db, order)
     if rep_email is not None:
         rep = await make_representative(db, market_code=market)
         rep.email = rep_email
@@ -84,6 +100,60 @@ async def test_enqueue_is_idempotent_and_merges_equal_recipients(db_session, mon
         client_email="Shared@Example.com",
         rep_email="shared@example.com",
     )
+    item_code = (
+        await db_session.execute(
+            select(OrderItem.product_code)
+            .where(OrderItem.order_id == order.id)
+            .limit(1)
+        )
+    ).scalar_one()
+    product = (
+        await db_session.execute(
+            select(Product).where(
+                Product.market_code == order.market_code,
+                Product.product_code == item_code,
+            )
+        )
+    ).scalar_one()
+    product.is_set = True
+    product.photo_path = "object://products/foto-conjunto.jpg"
+
+    db_session.add(
+        OptionalCategory(
+            market_code=order.market_code,
+            code="corda_v2",
+            name="Corda Náutica",
+        )
+    )
+    db_session.add(
+        OptionalCategory(
+            market_code="EU",
+            code="categoria_eu_isolada",
+            name="Categoria EU",
+        )
+    )
+    opt_color = OptionalColor(
+        market_code=order.market_code,
+        category="corda_v2",
+        color_name="Terracota",
+        brand="ILYA",
+    )
+    db_session.add(opt_color)
+    await db_session.flush()
+    db_session.add(
+        ProductSetComponent(
+            set_id=product.id,
+            description="Módulo Direito",
+            is_circular=False,
+            altura=75,
+            largura=180,
+            profundidade=90,
+            qty=2,
+            optionals=[opt_color],
+        )
+    )
+    await db_session.flush()
+
     monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "live")
 
     await enqueue_order_emails(db_session, order, requested_by_user_id=owner.id)
@@ -95,7 +165,43 @@ async def test_enqueue_is_idempotent_and_merges_equal_recipients(db_session, mon
     assert len(deliveries) == 1
     assert deliveries[0].recipient_roles == ["client", "representative"]
     assert deliveries[0].recipient_email == "shared@example.com"
-    assert "history" not in documents[0].snapshot["order"]
+
+    snapshot = documents[0].snapshot
+    assert snapshot["schema_version"] == 2
+    assert "history" not in snapshot["order"]
+    assert _is_number(snapshot["order"]["total_value"])
+    assert _is_number(snapshot["order"]["total_ipi"])
+    assert _is_number(snapshot["order"]["total_with_ipi"])
+    assert _is_number(snapshot["order"]["items"][0]["unit_price"])
+    assert _is_number(snapshot["order"]["items"][0]["discount"])
+    assert _is_number(snapshot["order"]["items"][0]["ipi_rate"])
+    assert _is_number(snapshot["order"]["items"][0]["ipi_value"])
+    assert _is_number(snapshot["client"]["max_discount"])
+    assert _is_number(snapshot["representative"]["max_discount"])
+    assert snapshot["category_labels"]["corda_v2"] == "Corda Náutica"
+    assert "categoria_eu_isolada" not in snapshot["category_labels"]
+
+    prod_snap = next(
+        p for p in snapshot["products"] if p["product_code"] == item_code
+    )
+    assert prod_snap["is_set"] is True
+    assert prod_snap["type"] == product.type
+    assert prod_snap["photo_path"] == "object://products/foto-conjunto.jpg"
+    assert prod_snap["thumbnail_url"] is None
+    assert prod_snap["photo_url"] is None
+    assert "price" not in prod_snap
+    assert "price_lojista" not in prod_snap
+    assert "price_corporativo" not in prod_snap
+    assert len(prod_snap["components"]) == 1
+    comp_snap = prod_snap["components"][0]
+    assert comp_snap["description"] == "Módulo Direito"
+    assert comp_snap["qty"] == 2
+    assert _is_number(comp_snap["largura"])
+    assert _is_number(comp_snap["profundidade"])
+    assert _is_number(comp_snap["altura"])
+    assert len(comp_snap["optionals"]) == 1
+    assert comp_snap["optionals"][0]["category"] == "corda_v2"
+    assert comp_snap["optionals"][0]["color_name"] == "Terracota"
 
 
 async def test_document_retry_window_starts_on_first_attempt(
@@ -164,7 +270,7 @@ async def test_expired_delivery_lease_is_reclaimed_but_current_lease_is_not(db_s
         locale=order.locale,
         status="ready",
         attempts=1,
-        snapshot={},
+        snapshot={"schema_version": 2},
         storage_key="order-documents/00000000-0000-0000-0000-000000000000/v1-0000000000000000.pdf",
     )
     db_session.add(document)

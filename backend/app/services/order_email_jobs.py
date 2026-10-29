@@ -2,6 +2,7 @@
 import uuid
 
 from email_validator import EmailNotValidError, validate_email
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,12 +10,14 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.client import Client
+from app.models.optional_category import OptionalCategory
 from app.models.order import Order, OrderItem
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
-from app.models.product import Product
+from app.models.product import Product, ProductSetComponent
 from app.models.representative import Representative
 from app.schemas.client import ClientRead
 from app.schemas.order import OrderRead
+from app.schemas.product import ProductSetComponentRead
 from app.schemas.representative import RepresentativeRead
 
 
@@ -54,10 +57,10 @@ def _read_schema(schema, row, *, email: str | None = None) -> dict:
     }
     if email is not None or getattr(row, "email", None) is not None:
         values["email"] = email
-    return schema.model_validate(values).model_dump(mode="json")
+    return jsonable_encoder(schema.model_validate(values))
 
 
-async def _snapshot_v1(
+async def _snapshot_v2(
     db: AsyncSession,
     order: Order,
     client: Client,
@@ -65,11 +68,11 @@ async def _snapshot_v1(
     client_email: str | None,
     representative_email: str | None,
 ) -> dict:
-    """Congela somente linhas locais do banco.
+    """Congela somente linhas locais do banco no formato v2.
 
-    A F3 poderá criar ``schema_version=2`` para copiar fotos e acrescentar os
-    campos exigidos pelo renderer. Preços continuam vindo exclusivamente dos
-    itens do pedido, nunca do catálogo atual.
+    Preços continuam vindo exclusivamente dos itens do pedido, nunca do
+    catálogo atual. As referências de foto ficam em ``photo_path`` e são
+    convertidas para data URL pelo renderer no momento de gerar o PDF.
     """
     loaded_order = (
         await db.execute(
@@ -83,19 +86,62 @@ async def _snapshot_v1(
     ).scalar_one()
     product_codes = sorted({item.product_code for item in loaded_order.items})
     products = (
-        await db.execute(
-            select(Product.product_code, Product.photo_path).where(
-                Product.market_code == order.market_code,
-                Product.product_code.in_(product_codes),
+        (
+            await db.execute(
+                select(Product)
+                .where(
+                    Product.market_code == order.market_code,
+                    Product.product_code.in_(product_codes),
+                )
+                .options(
+                    selectinload(Product.components).selectinload(
+                        ProductSetComponent.optionals
+                    ),
+                )
+                .execution_options(populate_existing=True)
             )
         )
+        .scalars()
+        .all()
+    )
+    product_by_code = {row.product_code: row for row in products}
+    categories = (
+        await db.execute(
+            select(OptionalCategory.code, OptionalCategory.name)
+            .where(OptionalCategory.market_code == order.market_code)
+            .order_by(OptionalCategory.code)
+        )
     ).all()
-    photo_by_code = {row.product_code: row.photo_path for row in products}
+    category_labels = {row.code: row.name for row in categories}
+
+    products_snapshot = []
+    for code in product_codes:
+        product = product_by_code.get(code)
+        components = (
+            [
+                jsonable_encoder(ProductSetComponentRead.model_validate(component))
+                for component in product.components
+            ]
+            if product is not None
+            else []
+        )
+        products_snapshot.append(
+            {
+                "product_code": code,
+                "type": product.type if product is not None else None,
+                "is_set": bool(product.is_set) if product is not None else False,
+                "components": components,
+                "photo_path": product.photo_path if product is not None else None,
+                "thumbnail_url": None,
+                "photo_url": None,
+            }
+        )
+
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "locale": order.locale,
-        "order": OrderRead.model_validate(loaded_order).model_dump(
-            mode="json", exclude={"history"}
+        "order": jsonable_encoder(
+            OrderRead.model_validate(loaded_order), exclude={"history"}
         ),
         "client": _read_schema(ClientRead, client, email=client_email),
         "representative": (
@@ -103,10 +149,8 @@ async def _snapshot_v1(
             if representative
             else None
         ),
-        "products": [
-            {"product_code": code, "photo_path": photo_by_code.get(code)}
-            for code in product_codes
-        ],
+        "products": products_snapshot,
+        "category_labels": category_labels,
     }
 
 
@@ -143,7 +187,7 @@ async def enqueue_order_emails(
     representative_email, representative_error = normalize_recipient(
         representative.email if representative else None
     )
-    snapshot = await _snapshot_v1(
+    snapshot = await _snapshot_v2(
         db,
         order,
         client,

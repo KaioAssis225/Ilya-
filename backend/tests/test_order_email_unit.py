@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import io
 import json
 import time
 import uuid
@@ -9,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from PIL import Image
 from pydantic import ValidationError
 
 from app.core.config import Settings, settings
@@ -16,6 +18,12 @@ from app.core.http_client import external_request as real_external_request
 from app.core.resend_webhook import verify_resend_signature
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
 from app.services.order_email_jobs import recipient_is_allowed
+from app.services.pdf_renderer import (
+    PdfRendererUnavailable,
+    PlaywrightPdfRenderer,
+    _prepare_payload,
+    get_pdf_renderer,
+)
 from app.services.resend_client import (
     PermanentEmailError,
     TemporaryEmailError,
@@ -106,7 +114,7 @@ async def test_delivery_commit_error_rolls_back_and_records_pending(monkeypatch)
         locale="pt-BR",
         status="ready",
         attempts=1,
-        snapshot={"order": {"code": "PED-1"}},
+        snapshot={"schema_version": 2, "order": {"code": "PED-1"}},
         storage_key="order-documents/order/v1.pdf",
     )
     delivery = OrderEmailDelivery(
@@ -186,6 +194,7 @@ def test_attachment_filename_uses_only_order_code():
     assert sanitize_attachment_filename("PED/001") == "PED_001.pdf"
     content = build_order_email(
         {
+            "schema_version": 2,
             "locale": "pt-PT",
             "order": {
                 "code": "PED-9",
@@ -193,6 +202,8 @@ def test_attachment_filename_uses_only_order_code():
                 "locale": "pt-PT",
             },
             "client": {"name": "Nome Secreto"},
+            "products": [],
+            "category_labels": {},
         },
         b"%PDF-1.4\n%%EOF",
     )
@@ -208,6 +219,79 @@ def test_invalid_order_email_mode_has_clear_configuration_error():
             PASSWORD_PEPPER="unit-test-pepper",
             ORDER_EMAIL_MODE="unexpected",
         )
+
+
+def test_order_email_pdf_renderer_validation_and_selection(monkeypatch):
+    with pytest.raises(
+        ValidationError,
+        match="ORDER_EMAIL_PDF_RENDERER deve ser unavailable ou playwright",
+    ):
+        Settings(
+            SECRET_KEY="unit-test-secret",
+            PASSWORD_PEPPER="unit-test-pepper",
+            ORDER_EMAIL_PDF_RENDERER="invalid",
+        )
+
+    cfg = Settings(
+        SECRET_KEY="unit-test-secret",
+        PASSWORD_PEPPER="unit-test-pepper",
+        ORDER_EMAIL_PDF_RENDERER="Playwright",
+    )
+    assert cfg.ORDER_EMAIL_PDF_RENDERER == "playwright"
+
+    monkeypatch.setattr(settings, "ORDER_EMAIL_PDF_RENDERER", "playwright")
+    assert isinstance(get_pdf_renderer(), PlaywrightPdfRenderer)
+
+
+@pytest.mark.asyncio
+async def test_unavailable_pdf_renderer_raises_by_default(monkeypatch):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_PDF_RENDERER", "unavailable")
+    renderer = get_pdf_renderer()
+    with pytest.raises(PdfRendererUnavailable):
+        await renderer.render({"schema_version": 2})
+
+
+@pytest.mark.asyncio
+async def test_prepare_payload_resolves_local_photo_and_strips_photo_path(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    image_path = tmp_path / "produto.png"
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (120, 80, 40)).save(buf, format="PNG")
+    image_path.write_bytes(buf.getvalue())
+
+    warning_mock = MagicMock()
+    monkeypatch.setattr("app.services.pdf_renderer.logger.warning", warning_mock)
+
+    snapshot = {
+        "schema_version": 2,
+        "client": {"name": "Cliente Confidencial"},
+        "products": [
+            {
+                "product_code": "P-OK",
+                "photo_path": str(image_path),
+                "thumbnail_url": None,
+                "photo_url": None,
+            },
+            {
+                "product_code": "P-AUSENTE",
+                "photo_path": str(tmp_path / "inexistente.png"),
+                "thumbnail_url": None,
+                "photo_url": None,
+            },
+        ],
+    }
+
+    payload = await _prepare_payload(snapshot)
+    assert "photo_path" not in payload["products"][0]
+    assert "photo_path" not in payload["products"][1]
+    assert payload["products"][0]["thumbnail_url"].startswith("data:image/png;base64,")
+    assert payload["products"][1]["thumbnail_url"] is None
+    warning_mock.assert_called_once()
+    logged_text = " ".join(str(arg) for arg in warning_mock.call_args.args)
+    assert "Cliente Confidencial" not in logged_text
+    assert "inexistente.png" not in logged_text
 
 
 @pytest.mark.asyncio

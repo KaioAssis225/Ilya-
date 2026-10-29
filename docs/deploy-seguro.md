@@ -17,6 +17,8 @@ ambiente (nunca grave os valores no repositório):
 # ORDER_EMAIL_TIMEOUT_SECONDS=
 # ORDER_EMAIL_POLL_SECONDS=
 # ORDER_EMAIL_LOCAL_DIR=
+# ORDER_EMAIL_PDF_RENDERER=
+# ORDER_EMAIL_PDF_TIMEOUT_SECONDS=
 ```
 
 O worker é um processo separado (`python -m app.workers.order_email_sender`);
