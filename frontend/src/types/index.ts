@@ -434,6 +434,7 @@ export interface OrderEmailDelivery {
 export interface OrderEmailHistory {
   document: OrderEmailDocument | null
   deliveries: OrderEmailDelivery[]
+  test_send_available?: boolean
 }
 
 export interface ViaCepResponse {

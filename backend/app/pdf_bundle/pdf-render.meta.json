@@ -1,0 +1,16 @@
+{
+  "sources": [
+    "src/lib/areaProduct.ts",
+    "src/lib/generatePDF.ts",
+    "src/lib/ibtwLogoAssets.ts",
+    "src/lib/measurements.ts",
+    "src/lib/optionalApplications.ts",
+    "src/lib/optionalLabels.ts",
+    "src/lib/orderPdfSnapshot.ts",
+    "src/lib/orderPresentation.ts",
+    "src/lib/productType.ts",
+    "src/pdf-render/entry.ts"
+  ],
+  "jspdf_version": "4.2.1",
+  "sha256": "4e011d2b65853156e0b76c36f3cb6de2729f5d56d72c6ec5ad3af8c5ecdde1b9"
+}

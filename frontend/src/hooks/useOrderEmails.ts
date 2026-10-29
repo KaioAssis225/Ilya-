@@ -38,6 +38,17 @@ export function useResendOrderEmail(orderId: string) {
   })
 }
 
+export function useTestSendOrderEmail(orderId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<OrderEmailDelivery, Error, { recipient_email: string }>({
+    mutationFn: async ({ recipient_email }) =>
+      (await api.post<OrderEmailDelivery>(`/orders/${orderId}/emails/test-send`, {
+        recipient_email,
+      })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: orderEmailsKey(orderId) }),
+  })
+}
+
 /** Baixa o PDF enviado pelo cliente autenticado (o endpoint exige o token). */
 export async function downloadOrderEmailDocument(orderId: string, filename: string): Promise<void> {
   const response = await api.get<Blob>(`/orders/${orderId}/email-document`, { responseType: 'blob' })

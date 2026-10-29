@@ -133,17 +133,25 @@ function formatAddress(person: AddressParty, market: 'BR' | 'EU'): string {
   return [street, locality, regionCountry].filter(Boolean).join(' - ')
 }
 
+export interface BuildOrderPdfInput {
+  order: Order
+  client: Client
+  rep: Representative | null
+  products: Product[]
+  catLabel?: (code: string) => string
+  documentLocale?: 'pt-PT' | 'en-GB'
+}
+
 // ── Gerador principal ─────────────────────────────────────────────────────────
-export async function generateOrderPDF(
-  order: Order,
-  client: Client,
-  rep: Representative | null,
-  products: Product[],
-  catLabel: (code: string) => string = (c) => c,
-  documentLocale?: 'pt-PT' | 'en-GB',
-  // Pasta escolhida pelo usuário (resolvida no clique). Sem ela, vai para Downloads.
-  destination?: PdfDestination | null,
-): Promise<PdfSaveResult> {
+export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
+  const {
+    order,
+    client,
+    rep,
+    products,
+    catLabel = (c) => c,
+    documentLocale,
+  } = input
   const doc = new jsPDF('p', 'mm', 'a4')
   // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
@@ -675,6 +683,28 @@ export async function generateOrderPDF(
     doc.setFontSize(6)
     doc.text(L.commercialNotice, 20, 291)
   }
+
+  return doc
+}
+
+export async function generateOrderPDF(
+  order: Order,
+  client: Client,
+  rep: Representative | null,
+  products: Product[],
+  catLabel: (code: string) => string = (c) => c,
+  documentLocale?: 'pt-PT' | 'en-GB',
+  // Pasta escolhida pelo usuário (resolvida no clique). Sem ela, vai para Downloads.
+  destination?: PdfDestination | null,
+): Promise<PdfSaveResult> {
+  const doc = await buildOrderPdf({
+    order,
+    client,
+    rep,
+    products,
+    catLabel,
+    documentLocale,
+  })
 
   // ── Salva ──────────────────────────────────────────────────────────────────
   const filename = `${order.code}_${client.name.replace(/\s+/g, '_')}.pdf`

@@ -13,7 +13,9 @@
     "test": "tsc -p tsconfig.test.json && vitest run",
     "test:coverage": "tsc -p tsconfig.test.json && vitest run --coverage",
     "test:e2e": "playwright test --project=chromium-desktop",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:pdf-bundle": "vite build --config vite.pdf.config.ts",
+    "check:pdf-bundle": "node scripts/check-pdf-bundle.mjs"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",

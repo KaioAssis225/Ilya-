@@ -4,7 +4,7 @@ import {
   AlertTriangle, Ban, CheckCircle2, Clock, Download, LoaderCircle, MinusCircle, Send, XCircle,
 } from 'lucide-react'
 import { Dialog } from './Dialog'
-import { downloadOrderEmailDocument, useResendOrderEmail } from '../hooks/useOrderEmails'
+import { downloadOrderEmailDocument, useResendOrderEmail, useTestSendOrderEmail } from '../hooks/useOrderEmails'
 import {
   emailErrorMessage, emailRolesLabel, emailStatusInfo, formatEmailFileSize,
   type EmailStatusIcon, type EmailTone,
@@ -57,6 +57,7 @@ export function OrderEmailsPanel({ orderId, orderCode, history, english, dateLoc
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [resendTarget, setResendTarget] = useState<OrderEmailDelivery | null>(null)
+  const [testSendOpen, setTestSendOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const { document: doc, deliveries } = history
 
@@ -94,23 +95,35 @@ export function OrderEmailsPanel({ orderId, orderCode, history, english, dateLoc
             {size && <> · {size}</>}
             {doc.generated_at && <> · {tx('gerado em', 'generated on')} {fmtDateTime(doc.generated_at)}</>}
           </p>
-          {doc.status === 'ready' ? (
-            <button
-              type="button"
-              onClick={download}
-              disabled={downloading}
-              className="btn-secondary inline-flex min-h-11 items-center justify-center gap-1.5 text-xs disabled:opacity-50"
-            >
-              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-              {downloading ? tx('Baixando…', 'Downloading…') : tx('Baixar PDF enviado', 'Download sent PDF')}
-            </button>
-          ) : (
-            <p className="text-xs text-muted">
-              {doc.status === 'failed'
-                ? tx('Não foi possível gerar o PDF.', 'Could not generate the PDF.')
-                : tx('O PDF está sendo preparado.', 'The PDF is being prepared.')}
-            </p>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {history.test_send_available && (
+              <button
+                type="button"
+                onClick={() => { setNotice(null); setTestSendOpen(true) }}
+                className="btn-secondary inline-flex min-h-11 items-center justify-center gap-1.5 text-xs"
+              >
+                <Send className="h-3.5 w-3.5" aria-hidden="true" />
+                {tx('Enviar e-mail de teste', 'Send test email')}
+              </button>
+            )}
+            {doc.status === 'ready' ? (
+              <button
+                type="button"
+                onClick={download}
+                disabled={downloading}
+                className="btn-secondary inline-flex min-h-11 items-center justify-center gap-1.5 text-xs disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                {downloading ? tx('Baixando…', 'Downloading…') : tx('Baixar PDF enviado', 'Download sent PDF')}
+              </button>
+            ) : (
+              <p className="text-xs text-muted">
+                {doc.status === 'failed'
+                  ? tx('Não foi possível gerar o PDF.', 'Could not generate the PDF.')
+                  : tx('O PDF está sendo preparado.', 'The PDF is being prepared.')}
+              </p>
+            )}
+          </div>
         </div>
       )}
       {downloadError && <p role="alert" className="text-xs font-medium text-danger">{downloadError}</p>}
@@ -188,6 +201,18 @@ export function OrderEmailsPanel({ orderId, orderCode, history, english, dateLoc
           }}
         />
       )}
+
+      {testSendOpen && (
+        <TestSendDialog
+          orderId={orderId}
+          english={english}
+          onClose={() => setTestSendOpen(false)}
+          onDone={() => {
+            setTestSendOpen(false)
+            setNotice(tx('Envio de teste solicitado.', 'Test send requested.'))
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -262,6 +287,83 @@ function ResendDialog({ orderId, delivery, english, onClose, onDone }: {
         </button>
         <button type="button" onClick={confirm} disabled={resend.isPending} className="btn-primary min-h-11 text-xs sm:min-h-0">
           {resend.isPending ? tx('Enviando…', 'Sending…') : tx('Reenviar', 'Resend')}
+        </button>
+      </div>
+    </Dialog>
+  )
+}
+
+function TestSendDialog({ orderId, english, onClose, onDone }: {
+  orderId: string
+  english: boolean
+  onClose: () => void
+  onDone: () => void
+}) {
+  const tx = (pt: string, en: string) => (english ? en : pt)
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const testSend = useTestSendOrderEmail(orderId)
+
+  async function confirm() {
+    const trimmed = email.trim()
+    if (!trimmed) return
+    setError(null)
+    try {
+      await testSend.mutateAsync({ recipient_email: trimmed })
+      onDone()
+    } catch (err) {
+      const status = errorStatus(err)
+      if (status === 409) {
+        setError(
+          errorDetail(err) === 'Envio de teste disponível apenas no modo de teste.'
+            ? tx('O modo de teste não está ativo.', 'Test mode is not active.')
+            : tx('Já existe um envio pendente para este e-mail.', 'There is already a pending send for this email.'),
+        )
+      } else if (status === 403) {
+        setError(tx('Você não tem permissão para enviar o teste.', 'You do not have permission to send the test.'))
+      } else if (status === 422) {
+        setError(tx('E-mail inválido.', 'Invalid email address.'))
+      } else {
+        setError(tx('Não foi possível solicitar o envio de teste. Tente novamente.', 'Could not request the test send. Please try again.'))
+      }
+    }
+  }
+
+  return (
+    <Dialog
+      layer="sub"
+      title={tx('Enviar e-mail de teste', 'Send test email')}
+      onClose={onClose}
+      dismissible={!testSend.isPending}
+    >
+      <p className="mb-3 text-sm text-ink-2">
+        {tx(
+          'O envio passa pela fila e só chega a endereços da lista de teste.',
+          'The send goes through the queue and only reaches addresses on the test list.',
+        )}
+      </p>
+      <label className="mb-4 block space-y-1 text-sm text-ink-2">
+        <span className="text-xs font-medium text-muted">{tx('E-mail de teste', 'Test email')}</span>
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="input min-h-11 w-full"
+        />
+      </label>
+      {error && <p role="alert" className="mb-3 text-xs font-medium text-danger">{error}</p>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} disabled={testSend.isPending} className="btn-secondary min-h-11 text-xs">
+          {tx('Cancelar', 'Cancel')}
+        </button>
+        <button
+          type="button"
+          onClick={confirm}
+          disabled={testSend.isPending || !email.trim()}
+          className="btn-primary min-h-11 text-xs disabled:opacity-50"
+        >
+          {testSend.isPending ? tx('Enviando…', 'Sending…') : tx('Enviar teste', 'Send test')}
         </button>
       </div>
     </Dialog>

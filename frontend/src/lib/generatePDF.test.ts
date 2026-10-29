@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { beforeEach, test, vi } from 'vitest'
 import type { Client, Order, OrderItem, Product } from '../types/index.ts'
-import { generateOrderPDF } from './generatePDF.ts'
+import { buildOrderPdf, generateOrderPDF } from './generatePDF.ts'
 
 const renderedTexts: string[] = []
 const savedFiles: string[] = []
@@ -455,4 +455,78 @@ test('tapete com várias peças imprime medida, peças e total em m²', async ()
   assert.ok(renderedTexts.some((text) => text.includes('2,05 × 2,05 m = 4,2 m² × 3 peças = 12,6 m²')))
   assert.ok(renderedTexts.includes('12,6 m²'))
   assert.ok(renderedTexts.includes('3 peças'))
+})
+
+
+test('buildOrderPdf monta o documento sem chamar save e generateOrderPDF preserva o nome do arquivo', async () => {
+  const client = makeClient({ name: 'Maria da Silva' })
+  const products = [makeProduct()]
+  const order = makeOrder({ code: 'PED-0042' })
+
+  const doc = await buildOrderPdf({
+    order,
+    client,
+    rep: null,
+    products,
+  })
+
+  assert.ok(doc)
+  assert.ok(renderedTexts.includes('PED-0042'))
+  assert.deepEqual(savedFiles, [])
+
+  await generateOrderPDF(order, client, null, products)
+  assert.deepEqual(savedFiles, ['PED-0042_Maria_da_Silva.pdf'])
+})
+
+test('buildOrderPdf com documentLocale en-GB aplica rótulos em inglês sem salvar arquivo', async () => {
+  const client = makeClient({
+    name: 'Client UK',
+    country: 'PT',
+    city: 'Lisboa',
+    state: 'LX',
+    region: 'Lisboa',
+    cep: '1000-001',
+    market_code: 'EU',
+    price_profile: 'pvp',
+  })
+  const products = [
+    makeProduct({
+      market_code: 'EU',
+      currency: 'EUR',
+      description: 'Ilya Armchair',
+    }),
+  ]
+  const order = makeOrder({
+    code: 'ORD-EN-0001',
+    orc_id: 'QUO-EN-0001',
+    market_code: 'EU',
+    price_list_code: 'EU_PVP',
+    currency: 'EUR',
+    locale: 'pt-PT',
+    items: [
+      makeOrderItem({
+        description: 'Ilya Armchair',
+        qty: 1,
+        unit_price: 1500,
+        ipi_rate: 23,
+        ipi_value: 345,
+        tax_label: 'IVA',
+        currency: 'EUR',
+      }),
+    ],
+  })
+
+  await buildOrderPdf({
+    order,
+    client,
+    rep: null,
+    products,
+    documentLocale: 'en-GB',
+  })
+
+  assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
+  assert.ok(renderedTexts.includes('ORDER'))
+  assert.ok(renderedTexts.includes('BILL TO'))
+  assert.ok(renderedTexts.includes('GRAND TOTAL:'))
+  assert.deepEqual(savedFiles, [])
 })

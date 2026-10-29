@@ -15,14 +15,18 @@ from app.models.client import Client
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
 from app.models.order_history import OrderHistory
 from app.models.representative import Representative
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.order_email import (
     OrderEmailDeliveryRead,
     OrderEmailDocumentRead,
     OrderEmailHistoryRead,
     OrderEmailResendRequest,
+    OrderEmailTestSendRequest,
 )
-from app.services.order_email_jobs import normalize_recipient
+from app.services.order_email_jobs import (
+    normalize_recipient,
+    recipient_is_allowed,
+)
 from app.services.resend_client import sanitize_attachment_filename
 
 
@@ -81,7 +85,11 @@ async def get_order_email_history(
     document = await _latest_document(db, order_id)
     if document is None:
         # Pedidos finalizados antes da ativação não ganham histórico retroativo.
-        return OrderEmailHistoryRead(document=None, deliveries=[])
+        return OrderEmailHistoryRead(
+            document=None,
+            deliveries=[],
+            test_send_available=False,
+        )
     deliveries = (
         await db.execute(
             select(OrderEmailDelivery)
@@ -94,6 +102,10 @@ async def get_order_email_history(
             document, from_attributes=True
         ),
         deliveries=[_delivery_read(row) for row in deliveries],
+        test_send_available=(
+            current_user.role == UserRole.admin
+            and settings.ORDER_EMAIL_MODE == "test"
+        ),
     )
 
 
@@ -247,6 +259,84 @@ async def resend_order_email(
             order_id=order.id,
             user_id=current_user.id,
             action="email_resent",
+            details=f"delivery_id={delivery.id}",
+        )
+    )
+    await db.commit()
+    return _delivery_read(delivery)
+
+
+@router.post(
+    "/{order_id}/emails/test-send",
+    response_model=OrderEmailDeliveryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("5/minute")
+async def test_send_order_email(
+    request: Request,
+    response: Response,
+    order_id: uuid.UUID,
+    payload: OrderEmailTestSendRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    order = await _get_order(db, str(order_id), current_user)
+    if current_user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    if settings.ORDER_EMAIL_MODE != "test":
+        raise HTTPException(
+            status_code=409,
+            detail="Envio de teste disponível apenas no modo de teste.",
+        )
+    document = await _latest_document(db, order.id)
+    if document is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Pedido sem documento de e-mail.",
+        )
+    email, error = normalize_recipient(str(payload.recipient_email))
+    if error or not email:
+        raise HTTPException(status_code=422, detail="E-mail inválido.")
+    active = (
+        await db.execute(
+            select(OrderEmailDelivery.id).where(
+                OrderEmailDelivery.order_id == order.id,
+                OrderEmailDelivery.status.in_(("pending", "processing")),
+                func.lower(OrderEmailDelivery.recipient_email) == email.lower(),
+            )
+        )
+    ).scalar_one_or_none()
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe um envio pendente para este destinatário.",
+        )
+
+    allowed = recipient_is_allowed(email)
+    delivery_id = uuid.uuid4()
+    delivery = OrderEmailDelivery(
+        id=delivery_id,
+        order_id=order.id,
+        market_code=order.market_code,
+        document_id=document.id,
+        recipient_roles=[],
+        recipient_email=email,
+        recipient_name=None,
+        origin="manual_resend",
+        resend_of_id=None,
+        requested_by_user_id=current_user.id,
+        status="pending" if allowed else "skipped",
+        attempts=0,
+        idempotency_key=f"order-email/{delivery_id}",
+        last_error=None if allowed else "not_in_allowlist",
+    )
+    db.add(delivery)
+    db.add(
+        OrderHistory(
+            id=uuid.uuid4(),
+            order_id=order.id,
+            user_id=current_user.id,
+            action="email_test_sent",
             details=f"delivery_id={delivery.id}",
         )
     )

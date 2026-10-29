@@ -58,6 +58,8 @@ export function emailStatusInfo(status: OrderEmailStatus | string, english: bool
 }
 
 export function emailRolesLabel(roles: OrderEmailRole[], english: boolean): string {
+  // Envio de teste manual (admin): sem papel de cliente/representante.
+  if (roles.length === 0) return pick(english, 'Teste', 'Test')
   const client = roles.includes('client')
   const rep = roles.includes('representative')
   if (client && rep) return pick(english, 'Cliente e representante', 'Client and representative')

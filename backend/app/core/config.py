@@ -168,6 +168,8 @@ class Settings(BaseSettings):
     ORDER_EMAIL_TIMEOUT_SECONDS: float = 15.0
     ORDER_EMAIL_POLL_SECONDS: float = 10.0
     ORDER_EMAIL_LOCAL_DIR: str = "data/order-documents"
+    ORDER_EMAIL_PDF_RENDERER: str = "unavailable"
+    ORDER_EMAIL_PDF_TIMEOUT_SECONDS: float = 60.0
 
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"
@@ -178,6 +180,16 @@ class Settings(BaseSettings):
         normalized = value.strip().lower()
         if normalized not in {"off", "test", "live"}:
             raise ValueError("ORDER_EMAIL_MODE deve ser off, test ou live.")
+        return normalized
+
+    @field_validator("ORDER_EMAIL_PDF_RENDERER")
+    @classmethod
+    def validate_order_email_pdf_renderer(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"unavailable", "playwright"}:
+            raise ValueError(
+                "ORDER_EMAIL_PDF_RENDERER deve ser unavailable ou playwright."
+            )
         return normalized
 
     def get_cors_origins(self) -> List[str]:
