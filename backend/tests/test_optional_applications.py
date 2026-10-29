@@ -2,6 +2,7 @@
 import asyncio
 import os
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -159,9 +160,27 @@ def test_history_keeps_application_and_option_names_as_snapshots():
     )
     snapshot = _items_history_snapshot([SimpleNamespace(
         product_code="ABC", opt_categories={}, optional_choices=[choice], comment=None,
+        qty=Decimal("1.00"), unit_price=Decimal("10.00"), discount=Decimal("0.00"),
+        ipi_rate=Decimal("0.00"), ipi_value=Decimal("0.00"), tax_label="IPI", currency="BRL",
     )])
     assert snapshot[0]["applications"][0]["component_name"] == "Cadeira"
     assert snapshot[0]["applications"][0]["application_name"] == "Pintura dos pés"
+
+
+def test_history_snapshot_keeps_financial_terms():
+    snapshot = _items_history_snapshot([SimpleNamespace(
+        product_code="ABC", opt_categories={}, optional_choices=[], comment=None,
+        qty=Decimal("12.50"), unit_price=Decimal("1234.56"), discount=Decimal("10.00"),
+        ipi_rate=Decimal("5.00"), ipi_value=Decimal("61.73"),
+        tax_label="IPI", currency="BRL",
+    )])
+    assert snapshot[0]["qty"] == "12.50"
+    assert snapshot[0]["unit_price"] == "1234.56"
+    assert snapshot[0]["discount"] == "10.00"
+    assert snapshot[0]["ipi_rate"] == "5.00"
+    assert snapshot[0]["ipi_value"] == "61.73"
+    assert snapshot[0]["tax_label"] == "IPI"
+    assert snapshot[0]["currency"] == "BRL"
 
 
 def test_product_application_creation_reuses_master_category_and_option():
