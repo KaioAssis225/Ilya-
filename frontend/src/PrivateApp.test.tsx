@@ -75,7 +75,7 @@ describe('PrivateApp em DOM', () => {
     mapRequests()
     renderPrivate(userFor(role), '/produtos')
     await screen.findByRole('heading', { name: 'Catálogo de produtos', level: 1 })
-    const links = screen.queryAllByRole('link', { name: 'Opcionais' })
+    const links = screen.queryAllByRole('link', { name: 'Opcional' })
     const allowed = ['admin', 'vendedor', 'representante', 'cliente', 'produtos'].includes(role)
     expect(links).toHaveLength(allowed ? 2 : 0)
   })
@@ -87,7 +87,7 @@ describe('PrivateApp em DOM', () => {
       renderPrivate(userFor(role, market), '/cadastros')
       if (redirect === null) {
         const navigation = screen.getAllByRole('navigation', { name: 'Navegação principal' })[0]
-        expect(await within(navigation).findByRole('link', { name: 'Cadastros' })).toHaveAttribute('aria-current', 'page')
+        expect(await within(navigation).findByRole('link', { name: 'Cadastro' })).toHaveAttribute('aria-current', 'page')
       } else {
         const expectedHeading = redirect === '/dashboard' ? 'Dashboard BI Comercial' : 'Novo Orçamento'
         expect(await screen.findByRole('heading', { name: expectedHeading, hidden: true, level: 1 })).toBeInTheDocument()
