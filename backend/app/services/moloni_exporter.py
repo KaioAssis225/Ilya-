@@ -242,6 +242,23 @@ def _choice_value(choice, locale: str) -> str:
     return f"{label}: {choice.custom_text}" if choice.custom_text else label
 
 
+def _plain_decimal(value, locale: str) -> str:
+    text = format(Decimal(str(value)).normalize(), "f")
+    return text if locale == "en-GB" else text.replace(".", ",")
+
+
+def _rug_measurement_line(item: OrderItem, locale: str) -> str:
+    """Medidas do tapete (L × P) e peças; o qty exportado já é o total em m²."""
+    width_m = getattr(item, "area_width_m", None)
+    depth_m = getattr(item, "area_depth_m", None)
+    if not getattr(item, "sold_by_area", False) or width_m is None or depth_m is None:
+        return ""
+    english = locale == "en-GB"
+    pieces = getattr(item, "area_pieces", 1) or 1
+    suffix = "" if pieces == 1 else f" × {pieces} {'pieces' if english else 'peças'}"
+    return f"{'Dimensions' if english else 'Medidas'}: {_plain_decimal(width_m, locale)} × {_plain_decimal(depth_m, locale)} m{suffix}"
+
+
 def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> str:
     choice_lines = [
         f"{(choice.component_name + ' — ') if choice.component_name else ''}{(choice.application_name_en if locale == 'en-GB' and choice.application_name_en else choice.application_name)}: {_choice_value(choice, locale)}"
@@ -249,7 +266,8 @@ def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> 
     ]
     legacy_lines = [f"{category}: {value}" for category, value in item.opt_categories.items()]
     comment_line = f"{'Comment' if locale == 'en-GB' else 'Comentário'}: {item.comment}" if item.comment else ""
-    return "\n".join(part for part in [product_summary or "", *legacy_lines, *choice_lines, comment_line] if part)
+    measurement_line = _rug_measurement_line(item, locale)
+    return "\n".join(part for part in [product_summary or "", measurement_line, *legacy_lines, *choice_lines, comment_line] if part)
 
 async def active_moloni_connection(db: AsyncSession) -> MoloniConnection | None:
     """Conexão ativa única. Com duas ativas o destino dos dados EU seria

@@ -194,8 +194,21 @@ def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
          "applications": _choice_snapshot(item), "comment": item.comment,
          **{field: str(_decimal(getattr(item, field)))
             for field in ("qty", "unit_price", "discount", "ipi_rate", "ipi_value")},
-         "tax_label": item.tax_label, "currency": item.currency} for item in items
+         "tax_label": item.tax_label, "currency": item.currency,
+         **_rug_snapshot(item)} for item in items
     ]
+
+
+def _rug_snapshot(item: OrderItem) -> dict:
+    # Tapete: qty é o total em m²; medida e peças explicam como ele foi formado.
+    if not getattr(item, "sold_by_area", False):
+        return {}
+    width_m, depth_m = item.area_width_m, item.area_depth_m
+    return {
+        "area_width_m": None if width_m is None else str(width_m),
+        "area_depth_m": None if depth_m is None else str(depth_m),
+        "area_pieces": item.area_pieces or 1,
+    }
 
 
 async def _resolve_item_choices(
@@ -667,15 +680,28 @@ def _validate_item_quantity(product: Product, qty: Decimal) -> bool:
     return True
 
 
+_MAX_RUG_TOTAL_AREA = Decimal("1000000")
+
+
+def _checked_rug_total(item_in: OrderItemCreate, qty: Decimal) -> Decimal:
+    """Área total (por peça × peças) precisa caber em order_items.qty, Numeric(10, 2)."""
+    if qty > _MAX_RUG_TOTAL_AREA:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"A área total do tapete '{item_in.product_code}' excede o limite permitido.",
+        )
+    return qty
+
+
 def _resolve_item_measurement(
     product: Product,
     item_in: OrderItemCreate,
     source: OrderItem | None,
-) -> tuple[Decimal, bool, Decimal | None, Decimal | None]:
-    """Resolve qty, sold_by_area e dimensões; tapete calcula área no servidor."""
+) -> tuple[Decimal, bool, Decimal | None, Decimal | None, int]:
+    """Resolve qty, sold_by_area, dimensões e número de peças; tapete calcula área no servidor."""
     sold_by_area = is_area_product(product)
     if not sold_by_area:
-        if item_in.area_width_m is not None or item_in.area_depth_m is not None:
+        if item_in.area_width_m is not None or item_in.area_depth_m is not None or item_in.area_pieces is not None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"O item '{item_in.product_code}' não é vendido por área.",
@@ -686,20 +712,24 @@ def _resolve_item_measurement(
                 detail=f"Informe a quantidade do item '{item_in.product_code}'.",
             )
         _validate_item_quantity(product, item_in.qty)
-        return item_in.qty, False, None, None
+        return item_in.qty, False, None, None, 1
     if item_in.area_width_m is not None and item_in.area_depth_m is not None:
         width_m = _decimal(item_in.area_width_m)
         depth_m = _decimal(item_in.area_depth_m)
+        pieces = item_in.area_pieces or 1
         raw_area = width_m * depth_m
         _validate_item_quantity(product, raw_area)
-        qty = area_from_dimensions(width_m, depth_m)
-        return qty, True, width_m, depth_m
+        qty = _checked_rug_total(item_in, area_from_dimensions(width_m, depth_m) * pieces)
+        return qty, True, width_m, depth_m, pieces
     if (
         source is not None
         and source.product_code == item_in.product_code
         and source.sold_by_area
     ):
-        return source.qty, True, source.area_width_m, source.area_depth_m
+        area_per_piece = (_decimal(source.qty) / (source.area_pieces or 1)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        pieces = item_in.area_pieces if item_in.area_pieces is not None else (source.area_pieces or 1)
+        qty = _checked_rug_total(item_in, area_per_piece * pieces)
+        return qty, True, source.area_width_m, source.area_depth_m, pieces
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail=f"Informe largura × profundidade do tapete '{item_in.product_code}'.",
@@ -970,7 +1000,7 @@ async def create_order(
             )
         else:
             ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-        qty, sold_by_area, width_m, depth_m = _resolve_item_measurement(
+        qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
             product, item_in, source_items.get(item_in.source_order_item_id)
         )
         unit_price, discount, subtotal, ipi_rate, ipi_value = (
@@ -1004,6 +1034,7 @@ async def create_order(
             sold_by_area=sold_by_area,
             area_width_m=width_m,
             area_depth_m=depth_m,
+            area_pieces=area_pieces,
             unit_price=unit_price,
             discount=discount,
             ipi_rate=ipi_rate,
@@ -1091,6 +1122,7 @@ async def create_order_revision(
         items=[OrderItemCreate(
             product_code=item.product_code, qty=item.qty,
             area_width_m=item.area_width_m, area_depth_m=item.area_depth_m,
+            area_pieces=item.area_pieces if item.sold_by_area else None,
             discount=item.discount, opt_categories=item.opt_categories,
             source_order_item_id=item.id, comment=item.comment,
         ) for item in source.items],
@@ -1516,7 +1548,7 @@ async def update_order(
                 )
             else:
                 ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-            qty, sold_by_area, width_m, depth_m = _resolve_item_measurement(
+            qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, old_item_map.get(item_in.source_order_item_id)
             )
             unit_price, discount, subtotal, ipi_rate, ipi_value = (
@@ -1551,6 +1583,7 @@ async def update_order(
                 sold_by_area=sold_by_area,
                 area_width_m=width_m,
                 area_depth_m=depth_m,
+                area_pieces=area_pieces,
                 unit_price=unit_price,
                 discount=discount,
                 ipi_rate=ipi_rate,

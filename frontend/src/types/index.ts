@@ -268,6 +268,7 @@ export interface OrderItemCreate {
   qty?: number
   area_width_m?: number
   area_depth_m?: number
+  area_pieces?: number
   discount?: number
   opt_categories?: Record<string, string>
   optional_choices?: OptionalChoiceInput[]
@@ -300,6 +301,7 @@ export interface OrderItem {
   sold_by_area?: boolean
   area_width_m?: number | string | null
   area_depth_m?: number | string | null
+  area_pieces?: number
   is_circular: boolean
   altura: number
   largura: number
@@ -334,6 +336,7 @@ export interface OrderHistory {
 export interface OrderSummaryItem {
   product_code: string
   qty: number
+  area_pieces?: number
 }
 
 export interface OrderSummary {

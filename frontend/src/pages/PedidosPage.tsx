@@ -477,8 +477,10 @@ function OrderDetailModal({
                                 && item.area_depth_m != null
                                 && Number(item.area_width_m) > 0
                                 && Number(item.area_depth_m) > 0
-                              ? formatRugSize(item.area_width_m, item.area_depth_m, item.qty, viewLocale)
-                              : '—'
+                              ? formatRugSize(item.area_width_m, item.area_depth_m, item.qty, viewLocale, item.area_pieces ?? 1)
+                              : (item.area_pieces ?? 1) > 1
+                                ? formatRugSize(null, null, item.qty, viewLocale, item.area_pieces)
+                                : '—'
                             : formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">

@@ -227,3 +227,33 @@ def test_moloni_line_summary_keeps_every_application_choice():
     assert _line_summary("Resumo", item, "en-GB") == (
         "Resumo\nCORDA: Natural\nAssento — Seat leather: Caramelo\nLeg paint: Custom: Pés em latão\nComment: Entregar montado"
     )
+
+
+def test_moloni_line_summary_shows_rug_measurements_and_pieces():
+    from app.services.moloni_exporter import _line_summary
+    from decimal import Decimal
+
+    item_pt = SimpleNamespace(
+        sold_by_area=True,
+        area_width_m=Decimal("2.05"),
+        area_depth_m=Decimal("3.000"),
+        area_pieces=2,
+        opt_categories={},
+        optional_choices=[],
+        comment=None,
+    )
+    summary_pt = _line_summary("Resumo", item_pt, "pt-PT")
+    assert "Medidas: 2,05 × 3 m × 2 peças" in summary_pt
+
+    item_en = SimpleNamespace(
+        sold_by_area=True,
+        area_width_m=Decimal("2.00"),
+        area_depth_m=Decimal("2.00"),
+        area_pieces=1,
+        opt_categories={},
+        optional_choices=[],
+        comment=None,
+    )
+    summary_en = _line_summary("Resumo", item_en, "en-GB")
+    assert "Dimensions: 2 × 2 m" in summary_en
+    assert "pieces" not in summary_en

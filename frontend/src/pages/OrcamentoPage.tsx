@@ -31,7 +31,7 @@ import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
 import { formatDimensions } from '../lib/measurements'
-import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, previewArea } from '../lib/areaProduct'
+import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPieces, previewArea } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
@@ -387,6 +387,7 @@ interface CartItem {
   sold_by_area?: boolean
   area_width_m?: number | null
   area_depth_m?: number | null
+  area_pieces?: number
   discount: number
   opt_categories: Partial<Record<string, string>>
   optional_choices: OptionalChoiceInput[]
@@ -713,15 +714,17 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
-function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDimensionsChange }: {
+function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDimensionsChange, onAreaPiecesChange }: {
   item: CartItem
   english: boolean
   locale: string
   qtyLimitWarning: boolean
   onAreaDimensionsChange: (lineId: string, width: number | null, depth: number | null) => void
+  onAreaPiecesChange: (lineId: string, pieces: number) => void
 }) {
   const width = item.area_width_m ?? null
   const depth = item.area_depth_m ?? null
+  const pieces = item.area_pieces ?? 1
   const preview = previewArea(width, depth)
   const maximumArea = areaLimit(item._product)
   const legacyNoMeasurements = Boolean(item.source_order_item_id && width == null && depth == null)
@@ -733,28 +736,48 @@ function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDim
 
   return (
     <div>
-      <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'W × D (m)' : 'L × P (m)'}</span>
-      <div className="flex items-center gap-1">
-        <NumberField
-          value={width}
-          step="0.01"
-          min="0.01"
-          aria-label={english ? 'Width in metres' : 'Largura em metros'}
-          className={dimensionInput}
-          onValueChange={(value) => onAreaDimensionsChange(item.line_id, value > 0 ? value : null, depth)}
-        />
-        <span className="text-xs text-muted" aria-hidden="true">×</span>
-        <NumberField
-          value={depth}
-          step="0.01"
-          min="0.01"
-          aria-label={english ? 'Depth in metres' : 'Profundidade em metros'}
-          className={dimensionInput}
-          onValueChange={(value) => onAreaDimensionsChange(item.line_id, width, value > 0 ? value : null)}
-        />
+      {/* L × P é a medida de cada peça; Qtd é o número de peças iguais. */}
+      <div className="flex items-start gap-3">
+        <div>
+          <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'W × D (m)' : 'L × P (m)'}</span>
+          <div className="flex items-center gap-1">
+            <NumberField
+              value={width}
+              step="0.01"
+              min="0.01"
+              aria-label={english ? 'Width in metres' : 'Largura em metros'}
+              className={dimensionInput}
+              onValueChange={(value) => onAreaDimensionsChange(item.line_id, value > 0 ? value : null, depth)}
+            />
+            <span className="text-xs text-muted" aria-hidden="true">×</span>
+            <NumberField
+              value={depth}
+              step="0.01"
+              min="0.01"
+              aria-label={english ? 'Depth in metres' : 'Profundidade em metros'}
+              className={dimensionInput}
+              onValueChange={(value) => onAreaDimensionsChange(item.line_id, width, value > 0 ? value : null)}
+            />
+          </div>
+        </div>
+        <div>
+          <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'Qty' : 'Qtd'}</span>
+          <NumberField
+            value={pieces}
+            step="1"
+            min="1"
+            max="1000"
+            inputMode="numeric"
+            aria-label={english ? 'Number of pieces' : 'Número de peças'}
+            className={dimensionInput}
+            onValueChange={(value) => onAreaPiecesChange(item.line_id, value)}
+          />
+        </div>
       </div>
       {preview != null ? (
-        <p className="mt-0.5 text-[10px] text-muted whitespace-nowrap" aria-live="polite">= {formatArea(preview, locale)}</p>
+        <p className="mt-0.5 text-[10px] text-muted whitespace-nowrap" aria-live="polite">
+          = {formatArea(preview, locale)}{pieces > 1 && <> × {pieces} = {formatArea(normalizeAreaQty(preview * pieces), locale)}</>}
+        </p>
       ) : legacyNoMeasurements ? (
         <p className="mt-0.5 text-[10px] text-muted whitespace-nowrap">
           {formatArea(item.qty, locale)} <span className="text-warning">({english ? 'no measurements on record' : 'medidas não registradas'})</span>
@@ -772,11 +795,12 @@ function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDim
 }
 
 function MobileCartCard({
-  item, onQtyChange, onAreaDimensionsChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
   onAreaDimensionsChange: (lineId: string, width: number | null, depth: number | null) => void
+  onAreaPiecesChange: (lineId: string, pieces: number) => void
   qtyLimitWarning: boolean
   onDiscountChange: (code: string, discount: number) => void
   maxDiscount: number
@@ -870,6 +894,7 @@ function MobileCartCard({
             locale={measurementLocale}
             qtyLimitWarning={qtyLimitWarning}
             onAreaDimensionsChange={onAreaDimensionsChange}
+            onAreaPiecesChange={onAreaPiecesChange}
           />
         ) : (
           <div>
@@ -1204,7 +1229,7 @@ export default function OrcamentoPage() {
         product_code: configureProduct.product_code,
         qty: 1,
         sold_by_area: isAreaProduct(configureProduct),
-        ...(isAreaProduct(configureProduct) ? { area_width_m: null, area_depth_m: null } : {}),
+        ...(isAreaProduct(configureProduct) ? { area_width_m: null, area_depth_m: null, area_pieces: 1 } : {}),
         discount: 0,
         opt_categories: initialLegacyOptionCategories(configureProduct),
         optional_choices: [],
@@ -1466,6 +1491,7 @@ export default function OrcamentoPage() {
               sold_by_area: item.sold_by_area ?? isAreaProduct(product),
               area_width_m: item.area_width_m == null ? null : Number(item.area_width_m),
               area_depth_m: item.area_depth_m == null ? null : Number(item.area_depth_m),
+              area_pieces: Number(item.area_pieces ?? 1),
               discount: Number(item.discount),
               opt_categories: item.opt_categories,
               optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice))).map(choice => isCustomChoice(choice)
@@ -1543,7 +1569,7 @@ export default function OrcamentoPage() {
         product_code: selectedProduct.product_code,
         qty: 1,
         sold_by_area: areaProduct,
-        ...(areaProduct ? { area_width_m: null, area_depth_m: null } : {}),
+        ...(areaProduct ? { area_width_m: null, area_depth_m: null, area_pieces: 1 } : {}),
         discount: 0,
         opt_categories: auto_categories,
         optional_choices: selectedChoices,
@@ -1582,9 +1608,10 @@ export default function OrcamentoPage() {
 
     const nextWidth = width != null && width > 0 ? width : null
     const nextDepth = depth != null && depth > 0 ? depth : null
-    const nextQty = previewArea(nextWidth, nextDepth) ?? item.qty
+    const area = previewArea(nextWidth, nextDepth)
+    const nextQty = area != null ? normalizeAreaQty(area * (item.area_pieces ?? 1)) : item.qty
     const maximumArea = areaLimit(item._product)
-    const overLimit = nextQty != null && maximumArea !== null && nextQty > maximumArea
+    const overLimit = area != null && maximumArea !== null && area > maximumArea
 
     setQtyLimitWarnings((current) => {
       const next = new Set(current)
@@ -1598,6 +1625,20 @@ export default function OrcamentoPage() {
       area_depth_m: nextDepth,
       qty: nextQty,
       sold_by_area: true,
+    } : candidate))
+  }
+
+  function updateAreaPieces(lineId: string, value: number) {
+    const item = cart.find((candidate) => candidate.line_id === lineId)
+    if (!item) return
+    const pieces = normalizeRugPieces(value)
+    const currentPieces = item.area_pieces ?? 1
+    const areaPerPiece = previewArea(item.area_width_m, item.area_depth_m)
+      ?? normalizeAreaQty(item.qty / currentPieces)
+    setCart((previous) => previous.map((candidate) => candidate.line_id === lineId ? {
+      ...candidate,
+      area_pieces: pieces,
+      qty: normalizeAreaQty(areaPerPiece * pieces),
     } : candidate))
   }
 
@@ -1649,7 +1690,7 @@ export default function OrcamentoPage() {
   }, 0)
 
   const totalWithIpi = total + ipiTotal
-  const cartUnitCount = cart.reduce((sum, item) => sum + (isAreaProduct(item._product) ? 1 : item.qty), 0)
+  const cartUnitCount = cart.reduce((sum, item) => sum + (isAreaProduct(item._product) ? (item.area_pieces ?? 1) : item.qty), 0)
 
   // O código definitivo é atribuído atomicamente pelo PostgreSQL ao salvar.
   // Não é possível prevê-lo por contagem sem criar colisões em uso concorrente.
@@ -1669,11 +1710,14 @@ export default function OrcamentoPage() {
       preserve_optional_choices,
       comment: comment?.trim() || null,
     }
-    // Tapete com medidas não manda qty: o servidor calcula L × P.
+    // Tapete com medidas não manda qty: o servidor calcula L × P × peças.
     if (areaProduct && width != null && depth != null) {
-      return { ...base, area_width_m: width, area_depth_m: depth }
+      return { ...base, area_width_m: width, area_depth_m: depth, area_pieces: normalizeRugPieces(item.area_pieces ?? 1) }
     }
-    return { ...base, qty: areaProduct ? normalizeAreaQty(qty) : Math.max(1, Math.round(qty)) }
+    if (areaProduct) {
+      return { ...base, qty: normalizeAreaQty(qty), area_pieces: normalizeRugPieces(item.area_pieces ?? 1) }
+    }
+    return { ...base, qty: Math.max(1, Math.round(qty)) }
   })
   const repIdForSubmit = editId
     ? selectedRep?.id ?? null
@@ -2013,6 +2057,7 @@ export default function OrcamentoPage() {
                       item={item}
                       onQtyChange={updateQty}
                       onAreaDimensionsChange={updateAreaDimensions}
+                      onAreaPiecesChange={updateAreaPieces}
                       qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
                       onDiscountChange={updateDiscount}
                       maxDiscount={maxDiscount}
@@ -2100,6 +2145,7 @@ export default function OrcamentoPage() {
                               locale={locale}
                               qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
                               onAreaDimensionsChange={updateAreaDimensions}
+                              onAreaPiecesChange={updateAreaPieces}
                             />
                           ) : (
                             <div>

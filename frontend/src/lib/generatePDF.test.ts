@@ -423,3 +423,36 @@ test('tapete com medidas imprime dimensões formatadas em m (BR)', async () => {
 
   assert.ok(renderedTexts.some((text) => text.includes('2,05 × 2,05 m = 4,2 m²')))
 })
+
+test('tapete com várias peças imprime medida, peças e total em m²', async () => {
+  const order = makeOrder({
+    items: [
+      makeOrderItem({
+        id: 'item-tapete-pecas',
+        product_code: 'TAP-001',
+        description: 'Tapete Amazonas',
+        sold_by_area: true,
+        qty: 12.6,
+        area_width_m: 2.05,
+        area_depth_m: 2.05,
+        area_pieces: 3,
+        altura: 9,
+        largura: 9,
+        profundidade: 9,
+      }),
+    ],
+  })
+
+  await generateOrderPDF(order, makeClient(), null, [
+    makeProduct({
+      id: 'prod-tapete',
+      product_code: 'TAP-001',
+      description: 'Tapete Amazonas',
+      catalog: { id: 'tapetes', name: 'Tapete' },
+    }),
+  ])
+
+  assert.ok(renderedTexts.some((text) => text.includes('2,05 × 2,05 m = 4,2 m² × 3 peças = 12,6 m²')))
+  assert.ok(renderedTexts.includes('12,6 m²'))
+  assert.ok(renderedTexts.includes('3 peças'))
+})
