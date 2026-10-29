@@ -43,11 +43,14 @@ def upgrade() -> None:
           AND product_code = :code
     """)
     update_product_markets = sa.text("""
-        UPDATE product_markets
+        UPDATE product_markets pm
         SET description_pt_pt = :pt_desc,
             updated_at = now()
-        WHERE market_code = 'EU'
-          AND product_code = :code
+        FROM products p
+        WHERE pm.product_id = p.id
+          AND pm.market_code = 'EU'
+          AND p.market_code = 'EU'
+          AND p.product_code = :code
     """)
     for code, pt_desc in EU_PRODUCT_PT_TRANSLATIONS:
         bind.execute(update_products, {"code": code, "pt_desc": pt_desc})
