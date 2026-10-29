@@ -96,9 +96,8 @@ class OrderItemCreate(BaseModel):
 class OrderCreate(BaseModel):
     client_id: uuid.UUID
     rep_id: Optional[uuid.UUID] = None
-    # No EU, a lista escolhida no catálogo/orçamento é parte explícita do
-    # contrato comercial. Ausente mantém compatibilidade com clientes antigos,
-    # usando o perfil padrão cadastrado no cliente.
+    # Só aceita a tabela de faturamento do cliente (ou a da revisão de
+    # origem); outra tabela é 422. Ausente usa o perfil do cliente.
     price_list_code: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     notes: Optional[str] = Field(None, max_length=10_000)
     items: List[OrderItemCreate] = Field(..., min_length=1, max_length=500)

@@ -395,14 +395,66 @@ describe('OrcamentoPage', () => {
 
     renderProductPage(<OrcamentoPage />, user)
 
+    // A tabela do catálogo (Corporativo) não vale com cliente Lojista: o
+    // orçamento trava na tabela do cadastro, inclusive para admin.
+    expect(await screen.findByRole('status', { name: 'Tabela do cliente: Lojista' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Tabela de preço do orçamento' })).toBeNull()
+    const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
+    expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(100))
     const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
     await waitFor(() => expect(posted).not.toBeNull())
     expect(posted).toMatchObject({
       client_id: quoteClient.id,
-      price_list_code: 'corporativo',
+      price_list_code: 'lojista',
     })
+  })
+
+  it('pedido antigo feito em PVP continua travado em PVP na edição', async () => {
+    const user = productTestUser('admin', 'EU')
+    const product = buildProduct('EU', { optional_applications: [] })
+    const client = buildClient('client-legacy-pvp')
+    const orderId = 'order-legacy-pvp'
+    installOrcamentoHandlers([product])
+    let updated: Record<string, unknown> | null = null
+    server.use(
+      http.get(`*/orders/${orderId}`, () => HttpResponse.json({
+        id: orderId,
+        code: 'PED-EU-0002',
+        client_id: client.id,
+        rep_id: null,
+        price_list_code: 'pvp',
+        notes: null,
+        items: [{
+          id: 'item-legacy',
+          product_code: product.product_code,
+          qty: 1,
+          sold_by_area: false,
+          discount: 0,
+          opt_categories: {},
+          optional_choices: [],
+          comment: null,
+        }],
+      })),
+      http.get(`*/clients/${client.id}`, () => HttpResponse.json(client)),
+      http.put(`*/orders/${orderId}`, async ({ request }) => {
+        updated = await request.json() as Record<string, unknown>
+        return HttpResponse.json({}, { status: 200 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user, [`/orcamentos?edit=${orderId}`])
+
+    expect(await screen.findByRole('status', { name: 'Tabela do cliente: PVP' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Tabela de preço do orçamento' })).toBeNull()
+    const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
+    expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(120))
+    const submit = await screen.findByRole('button', { name: 'Salvar Alterações' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+    await waitFor(() => expect(updated).not.toBeNull())
+    expect(updated).toMatchObject({ price_list_code: 'pvp' })
   })
 
   it('envia L × P do tapete sem qty e bloqueia tapete sem medidas', async () => {

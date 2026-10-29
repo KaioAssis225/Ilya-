@@ -1315,12 +1315,15 @@ export default function OrcamentoPage() {
   const createClientM = useCreateClient()
   const createRepM = useCreateRepresentative()
 
-  // No EU a tabela escolhida no catálogo/orçamento é parte do orçamento. O
-  // perfil do cliente é apenas o fallback para carrinhos antigos sem escolha.
-  // BR conserva o contrato histórico baseado no cadastro do cliente.
+  // Com cliente escolhido, o orçamento fecha na tabela de faturamento dele (o
+  // servidor recusa outra). Pedido em edição mantém a tabela com que foi
+  // feito. Sem cliente, o seletor EU só serve para consultar preços.
   const clientDefaultPriceProfile = selectedClient?.price_profile ?? 'lojista'
+  const lockedEuPriceList: PriceListCode | null = market === 'EU'
+    ? ((editOrder?.price_list_code as PriceListCode | undefined) ?? selectedClient?.price_profile ?? null)
+    : null
   const priceProfile: PriceListCode = market === 'EU'
-    ? (selectedEuPriceList ?? (editOrder?.price_list_code as PriceListCode | undefined) ?? clientDefaultPriceProfile)
+    ? (lockedEuPriceList ?? selectedEuPriceList ?? 'lojista')
     : (clientDefaultPriceProfile === 'pvp' || clientDefaultPriceProfile === 'arquiteto'
         ? 'lojista'
         : clientDefaultPriceProfile)
@@ -1909,7 +1912,22 @@ export default function OrcamentoPage() {
               <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4" /> {isEnglish ? 'Quote Items' : 'Itens do Orçamento'}
               </h2>
-              {market === 'EU' ? (
+              {market === 'EU' && lockedEuPriceList ? (
+                <output
+                  aria-live="polite"
+                  aria-label={isEnglish ? `Client price list: ${priceProfileLabel}` : `Tabela do cliente: ${priceProfileLabel}`}
+                  title={isEnglish ? 'Set by the client record' : 'Definida no cadastro do cliente'}
+                  className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
+                >
+                  <span className="px-2.5 text-muted inline-flex items-center gap-1">
+                    <Lock className="w-3 h-3" aria-hidden="true" />
+                    {isEnglish ? 'Client price list' : 'Tabela do cliente'}
+                  </span>
+                  <strong className="self-stretch border-l border-line bg-white px-2.5 inline-flex items-center font-semibold text-gold">
+                    {priceProfileLabel}
+                  </strong>
+                </output>
+              ) : market === 'EU' ? (
                 <label className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider">
                   <span className="px-2.5 text-muted">{isEnglish ? 'Price list' : 'Tabela de preço'}</span>
                   <select
