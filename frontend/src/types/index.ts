@@ -387,6 +387,55 @@ export interface Order {
   updated_at: string
 }
 
+// ── E-mail do PDF do pedido (backend: app/schemas/order_email.py) ─────────────
+
+export type OrderEmailStatus =
+  | 'pending'
+  | 'processing'
+  | 'accepted'
+  | 'delivered'
+  | 'failed'
+  | 'needs_review'
+  | 'blocked'
+  | 'skipped'
+
+export type OrderEmailRole = 'client' | 'representative'
+
+export interface OrderEmailDocument {
+  id: string
+  version: number
+  status: string
+  sha256: string | null
+  size_bytes: number | null
+  generated_at: string | null
+}
+
+export interface OrderEmailDelivery {
+  id: string
+  document_id: string
+  recipient_roles: OrderEmailRole[]
+  recipient_email: string | null
+  status: OrderEmailStatus
+  attempts: number
+  created_at: string
+  updated_at: string
+  first_attempt_at: string | null
+  next_attempt_at: string | null
+  accepted_at: string | null
+  delivered_at: string | null
+  last_event_type: string | null
+  last_event_at: string | null
+  last_error: string | null
+  origin: 'finalization' | 'manual_resend'
+  resend_of_id: string | null
+  can_resend: boolean
+}
+
+export interface OrderEmailHistory {
+  document: OrderEmailDocument | null
+  deliveries: OrderEmailDelivery[]
+}
+
 export interface ViaCepResponse {
   cep: string
   logradouro: string

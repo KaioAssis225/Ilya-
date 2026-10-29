@@ -9,6 +9,8 @@ import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { useAuth } from '../hooks/useAuth'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
+import { OrderEmailsPanel } from '../components/OrderEmailsPanel'
+import { useOrderEmails } from '../hooks/useOrderEmails'
 import { PdfDestinationControl } from '../components/PdfDestinationControl'
 import { describePdfSave, resolvePdfDestination, type PdfSaveNotice } from '../lib/pdfDestination'
 import { SafePrice } from '../components/SafePrice'
@@ -209,11 +211,13 @@ function CancelModal({ order, onClose }: { order: OrderSummary; onClose: () => v
 
 function OrderDetailModal({
   order: orderLight, clientName, repName,
-  userRole,
+  userRole, canResendEmail,
   onClose, onEdit, onFinalize, onCancel,
 }: {
   order: OrderSummary; clientName: string; repName: string
   userRole: string
+  /** Quem opera o pedido (mesma regra do backend); controla o botão Reenviar. */
+  canResendEmail: boolean
   onClose: () => void; onEdit: () => void; onFinalize: () => void; onCancel: () => void
 }) {
   const navigate = useNavigate()
@@ -259,7 +263,15 @@ function OrderDetailModal({
   )
   const { data: optCategories = [] } = useOptionalCategories()
   const catLabel = (code: string) => optionalCategoryLabel(optCategories.find(c => c.code === code)?.name ?? code, optionalEnglish)
-  const [tab, setTab] = useState<'details' | 'history'>('details')
+  const [tab, setTab] = useState<'details' | 'history' | 'emails'>('details')
+  // A aba de e-mails só existe quando o pedido finalizado tem documento enviado:
+  // sem ele (modo off, pedido anterior à ativação, erro) a tela não muda.
+  const { data: emailHistory } = useOrderEmails(orderLight.id, {
+    enabled: orderLight.is_finalized,
+    active: tab === 'emails',
+  })
+  const showEmailsTab = orderLight.is_finalized && !!emailHistory?.document
+  const currentTab = tab === 'emails' && !showEmailsTab ? 'details' : tab
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
   const [expandedOptionalItems, setExpandedOptionalItems] = useState<Set<string>>(() => new Set())
   const [revisionError, setRevisionError] = useState(false)
@@ -395,18 +407,29 @@ function OrderDetailModal({
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-line mb-4">
-          {(['details', 'history'] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-semibold transition-colors ${tab === t ? 'text-gold border-b-2 border-gold -mb-px' : 'text-muted hover:text-ink-2'}`}>
-              {t === 'details' ? viewText('Detalhes', 'Details') : viewText('Histórico', 'History')}
+          {(showEmailsTab ? ['details', 'history', 'emails'] as const : ['details', 'history'] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2 text-xs font-semibold transition-colors ${currentTab === t ? 'text-gold border-b-2 border-gold -mb-px' : 'text-muted hover:text-ink-2'}`}>
+              {t === 'details' ? viewText('Detalhes', 'Details') : t === 'history' ? viewText('Histórico', 'History') : viewText('E-mails', 'Emails')}
             </button>
           ))}
         </div>
 
-        {tab === 'history' && (
+        {currentTab === 'history' && (
           <div className="pt-1"><AuditTimeline history={order.history} /></div>
         )}
 
-        {tab === 'details' && (
+        {currentTab === 'emails' && emailHistory && (
+          <OrderEmailsPanel
+            orderId={order.id}
+            orderCode={order.code}
+            history={emailHistory}
+            english={isEuOrder && locale === 'en-GB'}
+            dateLocale={viewLocale}
+            canResend={canResendEmail}
+          />
+        )}
+
+        {currentTab === 'details' && (
           <>
             <div className="grid grid-cols-2 gap-3 text-sm mb-5">
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Cliente', 'Client')}</p><p className="text-ink font-medium">{clientName}</p></div>
@@ -1112,6 +1135,7 @@ export default function PedidosPage() {
           clientName={viewing.client_name}
           repName={viewing.rep_name ?? ''}
           userRole={user?.role ?? ''}
+          canResendEmail={canManage}
           onClose={() => setViewing(null)}
           onEdit={() => { setViewing(null); navigate(`/orcamentos?edit=${viewing.id}`) }}
           onFinalize={() => { setFinalizing(viewing); setViewing(null) }}
