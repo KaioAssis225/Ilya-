@@ -714,13 +714,12 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
 
-function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDimensionsChange, onAreaPiecesChange }: {
+function RugMeasureFields({ item, english, locale, qtyLimitWarning, onAreaDimensionsChange }: {
   item: CartItem
   english: boolean
   locale: string
   qtyLimitWarning: boolean
   onAreaDimensionsChange: (lineId: string, width: number | null, depth: number | null) => void
-  onAreaPiecesChange: (lineId: string, pieces: number) => void
 }) {
   const width = item.area_width_m ?? null
   const depth = item.area_depth_m ?? null
@@ -736,43 +735,26 @@ function AreaDimensionFields({ item, english, locale, qtyLimitWarning, onAreaDim
 
   return (
     <div>
-      {/* L × P é a medida de cada peça; Qtd é o número de peças iguais. */}
-      <div className="flex items-start gap-3">
-        <div>
-          <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'W × D (m)' : 'L × P (m)'}</span>
-          <div className="flex items-center gap-1">
-            <NumberField
-              value={width}
-              step="0.01"
-              min="0.01"
-              aria-label={english ? 'Width in metres' : 'Largura em metros'}
-              className={dimensionInput}
-              onValueChange={(value) => onAreaDimensionsChange(item.line_id, value > 0 ? value : null, depth)}
-            />
-            <span className="text-xs text-muted" aria-hidden="true">×</span>
-            <NumberField
-              value={depth}
-              step="0.01"
-              min="0.01"
-              aria-label={english ? 'Depth in metres' : 'Profundidade em metros'}
-              className={dimensionInput}
-              onValueChange={(value) => onAreaDimensionsChange(item.line_id, width, value > 0 ? value : null)}
-            />
-          </div>
-        </div>
-        <div>
-          <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'Qty' : 'Qtd'}</span>
-          <NumberField
-            value={pieces}
-            step="1"
-            min="1"
-            max="1000"
-            inputMode="numeric"
-            aria-label={english ? 'Number of pieces' : 'Número de peças'}
-            className={dimensionInput}
-            onValueChange={(value) => onAreaPiecesChange(item.line_id, value)}
-          />
-        </div>
+      {/* L × P é a medida de cada peça; a quantidade de peças fica na coluna Qtd. */}
+      <span className="type-label text-xs block mb-1 whitespace-nowrap">{english ? 'W × D (m)' : 'L × P (m)'}</span>
+      <div className="flex items-center gap-1">
+        <NumberField
+          value={width}
+          step="0.01"
+          min="0.01"
+          aria-label={english ? 'Width in metres' : 'Largura em metros'}
+          className={dimensionInput}
+          onValueChange={(value) => onAreaDimensionsChange(item.line_id, value > 0 ? value : null, depth)}
+        />
+        <span className="text-xs text-muted" aria-hidden="true">×</span>
+        <NumberField
+          value={depth}
+          step="0.01"
+          min="0.01"
+          aria-label={english ? 'Depth in metres' : 'Profundidade em metros'}
+          className={dimensionInput}
+          onValueChange={(value) => onAreaDimensionsChange(item.line_id, width, value > 0 ? value : null)}
+        />
       </div>
       {preview != null ? (
         <p className="mt-0.5 text-[10px] text-muted whitespace-nowrap" aria-live="polite">
@@ -826,6 +808,7 @@ function MobileCartCard({
   const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
   const hasDiscount = item.discount > 0
   const soldByArea = isAreaProduct(item._product)
+  const pieces = item.area_pieces ?? 1
 
   return (
     <div className="bg-white border border-line rounded-xl p-3.5 shadow-sm">
@@ -860,6 +843,7 @@ function MobileCartCard({
               {item._product.observacao && (
                 <p className="text-[11px] leading-snug text-gold italic mt-1 line-clamp-2">{item._product.observacao}</p>
               )}
+              {soldByArea && <div className="mt-2"><RugMeasureFields item={item} english={isEnglish} locale={measurementLocale} qtyLimitWarning={qtyLimitWarning} onAreaDimensionsChange={onAreaDimensionsChange} /></div>}
             </div>
             <div className="flex flex-shrink-0">
               <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={onToggleComment} />
@@ -886,40 +870,29 @@ function MobileCartCard({
           o representante no showroom concede desconto pelo tablet/celular. O
           teto é o do usuário; o servidor revalida contra cliente/representante. */}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mt-3 pt-3 border-t border-bg-2">
-        {/* Qty stepper ou dimensões do tapete */}
-        {soldByArea ? (
-          <AreaDimensionFields
-            item={item}
-            english={isEnglish}
-            locale={measurementLocale}
-            qtyLimitWarning={qtyLimitWarning}
-            onAreaDimensionsChange={onAreaDimensionsChange}
-            onAreaPiecesChange={onAreaPiecesChange}
-          />
-        ) : (
-          <div>
-            <label htmlFor={`mobile-qty-${item.line_id}`} className="type-label block mb-1 text-center">{isEnglish ? 'Qty' : 'Qtd'}</label>
-            <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
-              <button
-                onClick={() => onQtyChange(item.line_id, Math.max(1, item.qty - 1))}
-                className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
-                style={{ touchAction: 'manipulation' }}
-                aria-label={isEnglish ? `Decrease quantity of ${item._product.description}` : `Diminuir quantidade de ${item._product.description}`}
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{item.qty}</span>
-              <button
-                onClick={() => onQtyChange(item.line_id, item.qty + 1)}
-                className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
-                style={{ touchAction: 'manipulation' }}
-                aria-label={isEnglish ? `Increase quantity of ${item._product.description}` : `Aumentar quantidade de ${item._product.description}`}
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
+        {/* Qty stepper: no tapete conta o número de peças iguais. */}
+        <div>
+          <label htmlFor={`mobile-qty-${item.line_id}`} className="type-label block mb-1 text-center">{isEnglish ? 'Qty' : 'Qtd'}</label>
+          <div className="flex items-center gap-0 border border-line rounded-lg overflow-hidden">
+            <button
+              onClick={() => soldByArea ? onAreaPiecesChange(item.line_id, Math.max(1, pieces - 1)) : onQtyChange(item.line_id, Math.max(1, item.qty - 1))}
+              className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+              aria-label={soldByArea ? (isEnglish ? `Decrease number of pieces of ${item._product.description}` : `Diminuir número de peças de ${item._product.description}`) : (isEnglish ? `Decrease quantity of ${item._product.description}` : `Diminuir quantidade de ${item._product.description}`)}
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <span className="w-9 text-center text-sm font-semibold text-ink" aria-live="polite">{soldByArea ? pieces : item.qty}</span>
+            <button
+              onClick={() => soldByArea ? onAreaPiecesChange(item.line_id, pieces + 1) : onQtyChange(item.line_id, item.qty + 1)}
+              className="w-11 h-11 flex items-center justify-center text-muted active:bg-bg-2 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+              aria-label={soldByArea ? (isEnglish ? `Increase number of pieces of ${item._product.description}` : `Aumentar número de peças de ${item._product.description}`) : (isEnglish ? `Increase quantity of ${item._product.description}` : `Aumentar quantidade de ${item._product.description}`)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
           </div>
-        )}
+        </div>
 
         {/* Desconto percentual */}
         <div className="flex items-center gap-1.5">
@@ -2126,6 +2099,7 @@ export default function OrcamentoPage() {
                             {dimLabel(item._product, market, locale) && (
                               <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
                             )}
+                            {soldByArea && <div className="mt-2"><RugMeasureFields item={item} english={isEnglish} locale={locale} qtyLimitWarning={qtyLimitWarnings.has(item.line_id)} onAreaDimensionsChange={updateAreaDimensions} /></div>}
                             <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} catLabel={catLabel} allowCustom={allowsCustomOption(market) && optionalsReady} />
                             {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">
                               {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
@@ -2138,33 +2112,23 @@ export default function OrcamentoPage() {
 
                         {/* Em 2xl qtd, preços, subtotal, comentário e excluir cabem numa linha (~540px). */}
                         <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[600px]">
-                          {soldByArea ? (
-                            <AreaDimensionFields
-                              item={item}
-                              english={isEnglish}
-                              locale={locale}
-                              qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
-                              onAreaDimensionsChange={updateAreaDimensions}
-                              onAreaPiecesChange={updateAreaPieces}
+                          <div>
+                            <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
+                            <QuantityInput
+                              id={`desktop-qty-${item.line_id}`}
+                              value={soldByArea ? (item.area_pieces ?? 1) : item.qty}
+                              allowDecimal={false}
+                              max={soldByArea ? 1000 : null}
+                              ariaLabel={soldByArea ? (isEnglish ? `Number of pieces — ${item._product.description}` : `Número de peças — ${item._product.description}`) : (isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`)}
+                              className="input w-20 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
+                              onCommit={(qty) => soldByArea ? updateAreaPieces(item.line_id, qty) : updateQty(item.line_id, qty)}
                             />
-                          ) : (
-                            <div>
-                              <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
-                              <QuantityInput
-                                id={`desktop-qty-${item.line_id}`}
-                                value={item.qty}
-                                allowDecimal={false}
-                                max={null}
-                                ariaLabel={isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`}
-                                className="input w-20 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
-                                onCommit={(qty) => updateQty(item.line_id, qty)}
-                              />
-                            </div>
-                          )}
+                          </div>
                           <div>
                             <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Base Price' : 'Preço base'}</span>
                             <div className="text-ink-2 text-xs font-semibold whitespace-nowrap min-h-8 flex items-center">
                               <SafePrice value={effectivePrice(item._product, priceProfile)} currency={currency} locale={locale} />
+                              {soldByArea && <span className="ml-0.5 font-normal text-muted">/m²</span>}
                             </div>
                           </div>
                           <div>
