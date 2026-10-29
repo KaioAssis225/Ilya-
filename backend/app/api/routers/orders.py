@@ -28,6 +28,7 @@ from app.models.catalog import Catalog
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
+from app.models.order_email import OrderDocument, OrderEmailDelivery
 from app.services.moloni_jobs import enqueue_finalized_eu_order
 from app.models.client import Client
 from app.models.representative import Representative
@@ -39,9 +40,12 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
-from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
+from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead, OrderEmailDeliveryRead
 from app.services.integration_events import enqueue_event
 from app.services.area_products import is_area_product
+from app.services.order_email import create_finalized_document, decode_pdf_payload, enqueue_manual_resend
+from app.core.order_documents import read_order_pdf
+from app.core.config import settings
 
 logger = logging.getLogger("ilya.orders")
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -1536,6 +1540,16 @@ async def update_order(
 
 class FinalizePayload(BaseModel):
     external_code: str | None = Field(None, max_length=100)
+    pdf_base64: str | None = Field(None, max_length=14_500_000)
+
+
+@router.get("/email-delivery/config")
+async def get_order_email_config(
+    current_user: User = Depends(get_current_user),
+) -> dict[str, bool]:
+    if not _can_operate_order(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    return {"enabled": settings.ORDER_EMAIL_ENABLED}
 
 
 @router.post("/{order_id}/finalize", response_model=OrderRead)
@@ -1560,6 +1574,7 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
+    pdf_content = decode_pdf_payload(payload.pdf_base64) if settings.ORDER_EMAIL_ENABLED else None
     terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
     order.finalized_at = terminal_at
@@ -1577,10 +1592,112 @@ async def finalize_order(
     await touch_client_activity(db, order.client_id, terminal_at)
     if order.market_code == "EU":
         await enqueue_finalized_eu_order(db, order.id)
+    if pdf_content is not None:
+        await create_finalized_document(db, order, pdf_content)
     await db.commit()
     order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
     return order
+
+
+async def _visible_order_for_email(
+    db: AsyncSession, order_id: uuid.UUID, current_user: User
+) -> Order:
+    order = (
+        await db.execute(
+            select(Order).where(
+                Order.id == order_id,
+                *_order_visibility_filters(current_user),
+            )
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    return order
+
+
+@router.get("/{order_id}/email-deliveries", response_model=list[OrderEmailDeliveryRead])
+async def list_order_email_deliveries(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _visible_order_for_email(db, order_id, current_user)
+    return list(
+        (
+            await db.execute(
+                select(OrderEmailDelivery)
+                .where(OrderEmailDelivery.order_id == order_id)
+                .order_by(OrderEmailDelivery.created_at.desc())
+            )
+        ).scalars().all()
+    )
+
+
+@router.get("/{order_id}/document")
+async def download_order_document(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _visible_order_for_email(db, order_id, current_user)
+    document = (
+        await db.execute(
+            select(OrderDocument)
+            .where(OrderDocument.order_id == order_id)
+            .order_by(OrderDocument.document_version.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if document is None:
+        raise HTTPException(status_code=404, detail="PDF enviado não encontrado.")
+    content = await read_order_pdf(document.storage_key, document.market_code)
+    safe_filename = document.filename.replace('"', "")
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "ETag": f'"{document.sha256}"',
+            "Cache-Control": "private, max-age=0, must-revalidate",
+        },
+    )
+
+
+@router.post("/{order_id}/email-deliveries/resend", response_model=list[OrderEmailDeliveryRead], status_code=202)
+async def resend_order_email_deliveries(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not _can_operate_order(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    if not settings.ORDER_EMAIL_ENABLED:
+        raise HTTPException(status_code=409, detail="Envio automático de pedidos está desativado.")
+    order = await _visible_order_for_email(db, order_id, current_user)
+    if not order.is_finalized or order.is_cancelled:
+        raise HTTPException(status_code=409, detail="Somente pedido finalizado pode ser reenviado.")
+    document = (
+        await db.execute(
+            select(OrderDocument).where(OrderDocument.order_id == order.id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if document is None:
+        raise HTTPException(status_code=404, detail="PDF enviado não encontrado.")
+    rows = await enqueue_manual_resend(db, order, document)
+    db.add(
+        OrderHistory(
+            id=uuid.uuid4(),
+            order_id=order.id,
+            user_id=current_user.id,
+            action="email_resent",
+            details=f"{len(rows)} destino(s) enfileirado(s)",
+        )
+    )
+    await db.commit()
+    for row in rows:
+        await db.refresh(row)
+    return rows
 
 
 class CancelPayload(BaseModel):

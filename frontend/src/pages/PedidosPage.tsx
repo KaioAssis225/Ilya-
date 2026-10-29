@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Lock, Ban, ChevronDown } from 'lucide-react'
-import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Lock, Ban, ChevronDown, Download, Mail, RefreshCw } from 'lucide-react'
+import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useOrderEmailDeliveries, useResendOrderEmail } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
@@ -107,16 +107,50 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
 
 // ── Finalize Modal ─────────────────────────────────────────────────────────────
 
-function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () => void }) {
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Não foi possível ler o PDF gerado.'))
+    reader.onload = () => {
+      const value = String(reader.result ?? '')
+      const separator = value.indexOf(',')
+      if (separator < 0) reject(new Error('PDF gerado em formato inválido.'))
+      else resolve(value.slice(separator + 1))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+function FinalizeModal({
+  order,
+  onClose,
+  buildPdf,
+}: {
+  order: OrderSummary
+  onClose: () => void
+  buildPdf: (order: OrderSummary) => Promise<Blob>
+}) {
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const finalizeM = useFinalizeOrder()
 
   async function handleSubmit() {
     setLoading(true)
+    setError(null)
     try {
-      await finalizeM.mutateAsync({ id: order.id, external_code: code.trim() || undefined })
+      const config = (await api.get<{ enabled: boolean }>('/orders/email-delivery/config')).data
+      const pdf_base64 = config.enabled
+        ? await blobToBase64(await buildPdf(order))
+        : undefined
+      await finalizeM.mutateAsync({
+        id: order.id,
+        external_code: code.trim() || undefined,
+        pdf_base64,
+      })
       onClose()
+    } catch {
+      setError('Não foi possível gerar ou enviar o PDF. O pedido não foi finalizado.')
     } finally {
       setLoading(false)
     }
@@ -143,6 +177,7 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
             onChange={(e) => setCode(e.target.value)}
           />
         </label>
+        {error && <p role="alert" className="mb-4 rounded-lg bg-danger-soft p-3 text-sm text-danger">{error}</p>}
         <div className="flex gap-3 justify-end">
           <button className="btn-secondary" onClick={onClose}>Cancelar</button>
           <button className="btn-primary" disabled={loading} onClick={handleSubmit}>
@@ -223,6 +258,8 @@ function OrderDetailModal({
     isError: detailError,
     refetch: retryOrderDetail,
   } = useOrder(orderLight.id)
+  const { data: emailDeliveries = [] } = useOrderEmailDeliveries(orderLight.id, orderLight.is_finalized)
+  const resendEmail = useResendOrderEmail()
   const order: Order = orderDetail ?? {
     ...orderLight,
     price_list_code: 'lojista',
@@ -271,6 +308,22 @@ function OrderDetailModal({
     || userRole === 'vendedor'
   const canRevise = userRole === 'admin' || userRole === 'representante'
     || userRole === 'vendedor'
+
+  const emailStatusLabel: Record<string, string> = {
+    pending: 'Pendente', processing: 'Processando', accepted: 'Aceito', sent: 'Enviado', delivered: 'Entregue',
+    delayed: 'Atrasado', failed: 'Falhou', suppressed: 'Suprimido', bounced: 'Devolvido',
+    complained: 'Denunciado', missing_address: 'Sem e-mail',
+  }
+
+  async function downloadSentDocument() {
+    const response = await api.get(`/orders/${order.id}/document`, { responseType: 'blob' })
+    const href = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = href
+    link.download = `${order.code}.pdf`
+    link.click()
+    URL.revokeObjectURL(href)
+  }
 
   function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null }[] {
     return Object.entries(cats).map(([cat, color]) => {
@@ -415,6 +468,51 @@ function OrderDetailModal({
                 <div className="col-span-2 bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Observações', 'Notes')}</p><p className="text-ink-2">{order.notes}</p></div>
               )}
             </div>
+            {order.is_finalized && emailDeliveries.length > 0 && (
+              <section className="mb-5 rounded-xl border border-line bg-bg p-4" aria-label="Envio do PDF">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-gold" />
+                    <h4 className="text-sm font-semibold text-ink">Envio do PDF</h4>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => void downloadSentDocument()} className="btn-secondary text-xs">
+                      <Download className="mr-1 inline h-3.5 w-3.5" /> Baixar cópia
+                    </button>
+                    {canManage && (
+                      <button
+                        type="button"
+                        disabled={resendEmail.isPending}
+                        onClick={() => void resendEmail.mutateAsync(order.id)}
+                        className="btn-secondary text-xs disabled:opacity-50"
+                      >
+                        <RefreshCw className="mr-1 inline h-3.5 w-3.5" />
+                        {resendEmail.isPending ? 'Enfileirando...' : 'Reenviar'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {emailDeliveries.map((delivery) => (
+                    <div key={delivery.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="text-ink-2">
+                        {delivery.recipient_kind === 'client'
+                          ? 'Cliente'
+                          : delivery.recipient_kind === 'representative'
+                            ? 'Representante'
+                            : 'Cliente e representante'}
+                        {delivery.recipient_email ? ` · ${delivery.recipient_email}` : ''}
+                        {delivery.batch_number > 1 ? ` · reenvio ${delivery.batch_number - 1}` : ''}
+                      </span>
+                      <span className="rounded-full border border-line bg-surface px-2 py-0.5 font-medium text-ink-2">
+                        {emailStatusLabel[delivery.status] ?? delivery.status}
+                      </span>
+                      {delivery.last_error && <p className="w-full text-danger">{delivery.last_error}</p>}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <div className="flex items-center justify-between gap-3 mb-2">
               <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">{viewText('Itens', 'Items')}</h4>
@@ -711,11 +809,7 @@ export default function PedidosPage() {
   const globalHistory = globalHistoryPage?.items ?? []
   const deleteM = useDeleteOrder()
 
-  async function handlePDF(orderLight: OrderSummary) {
-    if (pdfOrderId) return
-    setPdfOrderId(orderLight.id)
-    setPdfError(null)
-    try {
+  async function buildOrderPDF(orderLight: OrderSummary, download: boolean): Promise<Blob | null> {
       const order = (await api.get<Order>(`/orders/${orderLight.id}`)).data
       const codes = Array.from(
         new Set(order.items.map((item) => item.product_code)),
@@ -742,14 +836,23 @@ export default function PedidosPage() {
       const client = clientResponse.data
       const rep = repResponse?.data ?? null
       const products = productsResponses.flatMap((response) => response.data)
-      await pdfModule.generateOrderPDF(
+      return await pdfModule.generateOrderPDF(
         order,
         client,
         rep,
         products,
         pdfCatLabel,
         order.market_code === 'EU' ? locale : undefined,
+        download,
       )
+  }
+
+  async function handlePDF(orderLight: OrderSummary) {
+    if (pdfOrderId) return
+    setPdfOrderId(orderLight.id)
+    setPdfError(null)
+    try {
+      await buildOrderPDF(orderLight, true)
     } catch {
       setPdfError('Não foi possível gerar o PDF. Tente novamente.')
     } finally {
@@ -1075,7 +1178,15 @@ export default function PedidosPage() {
         />
       )}
 
-      {finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} />}
+      {finalizing && <FinalizeModal
+        order={finalizing}
+        onClose={() => setFinalizing(null)}
+        buildPdf={async (selectedOrder) => {
+          const blob = await buildOrderPDF(selectedOrder, false)
+          if (!blob) throw new Error('PDF não gerado.')
+          return blob
+        }}
+      />}
       {canceling && <CancelModal order={canceling} onClose={() => setCanceling(null)} />}
 
       {deleting && (

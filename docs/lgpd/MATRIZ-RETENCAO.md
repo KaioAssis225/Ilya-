@@ -25,6 +25,7 @@ investigação ou obrigação legal, aplica-se legal hold até o encerramento.
 | RET-11 | Backups | 7 diários, 4 semanais, 6 mensais; criptografados | manter GFS atual, confirmar se 6 meses atende obrigações e risco | expiração automática local e off-site; registrar destruição | Infra + Jurídico |
 | RET-12 | Outbox/webhooks | `delivered_at` e `dead_lettered_at` implementados | entregues por 90 dias; `dead_letter` até resolução manual | simular remoção do payload entregue; nunca eliminar falha não resolvida | Aprovado |
 | RET-13 | Arquivos/imagens de produto | sem descarte de órfãos comprovado | enquanto produto estiver ativo e janela curta após substituição | job de órfãos e exclusão no storage | Produto + Infra |
+| RET-14 | PDF imutável do pedido e metadados de entrega Resend | PDF e tentativas acompanham o pedido; eventos Svix são deduplicados | mesmo prazo de 10 anos do pedido para o PDF e a evidência necessária; eventos técnicos brutos entregues por 90 dias | anonimizar destinatários e eliminar cópias no storage/operador ao término, respeitando legal hold | Requer validação jurídica do operador antes da ativação |
 
 ## Regras de implementação
 

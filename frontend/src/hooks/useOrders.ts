@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Order, OrderCreate, OrderUpdate, OrderHistory, OrderSummary } from '../types'
+import type { Order, OrderCreate, OrderUpdate, OrderHistory, OrderSummary, OrderEmailDelivery } from '../types'
 
 const KEY = 'orders'
 
@@ -72,10 +72,37 @@ export function useUpdateOrder() {
 
 export function useFinalizeOrder() {
   const qc = useQueryClient()
-  return useMutation<Order, Error, { id: string; external_code?: string }>({
-    mutationFn: ({ id, external_code }) =>
-      api.post(`/orders/${id}/finalize`, { external_code: external_code ?? null }).then((r) => r.data),
+  return useMutation<Order, Error, { id: string; external_code?: string; pdf_base64?: string }>({
+    mutationFn: ({ id, external_code, pdf_base64 }) =>
+      api.post(`/orders/${id}/finalize`, {
+        external_code: external_code ?? null,
+        pdf_base64: pdf_base64 ?? null,
+      }).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
+export function useOrderEmailDeliveries(orderId: string, enabled: boolean) {
+  return useQuery<OrderEmailDelivery[]>({
+    queryKey: [KEY, orderId, 'email-deliveries'],
+    queryFn: () => api.get(`/orders/${orderId}/email-deliveries`).then((r) => r.data),
+    enabled,
+    refetchInterval: (query) => {
+      const rows = query.state.data
+      return rows?.some((row) => ['pending', 'processing', 'accepted', 'delayed'].includes(row.status))
+        ? 10_000
+        : false
+    },
+  })
+}
+
+export function useResendOrderEmail() {
+  const qc = useQueryClient()
+  return useMutation<OrderEmailDelivery[], Error, string>({
+    mutationFn: (orderId) => api.post(`/orders/${orderId}/email-deliveries/resend`).then((r) => r.data),
+    onSuccess: (_rows, orderId) => {
+      qc.invalidateQueries({ queryKey: [KEY, orderId, 'email-deliveries'] })
+    },
   })
 }
 

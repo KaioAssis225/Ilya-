@@ -22,6 +22,7 @@ from app.schemas.integration import (
     TestEventRequest,
 )
 from app.services.integration_events import enqueue_event
+from app.services.resend_webhook import apply_event, verify_signature
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
@@ -29,6 +30,23 @@ _OUTBOX_READER = Depends(require_platform_capability("read_outbox"))
 
 # Amostra de linhas recentes devolvida pela consulta de status.
 _RECENT_LIMIT = 20
+
+
+@router.post("/resend/webhook", include_in_schema=False)
+async def receive_resend_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+) -> dict[str, bool]:
+    raw_body = await request.body()
+    event_id = request.headers.get("svix-id")
+    verify_signature(
+        raw_body,
+        event_id,
+        request.headers.get("svix-timestamp"),
+        request.headers.get("svix-signature"),
+    )
+    processed = await apply_event(db, event_id or "", raw_body)
+    return {"processed": processed}
 
 
 @router.post("/test-event", response_model=OutboxStatusResponse, status_code=202)

@@ -13,6 +13,7 @@ from app.models.client import Client
 from app.models.representative import Representative
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
+from app.models.order_email import OrderDocument, OrderEmailDelivery, ResendWebhookEvent
 from app.models.user import User, UserRole
 from app.models.refresh_token import RefreshToken
 from app.models.notification import Notification
@@ -47,6 +48,9 @@ __all__ = [
     "Order",
     "OrderItem",
     "OrderHistory",
+    "OrderDocument",
+    "OrderEmailDelivery",
+    "ResendWebhookEvent",
     "User",
     "UserRole",
     "RefreshToken",

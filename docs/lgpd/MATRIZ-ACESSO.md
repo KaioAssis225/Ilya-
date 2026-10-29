@@ -19,6 +19,11 @@ Somente `admin` acessa a governança de retenção, cria/libera legal holds,
 aprova simulações e registra o encerramento do vínculo de representantes. O
 encerramento exige reautenticação e revoga os acessos vinculados.
 
+O PDF imutável e os estados de entrega seguem exatamente a visibilidade do
+pedido. Download e consulta não ampliam o escopo de nenhum papel; reenvio fica
+restrito aos papéis que podem operar/finalizar pedidos e sempre cria trilha no
+histórico.
+
 ## Decisão necessária para `produtos`
 
 O código atual concede a `produtos` acesso aos diretórios completos e a todos os

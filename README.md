@@ -297,6 +297,28 @@ imagens. A flag só pode ser ativada após a homologação conferir essa diferen
 e os documentos resultantes. Assinaturas antigas inconclusivas exigem revisão
 humana e, quando for necessário regularizar, uma revisão com nova assinatura.
 
+### Envio do PDF do pedido pelo Resend
+
+Quando `ORDER_EMAIL_ENABLED=true`, a finalização exige o PDF produzido pelo
+mesmo gerador jsPDF usado no download da interface. O backend salva uma cópia
+privada e imutável, registra as entregas ao cliente e ao representante na mesma
+transação e o worker `python -m app.workers.order_email_sender` envia cada
+mensagem individualmente. Endereços iguais são deduplicados e endereço ausente
+vira uma pendência visível sem impedir o outro destinatário.
+
+O worker deve rodar como serviço Railway separado, com as mesmas variáveis e
+storage do backend. O endpoint público do Resend é
+`POST /api/v1/integrations/resend/webhook`; ele valida o corpo original e os
+cabeçalhos `svix-id`, `svix-timestamp` e `svix-signature`. Cadastre os eventos
+`email.sent`, `email.delivered`, `email.delivery_delayed`, `email.failed`,
+`email.suppressed`, `email.bounced` e `email.complained`.
+
+Implante primeiro com `ORDER_EMAIL_ENABLED=false`. Configure
+`RESEND_API_KEY`, `RESEND_FROM_NAME`, `RESEND_FROM_EMAIL`, `RESEND_REPLY_TO` e
+`RESEND_WEBHOOK_SECRET`, confirme domínio, worker, storage e webhook, e só
+então ative a flag. Um reenvio manual cria um novo lote idempotente e reutiliza
+exatamente o PDF e o hash da finalização original.
+
 ### Rate limit, proxy e contenção de login
 
 O login combina uma cota de rede com contenção progressiva por

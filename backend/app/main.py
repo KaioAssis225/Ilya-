@@ -75,6 +75,20 @@ async def _cleanup_login_attempts_background() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.ORDER_EMAIL_ENABLED:
+        required_resend = {
+            "RESEND_API_KEY": settings.RESEND_API_KEY,
+            "RESEND_FROM_NAME": settings.RESEND_FROM_NAME,
+            "RESEND_FROM_EMAIL": settings.RESEND_FROM_EMAIL,
+            "RESEND_REPLY_TO": settings.RESEND_REPLY_TO,
+            "RESEND_WEBHOOK_SECRET": settings.RESEND_WEBHOOK_SECRET,
+        }
+        missing_resend = [name for name, value in required_resend.items() if not value.strip()]
+        if missing_resend:
+            raise RuntimeError(
+                "Envio de pedidos ativo sem configuração Resend: "
+                + ", ".join(missing_resend)
+            )
     if settings.object_storage_partially_configured():
         raise RuntimeError(
             "Configuração incompleta do armazenamento de objetos."

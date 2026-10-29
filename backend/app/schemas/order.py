@@ -152,6 +152,23 @@ class OrderHistoryRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrderEmailDeliveryRead(BaseModel):
+    id: uuid.UUID
+    recipient_kind: str
+    recipient_name: str
+    recipient_email: Optional[str] = None
+    status: str
+    batch_number: int
+    attempts: int
+    last_error: Optional[str] = None
+    accepted_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrderRead(BaseModel):
     id: uuid.UUID
     code: str

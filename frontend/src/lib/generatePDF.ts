@@ -139,7 +139,8 @@ export async function generateOrderPDF(
   products: Product[],
   catLabel: (code: string) => string = (c) => c,
   documentLocale?: 'pt-PT' | 'en-GB',
-): Promise<void> {
+  download = true,
+): Promise<Blob | null> {
   const doc = new jsPDF('p', 'mm', 'a4')
   // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
@@ -648,5 +649,9 @@ export async function generateOrderPDF(
 
   // ── Salva ──────────────────────────────────────────────────────────────────
   const filename = `${order.code}_${client.name.replace(/\s+/g, '_')}.pdf`
-  doc.save(filename)
+  if (download) {
+    doc.save(filename)
+    return null
+  }
+  return doc.output('blob')
 }

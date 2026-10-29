@@ -326,6 +326,21 @@ export interface OrderHistory {
   created_at: string
 }
 
+export interface OrderEmailDelivery {
+  id: string
+  recipient_kind: 'client' | 'representative' | 'client_and_representative'
+  recipient_name: string
+  recipient_email: string | null
+  status: 'pending' | 'processing' | 'accepted' | 'sent' | 'delivered' | 'delayed' | 'failed' | 'suppressed' | 'bounced' | 'complained' | 'missing_address'
+  batch_number: number
+  attempts: number
+  last_error: string | null
+  accepted_at: string | null
+  delivered_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface OrderSummaryItem {
   product_code: string
   qty: number

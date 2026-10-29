@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     CLIENT_INVITE_BASE_URL: str = ""
     CLIENT_INVITE_TTL_MINUTES: int = 30
 
+    # PDF de pedido e entrega transacional pelo Resend. A feature flag evita
+    # criar uma fila antes de domínio, worker e webhook estarem homologados.
+    ORDER_EMAIL_ENABLED: bool = False
+    ORDER_PDF_MAX_BYTES: int = 10 * 1024 * 1024
+    RESEND_API_KEY: str = ""
+    RESEND_API_BASE_URL: str = "https://api.resend.com"
+    RESEND_FROM_NAME: str = "Ilya Pedidos"
+    RESEND_FROM_EMAIL: str = "pedidos@ilya.com.br"
+    RESEND_REPLY_TO: str = "procgh@outlook.com"
+    RESEND_WEBHOOK_SECRET: str = ""
+    RESEND_WEBHOOK_TOLERANCE_SECONDS: int = 300
+    RESEND_TIMEOUT_SECONDS: float = 20.0
+    RESEND_MAX_ATTEMPTS: int = 7
+
     # Orçamento de conexões por processo. Em produção, o total máximo é:
     # replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW).
     DB_POOL_SIZE: int = 5
