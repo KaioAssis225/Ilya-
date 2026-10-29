@@ -7,6 +7,7 @@ import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
 import { formatArea, formatRugPieces, formatRugSize } from './areaProduct'
 import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
+import { savePdf, type PdfDestination, type PdfSaveResult } from './pdfDestination'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
 const ILYA_GOLD: [number, number, number] = [198, 157, 48]
@@ -140,7 +141,9 @@ export async function generateOrderPDF(
   products: Product[],
   catLabel: (code: string) => string = (c) => c,
   documentLocale?: 'pt-PT' | 'en-GB',
-): Promise<void> {
+  // Pasta escolhida pelo usuário (resolvida no clique). Sem ela, vai para Downloads.
+  destination?: PdfDestination | null,
+): Promise<PdfSaveResult> {
   const doc = new jsPDF('p', 'mm', 'a4')
   // Moeda, locale e rótulo saem do snapshot do pedido (ver orderPresentation):
   // um pedido antigo precisa imprimir o tributo com que foi contratado, não o
@@ -675,5 +678,5 @@ export async function generateOrderPDF(
 
   // ── Salva ──────────────────────────────────────────────────────────────────
   const filename = `${order.code}_${client.name.replace(/\s+/g, '_')}.pdf`
-  doc.save(filename)
+  return savePdf(doc, filename, destination)
 }

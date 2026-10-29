@@ -9,6 +9,8 @@ import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { useAuth } from '../hooks/useAuth'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
+import { PdfDestinationControl } from '../components/PdfDestinationControl'
+import { describePdfSave, resolvePdfDestination, type PdfSaveNotice } from '../lib/pdfDestination'
 import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
 import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
@@ -689,6 +691,12 @@ export default function PedidosPage() {
   const [historyCursorStack, setHistoryCursorStack] = useState<Array<string | undefined>>([undefined])
   const [pdfOrderId, setPdfOrderId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
+  const [pdfNotice, setPdfNotice] = useState<PdfSaveNotice | null>(null)
+  useEffect(() => {
+    if (!pdfNotice) return
+    const timer = window.setTimeout(() => setPdfNotice(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [pdfNotice])
   const debouncedFilter = useDebouncedValue(filter.trim(), 300)
   const debouncedClient = useDebouncedValue(filterClient.trim(), 300)
   const debouncedRep = useDebouncedValue(filterRep.trim(), 300)
@@ -729,7 +737,10 @@ export default function PedidosPage() {
     if (pdfOrderId) return
     setPdfOrderId(orderLight.id)
     setPdfError(null)
+    setPdfNotice(null)
     try {
+      // Antes de qualquer fetch: pedir permissão da pasta exige gesto recente do clique.
+      const destination = user ? await resolvePdfDestination(user.id) : null
       const order = (await api.get<Order>(`/orders/${orderLight.id}`)).data
       const codes = Array.from(
         new Set(order.items.map((item) => item.product_code)),
@@ -756,14 +767,16 @@ export default function PedidosPage() {
       const client = clientResponse.data
       const rep = repResponse?.data ?? null
       const products = productsResponses.flatMap((response) => response.data)
-      await pdfModule.generateOrderPDF(
+      const saved = await pdfModule.generateOrderPDF(
         order,
         client,
         rep,
         products,
         pdfCatLabel,
         order.market_code === 'EU' ? locale : undefined,
+        destination,
       )
+      setPdfNotice(describePdfSave(saved, isEnglish))
     } catch {
       setPdfError('Não foi possível gerar o PDF. Tente novamente.')
     } finally {
@@ -817,11 +830,28 @@ export default function PedidosPage() {
           )}
         </div>
 
+        {!isAuditActive && user && <PdfDestinationControl userKey={user.id} />}
+
         {pdfError && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
             <span>{pdfError}</span>
             <button className="text-xs font-semibold" onClick={() => setPdfError(null)}>
               Fechar
+            </button>
+          </div>
+        )}
+
+        {pdfNotice && (
+          <div
+            className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm text-ink ${pdfNotice.tone === 'warning' ? 'border-line-note bg-gold-wash' : 'border-line bg-white'}`}
+            role="status"
+          >
+            <span className="flex items-center gap-2">
+              {pdfNotice.tone === 'success' && <CheckCircle className="w-4 h-4 text-gold shrink-0" aria-hidden="true" />}
+              {pdfNotice.text}
+            </span>
+            <button className="text-xs font-semibold text-muted hover:text-ink" onClick={() => setPdfNotice(null)}>
+              {isEnglish ? 'Close' : 'Fechar'}
             </button>
           </div>
         )}
