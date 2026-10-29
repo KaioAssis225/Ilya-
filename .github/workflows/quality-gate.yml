@@ -44,6 +44,9 @@ jobs:
       - name: Validar código
         run: npm run lint
 
+      - name: Verificar bundle do PDF (servidor)
+        run: npm run check:pdf-bundle
+
       - name: Executar testes
         run: npm run test:coverage
 
