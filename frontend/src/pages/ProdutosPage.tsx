@@ -4,7 +4,7 @@ import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../l
 import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine, SlidersHorizontal } from 'lucide-react'
-import { cartStorageKey, configureProductPath, notifyCartChanged, writeCartPriceList } from '../lib/cart'
+import { cartEntryUnits, cartStorageKey, configureProductPath, notifyCartChanged, withRugPieces, writeCartPriceList } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useImageRetry } from '../hooks/useImageRetry'
@@ -403,6 +403,7 @@ interface StoredProductLine extends CartSelections {
   sold_by_area?: boolean
   area_width_m?: number | null
   area_depth_m?: number | null
+  area_pieces?: number
   line_id?: string
   _product: Product
 }
@@ -455,18 +456,31 @@ function addToCart(
   }
   const areaProduct = isAreaProduct(product)
   if (areaProduct) {
-    cart.push({
-      line_id: crypto.randomUUID(),
-      product_code: product.product_code,
-      qty: 1,
-      discount: 0,
-      sold_by_area: true,
-      area_width_m: null,
-      area_depth_m: null,
-      opt_categories: selections.opt_categories,
-      optional_choices: sortedChoices(selections.optional_choices),
-      _product: product,
-    })
+    // Toque repetido soma peças à linha mais recente com a mesma configuração;
+    // outra medida do mesmo tapete se cria no orçamento.
+    const existingRugIndex = cart.findLastIndex(line =>
+      line.product_code === product.product_code
+        && line.discount === 0
+        && sameSelections(line, selections),
+    )
+    if (existingRugIndex !== -1) {
+      const existingLine = cart[existingRugIndex]
+      cart[existingRugIndex] = withRugPieces(existingLine, (existingLine.area_pieces ?? 1) + 1)
+    } else {
+      cart.push({
+        line_id: crypto.randomUUID(),
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        sold_by_area: true,
+        area_width_m: null,
+        area_depth_m: null,
+        area_pieces: 1,
+        opt_categories: selections.opt_categories,
+        optional_choices: sortedChoices(selections.optional_choices),
+        _product: product,
+      })
+    }
   } else {
     const existing = cart.find(line =>
       line.product_code === product.product_code
@@ -495,11 +509,15 @@ function addToCart(
 // Uma unidade a menos; some do carrinho ao chegar a 0 em vez de deixar qty: 0
 // pendurado (o resto do app assume que todo item presente no carrinho tem
 // qty > 0 — é o mesmo contrato que readCartQuantities já aplica na leitura).
+//
+// A última linha do SKU é a que espelha o "+": desfaz o último incremento. Com
+// várias medidas do mesmo tapete, tira uma peça da linha mais recente; se só
+// tiver uma peça, remove a linha inteira.
 function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
   const storageKey = cartStorageKey(userId, market)
   const raw = localStorage.getItem(storageKey)
   if (!raw) return
-  let cart: { product_code: string; qty: number }[]
+  let cart: StoredProductLine[]
   try {
     cart = JSON.parse(raw)
   } catch {
@@ -507,13 +525,17 @@ function decrementCart(product: Product, userId: string, market: 'BR' | 'EU') {
   }
   if (!Array.isArray(cart)) return
 
-  const index = cart.findIndex(item => item.product_code === product.product_code)
+  const index = cart.findLastIndex(item => item.product_code === product.product_code)
   if (index === -1) return
 
-  if (cart[index].qty > 1) {
-    cart[index].qty -= 1
-  } else {
+  const line = cart[index]
+  const units = line.sold_by_area === true ? (line.area_pieces ?? 1) : line.qty
+  if (units <= 1) {
     cart.splice(index, 1)
+  } else if (line.sold_by_area === true) {
+    cart[index] = withRugPieces(line, units - 1)
+  } else {
+    line.qty -= 1
   }
   localStorage.setItem(storageKey, JSON.stringify(cart))
   notifyCartChanged()
@@ -1626,11 +1648,13 @@ export default function ProdutosPage() {
                   quantidade a tirar; flex (não offset calculado) empurra o "+"
                   para a direita sozinho quando o irmão aparece. */}
               <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                {(cartQuantities[product.product_code]?.qty ?? 0) > 0 && (
+                {cartQuantities[product.product_code] && cartEntryUnits(cartQuantities[product.product_code]) > 0 && (
                   <button
                     type="button"
                     onClick={() => user && decrementCart(product, user.id, user.active_market)}
-                    aria-label={`Diminuir quantidade de ${product.description} no orçamento`}
+                    aria-label={isAreaProduct(product)
+                      ? (locale === 'en-GB' ? `Remove one piece of ${product.description}` : `Diminuir peças de ${product.description} no orçamento`)
+                      : `Diminuir quantidade de ${product.description} no orçamento`}
                     style={{ touchAction: 'manipulation' }}
                     className="w-11 h-11 rounded-full bg-white text-ink border border-line shadow-md shadow-ink/10
                                flex items-center justify-center transition-transform duration-150
@@ -1649,7 +1673,7 @@ export default function ProdutosPage() {
                              hover:bg-gold-600 active:scale-90"
                 >
                   {cartQuantities[product.product_code] ? (
-                    <span className="text-sm font-semibold tabular-nums">{cartQuantities[product.product_code].qty}</span>
+                    <span className="text-sm font-semibold tabular-nums">{cartEntryUnits(cartQuantities[product.product_code])}</span>
                   ) : (
                     <Plus className="w-5 h-5" strokeWidth={2.5} />
                   )}

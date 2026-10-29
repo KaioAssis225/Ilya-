@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { cartStorageKey, configureProductPath, countCartUnits, privateScopeKey, readCartQuantities } from './cart.ts'
+import { cartEntryUnits, cartStorageKey, configureProductPath, countCartUnits, privateScopeKey, readCartQuantities, withRugPieces } from './cart.ts'
 
 test('separa o carrinho por identidade e mercado', () => {
   assert.equal(cartStorageKey('user-1', 'BR'), 'carrinho_orcamento:user-1:BR')
@@ -23,7 +23,7 @@ test('lê venda por área e mantém carrinhos antigos como unidades', () => {
 
   const quantities = readCartQuantities('user-cart', 'BR')
   assert.deepEqual(quantities, {
-    'TAP-1': { qty: 4.5, sold_by_area: true },
+    'TAP-1': { qty: 4.5, sold_by_area: true, area_pieces: 1 },
     'CAD-1': { qty: 2, sold_by_area: false },
   })
   assert.equal(countCartUnits(quantities), 3)
@@ -54,4 +54,37 @@ test('produto com aplicações abre a configuração na rota real do orçamento'
 test('countCartUnits conta peças de tapete quando informadas', () => {
   assert.equal(countCartUnits({ tapete: { qty: 9.5, sold_by_area: true, area_pieces: 3 }, cadeira: { qty: 2, sold_by_area: false } }), 5)
   assert.equal(countCartUnits({ tapete: { qty: 4.5, sold_by_area: true } }), 1)
+})
+
+test('readCartQuantities soma linhas do mesmo tapete e do mesmo móvel', () => {
+  localStorage.setItem(cartStorageKey('user-agg', 'BR'), JSON.stringify([
+    { product_code: 'TAP-2', qty: 6, sold_by_area: true, area_pieces: 3 },
+    { product_code: 'TAP-2', qty: 4, sold_by_area: true, area_pieces: 2 },
+    { product_code: 'SOF-1', qty: 2 },
+    { product_code: 'SOF-1', qty: 1 },
+  ]))
+
+  const quantities = readCartQuantities('user-agg', 'BR')
+  assert.deepEqual(quantities, {
+    'TAP-2': { qty: 10, sold_by_area: true, area_pieces: 5 },
+    'SOF-1': { qty: 3, sold_by_area: false },
+  })
+})
+
+test('cartEntryUnits devolve peças para tapete e quantidade para os demais', () => {
+  assert.equal(cartEntryUnits({ qty: 64, sold_by_area: true, area_pieces: 2 }), 2)
+  assert.equal(cartEntryUnits({ qty: 3, sold_by_area: false }), 3)
+  assert.equal(cartEntryUnits(4), 4)
+})
+
+test('withRugPieces recalcula a área a partir das peças informadas', () => {
+  const lineComMedidas = { qty: 128, area_width_m: 8, area_depth_m: 8, area_pieces: 2 }
+  const lineUmaPeca = withRugPieces(lineComMedidas, 1)
+  assert.equal(lineUmaPeca.area_pieces, 1)
+  assert.equal(lineUmaPeca.qty, 64)
+
+  const lineSemMedidas = { qty: 12, area_pieces: 2 }
+  const lineTresPecas = withRugPieces(lineSemMedidas, 3)
+  assert.equal(lineTresPecas.area_pieces, 3)
+  assert.equal(lineTresPecas.qty, 18)
 })
