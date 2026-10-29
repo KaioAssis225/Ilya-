@@ -18,6 +18,7 @@ from app.models.order_email import (
     OrderEmailDocument,
     OrderEmailWebhookEvent,
 )
+from app.models.order_history import OrderHistory
 from app.models.user import UserRole
 from app.workers.order_email_sender import process_due
 from tests.factories import make_client, make_user, make_user_market
@@ -141,7 +142,11 @@ async def test_history_is_empty_for_non_retroactive_order(client, db_session):
     response = await client.get(f"/api/v1/orders/{order.id}/emails", headers=headers)
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"document": None, "deliveries": []}
+    assert response.json() == {
+        "document": None,
+        "deliveries": [],
+        "test_send_available": False,
+    }
 
 
 async def test_download_returns_exact_bytes_and_private_headers(
@@ -352,3 +357,200 @@ async def test_worker_scan_applies_orphan_webhook_when_provider_id_becomes_known
     assert delivery.status == "delivered"
     assert event.delivery_id == delivery.id
     assert event.applied_at is not None
+
+
+async def test_test_send_by_admin_enqueues_and_worker_sends_same_pdf(
+    client, db_session, monkeypatch, tmp_path
+):
+    _, _, order, headers = await _context(db_session)
+    document = await _ready_document(db_session, order, monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "test")
+    monkeypatch.setattr(
+        settings, "ORDER_EMAIL_TEST_ALLOWLIST", "admin-test@example.com"
+    )
+
+    history_resp = await client.get(
+        f"/api/v1/orders/{order.id}/emails", headers=headers
+    )
+    assert history_resp.status_code == 200
+    assert history_resp.json()["test_send_available"] is True
+
+    response = await client.post(
+        f"/api/v1/orders/{order.id}/emails/test-send",
+        json={"recipient_email": "Admin-Test@Example.com"},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["document_id"] == str(document.id)
+    assert body["recipient_email"] == "admin-test@example.com"
+    assert body["origin"] == "manual_resend"
+    assert body["resend_of_id"] is None
+
+    created = await db_session.get(OrderEmailDelivery, uuid.UUID(body["id"]))
+    assert created is not None
+    assert created.document_id == document.id
+    assert created.status == "pending"
+
+    audit = (
+        await db_session.execute(
+            select(OrderHistory).where(
+                OrderHistory.order_id == order.id,
+                OrderHistory.action == "email_test_sent",
+            )
+        )
+    ).scalar_one_or_none()
+    assert audit is not None
+    assert audit.details == f"delivery_id={created.id}"
+    assert "admin-test@example.com" not in (audit.details or "")
+
+    sent_calls: list[dict] = []
+
+    async def fake_sender(**kwargs):
+        sent_calls.append(kwargs)
+        return "provider-test-1"
+
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test_key")
+    monkeypatch.setattr(settings, "ORDER_EMAIL_FROM", "Ilya <pedidos@example.com>")
+
+    await process_due(db_session, sender=fake_sender)
+    await db_session.refresh(created)
+
+    assert created.status == "accepted"
+    assert len(sent_calls) == 1
+    assert sent_calls[0]["to"] == "admin-test@example.com"
+    assert sent_calls[0]["attachments"][0]["content"] == _PDF
+
+
+async def test_test_send_outside_allowlist_is_skipped(
+    client, db_session, monkeypatch, tmp_path
+):
+    _, _, order, headers = await _context(db_session)
+    await _ready_document(db_session, order, monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "test")
+    monkeypatch.setattr(
+        settings, "ORDER_EMAIL_TEST_ALLOWLIST", "allowed@example.com"
+    )
+
+    response = await client.post(
+        f"/api/v1/orders/{order.id}/emails/test-send",
+        json={"recipient_email": "outside@example.com"},
+        headers=headers,
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "skipped"
+    assert body["last_error"] == "not_in_allowlist"
+
+
+async def test_test_send_forbidden_for_non_admin(
+    client, db_session, monkeypatch, tmp_path
+):
+    _, _, order, _ = await _context(db_session)
+    await _ready_document(db_session, order, monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "test")
+    monkeypatch.setattr(settings, "ORDER_EMAIL_TEST_ALLOWLIST", "@example.com")
+
+    for role in (UserRole.vendedor, UserRole.produtos):
+        user = await make_user(db_session, role=role, home_market="BR")
+        await make_user_market(
+            db_session, user, market_code="BR", role=role.value
+        )
+        token = create_access_token(
+            user.id, role.value, user.auth_version, "BR"
+        )
+        user_headers = {"Authorization": f"Bearer {token}"}
+
+        history = await client.get(
+            f"/api/v1/orders/{order.id}/emails", headers=user_headers
+        )
+        assert history.status_code == 200
+        assert history.json()["test_send_available"] is False
+
+        resp = await client.post(
+            f"/api/v1/orders/{order.id}/emails/test-send",
+            json={"recipient_email": "op@example.com"},
+            headers=user_headers,
+        )
+        assert resp.status_code == 403
+
+
+async def test_test_send_rejects_off_and_live_modes(
+    client, db_session, monkeypatch, tmp_path
+):
+    _, _, order, headers = await _context(db_session)
+    await _ready_document(db_session, order, monkeypatch, tmp_path)
+
+    for mode in ("off", "live"):
+        monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", mode)
+        history = await client.get(
+            f"/api/v1/orders/{order.id}/emails", headers=headers
+        )
+        assert history.status_code == 200
+        assert history.json()["test_send_available"] is False
+
+        resp = await client.post(
+            f"/api/v1/orders/{order.id}/emails/test-send",
+            json={"recipient_email": "admin@example.com"},
+            headers=headers,
+        )
+        assert resp.status_code == 409
+        assert (
+            resp.json()["detail"]
+            == "Envio de teste disponível apenas no modo de teste."
+        )
+
+
+async def test_test_send_404_missing_doc_invalid_email_and_duplicate_pending(
+    client, db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "test")
+    monkeypatch.setattr(settings, "ORDER_EMAIL_TEST_ALLOWLIST", "@example.com")
+
+    _, _, eu_order, _ = await _context(db_session, market="EU")
+    await _ready_document(db_session, eu_order, monkeypatch, tmp_path)
+    _, _, order_no_doc, br_headers = await _context(db_session, market="BR")
+
+    other_market = await client.post(
+        f"/api/v1/orders/{eu_order.id}/emails/test-send",
+        json={"recipient_email": "admin@example.com"},
+        headers=br_headers,
+    )
+    missing_order = await client.post(
+        f"/api/v1/orders/{uuid.uuid4()}/emails/test-send",
+        json={"recipient_email": "admin@example.com"},
+        headers=br_headers,
+    )
+    assert other_market.status_code == missing_order.status_code == 404
+
+    no_doc = await client.post(
+        f"/api/v1/orders/{order_no_doc.id}/emails/test-send",
+        json={"recipient_email": "admin@example.com"},
+        headers=br_headers,
+    )
+    assert no_doc.status_code == 409
+    assert no_doc.json()["detail"] == "Pedido sem documento de e-mail."
+
+    await _ready_document(db_session, order_no_doc, monkeypatch, tmp_path)
+
+    invalid_email = await client.post(
+        f"/api/v1/orders/{order_no_doc.id}/emails/test-send",
+        json={"recipient_email": "nao-e-um-email"},
+        headers=br_headers,
+    )
+    assert invalid_email.status_code == 422
+
+    first = await client.post(
+        f"/api/v1/orders/{order_no_doc.id}/emails/test-send",
+        json={"recipient_email": "dup@example.com"},
+        headers=br_headers,
+    )
+    assert first.status_code == 201
+    duplicate = await client.post(
+        f"/api/v1/orders/{order_no_doc.id}/emails/test-send",
+        json={"recipient_email": "DUP@example.com"},
+        headers=br_headers,
+    )
+    assert duplicate.status_code == 409

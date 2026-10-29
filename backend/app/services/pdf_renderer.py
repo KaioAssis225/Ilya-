@@ -115,6 +115,10 @@ class PlaywrightPdfRenderer:
                                 "--no-sandbox",
                                 "--disable-dev-shm-usage",
                                 "--disable-gpu",
+                                "--disable-background-networking",
+                                "--disable-component-update",
+                                "--disable-sync",
+                                "--no-first-run",
                             ]
                         )
                     except Exception as exc:

@@ -346,4 +346,92 @@ describe('PedidosPage — aba E-mails', () => {
       vi.useRealTimers()
     }
   })
+
+  it('mostra Enviar e-mail de teste apenas quando test_send_available é verdadeiro', async () => {
+    const summary = makeSummary()
+    setupHandlers(summary, makeHistory([makeDelivery()]))
+    const absent = renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    const user1 = await openOrder(summary)
+    await user1.click(await screen.findByRole('button', { name: 'E-mails' }))
+    expect(screen.queryByRole('button', { name: 'Enviar e-mail de teste' })).not.toBeInTheDocument()
+    absent.unmount()
+
+    setupHandlers(summary, { ...makeHistory([makeDelivery()]), test_send_available: false })
+    const repRender = renderProductPage(<PedidosPage />, productTestUser('representante', 'BR'))
+    const repUser = await openOrder(summary)
+    await repUser.click(await screen.findByRole('button', { name: 'E-mails' }))
+    expect(screen.queryByRole('button', { name: 'Enviar e-mail de teste' })).not.toBeInTheDocument()
+    repRender.unmount()
+
+    setupHandlers(summary, { ...makeHistory([makeDelivery()]), test_send_available: true })
+    renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    const adminUser = await openOrder(summary)
+    await adminUser.click(await screen.findByRole('button', { name: 'E-mails' }))
+    expect(screen.getByRole('button', { name: 'Enviar e-mail de teste' })).toBeInTheDocument()
+  })
+
+  it('solicita envio de teste via POST com recipient_email, exibe aviso e traduz rótulo em en-GB', async () => {
+    const summary = makeSummary()
+    const bodies: unknown[] = []
+    setupHandlers(summary, { ...makeHistory([makeDelivery()]), test_send_available: true })
+    server.use(http.post('*/orders/order-1/emails/test-send', async ({ request }) => {
+      bodies.push(await request.json())
+      return HttpResponse.json(
+        makeDelivery({ id: 'test-1', status: 'pending', recipient_email: 'admin@example.test', origin: 'manual_resend' }),
+        { status: 201 },
+      )
+    }))
+
+    const brRender = renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    const user = await openOrder(summary)
+    await user.click(await screen.findByRole('button', { name: 'E-mails' }))
+    await user.click(screen.getByRole('button', { name: 'Enviar e-mail de teste' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Enviar e-mail de teste' })
+    expect(dialog).toHaveTextContent('O envio passa pela fila e só chega a endereços da lista de teste.')
+    const input = screen.getByLabelText('E-mail de teste')
+    expect(input).toHaveAttribute('type', 'email')
+    expect(input).toBeRequired()
+    await user.type(input, 'admin@example.test')
+    await user.click(screen.getByRole('button', { name: 'Enviar teste' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Envio de teste solicitado.')
+    expect(bodies).toEqual([{ recipient_email: 'admin@example.test' }])
+    brRender.unmount()
+
+    const euSummary = makeSummary({ market_code: 'EU', currency: 'EUR' })
+    const euUser = productTestUser('admin', 'EU')
+    localStorage.setItem(`ilya-locale:${euUser.id}:EU`, 'en-GB')
+    setupHandlers(euSummary, { ...makeHistory([makeDelivery()]), test_send_available: true })
+    renderProductPage(<PedidosPage />, euUser)
+    const euInteraction = userEvent.setup()
+    await screen.findAllByText(euSummary.code)
+    await euInteraction.click(screen.getByLabelText('Ver detalhes do orçamento PED-0001'))
+    await euInteraction.click(await screen.findByRole('button', { name: 'Emails' }))
+    expect(screen.getByRole('button', { name: 'Send test email' })).toBeInTheDocument()
+  })
+
+  it('traduz os erros do envio de teste (409 modo, 409 pendente, 403, 422, 500)', async () => {
+    const cases: Array<[number, { detail: string }, string]> = [
+      [409, { detail: 'Envio de teste disponível apenas no modo de teste.' }, 'O modo de teste não está ativo.'],
+      [409, { detail: 'Já existe um envio pendente para este destinatário.' }, 'Já existe um envio pendente para este e-mail.'],
+      [403, { detail: 'Acesso negado.' }, 'Você não tem permissão para enviar o teste.'],
+      [422, { detail: 'E-mail inválido.' }, 'E-mail inválido.'],
+      [500, { detail: 'x' }, 'Não foi possível solicitar o envio de teste. Tente novamente.'],
+    ]
+    for (const [status, body, message] of cases) {
+      const summary = makeSummary()
+      setupHandlers(summary, { ...makeHistory([makeDelivery()]), test_send_available: true })
+      server.use(http.post('*/orders/order-1/emails/test-send', () => HttpResponse.json(body, { status })))
+      const { unmount } = renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+      const user = await openOrder(summary)
+      await user.click(await screen.findByRole('button', { name: 'E-mails' }))
+      await user.click(screen.getByRole('button', { name: 'Enviar e-mail de teste' }))
+      await screen.findByRole('dialog', { name: 'Enviar e-mail de teste' })
+      await user.type(screen.getByLabelText('E-mail de teste'), 'admin@example.test')
+      await user.click(screen.getByRole('button', { name: 'Enviar teste' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      unmount()
+    }
+  })
 })

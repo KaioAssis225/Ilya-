@@ -5,7 +5,10 @@ import uuid
 
 import pytest
 from PIL import Image
-from pypdf import PdfReader
+
+# Ambientes sem as dependências de renderização (ex.: imagem de teste antiga) pulam o módulo.
+PdfReader = pytest.importorskip("pypdf").PdfReader
+pytest.importorskip("playwright")
 
 from app.services.pdf_renderer import (
     PdfRendererUnavailable,

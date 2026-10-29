@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class OrderEmailDocumentRead(BaseModel):
@@ -37,8 +37,13 @@ class OrderEmailDeliveryRead(BaseModel):
 class OrderEmailHistoryRead(BaseModel):
     document: OrderEmailDocumentRead | None = None
     deliveries: list[OrderEmailDeliveryRead]
+    test_send_available: bool = False
 
 
 class OrderEmailResendRequest(BaseModel):
     delivery_id: uuid.UUID
     use_current_address: bool = False
+
+
+class OrderEmailTestSendRequest(BaseModel):
+    recipient_email: EmailStr

@@ -24,6 +24,8 @@ describe('orderEmailLabels', () => {
   })
 
   it('rotula os papéis do destinatário', () => {
+    expect(emailRolesLabel([], false)).toBe('Teste')
+    expect(emailRolesLabel([], true)).toBe('Test')
     expect(emailRolesLabel(['client'], false)).toBe('Cliente')
     expect(emailRolesLabel(['representative'], true)).toBe('Representative')
     expect(emailRolesLabel(['client', 'representative'], false)).toBe('Cliente e representante')
