@@ -91,7 +91,7 @@ test('E2E-02: catálogo e fotos ficam no mercado correto', async ({ page }) => {
     await page.getByRole('button', { name: 'Salvar' }).click()
     const image = compact
       ? item.locator('img')
-      : item.locator('[data-product-col="photo"] img')
+      : item.locator('[data-product-col="description"] img')
     await expect(image).toBeVisible()
     await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
     if (compact) {

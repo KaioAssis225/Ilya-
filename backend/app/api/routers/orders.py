@@ -187,9 +187,14 @@ def _choice_snapshot(item: OrderItem) -> list[dict]:
 
 
 def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
+    # Termos financeiros como string decimal: o JSON não aceita Decimal e float
+    # perderia exatidão. Cada versão do histórico fica reconstituível.
     return [
         {"product_code": item.product_code, "legacy_optionals": item.opt_categories,
-         "applications": _choice_snapshot(item), "comment": item.comment} for item in items
+         "applications": _choice_snapshot(item), "comment": item.comment,
+         **{field: str(_decimal(getattr(item, field)))
+            for field in ("qty", "unit_price", "discount", "ipi_rate", "ipi_value")},
+         "tax_label": item.tax_label, "currency": item.currency} for item in items
     ]
 
 
