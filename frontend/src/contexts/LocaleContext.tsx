@@ -6,7 +6,7 @@ export type AppLocale = 'pt-PT' | 'en-GB'
 
 const messages = {
   'pt-PT': {
-    products: 'Produtos', optionals: 'Opcionais', quote: 'Novo orçamento', orders: 'Orçamentos', registrations: 'Cadastros',
+    products: 'Produto', optionals: 'Opcional', quote: 'Novo orçamento', orders: 'Orçamento', registrations: 'Cadastro',
     admin: 'Administração', logout: 'Sair', notifications: 'Notificações', noNotifications: 'Sem notificações.',
     confirmLogout: 'Deseja realmente encerrar a sessão?',
     mainNavigation: 'Navegação principal', skipContent: 'Saltar para o conteúdo',
@@ -17,7 +17,7 @@ const messages = {
     language: 'Idioma', portuguese: 'Português', english: 'English', environment: 'Ambiente',
   },
   'en-GB': {
-    products: 'Products', optionals: 'Finishes', quote: 'New quote', orders: 'Quotes', registrations: 'Records',
+    products: 'Product', optionals: 'Finish', quote: 'New quote', orders: 'Quote', registrations: 'Record',
     admin: 'Admin', logout: 'Sign out', notifications: 'Notifications', noNotifications: 'No notifications.',
     confirmLogout: 'Do you really want to sign out?',
     mainNavigation: 'Main navigation', skipContent: 'Skip to content',
