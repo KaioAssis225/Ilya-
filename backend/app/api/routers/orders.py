@@ -24,11 +24,13 @@ from app.api.deps import (
 from app.api.catalog_access import CatalogScope, allows, order_catalog_scope
 from app.api.price_access import ensure_price_visible, visible_price_scope
 from app.core.lifecycle import touch_client_activity
+from app.core.config import settings
 from app.models.catalog import Catalog
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
 from app.services.moloni_jobs import enqueue_finalized_eu_order
+from app.services.order_email_jobs import enqueue_order_emails
 from app.models.client import Client
 from app.models.representative import Representative
 from app.models.product import Product
@@ -1718,6 +1720,21 @@ async def finalize_order(
     await touch_client_activity(db, order.client_id, terminal_at)
     if order.market_code == "EU":
         await enqueue_finalized_eu_order(db, order.id)
+    if settings.ORDER_EMAIL_MODE != "off":
+        try:
+            # O pedido tem prioridade: o savepoint impede que uma falha da fila
+            # de e-mail deixe lixo ou desfaça a finalização.
+            async with db.begin_nested():
+                await enqueue_order_emails(
+                    db,
+                    order,
+                    requested_by_user_id=current_user.id,
+                )
+        except Exception:
+            logger.exception(
+                "Falha ao enfileirar e-mail do pedido: order_id=%s",
+                order.id,
+            )
     await db.commit()
     order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)

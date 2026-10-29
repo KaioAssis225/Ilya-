@@ -55,3 +55,12 @@ def test_admin_can_anonymize_client_and_representative_records():
         "/api/v1/representatives/{rep_id}/anonymize"
         in schema["paths"]
     )
+
+
+def test_openapi_exposes_order_email_routes_and_resend_webhook():
+    schema = app.openapi()
+
+    assert "/api/v1/orders/{order_id}/emails" in schema["paths"]
+    assert "/api/v1/orders/{order_id}/email-document" in schema["paths"]
+    assert "/api/v1/orders/{order_id}/emails/resend" in schema["paths"]
+    assert "/webhooks/resend" in schema["paths"]

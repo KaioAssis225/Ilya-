@@ -250,6 +250,14 @@ PASSWORD_PEPPER=seu_pepper_secreto_para_argon2
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_db
 ```
 
+O envio do PDF do pedido permanece desligado sem configuração explícita.
+As variáveis, documentadas sem valores em `.env.example`, são:
+`ORDER_EMAIL_MODE`, `ORDER_EMAIL_TEST_ALLOWLIST`, `RESEND_API_KEY`,
+`RESEND_API_BASE_URL`, `RESEND_WEBHOOK_SECRET`, `ORDER_EMAIL_FROM`,
+`ORDER_EMAIL_REPLY_TO`, `ORDER_EMAIL_TIMEOUT_SECONDS`,
+`ORDER_EMAIL_POLL_SECONDS` e `ORDER_EMAIL_LOCAL_DIR`. O consumidor roda em
+processo separado com `python -m app.workers.order_email_sender`.
+
 Para enviar convites de ativação a clientes, configure no backend `SMTP_HOST`,
 `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL` e
 `CLIENT_INVITE_BASE_URL` com a origem HTTPS do frontend. Use `SMTP_USE_SSL=true`

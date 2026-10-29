@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, field_validator
 from typing import List
 import json
 import os
@@ -156,8 +156,29 @@ class Settings(BaseSettings):
     MOLONI_PRODUCT_UNIT_ID: int = 0
     MOLONI_SALESMAN_ID: int = 182219
 
+    # E-mail do PDF do pedido. Desligado por padrão para que publicar o
+    # backend não altere a finalização existente antes da ativação.
+    ORDER_EMAIL_MODE: str = "off"
+    ORDER_EMAIL_TEST_ALLOWLIST: str = ""
+    RESEND_API_KEY: str = ""
+    RESEND_API_BASE_URL: str = "https://api.resend.com"
+    RESEND_WEBHOOK_SECRET: str = ""
+    ORDER_EMAIL_FROM: str = ""
+    ORDER_EMAIL_REPLY_TO: str = ""
+    ORDER_EMAIL_TIMEOUT_SECONDS: float = 15.0
+    ORDER_EMAIL_POLL_SECONDS: float = 10.0
+    ORDER_EMAIL_LOCAL_DIR: str = "data/order-documents"
+
     DEBUG: bool = False
     APP_VERSION: str = "0.1.0"
+
+    @field_validator("ORDER_EMAIL_MODE")
+    @classmethod
+    def validate_order_email_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"off", "test", "live"}:
+            raise ValueError("ORDER_EMAIL_MODE deve ser off, test ou live.")
+        return normalized
 
     def get_cors_origins(self) -> List[str]:
         try:
