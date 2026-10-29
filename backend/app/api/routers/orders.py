@@ -483,6 +483,27 @@ def _price_for_profile(product: Product, profile: str) -> Decimal:
     return _money(product.price_lojista)
 
 
+def _ensure_order_price_list_allowed(
+    requested: str | None,
+    client: Client,
+    current: str | None = None,
+) -> None:
+    """Recusa tabela diferente da de faturamento do cliente, para qualquer papel.
+
+    `current` é a tabela já gravada no pedido (ou na origem da revisão): pedido
+    antigo feito com outra tabela continua editável sem trocar de tabela.
+    """
+    if requested is None or requested in {client.price_profile, current}:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"O orçamento usa a tabela de preço do cliente ({client.price_profile}); "
+            f"a tabela '{requested}' não pode ser escolhida."
+        ),
+    )
+
+
 def _resolve_max_discount(
     current_user: User,
     client: Client,
@@ -843,9 +864,14 @@ async def create_order(
     )
     market_code = principal.code
     context = principal.market
-    # Portugal escolhe a tabela por orçamento. A ausência mantém o contrato
-    # antigo (perfil padrão do cliente), de modo que carrinhos e integrações
-    # anteriores continuem funcionando. Revisões preservam a tabela de origem.
+    # O orçamento fecha na tabela de faturamento do cliente; as tabelas
+    # visíveis do cadastro servem só para consulta no catálogo. Revisões
+    # preservam a tabela de origem, mesmo que o cadastro tenha mudado.
+    _ensure_order_price_list_allowed(
+        payload.price_list_code,
+        client,
+        source_order.price_list_code if source_order else None,
+    )
     requested_price_list_code = client.price_profile
     if market_code == "EU":
         requested_price_list_code = (
@@ -1408,6 +1434,7 @@ async def update_order(
         ))).scalar_one_or_none()
         if not client or not price_list:
             raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
+        _ensure_order_price_list_allowed(payload.price_list_code, client, order.price_list_code)
         require_launch_country(principal.code, client.country)
         ensure_price_visible(
             await visible_price_scope(db, current_user, principal.code),
