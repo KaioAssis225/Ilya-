@@ -7,6 +7,36 @@ import { server } from '../test/setup'
 import PedidosPage from './PedidosPage'
 import type { Order, OrderEmailDelivery, OrderEmailHistory, OrderSummary } from '../types'
 
+// O Blob do jsdom não tem .stream(). No Node 22 o interceptor XHR do MSW monta um
+// Response com esse Blob (responseType 'blob') e o undici exige .stream(); o
+// navegador real devolve um Blob nativo, então isto é só do ambiente de teste.
+if (typeof Blob.prototype.stream !== 'function') {
+  Object.defineProperty(Blob.prototype, 'stream', {
+    configurable: true,
+    writable: true,
+    value(this: Blob) {
+      return readBlobStream(this)
+    },
+  })
+}
+
+function readBlobStream(blob: Blob) {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      return new Promise<void>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          controller.enqueue(new Uint8Array(reader.result as ArrayBuffer))
+          controller.close()
+          resolve()
+        }
+        reader.onerror = () => reject(reader.error)
+        reader.readAsArrayBuffer(blob)
+      })
+    },
+  })
+}
+
 const makeSummary = (overrides: Partial<OrderSummary> = {}): OrderSummary => ({
   id: 'order-1',
   code: 'PED-0001',
