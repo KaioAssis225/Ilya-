@@ -54,12 +54,9 @@ _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
-_EU_PRICE_LIST_DISCOUNTS = {
-    "lojista": Decimal("50.00"),
-    "arquiteto": Decimal("35.00"),
-    "corporativo": Decimal("25.00"),
-    "pvp": Decimal("10.00"),
-}
+_EU_DISCOUNT_PRICE_LIST = "pvp"
+_EU_PVP_MAX_DISCOUNT = Decimal("30.00")
+_EU_PVP_ADMIN_MAX_DISCOUNT = Decimal("70.00")
 
 
 def _decimal(value: object) -> Decimal:
@@ -529,12 +526,18 @@ def _resolve_max_discount(
     market_code: str = "BR",
     price_list_code: str | None = None,
 ) -> Decimal:
-    """Resolve o teto por tabela no EU e por cadastro comercial no BR."""
+    """Resolve o teto por tabela no EU (somente PVP) e por cadastro comercial no BR."""
     if market_code == "EU":
         code = (price_list_code or "").strip().lower()
-        if code == "pvp" and current_user.role != UserRole.admin:
+        if code != _EU_DISCOUNT_PRICE_LIST:
             return _ZERO
-        return _EU_PRICE_LIST_DISCOUNTS.get(code, _ZERO)
+        if is_client_account(current_user):
+            return _ZERO
+        if current_user.role == UserRole.admin:
+            return _EU_PVP_ADMIN_MAX_DISCOUNT
+        if current_user.role == UserRole.representante or is_internal_operator(current_user):
+            return _EU_PVP_MAX_DISCOUNT
+        return _ZERO
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO
     if is_client_account(current_user):
@@ -546,6 +549,18 @@ def _resolve_max_discount(
     # Papéis sem autorização comercial recebem zero por padrão. Isso evita que
     # uma nova role herde desconto integral ao cair neste fallback.
     return _ZERO
+
+
+def _edit_line_max_discount(
+    max_discount: Decimal,
+    old_item: OrderItem | None,
+    product_code: str,
+    same_price_list: bool,
+) -> Decimal:
+    """Teto por linha na edição: mantém desconto antigo na mesma tabela/produto."""
+    if old_item is not None and same_price_list and old_item.product_code == product_code:
+        return max(_decimal(max_discount), _decimal(old_item.discount))
+    return _decimal(max_discount)
 
 
 def _resolve_eu_vat(
@@ -1525,6 +1540,7 @@ async def update_order(
         total = _ZERO
         total_ipi = _ZERO
         new_items: list[OrderItem] = []
+        used_source_ids: set[uuid.UUID] = set()
         for item_in in payload.items:
             product = product_map.get(item_in.product_code)
             if not product:
@@ -1551,12 +1567,24 @@ async def update_order(
             qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, old_item_map.get(item_in.source_order_item_id)
             )
+            line_max_discount = max_discount
+            if order.market_code == "EU" and item_in.source_order_item_id is not None:
+                if item_in.source_order_item_id not in used_source_ids:
+                    used_source_ids.add(item_in.source_order_item_id)
+                    old_item = old_item_map.get(item_in.source_order_item_id)
+                    if old_item is not None:
+                        line_max_discount = _edit_line_max_discount(
+                            max_discount,
+                            old_item,
+                            product.product_code,
+                            price_list.code == order.price_list_code,
+                        )
             unit_price, discount, subtotal, ipi_rate, ipi_value = (
                 _calculate_order_line(
                     unit_price=price_map[product.id],
                     qty=qty,
                     discount=item_in.discount or _ZERO,
-                    max_discount=max_discount,
+                    max_discount=line_max_discount,
                     product_code=product.product_code,
                     tax_rate=ipi_rate,
                 )

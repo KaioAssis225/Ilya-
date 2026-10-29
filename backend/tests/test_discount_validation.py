@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.api.routers.orders import _resolve_max_discount, _validate_discount
+from app.api.routers.orders import _edit_line_max_discount, _resolve_max_discount, _validate_discount
 from app.models.user import UserRole
 
 
@@ -58,27 +58,45 @@ class TestResolveMaxDiscount:
         assert _resolve_max_discount(_user(UserRole.vendedor), client_a, None) == 0.0
         assert _resolve_max_discount(_user(UserRole.vendedor), client_b, None) == 12.0
 
-    @pytest.mark.parametrize(("profile", "expected"), [
-        ("lojista", Decimal("50.00")),
-        ("arquiteto", Decimal("35.00")),
-        ("corporativo", Decimal("25.00")),
+    @pytest.mark.parametrize("profile", [
+        "lojista", "arquiteto", "corporativo", "especial",
     ])
-    def test_eu_usa_limite_da_lista_de_precos(self, profile, expected):
+    @pytest.mark.parametrize("role", [
+        UserRole.admin, UserRole.vendedor, UserRole.representante,
+    ])
+    def test_eu_tabelas_fora_de_pvp_tem_teto_zero(self, profile, role):
         assert _resolve_max_discount(
-            _user(UserRole.vendedor), _client("1.00"), _rep("2.00"), "EU", profile
-        ) == expected
-
-    def test_eu_pvp_permite_dez_por_cento_somente_para_admin(self):
-        assert _resolve_max_discount(
-            _user(UserRole.admin), _client("100.00"), None, "EU", "pvp"
-        ) == Decimal("10.00")
-        assert _resolve_max_discount(
-            _user(UserRole.vendedor), _client("100.00"), None, "EU", "pvp"
+            _user(role), _client("100.00"), None, "EU", profile
         ) == Decimal("0")
 
-    def test_eu_lista_desconhecida_nao_concede_desconto(self):
+    def test_eu_pvp_admin_recebe_setenta_por_cento(self):
         assert _resolve_max_discount(
-            _user(UserRole.admin), _client("100.00"), None, "EU", "especial"
+            _user(UserRole.admin), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("70.00")
+
+    def test_eu_pvp_operador_interno_recebe_trinta_por_cento(self):
+        assert _resolve_max_discount(
+            _user(UserRole.vendedor), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("30.00")
+
+    def test_eu_pvp_representante_recebe_trinta_por_cento(self):
+        assert _resolve_max_discount(
+            _user(UserRole.representante), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("30.00")
+
+    def test_eu_pvp_conta_de_cliente_final_tem_teto_zero(self):
+        assert _resolve_max_discount(
+            _user(UserRole.cliente), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("0")
+
+    def test_eu_pvp_vendedor_vinculado_tem_teto_zero(self):
+        assert _resolve_max_discount(
+            _user(UserRole.vendedor, linked_id="cliente-1"), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("0")
+
+    def test_eu_pvp_produtos_tem_teto_zero(self):
+        assert _resolve_max_discount(
+            _user(UserRole.produtos), _client("100.00"), None, "EU", "pvp"
         ) == Decimal("0")
 
 
@@ -108,3 +126,40 @@ class TestValidateDiscount:
     def test_admin_pode_dar_cem_por_cento_de_desconto(self):
         max_discount = _resolve_max_discount(_user(UserRole.admin), _client("0.00"), None)
         _validate_discount(discount=100.0, max_discount=max_discount, product_code="XYZ")
+
+    @pytest.mark.parametrize(
+        ("role", "price_list_code", "discount", "should_raise"),
+        [
+            (UserRole.representante, "pvp", "31.00", True),
+            (UserRole.admin, "pvp", "71.00", True),
+            (UserRole.admin, "pvp", "70.00", False),
+            (UserRole.cliente, "pvp", "1.00", True),
+            (UserRole.admin, "lojista", "1.00", True),
+        ],
+    )
+    def test_nova_matriz_eu_validate_discount(self, role, price_list_code, discount, should_raise):
+        max_discount = _resolve_max_discount(
+            _user(role), _client("100.00"), None, "EU", price_list_code,
+        )
+        if should_raise:
+            with pytest.raises(HTTPException):
+                _validate_discount(discount=discount, max_discount=max_discount, product_code="ABC")
+        else:
+            _validate_discount(discount=discount, max_discount=max_discount, product_code="ABC")
+
+
+class TestEditLineMaxDiscount:
+    def test_herda_desconto_maior_ao_editar_linha_existente(self):
+        old = SimpleNamespace(product_code="ABC", discount=Decimal("40.00"))
+        assert _edit_line_max_discount(Decimal("0"), old, "ABC", True) == Decimal("40.00")
+
+    def test_nao_herda_com_produto_diferente(self):
+        old = SimpleNamespace(product_code="XYZ", discount=Decimal("40.00"))
+        assert _edit_line_max_discount(Decimal("0"), old, "ABC", True) == Decimal("0")
+
+    def test_nao_herda_com_tabela_diferente(self):
+        old = SimpleNamespace(product_code="ABC", discount=Decimal("40.00"))
+        assert _edit_line_max_discount(Decimal("0"), old, "ABC", False) == Decimal("0")
+
+    def test_old_item_none_usa_teto_novo(self):
+        assert _edit_line_max_discount(Decimal("10.00"), None, "ABC", True) == Decimal("10.00")

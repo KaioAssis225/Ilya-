@@ -192,33 +192,32 @@ def _dec(value: object) -> Decimal:
 #                2358.75 × 9.75/100 = 229.978125 → 229.98; total 2588.73
 _BR_AMOUNTS = {"lojista": D("1000.00"), "corporativo": D("850.00")}
 _BR_CASES = [
-    ("lojista", D("1000.00"), D("2775.00"), D("270.56"), D("3045.56")),
-    ("corporativo", D("850.00"), D("2358.75"), D("229.98"), D("2588.73")),
+    ("lojista", "7.50", D("1000.00"), D("2775.00"), D("270.56"), D("3045.56")),
+    ("corporativo", "7.50", D("850.00"), D("2358.75"), D("229.98"), D("2588.73")),
 ]
 
 # ── Perfis EU: EUR/IVA aprovado ────────────────────────────────────────────────
 # Listas: lojista 1000.00, corporativo 850.00, pvp 1200.00, arquiteto 700.00.
-# IVA aprovado 23.00%. qty 3, desconto 7.50%.
-#   lojista:     2775.00 × 23/100 = 638.25;               total 3413.25
-#   corporativo: 2358.75 × 23/100 = 542.5125 → 542.51;    total 2901.26
-#   pvp:         1200.00 × 0.925 = 1110.00; × 3 = 3330.00
+# IVA aprovado 23.00%. qty 3.
+#   lojista:     1000.00 × 3 = 3000.00; IVA 23% = 690.00;  total 3690.00
+#   corporativo:  850.00 × 3 = 2550.00; IVA 23% = 586.50;  total 3136.50
+#   pvp (desc. 7.50%): 1200.00 × 0.925 = 1110.00; × 3 = 3330.00
 #                3330.00 × 23/100 = 765.90;               total 4095.90
-#   arquiteto:    700.00 × 0.925 = 647.50;  × 3 = 1942.50
-#                1942.50 × 23/100 = 446.775 → 446.78;     total 2389.28
+#   arquiteto:    700.00 × 3 = 2100.00; IVA 23% = 483.00; total 2583.00
 _EU_AMOUNTS = {
     "lojista": D("1000.00"), "corporativo": D("850.00"),
     "pvp": D("1200.00"), "arquiteto": D("700.00"),
 }
 _EU_CASES = [
-    ("lojista", D("1000.00"), D("2775.00"), D("638.25"), D("3413.25")),
-    ("corporativo", D("850.00"), D("2358.75"), D("542.51"), D("2901.26")),
-    ("pvp", D("1200.00"), D("3330.00"), D("765.90"), D("4095.90")),
-    ("arquiteto", D("700.00"), D("1942.50"), D("446.78"), D("2389.28")),
+    ("lojista", "0", D("1000.00"), D("3000.00"), D("690.00"), D("3690.00")),
+    ("corporativo", "0", D("850.00"), D("2550.00"), D("586.50"), D("3136.50")),
+    ("pvp", "7.50", D("1200.00"), D("3330.00"), D("765.90"), D("4095.90")),
+    ("arquiteto", "0", D("700.00"), D("2100.00"), D("483.00"), D("2583.00")),
 ]
 
 
 @pytest.mark.parametrize(
-    ("market", "rate", "label", "currency", "profile", "unit", "subtotal", "tax", "total"),
+    ("market", "rate", "label", "currency", "profile", "discount", "unit", "subtotal", "tax", "total"),
     [("BR", D("9.75"), "IPI", "BRL", *case) for case in _BR_CASES]
     + [("EU", D("23.00"), "IVA", "EUR", *case) for case in _EU_CASES],
     ids=[f"BR-{case[0]}" for case in _BR_CASES] + [f"EU-{case[0]}" for case in _EU_CASES],
@@ -231,6 +230,7 @@ async def test_reg_price_profile_selects_list_and_tax_with_half_up_rounding(
     label: str,
     currency: str,
     profile: str,
+    discount: str,
     unit: Decimal,
     subtotal: Decimal,
     tax: Decimal,
@@ -242,7 +242,7 @@ async def test_reg_price_profile_selects_list_and_tax_with_half_up_rounding(
     client_id = await _client(db_session, market, profile)
 
     response = await _post_order(client, admin, client_id, [
-        {"product_code": code, "qty": 3, "discount": "7.50"},
+        {"product_code": code, "qty": 3, "discount": discount},
     ])
     assert response.status_code == 201, response.text
     body = response.json()
@@ -254,7 +254,7 @@ async def test_reg_price_profile_selects_list_and_tax_with_half_up_rounding(
     )
     [item] = body["items"]
     assert _dec(item["unit_price"]) == unit
-    assert _dec(item["discount"]) == D("7.50")
+    assert _dec(item["discount"]) == _dec(discount)
     assert _dec(item["ipi_rate"]) == rate
     assert _dec(item["ipi_value"]) == tax
     assert item["tax_label"] == label
@@ -456,9 +456,9 @@ async def test_reg_price_quote_rejects_list_other_than_client_billing(
 async def test_reg_price_eu_quote_uses_client_billing_list_and_its_discount_cap(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Cliente Arquiteto: o pedido usa o preço e o teto Arquiteto (35%).
+    """Cliente Arquiteto: fora de PVP qualquer desconto é recusado.
 
-    700.00 × 65% = 455.00; IVA 23% = 104.65; total 559.65.
+    700.00 × 1 = 700.00; IVA 23% = 161.00; total 861.00 (desconto 0).
     """
     admin = await _admin(db_session, "EU")
     code, _ = await _product(
@@ -470,7 +470,7 @@ async def test_reg_price_eu_quote_uses_client_billing_list_and_its_discount_cap(
         client,
         admin,
         client_id,
-        [{"product_code": code, "qty": 1, "discount": "35.00"}],
+        [{"product_code": code, "qty": 1, "discount": "0"}],
         price_list_code="arquiteto",
     )
     assert response.status_code == 201, response.text
@@ -479,20 +479,19 @@ async def test_reg_price_eu_quote_uses_client_billing_list_and_its_discount_cap(
     assert body["price_list_code"] == "arquiteto"
     [item] = body["items"]
     assert _dec(item["unit_price"]) == D("700.00")
-    assert _dec(item["discount"]) == D("35.00")
+    assert _dec(item["discount"]) == D("0")
     assert (_dec(body["total_value"]), _dec(body["total_ipi"]), _dec(body["total_with_ipi"])) == (
-        D("455.00"), D("104.65"), D("559.65"),
+        D("700.00"), D("161.00"), D("861.00"),
     )
 
     above_cap = await _post_order(
         client,
         admin,
         client_id,
-        [{"product_code": code, "qty": 1, "discount": "35.01"}],
+        [{"product_code": code, "qty": 1, "discount": "0.01"}],
         price_list_code="arquiteto",
     )
     assert above_cap.status_code == 422, above_cap.text
-    assert "35" in above_cap.json()["detail"]
 
 
 async def test_reg_price_eu_quote_edit_cannot_switch_list(
@@ -517,7 +516,7 @@ async def test_reg_price_eu_quote_edit_cannot_switch_list(
         f"/api/v1/orders/{order_id}",
         json={
             "price_list_code": "corporativo",
-            "items": [{"product_code": code, "qty": 1, "discount": "25.00"}],
+            "items": [{"product_code": code, "qty": 1, "discount": "0"}],
         },
         headers=_auth(admin.token),
     )
@@ -668,14 +667,14 @@ async def test_iso24_recalculation_after_vat_revoked_is_422_and_keeps_snapshot(
 ) -> None:
     """Pedido EU criado com IVA aprovado; IVA volta a pendente; PUT recalcula → 422.
 
-    Snapshot original: 1000.00 × 0.925 × 3 = 2775.00; IVA 23% = 638.25; 3413.25.
+    Snapshot original: 1000.00 × 3 = 3000.00; IVA 23% = 690.00; 3690.00.
     """
     admin = await _admin(db_session, "EU")
     code, _ = await _product(
         db_session, "EU", admin.user_id, amounts={"lojista": D("1000.00")}, tax_rate=D("23.00"),
     )
     client_id = await _client(db_session, "EU", "lojista")
-    item_payload = {"product_code": code, "qty": 3, "discount": "7.50"}
+    item_payload = {"product_code": code, "qty": 3, "discount": "0"}
 
     created = await _post_order(client, admin, client_id, [item_payload])
     assert created.status_code == 201, created.text
@@ -710,7 +709,7 @@ async def test_iso24_recalculation_after_vat_revoked_is_422_and_keeps_snapshot(
         select(Order).where(Order.id == order_id).execution_options(**_SKIP_SCOPE)
     )).scalar_one()
     assert (order.total_value, order.total_ipi, order.total_with_ipi) == (
-        D("2775.00"), D("638.25"), D("3413.25"),
+        D("3000.00"), D("690.00"), D("3690.00"),
     )
     assert order.document_version == original_version
     items = (await db_session.execute(
@@ -719,7 +718,7 @@ async def test_iso24_recalculation_after_vat_revoked_is_422_and_keeps_snapshot(
         .execution_options(**_SKIP_SCOPE)
     )).all()
     assert [(row.ipi_rate, row.ipi_value, row.tax_label) for row in items] == [
-        (D("23.00"), D("638.25"), "IVA"),
+        (D("23.00"), D("690.00"), "IVA"),
     ]
 
 
@@ -759,3 +758,125 @@ async def test_reg_price_eu_quote_client_account_cannot_pick_hidden_list(
     )
     assert own.status_code == 201, own.text
     assert own.json()["price_list_code"] == "lojista"
+
+
+async def test_eu_pvp_admin_discount_cap_is_70(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "pvp")
+
+    ok = await _post_order(
+        client, admin, client_id,
+        [{"product_code": code, "qty": 1, "discount": "70.00"}],
+        price_list_code="pvp",
+    )
+    assert ok.status_code == 201, ok.text
+    assert _dec(ok.json()["items"][0]["discount"]) == D("70.00")
+
+    above_cap = await _post_order(
+        client, admin, client_id,
+        [{"product_code": code, "qty": 1, "discount": "70.01"}],
+        price_list_code="pvp",
+    )
+    assert above_cap.status_code == 422, above_cap.text
+    await _discard_failed_request(db_session)
+    assert await _order_count(db_session, client_id) == 1
+
+
+@pytest.mark.parametrize("profile", ["lojista", "corporativo", "arquiteto"])
+async def test_eu_non_pvp_lists_reject_any_discount(
+    client: AsyncClient, db_session: AsyncSession, profile: str
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", profile)
+
+    response = await _post_order(
+        client, admin, client_id,
+        [{"product_code": code, "qty": 1, "discount": "0.01"}],
+        price_list_code=profile,
+    )
+    assert response.status_code == 422, response.text
+    await _discard_failed_request(db_session)
+    assert await _order_count(db_session, client_id) == 0
+
+
+async def test_eu_edit_keeps_grandfathered_discount(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "lojista")
+
+    created = await _post_order(
+        client, admin, client_id,
+        [{"product_code": code, "qty": 1, "discount": "0"}],
+        price_list_code="lojista",
+    )
+    assert created.status_code == 201, created.text
+    order_id = uuid.UUID(created.json()["id"])
+    original_item_id = created.json()["items"][0]["id"]
+
+    # Simula pedido antigo: força desconto acima do teto novo no banco.
+    order_item = (await db_session.execute(
+        select(OrderItem).where(OrderItem.order_id == order_id).execution_options(**_SKIP_SCOPE)
+    )).scalar_one()
+    order_item.discount = D("40.00")
+    await db_session.commit()
+
+    updated = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [{
+            "product_code": code,
+            "qty": 2,
+            "discount": "40.00",
+            "source_order_item_id": original_item_id,
+        }]},
+        headers=_auth(admin.token),
+    )
+    assert updated.status_code == 200, updated.text
+    line_id = updated.json()["items"][0]["id"]
+
+    above = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [{
+            "product_code": code,
+            "qty": 2,
+            "discount": "40.01",
+            "source_order_item_id": line_id,
+        }]},
+        headers=_auth(admin.token),
+    )
+    assert above.status_code == 422, above.text
+    await _discard_failed_request(db_session)
+
+    reduced = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [{
+            "product_code": code,
+            "qty": 2,
+            "discount": "20.00",
+            "source_order_item_id": line_id,
+        }]},
+        headers=_auth(admin.token),
+    )
+    assert reduced.status_code == 200, reduced.text
+
+    new_line = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [{
+            "product_code": code,
+            "qty": 1,
+            "discount": "1.00",
+        }]},
+        headers=_auth(admin.token),
+    )
+    assert new_line.status_code == 422, new_line.text
