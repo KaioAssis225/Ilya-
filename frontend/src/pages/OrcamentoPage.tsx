@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useId } from 'react'
+import { useState, useRef, useEffect, useId, useMemo, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
 import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, MessageSquare } from 'lucide-react'
@@ -35,7 +35,7 @@ import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPie
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
-import { orderMaxDiscount } from '../lib/discountRules'
+import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -1181,6 +1181,12 @@ export default function OrcamentoPage() {
 
   const editOrderQuery = useOrder(editId ?? '')
   const editOrder = editOrderQuery.data
+  const editOriginalDiscounts = useMemo(() => {
+    if (market !== 'EU' || !editOrder) return new Map<string, { product_code: string; discount: number }>()
+    return new Map(
+      editOrder.items.map(item => [item.id, { product_code: item.product_code, discount: Number(item.discount) }])
+    )
+  }, [market, editOrder])
   const productSearch = useProductsPage({
     skip: 0,
     limit: 15,
@@ -1336,7 +1342,15 @@ export default function OrcamentoPage() {
     priceProfile,
     user?.role,
     user?.max_discount ?? 0,
+    isClientUser,
   )
+
+  // Linha vinda de um orçamento EU já gravado pode manter (ou reduzir) o
+  // desconto original, mesmo acima do teto atual — o servidor aplica a mesma regra.
+  const itemMaxDiscount = useCallback((item: CartItem): number => {
+    const original = item.source_order_item_id ? editOriginalDiscounts.get(item.source_order_item_id) : undefined
+    return lineMaxDiscount(maxDiscount, original?.product_code === item.product_code ? original.discount : undefined)
+  }, [editOriginalDiscounts, maxDiscount])
 
   function selectEuPriceList(next: PriceListCode) {
     setSelectedEuPriceList(next)
@@ -1352,10 +1366,11 @@ export default function OrcamentoPage() {
     // A troca do cliente pode mudar a tabela e precisa reduzir descontos já
     // presentes no carrinho antes que o orçamento seja enviado.
     // oxlint-disable-next-line react/set-state-in-effect
-    setCart(previous => previous.map(item => (
-      item.discount > maxDiscount ? { ...item, discount: maxDiscount } : item
-    )))
-  }, [maxDiscount])
+    setCart(previous => previous.map(item => {
+      const cap = itemMaxDiscount(item)
+      return item.discount > cap ? { ...item, discount: cap } : item
+    }))
+  }, [itemMaxDiscount])
 
   function handleClientChange(client: Client | null) {
     const clientId = client?.id ?? ''
@@ -2033,7 +2048,7 @@ export default function OrcamentoPage() {
                       onAreaPiecesChange={updateAreaPieces}
                       qtyLimitWarning={qtyLimitWarnings.has(item.line_id)}
                       onDiscountChange={updateDiscount}
-                      maxDiscount={maxDiscount}
+                      maxDiscount={itemMaxDiscount(item)}
                       onRemove={removeItem}
                       onPhotoClick={setActivePhotoModal}
                       onPreview={photoUrl => setActivePhotoModal(photoUrl)}
@@ -2134,13 +2149,13 @@ export default function OrcamentoPage() {
                           <div>
                             <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
                             <NumberField
-                              min={0} max={maxDiscount}
+                              min={0} max={itemMaxDiscount(item)}
                               aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
                               className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
                               value={item.discount}
                               placeholder="0"
-                              disabled={maxDiscount <= 0}
-                              onValueChange={(v) => updateDiscount(item.line_id, Math.min(maxDiscount, Math.max(0, v)))}
+                              disabled={itemMaxDiscount(item) <= 0}
+                              onValueChange={(v) => updateDiscount(item.line_id, Math.min(itemMaxDiscount(item), Math.max(0, v)))}
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
