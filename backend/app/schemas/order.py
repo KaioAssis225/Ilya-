@@ -52,6 +52,7 @@ class OrderItemCreate(BaseModel):
     qty: Optional[Decimal] = Field(None, gt=0, le=1_000_000, decimal_places=2)
     area_width_m: Optional[Decimal] = Field(None, gt=0, le=1000, decimal_places=3)
     area_depth_m: Optional[Decimal] = Field(None, gt=0, le=1000, decimal_places=3)
+    area_pieces: Optional[int] = Field(None, ge=1, le=1000)
     discount: Decimal = Field(Decimal("0"), ge=0, le=100, decimal_places=2)
     opt_categories: Dict[str, str] = Field(default_factory=dict, max_length=50)
     optional_choices: List[OptionalChoiceCreate] = Field(default_factory=list, max_length=100)
@@ -131,6 +132,7 @@ class OrderItemRead(BaseModel):
     sold_by_area: bool = False
     area_width_m: Optional[Decimal] = None
     area_depth_m: Optional[Decimal] = None
+    area_pieces: int = 1
     unit_price: Decimal
     discount: Decimal = Decimal("0")
     ipi_rate: Decimal = Decimal("0")
@@ -202,6 +204,7 @@ class OrderListItemRead(BaseModel):
     qty: float
     area_width_m: Optional[Decimal] = None
     area_depth_m: Optional[Decimal] = None
+    area_pieces: int = 1
 
 
 class OrderListRead(BaseModel):

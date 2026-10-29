@@ -193,6 +193,8 @@ class OrderItem(Base, TimestampMixin):
     # Medidas do tapete em metros; NULL para itens antigos (rug_dimensions_r29).
     area_width_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
     area_depth_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    # Quantas peças com a mesma medida; 1 é compatível com pedidos antigos (rug_pieces_r30).
+    area_pieces: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     discount: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     ipi_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
@@ -210,5 +212,6 @@ class OrderItem(Base, TimestampMixin):
             "(area_width_m IS NULL AND area_depth_m IS NULL) OR (area_width_m > 0 AND area_depth_m > 0)",
             name="ck_order_items_area_dims_pair",
         ),
+        CheckConstraint("area_pieces >= 1", name="ck_order_items_area_pieces_positive"),
         Index("ix_order_items_order_id", "order_id"),
     )

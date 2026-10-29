@@ -907,3 +907,181 @@ async def test_rug_area_limit_uses_width_times_depth(client, db_session):
     )
     assert response.status_code == 422, response.text
     assert "4 m²" in response.json()["detail"]
+
+
+async def test_rug_order_charges_area_times_pieces(client, db_session):
+    """Tapete cobra área por peça multiplicada pelo número de peças."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(db_session, price_list)
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    response = await _post_order(
+        client,
+        admin,
+        client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2.05",
+            "area_depth_m": "2.05",
+            "area_pieces": 3,
+            "discount": "0",
+        }],
+    )
+    assert response.status_code == 201, response.text
+    item = response.json()["items"][0]
+    assert Decimal(str(item["qty"])) == Decimal("12.60")
+    assert item["area_pieces"] == 3
+    assert Decimal(str(response.json()["total_value"])) == Decimal("1260.00")
+
+
+async def test_rug_area_limit_is_per_piece(client, db_session):
+    """Limite de área é aplicado por peça, não sobre o total de peças."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(
+        db_session, price_list,
+        area_limit_enabled=True, max_area_m2=Decimal("4"),
+    )
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    ok_response = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2",
+            "area_depth_m": "2",
+            "area_pieces": 5,
+            "discount": "0",
+        }],
+    )
+    assert ok_response.status_code == 201, ok_response.text
+    item = ok_response.json()["items"][0]
+    assert Decimal(str(item["qty"])) == Decimal("20.00")
+
+    over_limit_response = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2.01",
+            "area_depth_m": "2",
+            "area_pieces": 1,
+            "discount": "0",
+        }],
+    )
+    assert over_limit_response.status_code == 422, over_limit_response.text
+    assert "4 m²" in over_limit_response.json()["detail"]
+
+
+async def test_rug_pieces_on_regular_product_are_rejected(client, db_session):
+    """Produto comum não pode receber area_pieces."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_product_with_price(db_session, "BR", price_list, Decimal("50.00"))
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    response = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "qty": "1",
+            "area_pieces": 2,
+            "discount": "0",
+        }],
+    )
+    assert response.status_code == 422, response.text
+    assert "não é vendido por área" in response.json()["detail"]
+
+
+async def test_rug_edit_changes_pieces_keeping_measurements(client, db_session):
+    """Edição pode alterar apenas o número de peças mantendo as medidas."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(db_session, price_list)
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    create_resp = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2",
+            "area_depth_m": "3",
+            "area_pieces": 1,
+            "discount": "0",
+        }],
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    order_id = uuid.UUID(create_resp.json()["id"])
+    item_id = uuid.UUID(create_resp.json()["items"][0]["id"])
+
+    edit_resp = await _put_order(
+        client, admin, order_id,
+        [{
+            "product_code": product.product_code,
+            "source_order_item_id": str(item_id),
+            "area_width_m": "2",
+            "area_depth_m": "3",
+            "area_pieces": 2,
+            "discount": "0",
+        }],
+    )
+    assert edit_resp.status_code == 200, edit_resp.text
+    item = edit_resp.json()["items"][0]
+    assert Decimal(str(item["qty"])) == Decimal("12.00")
+    assert item["area_pieces"] == 2
+    assert Decimal(str(edit_resp.json()["total_value"])) == Decimal("1200.00")
+
+
+async def test_legacy_rug_without_measurements_keeps_area_per_piece(client, db_session):
+    """Tapete legado sem medidas preserva a área por peça ao editar peças."""
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_rug_product(db_session, price_list)
+    client_id = await _create_client(db_session, "BR", price_list)
+    db_session.expunge_all()
+
+    create_resp = await _post_order(
+        client, admin, client_id,
+        [{
+            "product_code": product.product_code,
+            "area_width_m": "2",
+            "area_depth_m": "3",
+            "area_pieces": 1,
+            "discount": "0",
+        }],
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    order_id = uuid.UUID(create_resp.json()["id"])
+    item_id = uuid.UUID(create_resp.json()["items"][0]["id"])
+
+    from sqlalchemy import update
+    await db_session.execute(
+        update(OrderItem)
+        .where(OrderItem.id == item_id)
+        .values(area_width_m=None, area_depth_m=None, qty=Decimal("6.00"))
+        .execution_options(**_SKIP_SCOPE)
+    )
+    await db_session.flush()
+    await db_session.commit()
+
+    edit_resp = await _put_order(
+        client, admin, order_id,
+        [{
+            "product_code": product.product_code,
+            "source_order_item_id": str(item_id),
+            # O front reenvia o qty da linha legada; o servidor o ignora.
+            "qty": "999",
+            "area_pieces": 2,
+            "discount": "0",
+        }],
+    )
+    assert edit_resp.status_code == 200, edit_resp.text
+    item = edit_resp.json()["items"][0]
+    assert Decimal(str(item["qty"])) == Decimal("12.00")
+    assert item["area_pieces"] == 2
+    assert item["area_width_m"] is None
+    assert item["area_depth_m"] is None

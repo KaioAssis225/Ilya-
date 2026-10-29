@@ -44,13 +44,25 @@ export function formatRugSize(
   depth: number | string | null | undefined,
   area: number | string,
   locale = 'pt-BR',
+  pieces = 1,
 ): string {
   const numericWidth = width == null ? 0 : Number(width)
   const numericDepth = depth == null ? 0 : Number(depth)
-  if (!Number.isFinite(numericWidth) || !Number.isFinite(numericDepth) || numericWidth <= 0 || numericDepth <= 0) {
-    return formatArea(area, locale)
+  const safePieces = normalizeRugPieces(pieces)
+  const total = Number(area)
+  const hasValidDimensions = Number.isFinite(numericWidth) && Number.isFinite(numericDepth) && numericWidth > 0 && numericDepth > 0
+
+  if (safePieces <= 1) {
+    if (!hasValidDimensions) return formatArea(total, locale)
+    return `${formatMeters(numericWidth, locale).replace(/ m$/, '')} × ${formatMeters(numericDepth, locale)} = ${formatArea(total, locale)}`
   }
-  return `${formatMeters(numericWidth, locale).replace(/ m$/, '')} × ${formatMeters(numericDepth, locale)} = ${formatArea(area, locale)}`
+
+  const areaPerPiece = normalizeAreaQty(total / safePieces)
+  const piecesLabel = formatRugPieces(safePieces, locale)
+  if (!hasValidDimensions) {
+    return `${formatArea(areaPerPiece, locale)} × ${piecesLabel} = ${formatArea(total, locale)}`
+  }
+  return `${formatMeters(numericWidth, locale).replace(/ m$/, '')} × ${formatMeters(numericDepth, locale)} = ${formatArea(areaPerPiece, locale)} × ${piecesLabel} = ${formatArea(total, locale)}`
 }
 
 export function normalizeAreaQty(value: number | string): number {
@@ -66,4 +78,21 @@ export function formatArea(qty: number | string, locale: string = 'pt-BR'): stri
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(safeQty)} m²`
+}
+
+export function normalizeRugPieces(value: number | string | null | undefined): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 1
+  const rounded = Math.round(numeric)
+  if (rounded < 1) return 1
+  if (rounded > 1000) return 1000
+  return rounded
+}
+
+export function formatRugPieces(pieces: number, locale = 'pt-BR'): string {
+  const safe = normalizeRugPieces(pieces)
+  if (locale === 'en-GB') {
+    return safe === 1 ? '1 piece' : `${safe} pieces`
+  }
+  return safe === 1 ? '1 peça' : `${safe} peças`
 }

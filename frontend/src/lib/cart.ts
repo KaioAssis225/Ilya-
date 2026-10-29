@@ -13,8 +13,8 @@ const CART_PRICE_LIST_KEY_PREFIX = 'carrinho_orcamento_tabela_preco'
 export const CART_EVENT = 'ilya:cart-changed'
 export type PriceListCode = 'lojista' | 'arquiteto' | 'corporativo' | 'pvp'
 
-type StoredCartItem = { product_code: string; qty: number; sold_by_area?: boolean }
-export type CartQuantity = { qty: number; sold_by_area: boolean }
+type StoredCartItem = { product_code: string; qty: number; sold_by_area?: boolean; area_pieces?: number }
+export type CartQuantity = { qty: number; sold_by_area: boolean; area_pieces?: number }
 
 /** Quantidade por SKU: `{ IAC0000: 2 }`. Vazio se não houver carrinho ou o JSON estiver corrompido. */
 export function cartStorageKey(userId: string, market: 'BR' | 'EU' = 'BR'): string {
@@ -77,7 +77,13 @@ export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' =
       if (!item || typeof item.product_code !== 'string') continue
       const qty = Number(item.qty)
       if (!Number.isFinite(qty) || qty <= 0) continue
-      quantities[item.product_code] = { qty, sold_by_area: item.sold_by_area === true }
+      const areaPieces = Number(item.area_pieces)
+      const validAreaPieces = Number.isFinite(areaPieces) && areaPieces >= 1 ? areaPieces : undefined
+      quantities[item.product_code] = {
+        qty,
+        sold_by_area: item.sold_by_area === true,
+        ...(validAreaPieces !== undefined ? { area_pieces: validAreaPieces } : {}),
+      }
     }
     return quantities
   } catch {
@@ -89,7 +95,7 @@ export function readCartQuantities(userId?: string | null, market: 'BR' | 'EU' =
 export function countCartUnits(quantities: Record<string, number | CartQuantity>): number {
   return Object.values(quantities).reduce<number>((total, entry) => {
     if (typeof entry === 'number') return total + entry
-    return total + (entry.sold_by_area ? 1 : entry.qty)
+    return total + (entry.sold_by_area ? (entry.area_pieces ?? 1) : entry.qty)
   }, 0)
 }
 

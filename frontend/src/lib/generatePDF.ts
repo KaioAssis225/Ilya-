@@ -5,7 +5,7 @@ import { formatDimensions } from './measurements'
 import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
-import { formatArea, formatRugSize } from './areaProduct'
+import { formatArea, formatRugPieces, formatRugSize } from './areaProduct'
 import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
 
 // ── Colors (idênticos ao protótipo) ──────────────────────────────────────────
@@ -355,11 +355,15 @@ export async function generateOrderPDF(
     // portanto nunca imprime a medida do item-pai, nem mesmo se houver valores legados.
     // Tapetes com medidas vendidas por área também ganham uma linha de dimensões,
     // pois o servidor informa a largura/profundidade em metros do item.
+    const pieces = item.area_pieces ?? 1
     const hasRugDims = item.sold_by_area
-      && item.area_width_m != null
-      && item.area_depth_m != null
-      && Number(item.area_width_m) > 0
-      && Number(item.area_depth_m) > 0
+      && (
+        (item.area_width_m != null
+          && item.area_depth_m != null
+          && Number(item.area_width_m) > 0
+          && Number(item.area_depth_m) > 0)
+        || pieces > 1
+      )
     const hasDims = !isSetProduct && (
       (!item.sold_by_area && (item.largura !== 0 || item.altura !== 0))
       || hasRugDims
@@ -371,7 +375,7 @@ export async function generateOrderPDF(
     const PRODUCT_TEXT_WIDTH = 70
     const dimText = hasDims
       ? item.sold_by_area
-        ? `${L.dimensions}: ${pdfSafe(formatRugSize(item.area_width_m, item.area_depth_m, item.qty, measurementLocale))}`
+        ? `${L.dimensions}: ${pdfSafe(formatRugSize(item.area_width_m, item.area_depth_m, item.qty, measurementLocale, pieces))}`
         : `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
       : null
     const obsText = item.observacao ? `${L.itemNote}: ${item.observacao}` : null
@@ -488,6 +492,15 @@ export async function generateOrderPDF(
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
     doc.text(item.sold_by_area ? formatArea(item.qty, locale) : String(item.qty), 125, y, { align: 'right' })
+
+    if (item.sold_by_area && pieces > 1) {
+      doc.setFontSize(6)
+      doc.setTextColor(...MUTED)
+      doc.text(pdfSafe(formatRugPieces(pieces, measurementLocale)), 125, y + 4, { align: 'right' })
+      doc.setFontSize(8)
+      doc.setTextColor(...DARK)
+      doc.setFont('helvetica', 'normal')
+    }
 
     // Valor unitário (com desconto se houver)
     if (discount > 0) {

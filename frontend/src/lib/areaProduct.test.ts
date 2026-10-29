@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { areaLimit, formatArea, formatRugSize, isAreaCatalogName, isAreaProduct, normalizeAreaQty, previewArea } from './areaProduct.ts'
+import { areaLimit, formatArea, formatRugPieces, formatRugSize, isAreaCatalogName, isAreaProduct, normalizeAreaQty, normalizeRugPieces, previewArea } from './areaProduct.ts'
 
 test('reconhece somente os nomes normalizados do catálogo de tapetes', () => {
   assert.equal(isAreaCatalogName(' Tapete '), true)
@@ -56,4 +56,40 @@ test('formatRugSize mostra medidas e área quando há dimensões válidas', () =
     formatRugSize(0, 2, 4.2, 'pt-BR'),
     '4,2 m²',
   )
+})
+
+test('formatRugSize com múltiplas peças em pt-BR', () => {
+  assert.equal(
+    formatRugSize(2, 3, 12, 'pt-BR', 2),
+    '2 × 3 m = 6 m² × 2 peças = 12 m²',
+  )
+  assert.equal(
+    formatRugSize(null, null, 12, 'pt-BR', 2),
+    '6 m² × 2 peças = 12 m²',
+  )
+})
+
+test('formatRugSize com múltiplas peças em en-GB', () => {
+  assert.equal(
+    formatRugSize(2, 3, 12, 'en-GB', 3),
+    '2 × 3 m = 4 m² × 3 pieces = 12 m²',
+  )
+  assert.equal(
+    formatRugSize(null, null, 12, 'en-GB', 3),
+    '4 m² × 3 pieces = 12 m²',
+  )
+})
+
+test('normalizeRugPieces arredonda e limita o intervalo', () => {
+  assert.equal(normalizeRugPieces(0), 1)
+  assert.equal(normalizeRugPieces(2.6), 3)
+  assert.equal(normalizeRugPieces(5000), 1000)
+  assert.equal(normalizeRugPieces(Number.NaN), 1)
+})
+
+test('formatRugPieces usa plural correto por locale', () => {
+  assert.equal(formatRugPieces(1, 'pt-BR'), '1 peça')
+  assert.equal(formatRugPieces(3, 'pt-BR'), '3 peças')
+  assert.equal(formatRugPieces(1, 'en-GB'), '1 piece')
+  assert.equal(formatRugPieces(3, 'en-GB'), '3 pieces')
 })

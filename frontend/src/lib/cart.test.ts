@@ -50,3 +50,8 @@ test('produto com aplicações abre a configuração na rota real do orçamento'
   assert.equal(configureProductPath('Teste'), '/orcamentos?configure=Teste')
   assert.equal(configureProductPath('SKU 1/2'), '/orcamentos?configure=SKU%201%2F2')
 })
+
+test('countCartUnits conta peças de tapete quando informadas', () => {
+  assert.equal(countCartUnits({ tapete: { qty: 9.5, sold_by_area: true, area_pieces: 3 }, cadeira: { qty: 2, sold_by_area: false } }), 5)
+  assert.equal(countCartUnits({ tapete: { qty: 4.5, sold_by_area: true } }), 1)
+})
