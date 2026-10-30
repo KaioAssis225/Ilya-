@@ -702,6 +702,10 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   )
 }
 
+// Cabeçalho e célula de valor da linha desktop: altura fixa para alinhar colunas entre itens.
+const LINE_LABEL = 'type-label mb-1 flex h-8 items-end tracking-[0.08em]'
+const LINE_VALUE = 'flex h-9 flex-col items-end justify-center gap-0.5 whitespace-nowrap text-xs font-semibold tabular-nums'
+
 // Preço efetivo conforme o perfil de faturamento do cliente (Bloco 62).
 // Sem cliente selecionado, usa o preço de lojista por padrão.
 function effectivePrice(product: Product, profile: string | undefined): number {
@@ -2080,7 +2084,7 @@ export default function OrcamentoPage() {
                 </div>
 
                 {/* ── Desktop item list ────────────────────────── */}
-                <ul className="hidden lg:block divide-y divide-line">
+                <ul className="hidden lg:block divide-y divide-line @container">
                   {filteredCart.map((item) => {
                     const ipiRate = taxRate(item._product)
                     const pricing = calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
@@ -2088,14 +2092,13 @@ export default function OrcamentoPage() {
                     // (Subtotal → IVA → Total), como numa fatura.
                     const lineTotal = market === 'EU' ? pricing.subtotal : roundMoney(pricing.subtotal + lineTax(pricing.subtotal, ipiRate))
                     const soldByArea = isAreaProduct(item._product)
-                    const perUnit = soldByArea ? <span className="ml-0.5 font-normal text-muted">/m²</span> : null
                     return (
                       <li
                         key={item.line_id}
                         aria-label={`${item.product_code} ${item._product.description}`}
-                        className="grid gap-4 px-4 lg:px-6 py-4 hover:bg-surface-2 transition-colors xl:grid-cols-[minmax(0,1fr)_auto]"
+                        className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 px-4 lg:px-6 py-4 hover:bg-surface-2 transition-colors @min-[960px]:grid-cols-[minmax(0,1fr)_auto_auto]"
                       >
-                        <div className="flex min-w-0 gap-3">
+                        <div className="col-start-1 row-start-1 flex min-w-0 gap-3">
                           {item._product.photo_url
                             ? <button type="button" onClick={() => setActivePhotoModal(item._product.photo_url!)} className="w-12 h-12 min-w-12 rounded-lg" aria-label={isEnglish ? `Enlarge photo of ${item._product.description}` : `Ampliar foto de ${item._product.description}`}>
                                 <img src={item._product.thumbnail_url ?? item._product.photo_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
@@ -2138,73 +2141,77 @@ export default function OrcamentoPage() {
                           </div>
                         </div>
 
-                        {/* Em 2xl qtd, preços, subtotal, comentário e excluir cabem numa linha (~540px). */}
-                        <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[480px] 2xl:max-w-[720px]">
-                          <div>
-                            <label className="type-label text-xs mb-1 flex min-h-8 items-end" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
+                        {/* Ações: no canto do bloco do produto quando a linha empilha; ao lado dos valores no layout largo. */}
+                        <div className="col-start-2 row-start-1 flex items-start @min-[960px]:col-start-3 @min-[960px]:pt-8">
+                          <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
+                          <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Qtd · Preço-base · Desconto · Valor c/ desconto · (IPI) · Subtotal.
+                            Colunas de largura fixa: cabeçalhos de até 2 linhas, alinhados pela
+                            base, e valores sempre na mesma linha (h-9) entre itens. */}
+                        <div className="col-span-2 row-start-2 flex justify-end gap-x-3 @min-[960px]:col-span-1 @min-[960px]:col-start-2 @min-[960px]:row-start-1">
+                          <div className="w-[4.5rem]">
+                            <label className={`${LINE_LABEL} justify-center text-center`} htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
                             <QuantityInput
                               id={`desktop-qty-${item.line_id}`}
                               value={soldByArea ? (item.area_pieces ?? 1) : item.qty}
                               allowDecimal={false}
                               max={soldByArea ? 1000 : null}
                               ariaLabel={soldByArea ? (isEnglish ? `Number of pieces — ${item._product.description}` : `Número de peças — ${item._product.description}`) : (isEnglish ? `Qty — ${item._product.description}` : `Qtd — ${item._product.description}`)}
-                              className="input w-20 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink"
+                              className="input mx-auto block h-9 w-16 text-center text-xs border border-line rounded-lg py-1 bg-white text-ink tabular-nums"
                               onCommit={(qty) => soldByArea ? updateAreaPieces(item.line_id, qty) : updateQty(item.line_id, qty)}
                             />
                           </div>
-                          <div>
-                            <span className="type-label text-xs mb-1 flex min-h-8 max-w-24 items-end">{isEnglish ? 'Base unit price' : 'Preço-base unitário'}</span>
-                            <div className="text-ink-2 text-xs font-semibold whitespace-nowrap min-h-8 flex items-center tabular-nums">
+                          <div className="w-[5.5rem]">
+                            <span className={`${LINE_LABEL} justify-end text-right`} title={isEnglish ? 'Base unit price' : 'Preço-base unitário'}>{isEnglish ? 'Base price' : 'Preço-base'}</span>
+                            <div className={`${LINE_VALUE} text-ink-2`}>
                               <SafePrice value={pricing.basePrice} currency={currency} locale={locale} />
-                              {perUnit}
+                              {soldByArea && <span className="text-[10px] font-normal leading-none text-muted">/m²</span>}
                             </div>
                           </div>
-                          <div>
-                            <span className="type-label text-xs mb-1 flex min-h-8 items-end whitespace-nowrap">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
+                          <div className="w-[5.75rem]">
+                            <span className={`${LINE_LABEL} justify-center text-center`}>{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
                             <NumberField
                               min={0} max={itemMaxDiscount(item)}
                               aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
-                              className="input w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink"
+                              className="input mx-auto block h-9 w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink tabular-nums"
                               value={item.discount}
                               placeholder="0"
                               disabled={itemMaxDiscount(item) <= 0}
                               onValueChange={(v) => updateDiscount(item.line_id, Math.min(itemMaxDiscount(item), Math.max(0, v)))}
                             />
                             {item.discount > 0 && (
-                              <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
-                                <span>− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />
+                              <p className="mt-1 text-center text-[11px] leading-none tabular-nums text-ink-2 whitespace-nowrap">
+                                <span aria-hidden="true">− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />
                               </p>
                             )}
                           </div>
-                          <div>
-                            <span className="type-label text-xs mb-1 flex min-h-8 max-w-28 items-end">{isEnglish ? 'Unit price after discount' : 'Valor unitário com desconto'}</span>
-                            <div className="text-ink text-xs font-semibold whitespace-nowrap min-h-8 flex items-center tabular-nums">
+                          <div className="w-[5.5rem]">
+                            <span className={`${LINE_LABEL} justify-end text-right`} title={isEnglish ? 'Unit price after discount' : 'Valor unitário com desconto'}>{isEnglish ? 'Net unit price' : 'Valor c/ desc.'}</span>
+                            <div className={`${LINE_VALUE} text-ink`}>
                               <SafePrice value={pricing.netUnitPrice} currency={currency} locale={locale} />
-                              {perUnit}
+                              {soldByArea && <span className="text-[10px] font-normal leading-none text-muted">/m²</span>}
                             </div>
                           </div>
                           {market === 'BR' && (
-                            <div>
-                              <span className="type-label text-xs mb-1 flex min-h-8 items-end whitespace-nowrap">IPI</span>
-                              <div className="min-h-8 flex items-center whitespace-nowrap">
+                            <div className="w-12">
+                              <span className={`${LINE_LABEL} justify-center text-center`}>IPI</span>
+                              <div className="flex h-9 items-center justify-center whitespace-nowrap">
                                 {ipiRate > 0
-                                  ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
+                                  ? <span className="text-xs font-semibold text-gold tabular-nums">{ipiRate}%</span>
                                   : <span className="text-xs text-muted">—</span>
                                 }
                               </div>
                             </div>
                           )}
-                          <div className="flex items-end gap-2">
-                            <div>
-                              <span className="type-label text-xs mb-1 flex min-h-8 items-end whitespace-nowrap">Subtotal</span>
-                              <div className="min-h-11 flex items-center text-xs font-bold text-ink tabular-nums whitespace-nowrap">
-                                <SafePrice value={lineTotal} currency={currency} locale={locale} />
-                              </div>
+                          <div className="w-[5.5rem]">
+                            <span className={`${LINE_LABEL} justify-end text-right`}>Subtotal</span>
+                            <div className={`${LINE_VALUE} font-bold text-ink`}>
+                              <SafePrice value={lineTotal} currency={currency} locale={locale} />
                             </div>
-                            <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
-                            <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
-                              <Trash2 className="w-4 h-4" />
-                            </button>
                           </div>
                         </div>
                       </li>
