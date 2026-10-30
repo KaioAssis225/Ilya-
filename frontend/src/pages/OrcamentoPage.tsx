@@ -36,6 +36,7 @@ import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
+import { calculateLinePricing, lineTax, roundMoney } from '../lib/linePricing'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -805,10 +806,11 @@ function MobileCartCard({
   const measurementMarket = currency === 'EUR' ? 'EU' : 'BR'
   const allowCustom = allowsCustomOption(measurementMarket) && optionalsReady
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
-  const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
+  const pricing = calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
   const hasDiscount = item.discount > 0
   const soldByArea = isAreaProduct(item._product)
   const pieces = item.area_pieces ?? 1
+  const perUnit = soldByArea ? '/m²' : ''
 
   return (
     <div className="bg-white border border-line rounded-xl p-3.5 shadow-sm">
@@ -913,19 +915,31 @@ function MobileCartCard({
           />
         </div>
 
-        {/* Pricing */}
-        <div className="text-right ml-auto">
-          {hasDiscount && (
-            <p className="text-[10px] text-muted line-through"><SafePrice value={effectivePrice(item._product, priceProfile) * item.qty} currency={currency} locale={locale} /></p>
-          )}
-          {hasDiscount && (
-            <span className="text-[10px] bg-gold/10 text-gold font-semibold px-1.5 py-0.5 rounded-full">
-              -{item.discount}%
-            </span>
-          )}
-          <p className="text-sm font-bold text-ink mt-0.5"><SafePrice value={subtotal} currency={currency} locale={locale} /></p>
-        </div>
       </div>
+
+      {/* Preço-base → desconto → valor unitário com desconto → subtotal, na
+          mesma ordem da tabela desktop. O valor unitário é informativo; o
+          subtotal é o oficial (ver lib/linePricing). */}
+      <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-bg-2 pt-3 text-xs">
+        <dt className="text-muted">{isEnglish ? 'Base unit price' : 'Preço-base unitário'}</dt>
+        <dd className="text-right font-semibold text-ink-2 tabular-nums">
+          <SafePrice value={pricing.basePrice} currency={currency} locale={locale} />{perUnit && <span className="font-normal text-muted">{perUnit}</span>}
+        </dd>
+        {hasDiscount && (
+          <>
+            <dt className="text-muted">{isEnglish ? `Unit discount (${item.discount}%)` : `Desconto unitário (${item.discount}%)`}</dt>
+            <dd className="text-right tabular-nums text-muted">
+              <span aria-hidden="true">− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />{perUnit}
+            </dd>
+          </>
+        )}
+        <dt className="text-muted">{isEnglish ? 'Unit price after discount' : 'Valor unitário com desconto'}</dt>
+        <dd className="text-right font-semibold text-ink tabular-nums">
+          <SafePrice value={pricing.netUnitPrice} currency={currency} locale={locale} />{perUnit && <span className="font-normal text-muted">{perUnit}</span>}
+        </dd>
+        <dt className="text-sm font-semibold text-ink">Subtotal</dt>
+        <dd className="text-right text-sm font-bold text-ink tabular-nums"><SafePrice value={pricing.subtotal} currency={currency} locale={locale} /></dd>
+      </dl>
     </div>
   )
 }
@@ -1661,9 +1675,11 @@ export default function OrcamentoPage() {
 
   const { data: productTypes = [] } = useProductTypes()
 
-  const total = cart.reduce((sum, i) => {
-    return sum + i.qty * effectivePrice(i._product, priceProfile) * (1 - (i.discount || 0) / 100)
-  }, 0)
+  // Como o servidor: soma de subtotais de linha já arredondados.
+  const lineSubtotal = (i: CartItem) =>
+    calculateLinePricing(effectivePrice(i._product, priceProfile), i.discount, i.qty).subtotal
+
+  const total = roundMoney(cart.reduce((sum, i) => sum + lineSubtotal(i), 0))
 
   // Brasil: IPI do grupo do tipo. Portugal: IVA aprovado do próprio produto,
   // o mesmo que o servidor grava no pedido (o grupo EU tem IPI 0).
@@ -1671,13 +1687,9 @@ export default function OrcamentoPage() {
     ? Number(product.vat_rate ?? 0)
     : Number(productTypes.find(t => t.name === product.type)?.group?.ipi ?? 0)
 
-  const ipiTotal = cart.reduce((sum, i) => {
-    const rate = taxRate(i._product)
-    const subtotal = i.qty * effectivePrice(i._product, priceProfile) * (1 - (i.discount || 0) / 100)
-    return sum + subtotal * rate / 100
-  }, 0)
+  const ipiTotal = roundMoney(cart.reduce((sum, i) => sum + lineTax(lineSubtotal(i), taxRate(i._product)), 0))
 
-  const totalWithIpi = total + ipiTotal
+  const totalWithIpi = roundMoney(total + ipiTotal)
   const cartUnitCount = cart.reduce((sum, item) => sum + (isAreaProduct(item._product) ? (item.area_pieces ?? 1) : item.qty), 0)
 
   // O código definitivo é atribuído atomicamente pelo PostgreSQL ao salvar.
@@ -2071,11 +2083,12 @@ export default function OrcamentoPage() {
                 <ul className="hidden lg:block divide-y divide-line">
                   {filteredCart.map((item) => {
                     const ipiRate = taxRate(item._product)
-                    const subtotal = item.qty * effectivePrice(item._product, priceProfile) * (1 - (item.discount || 0) / 100)
+                    const pricing = calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
                     // Brasil: IPI entra na linha. Portugal: IVA só no fecho
                     // (Subtotal → IVA → Total), como numa fatura.
-                    const lineTotal = market === 'EU' ? subtotal : subtotal * (1 + ipiRate / 100)
+                    const lineTotal = market === 'EU' ? pricing.subtotal : roundMoney(pricing.subtotal + lineTax(pricing.subtotal, ipiRate))
                     const soldByArea = isAreaProduct(item._product)
+                    const perUnit = soldByArea ? <span className="ml-0.5 font-normal text-muted">/m²</span> : null
                     return (
                       <li
                         key={item.line_id}
@@ -2126,9 +2139,9 @@ export default function OrcamentoPage() {
                         </div>
 
                         {/* Em 2xl qtd, preços, subtotal, comentário e excluir cabem numa linha (~540px). */}
-                        <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[440px] 2xl:max-w-[600px]">
+                        <div className="flex flex-wrap content-start items-start gap-x-5 gap-y-2 xl:justify-end xl:max-w-[480px] 2xl:max-w-[720px]">
                           <div>
-                            <label className="type-label text-xs block mb-1" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
+                            <label className="type-label text-xs mb-1 flex min-h-8 items-end" htmlFor={`desktop-qty-${item.line_id}`}>{isEnglish ? 'Qty' : 'Qtd'}</label>
                             <QuantityInput
                               id={`desktop-qty-${item.line_id}`}
                               value={soldByArea ? (item.area_pieces ?? 1) : item.qty}
@@ -2140,14 +2153,14 @@ export default function OrcamentoPage() {
                             />
                           </div>
                           <div>
-                            <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Base Price' : 'Preço base'}</span>
-                            <div className="text-ink-2 text-xs font-semibold whitespace-nowrap min-h-8 flex items-center">
-                              <SafePrice value={effectivePrice(item._product, priceProfile)} currency={currency} locale={locale} />
-                              {soldByArea && <span className="ml-0.5 font-normal text-muted">/m²</span>}
+                            <span className="type-label text-xs mb-1 flex min-h-8 max-w-24 items-end">{isEnglish ? 'Base unit price' : 'Preço-base unitário'}</span>
+                            <div className="text-ink-2 text-xs font-semibold whitespace-nowrap min-h-8 flex items-center tabular-nums">
+                              <SafePrice value={pricing.basePrice} currency={currency} locale={locale} />
+                              {perUnit}
                             </div>
                           </div>
                           <div>
-                            <span className="type-label text-xs block mb-1 whitespace-nowrap">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
+                            <span className="type-label text-xs mb-1 flex min-h-8 items-end whitespace-nowrap">{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
                             <NumberField
                               min={0} max={itemMaxDiscount(item)}
                               aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
@@ -2159,13 +2172,20 @@ export default function OrcamentoPage() {
                             />
                             {item.discount > 0 && (
                               <p className="text-[9px] text-muted mt-0.5 text-center whitespace-nowrap">
-                                <span>− </span><SafePrice value={effectivePrice(item._product, priceProfile) * item.discount / 100} currency={currency} locale={locale} />
+                                <span>− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />
                               </p>
                             )}
                           </div>
+                          <div>
+                            <span className="type-label text-xs mb-1 flex min-h-8 max-w-28 items-end">{isEnglish ? 'Unit price after discount' : 'Valor unitário com desconto'}</span>
+                            <div className="text-ink text-xs font-semibold whitespace-nowrap min-h-8 flex items-center tabular-nums">
+                              <SafePrice value={pricing.netUnitPrice} currency={currency} locale={locale} />
+                              {perUnit}
+                            </div>
+                          </div>
                           {market === 'BR' && (
                             <div>
-                              <span className="type-label text-xs block mb-1 whitespace-nowrap">IPI</span>
+                              <span className="type-label text-xs mb-1 flex min-h-8 items-end whitespace-nowrap">IPI</span>
                               <div className="min-h-8 flex items-center whitespace-nowrap">
                                 {ipiRate > 0
                                   ? <span className="text-xs font-semibold text-gold">{ipiRate}%</span>
@@ -2176,7 +2196,7 @@ export default function OrcamentoPage() {
                           )}
                           <div className="flex items-end gap-2">
                             <div>
-                              <span className="type-label text-xs block mb-1 whitespace-nowrap">Subtotal</span>
+                              <span className="type-label text-xs mb-1 flex min-h-8 items-end whitespace-nowrap">Subtotal</span>
                               <div className="min-h-11 flex items-center text-xs font-bold text-ink tabular-nums whitespace-nowrap">
                                 <SafePrice value={lineTotal} currency={currency} locale={locale} />
                               </div>
