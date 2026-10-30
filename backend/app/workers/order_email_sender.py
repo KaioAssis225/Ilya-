@@ -12,6 +12,10 @@ from app.core.config import settings
 from app.core.order_documents import OrderDocumentStorageError, get_document, put_document
 from app.db.session import AsyncSessionLocal
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
+from app.services.microsoft_graph_email import (
+    microsoft_graph_configured,
+    send_email as send_graph_email,
+)
 from app.services.order_email_events import apply_orphan_events, apply_pending_events
 from app.services.order_email_jobs import recipient_is_allowed
 from app.services.pdf_renderer import PdfRendererUnavailable, get_pdf_renderer
@@ -28,6 +32,18 @@ CLAIM_LEASE = timedelta(minutes=10)
 RETRY_WINDOW = timedelta(hours=24)
 MISSING_PROVIDER_WARNING_INTERVAL = timedelta(minutes=10)
 _last_missing_provider_warning_at: datetime | None = None
+
+
+def _provider_configured() -> bool:
+    if settings.ORDER_EMAIL_PROVIDER == "microsoft_graph":
+        return microsoft_graph_configured()
+    return bool(settings.RESEND_API_KEY and settings.ORDER_EMAIL_FROM)
+
+
+def _provider_sender():
+    if settings.ORDER_EMAIL_PROVIDER == "microsoft_graph":
+        return send_graph_email
+    return send_email
 
 
 def retry_delay(attempts: int) -> timedelta:
@@ -318,7 +334,9 @@ async def _warn_missing_provider_config(
     ).scalar_one()
     if pending:
         logger.warning(
-            "Configuração Resend incompleta; entregas pendentes=%s",
+            "Configuração do provedor de e-mail incompleta; "
+            "provedor=%s entregas pendentes=%s",
+            settings.ORDER_EMAIL_PROVIDER,
             pending,
         )
         _last_missing_provider_warning_at = now
@@ -337,7 +355,7 @@ async def process_due(
     if await apply_pending_events(db):
         await db.commit()
     renderer = renderer or get_pdf_renderer()
-    sender = sender or send_email
+    sender = sender or _provider_sender()
     processed = 0
     while processed < limit:
         document = await claim_next_document(db, datetime.now(timezone.utc))
@@ -346,7 +364,7 @@ async def process_due(
         processed += 1
         await _process_document(db, document, renderer)
 
-    if not settings.RESEND_API_KEY or not settings.ORDER_EMAIL_FROM:
+    if not _provider_configured():
         await _warn_missing_provider_config(db)
         return processed
 

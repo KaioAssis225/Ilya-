@@ -252,12 +252,15 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ilya_db
 
 O envio do PDF do pedido permanece desligado sem configuração explícita.
 As variáveis, documentadas sem valores em `.env.example`, são:
-`ORDER_EMAIL_MODE`, `ORDER_EMAIL_TEST_ALLOWLIST`, `RESEND_API_KEY`,
+`ORDER_EMAIL_MODE`, `ORDER_EMAIL_PROVIDER`, `ORDER_EMAIL_TEST_ALLOWLIST`, `RESEND_API_KEY`,
 `RESEND_API_BASE_URL`, `RESEND_WEBHOOK_SECRET`, `ORDER_EMAIL_FROM`,
 `ORDER_EMAIL_REPLY_TO`, `ORDER_EMAIL_TIMEOUT_SECONDS`,
 `ORDER_EMAIL_POLL_SECONDS`, `ORDER_EMAIL_LOCAL_DIR`,
 `ORDER_EMAIL_PDF_RENDERER` e `ORDER_EMAIL_PDF_TIMEOUT_SECONDS`. O consumidor roda em
 processo separado com `python -m app.workers.order_email_sender`.
+`ORDER_EMAIL_PROVIDER=microsoft_graph` usa a conta Outlook configurada em
+`MICROSOFT_GRAPH_*`; nesse modo, o Graph aceita o e-mail, mas não fornece os
+webhooks de entrega do Resend. O PDF inline deve ter menos de 3 MB.
 
 Para enviar convites de ativação a clientes, configure no backend `SMTP_HOST`,
 `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL` e
