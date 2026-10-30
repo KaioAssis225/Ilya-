@@ -466,7 +466,7 @@ function OrderDetailModal({
                   <tr>
                     <th className="px-3 py-2 w-10"></th>
                     <th className="px-3 py-2 text-left text-xs text-muted">{viewText('Produto', 'Product')}</th>
-                    <th className="px-3 py-2 text-left text-xs text-muted">Dim. ({order.market_code === 'EU' ? '″' : 'm'})</th>
+                    <th className="px-3 py-2 text-left text-xs text-muted">Dim. ({order.market_code === 'EU' ? 'mm' : 'm'})</th>
                     <th className="px-3 py-2 text-left text-xs text-muted">{viewText('Opcionais', 'Options')}</th>
                     <th className="px-3 py-2 text-center text-xs text-muted">{viewText('Qtd', 'Qty')}</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Preço Base', 'Base price')}</th>

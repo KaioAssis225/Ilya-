@@ -110,12 +110,6 @@ function drawIbtwLogo(doc: jsPDF, dataUrl: string, x: number, y: number): void {
   doc.addImage(dataUrl, 'JPEG', x, y, outputWidth, outputHeight, undefined, 'FAST')
 }
 
-// A Helvetica embutida do jsPDF só cobre WinAnsi: o "″" das polegadas (EU)
-// forçava a linha inteira para UTF-16 e as dimensões saíam ilegíveis.
-function pdfSafe(text: string): string {
-  return text.replace(/″/g, '"')
-}
-
 function formatMoney(value: number, currency: string, locale: string): string {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
@@ -386,8 +380,8 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     const PRODUCT_TEXT_WIDTH = 70
     const dimText = hasDims
       ? item.sold_by_area
-        ? `${L.dimensions}: ${pdfSafe(formatRugSize(item.area_width_m, item.area_depth_m, item.qty, measurementLocale, pieces))}`
-        : `${L.dimensions}: ${pdfSafe(formatDimensions(item, order.market_code, measurementLocale))}`
+        ? `${L.dimensions}: ${formatRugSize(item.area_width_m, item.area_depth_m, item.qty, measurementLocale, pieces)}`
+        : `${L.dimensions}: ${formatDimensions(item, order.market_code, measurementLocale)}`
       : null
     const obsText = item.observacao ? `${L.itemNote}: ${item.observacao}` : null
     const commentText = item.comment ? `${L.itemComment}: ${item.comment}` : null
@@ -398,7 +392,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     const commentLines: string[] = commentText ? doc.splitTextToSize(commentText, PRODUCT_TEXT_WIDTH) : []
     const optLines: string[] = optText ? doc.splitTextToSize(optText, PRODUCT_TEXT_WIDTH) : []
     const compLineGroups: string[][] = components.map((comp) => {
-      const compDim = pdfSafe(formatDimensions(comp, order.market_code, measurementLocale))
+      const compDim = formatDimensions(comp, order.market_code, measurementLocale)
       // Acabamentos do componente ("Alumínio: Taupe, Teka: Polywood") — mesma
       // informação exibida no carrinho; sem ela o PDF omitia os acabamentos
       // dos itens internos de um conjunto.
@@ -507,7 +501,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     if (item.sold_by_area && pieces > 1) {
       doc.setFontSize(6)
       doc.setTextColor(...MUTED)
-      doc.text(pdfSafe(formatRugPieces(pieces, measurementLocale)), 125, y + 4, { align: 'right' })
+      doc.text(formatRugPieces(pieces, measurementLocale), 125, y + 4, { align: 'right' })
       doc.setFontSize(8)
       doc.setTextColor(...DARK)
       doc.setFont('helvetica', 'normal')
