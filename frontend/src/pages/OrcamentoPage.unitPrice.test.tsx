@@ -79,12 +79,12 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    const labels = ['Qtd', 'Preço-base unitário', 'Desconto (%)', 'Valor unitário com desconto', 'Subtotal']
+    const labels = ['Qtd', 'Preço-base', 'Desconto (%)', 'Valor c/ desc.', 'Subtotal']
     const positions = labels.map((label) => item.textContent!.indexOf(label))
     expect(positions.every((p) => p >= 0)).toBe(true)
     expect([...positions].sort((a, b) => a - b)).toEqual(positions)
-    expect(columnValue(item, 'Preço-base unitário')).toContain(eur(1731.18))
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(eur(1731.18))
+    expect(columnValue(item, 'Preço-base')).toContain(eur(1731.18))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(eur(1731.18))
     expectSubtotal(item, eur(1731.18))
   })
 
@@ -97,7 +97,7 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(eur(1731.18))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(eur(1731.18))
     expectSubtotal(item, eur(5193.54))
   })
 
@@ -110,10 +110,10 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expect(columnValue(item, 'Preço-base unitário')).toContain(eur(1731.18))
+    expect(columnValue(item, 'Preço-base')).toContain(eur(1731.18))
     // Indicação monetária do desconto por unidade, abaixo do campo (aprovada).
     expect(item.textContent).toContain(`− ${eur(173.12)}`)
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(eur(1558.06))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(eur(1558.06))
     expectSubtotal(item, eur(3116.12))
   })
 
@@ -126,7 +126,7 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(eur(1558.06))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(eur(1558.06))
     // 1.558,062 × 3 = 4.674,186 → 4.674,19 (e não 1.558,06 × 3 = 4.674,18).
     expectSubtotal(item, eur(4674.19))
     expect(item.textContent).not.toContain(eur(4674.18))
@@ -171,7 +171,7 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user, [`/orcamentos?edit=${orderId}`])
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(eur(1558.06))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(eur(1558.06))
     expectSubtotal(item, eur(3116.12))
   })
 
@@ -186,7 +186,7 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
     fireEvent.change(within(item).getByLabelText('Desconto em Mesa PT'), { target: { value: '10' } })
     await waitFor(() => expectSubtotal(item, eur(3116.12)))
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(eur(1558.06))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(eur(1558.06))
   })
 
   it('cartão mobile mostra preço-base, desconto unitário, valor unitário e subtotal', async () => {
@@ -218,8 +218,8 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expect(within(item).getByText('Base unit price')).toBeInTheDocument()
-    expect(columnValue(item, 'Unit price after discount')).toContain('1,558.06')
+    expect(within(item).getByText('Base price')).toBeInTheDocument()
+    expect(columnValue(item, 'Net unit price')).toContain('1,558.06')
   })
 
   it('tapete: valor por m² com desconto e subtotal sobre a área total', async () => {
@@ -237,7 +237,7 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     renderProductPage(<OrcamentoPage />, user)
 
     const item = await screen.findByRole('listitem', { name: 'TAP-1 Tapete Teste' })
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(`${brl(90)}/m²`)
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(`${brl(90)}/m²`)
     expectSubtotal(item, brl(378))
   })
 
@@ -254,7 +254,7 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
     const item = await screen.findByRole('listitem', { name: 'SKU-BR Mesa BR' })
     expect(within(item).getByText('IPI')).toBeInTheDocument()
     await waitFor(() => expect(item.textContent).toContain('10%'))
-    expect(columnValue(item, 'Valor unitário com desconto')).toContain(brl(90))
+    expect(columnValue(item, 'Valor c/ desc.')).toContain(brl(90))
     // 3 × 90 = 270; com IPI 10% a linha mostra 297.
     expectSubtotal(item, brl(297))
   })
