@@ -256,7 +256,7 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   assert.ok(renderedTexts.includes('VAT / TAX ID: not provided'))
   assert.ok(renderedTexts.includes('Commercial order confirmation. This document is not an invoice.'))
   assert.ok(renderedTexts.includes('Ilya Armchair'))
-  assert.ok(renderedTexts.some((t) => /^Dimensions: W [\d,]+ mm × D [\d,]+ mm × H [\d,]+ mm$/.test(t)))
+  assert.ok(renderedTexts.some((t) => t === 'Dimensions: W 75000 mm × D 82000 mm × H 80000 mm'))
   assert.ok(!renderedTexts.some((t) => t.includes('″')))
   assert.ok(renderedTexts.some((t) => /€/.test(t)))
   // Portugal: a linha sai sem IVA e o imposto só entra no fecho
