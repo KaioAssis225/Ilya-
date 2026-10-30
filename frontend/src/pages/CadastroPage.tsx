@@ -1225,10 +1225,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                         : (isConjuntoType(p.type) ? '' : formatDimensions(p, isEurope ? 'EU' : 'BR', locale))}
                     </span>
                     <span className="space-y-0.5 text-right">
-                      <span className="block text-[10px] text-muted">Lojista <strong className="text-sm text-ink">{money(marketPrice(p, 'lojista'))}</strong></span>
-                      <span className="block text-[10px] text-muted">Corporativo <strong className="text-ink-2">{money(marketPrice(p, 'corporativo'))}</strong></span>
+                      <span className="block text-[10px] text-muted">{tx('Lojista')} <strong className="text-sm text-ink">{money(marketPrice(p, 'lojista'))}</strong></span>
+                      <span className="block text-[10px] text-muted">{tx('Corporativo')} <strong className="text-ink-2">{money(marketPrice(p, 'corporativo'))}</strong></span>
                       {isEurope && <span className="block text-[10px] text-muted">PVP <strong className="text-gold">{money(marketPrice(p, 'pvp'))}</strong></span>}
-                      {isEurope && <span className="block text-[10px] text-muted">Arquiteto <strong className="text-gold">{money(marketPrice(p, 'arquiteto'))}</strong></span>}
+                      {isEurope && <span className="block text-[10px] text-muted">{tx('Arquiteto')} <strong className="text-gold">{money(marketPrice(p, 'arquiteto'))}</strong></span>}
                     </span>
                   </div>
                   {(p.optionals.length > 0 || p.all_optionals_categories || (p.optional_applications?.length ?? 0) > 0 || p.components.some(component => (component.optional_applications?.length ?? 0) > 0)) && (
@@ -2131,7 +2131,7 @@ function PeopleTab<T extends Client | Representative>({
     ? ['lojista', 'corporativo', 'pvp', 'arquiteto']
     : ['lojista', 'corporativo']
   const canEditPriceLists = entityType === 'rep' && (authUser?.role === 'admin' || authUser?.role === 'cadastros')
-  const priceListCodeLabel = (code: string) => code === 'pvp' ? 'PVP' : code.charAt(0).toUpperCase() + code.slice(1)
+  const priceListCodeLabel = (code: string) => tx(code === 'pvp' ? 'PVP' : code.charAt(0).toUpperCase() + code.slice(1))
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)

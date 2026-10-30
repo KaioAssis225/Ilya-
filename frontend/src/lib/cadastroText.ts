@@ -9,8 +9,9 @@
  *
  * `{nome}` no texto é substituído por `vars.nome` nos dois idiomas.
  *
- * "Lojista", "Corporativo", "PVP" e "Arquiteto" são nomes comerciais e ficam iguais em
- * inglês, como no catálogo e no orçamento.
+ * Os nomes das tabelas de preço traduzem em inglês (Lojista → Retailer, Arquiteto →
+ * Architect, Corporativo → Corporate), como no catálogo e no orçamento (ver
+ * priceListLabels.ts). "PVP" continua "PVP".
  */
 const EN: Record<string, string> = {
   // navegação
@@ -131,8 +132,11 @@ const EN: Record<string, string> = {
   'Novo Produto em Portugal': 'New product in Portugal',
   'Novo Produto': 'New product',
   'Código *': 'Code *',
-  'Preço Lojista ({currency}) *': 'Lojista price ({currency}) *',
-  'Preço Corporativo ({currency}) *': 'Corporativo price ({currency}) *',
+  'Lojista': 'Retailer',
+  'Corporativo': 'Corporate',
+  'Arquiteto': 'Architect',
+  'Preço Lojista ({currency}) *': 'Retailer price ({currency}) *',
+  'Preço Corporativo ({currency}) *': 'Corporate price ({currency}) *',
   'Preço PVP (€) *': 'PVP price (€) *',
   'Preço Arquiteto (€) *': 'Architect price (€) *',
   'Observação': 'Notes',

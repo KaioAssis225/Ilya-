@@ -22,6 +22,7 @@ import type { OptionalChoiceInput, OptionalColor, PageResult, Product } from '..
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
 import { hasOptionalPhoto } from '../lib/optionalMedia'
+import { priceListLabel } from '../lib/priceListLabels'
 import {
   allowedForApplication,
   allowsCustomFor,
@@ -195,12 +196,7 @@ type PriceKey = 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
 type PriceTable = PriceKey
 
 const PRICE_TABLE_KEY = 'catalogo_tabela_preco'
-const PRICE_TABLE_OPTIONS: { value: PriceTable; label: string }[] = [
-  { value: 'lojista', label: 'Lojista' },
-  { value: 'arquiteto', label: 'Arquiteto' },
-  { value: 'corporativo', label: 'Corporativo' },
-  { value: 'pvp', label: 'PVP' },
-]
+const PRICE_TABLE_OPTIONS: PriceTable[] = ['lojista', 'arquiteto', 'corporativo', 'pvp']
 
 // Sem escolha salva ou com um valor legado inválido, usa Lojista.
 function readPriceTable(): PriceTable {
@@ -211,14 +207,14 @@ function readPriceTable(): PriceTable {
 
 type VisiblePrice = { key: PriceKey; label: string; value: number }
 
-function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
+function visiblePrices(product: Product, table: PriceTable, english: boolean): VisiblePrice[] {
   const source = product.market_prices ?? {
     ...(product.price_lojista != null ? { lojista: product.price_lojista } : {}),
     ...(product.price_corporativo != null ? { corporativo: product.price_corporativo } : {}),
   }
   const prices: VisiblePrice[] = PRICE_TABLE_OPTIONS
-    .flatMap(option => source[option.value] != null
-      ? [{ key: option.value, label: option.label, value: Number(source[option.value]) }]
+    .flatMap(option => source[option] != null
+      ? [{ key: option, label: priceListLabel(option, english), value: Number(source[option]) }]
       : [])
 
   // Uma tabela selecionada nunca pode exibir o valor de outra. Isso também
@@ -229,14 +225,15 @@ function visiblePrices(product: Product, table: PriceTable): VisiblePrice[] {
 
 function PriceTableToggle({ value, onChange, available }: { value: PriceTable; onChange: (next: PriceTable) => void; available: PriceKey[] }) {
   const { locale } = useLocale()
-  const options = PRICE_TABLE_OPTIONS.filter(option => available.includes(option.value))
+  const english = locale === 'en-GB'
+  const options = PRICE_TABLE_OPTIONS.filter(option => available.includes(option))
   return (
     <div
       role="group"
-      aria-label={locale === 'en-GB' ? 'Displayed price list' : 'Tabela de preço apresentada'}
+      aria-label={english ? 'Displayed price list' : 'Tabela de preço apresentada'}
       className="flex w-full md:w-auto flex-shrink-0 items-center gap-0.5 p-0.5 bg-bg border border-line rounded-lg"
     >
-      {options.map(({ value: option, label }) => {
+      {options.map(option => {
         const active = option === value
         return (
           <button
@@ -249,7 +246,7 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            {label}
+            {priceListLabel(option, english)}
           </button>
         )
       })}
@@ -264,7 +261,7 @@ function PriceTableToggle({ value, onChange, available }: { value: PriceTable; o
 
 function CardText({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
   const { locale } = useLocale()
-  const prices = visiblePrices(product, priceTable)
+  const prices = visiblePrices(product, priceTable, locale === 'en-GB')
   const maximumArea = areaLimit(product)
 
   return (
@@ -315,7 +312,7 @@ function CardPrice({ prices, currency, locale }: { prices: VisiblePrice[]; curre
 
 function DetailPrice({ product, priceTable }: { product: Product; priceTable: PriceTable }) {
   const { locale } = useLocale()
-  const prices = visiblePrices(product, priceTable)
+  const prices = visiblePrices(product, priceTable, locale === 'en-GB')
   if (prices.length === 0) return null
 
   return (

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { http, HttpResponse } from 'msw'
@@ -156,6 +156,23 @@ describe('ProdutosPage de catálogo em DOM', () => {
     await user.click(architect)
     expect(architect).toHaveAttribute('aria-pressed', 'true')
     expect(await screen.findByText(/80,00/)).toBeVisible()
+  })
+
+  it('en-GB: seletor e rótulo do preço usam Retailer, Architect, Corporate e PVP', async () => {
+    const user = userEvent.setup()
+    const authUser = productTestUser('admin', 'EU')
+    localStorage.setItem(`ilya-locale:${authUser.id}:EU`, 'en-GB')
+    installProductHandlers({ products: [productFixture('EU')] })
+    renderProductPage(<ProdutosPage />, authUser)
+
+    const group = await screen.findByRole('group', { name: 'Displayed price list' })
+    expect(within(group).getAllByRole('button').map(button => button.textContent))
+      .toEqual(['Retailer', 'Architect', 'Corporate', 'PVP'])
+    expect(screen.queryByRole('button', { name: 'Arquiteto' })).toBeNull()
+
+    await user.click(within(group).getByRole('button', { name: 'Architect' }))
+    expect(await screen.findByText('Architect', { selector: 'p' })).toBeVisible()
+    expect(await screen.findByText(/80\.00/)).toBeVisible()
   })
 
   it('REG-PROD-03: tabela EU selecionada acompanha o produto até o orçamento', async () => {

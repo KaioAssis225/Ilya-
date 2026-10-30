@@ -345,6 +345,20 @@ describe('OrcamentoPage', () => {
     expectItemSubtotal(item, expectedSubtotal)
   })
 
+  it('inglês: o seletor de tabela mostra Retailer, Architect, Corporate e PVP', async () => {
+    const user = productTestUser('admin', 'EU')
+    localStorage.setItem(`ilya-locale:${user.id}:EU`, 'en-GB')
+    writeCartPriceList(user.id, 'EU', 'arquiteto')
+    installOrcamentoHandlers([buildProduct('EU', { optional_applications: [] })])
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const selector = await screen.findByRole('combobox', { name: 'Quote price list' })
+    expect(selector).toHaveValue('arquiteto')
+    expect(within(selector).getAllByRole('option').map(option => option.textContent))
+      .toEqual(['Retailer', 'Architect', 'Corporate', 'PVP'])
+  })
+
   it('REG-PROD-03: envia a tabela EU escolhida no contrato de criação do pedido', async () => {
     const user = productTestUser('admin', 'EU')
     const product = buildProduct('EU', { optional_applications: [] })
