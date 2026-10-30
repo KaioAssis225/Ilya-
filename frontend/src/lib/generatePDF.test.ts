@@ -6,6 +6,7 @@ import { buildOrderPdf, generateOrderPDF } from './generatePDF.ts'
 const renderedTexts: string[] = []
 const savedFiles: string[] = []
 const wrappedTexts: Array<{ text: string; width: number }> = []
+const textCalls: Array<{ text: string; x: number; y: number; align?: string }> = []
 const addedImages: string[] = []
 const drawColors: number[][] = []
 const textColors: number[][] = []
@@ -34,15 +35,17 @@ vi.mock('jspdf', () => {
     getNumberOfPages() { return 1 }
     setPage() {}
     addImage(data: string) { addedImages.push(data) }
+    getTextWidth(text: string) { return String(text).length * 1.5 }
     splitTextToSize(text: string, width: number) {
       wrappedTexts.push({ text: String(text), width })
       return [String(text)]
     }
-    text(content: string | string[]) {
+    text(content: string | string[], x?: number, y?: number, options?: { align?: string }) {
       if (Array.isArray(content)) {
         renderedTexts.push(...content)
       } else {
         renderedTexts.push(content)
+        textCalls.push({ text: content, x: x ?? 0, y: y ?? 0, align: options?.align })
       }
     }
     save(filename: string) {
@@ -171,6 +174,7 @@ beforeEach(() => {
   renderedTexts.length = 0
   savedFiles.length = 0
   wrappedTexts.length = 0
+  textCalls.length = 0
   addedImages.length = 0
   drawColors.length = 0
   textColors.length = 0
@@ -244,7 +248,7 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   assert.ok(!drawColors.some((color) => color.join(',') === '198,157,48'))
   assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
   assert.ok(renderedTexts.includes('ORDER'))
-  assert.ok(renderedTexts.includes('DISCOUNT'))
+  assert.ok(renderedTexts.includes('DISCOUNT (%)'))
   assert.ok(renderedTexts.includes('0%'))
   assert.ok(!renderedTexts.includes('VAT'))
   assert.ok(renderedTexts.includes('COMPANY'))
@@ -265,7 +269,7 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   assert.ok(renderedTexts.includes('Subtotal:'))
   assert.ok(renderedTexts.includes('VAT:'))
   assert.ok(renderedTexts.includes(eur(460)))
-  assert.equal(renderedTexts.filter((t) => t === eur(2000)).length, 3) // unitário + linha + subtotal
+  assert.equal(renderedTexts.filter((t) => t === eur(2000)).length, 4) // preço-base + valor c/ desc. + subtotal da linha + subtotal do fecho
   assert.equal(renderedTexts.filter((t) => t === eur(2460)).length, 1) // só o total final
   assert.deepEqual(savedFiles, ['ORD-0002_Client_Europe.pdf'])
 })
@@ -296,7 +300,7 @@ test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', 
   assert.equal(addedImages.length, 1)
   assert.ok(addedImages[0].startsWith('data:image/jpeg;base64,'))
   assert.ok(renderedTexts.includes('PEDIDO'))
-  assert.ok(renderedTexts.includes('DESCONTO'))
+  assert.ok(renderedTexts.includes('DESCONTO (%)'))
   assert.ok(renderedTexts.includes('10%'))
   assert.ok(!renderedTexts.includes('IVA'))
   assert.ok(renderedTexts.includes('EMPRESA'))
@@ -392,7 +396,7 @@ test('tapete mostra m² apenas na linha do produto e não entra no total de iten
   assert.equal(renderedTexts[totalItemsIndex + 1], '2')
   assert.ok(!renderedTexts.includes('Área total:'))
   assert.ok(!renderedTexts.includes('Total area:'))
-  assert.ok(wrappedTexts.some(({ text, width }) => text === 'Tapete Amazonas' && width === 70))
+  assert.ok(wrappedTexts.some(({ text, width }) => text === 'Tapete Amazonas' && width >= 36 && width <= 70))
   assert.ok(!renderedTexts.some((text) => text.startsWith('DIMENSÕES:') || text.startsWith('DIMENSIONS:')))
 })
 
@@ -531,4 +535,119 @@ test('buildOrderPdf com documentLocale en-GB aplica rótulos em inglês sem salv
   assert.ok(renderedTexts.includes('BILL TO'))
   assert.ok(renderedTexts.includes('GRAND TOTAL:'))
   assert.deepEqual(savedFiles, [])
+})
+
+// ── Colunas de preço iguais às da tela ───────────────────────────────────────
+// Qtd · Preço-base · Desconto (%) · Valor c/ desc. · (IPI no Brasil) · Subtotal
+
+const money = (value: number, locale: string, currency: string) =>
+  new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
+
+function euClient(): Client {
+  return makeClient({
+    name: 'Cliente Portugal', country: 'PT', city: 'Porto', state: 'Porto',
+    region: 'Norte', cep: '4000-001', market_code: 'EU', price_profile: 'pvp', tax_id: 'PT509876543',
+  })
+}
+
+function euOrder(items: OrderItem[], locale: 'pt-PT' | 'en-GB' = 'en-GB'): Order {
+  return makeOrder({
+    code: 'ORD-EU-COLS', market_code: 'EU', price_list_code: 'EU_PVP', currency: 'EUR', locale,
+    total_value: 0, total_ipi: 0, total_with_ipi: 0, items,
+  })
+}
+
+const euItem = (overrides: Partial<OrderItem> = {}) => makeOrderItem({
+  qty: 3, unit_price: 1731.18, discount: 10, ipi_rate: 23, ipi_value: 0, tax_label: 'IVA', currency: 'EUR', ...overrides,
+})
+
+const callsOf = (text: string) => textCalls.filter((call) => call.text === text)
+
+test('EU en-GB com desconto: Qtd, Preço-base, Desconto (%), Valor c/ desc. e Subtotal, nesta ordem', async () => {
+  await buildOrderPdf({ order: euOrder([euItem()]), client: euClient(), rep: null, products: [makeProduct({ market_code: 'EU', currency: 'EUR' })], documentLocale: 'en-GB' })
+
+  const eur = (value: number) => money(value, 'en-GB', 'EUR')
+  for (const label of ['QTY', 'BASE PRICE', 'DISCOUNT (%)', 'NET UNIT PRICE', 'SUBTOTAL']) {
+    assert.ok(renderedTexts.includes(label), label)
+  }
+  assert.ok(!renderedTexts.includes('UNIT PRICE'))
+  const edges = [
+    callsOf('QTY')[0].x, callsOf('BASE PRICE')[0].x, callsOf('DISCOUNT (%)')[0].x,
+    callsOf('NET UNIT PRICE')[0].x, callsOf('SUBTOTAL')[0].x,
+  ]
+  assert.deepEqual([...edges].sort((a, b) => a - b), edges)
+  assert.equal(new Set(edges).size, edges.length)
+  // Cada valor está alinhado à direita na mesma borda do seu cabeçalho.
+  assert.equal(callsOf('3')[0].x, edges[0])
+  assert.equal(callsOf(eur(1731.18))[0].x, edges[1])
+  assert.equal(callsOf('10%')[0].x, edges[2])
+  assert.equal(callsOf(`- ${eur(173.12)}`)[0].x, edges[2])
+  assert.equal(callsOf(eur(1558.06))[0].x, edges[3])
+  assert.equal(callsOf(eur(4674.19))[0].x, edges[4])
+  // Subtotal oficial: linha arredondada uma vez (1.558,062 × 3), não unitário × qtd.
+  assert.ok(!renderedTexts.includes(eur(4674.18)))
+})
+
+test('quantidade 1 sem desconto (0%) em pt-PT: unitário = base = subtotal e sem desconto por unidade', async () => {
+  const order = euOrder([euItem({ qty: 1, discount: 0 })], 'pt-PT')
+  await buildOrderPdf({ order, client: euClient(), rep: null, products: [], documentLocale: 'pt-PT' })
+
+  const eur = (value: number) => money(value, 'pt-PT', 'EUR')
+  assert.ok(renderedTexts.includes('PREÇO-BASE'))
+  assert.ok(renderedTexts.includes('VALOR C/ DESC.'))
+  assert.ok(renderedTexts.includes('SUBTOTAL'))
+  assert.equal(callsOf(eur(1731.18)).length, 3)
+  assert.ok(renderedTexts.includes('0%'))
+  assert.ok(!renderedTexts.some((text) => text.startsWith('- ')))
+})
+
+test('Brasil mantém a coluna de IPI e o subtotal da linha inclui o IPI', async () => {
+  const order = makeOrder({
+    items: [makeOrderItem({ qty: 3, unit_price: 1000, discount: 10, ipi_rate: 10, ipi_value: 270 })],
+  })
+  await buildOrderPdf({ order, client: makeClient(), rep: null, products: [makeProduct()] })
+
+  const brl = (value: number) => money(value, 'pt-BR', 'BRL')
+  assert.ok(renderedTexts.includes('IPI'))
+  assert.ok(renderedTexts.includes('10%'))
+  assert.ok(renderedTexts.includes('DESCONTO (%)'))
+  assert.ok(renderedTexts.includes(brl(900)))
+  assert.ok(renderedTexts.includes(brl(2970)))
+  const ipiEdge = callsOf('IPI')[0].x
+  const netEdge = callsOf('VALOR C/ DESC.')[0].x
+  const subtotalEdge = callsOf('SUBTOTAL')[0].x
+  assert.ok(netEdge < ipiEdge && ipiEdge < subtotalEdge)
+  assert.equal(callsOf('10%').filter((call) => call.x === ipiEdge).length, 1)
+})
+
+test('tapete: valor por m², peças sob a quantidade e área em m²', async () => {
+  const order = makeOrder({
+    items: [makeOrderItem({
+      sold_by_area: true, area_width_m: 2, area_depth_m: 3, area_pieces: 2,
+      qty: 12, unit_price: 500, discount: 10, ipi_rate: 0, ipi_value: 0,
+    })],
+  })
+  await buildOrderPdf({ order, client: makeClient(), rep: null, products: [] })
+
+  assert.equal(callsOf('/m²').length, 2)
+  assert.ok(renderedTexts.includes(money(500, 'pt-BR', 'BRL')))
+  assert.ok(renderedTexts.includes(money(450, 'pt-BR', 'BRL')))
+  assert.ok(renderedTexts.includes(money(5400, 'pt-BR', 'BRL')))
+})
+
+test('o texto do produto termina antes da primeira coluna numérica, mesmo com valores grandes', async () => {
+  const longName = 'Sofá modular de canto com estrutura em alumínio termolacado e almofadas em tecido outdoor'
+  const order = makeOrder({
+    items: [makeOrderItem({ description: longName, qty: 12, unit_price: 45000, discount: 10, ipi_rate: 10, ipi_value: 0 })],
+  })
+  await buildOrderPdf({ order, client: makeClient(), rep: null, products: [] })
+
+  const productWidth = wrappedTexts.find((wrapped) => wrapped.text === longName)!.width
+  assert.ok(productWidth >= 30 && productWidth <= 70)
+  const qtyEdge = callsOf('QTD')[0].x
+  // 40 mm (início do texto) + largura do bloco + respiro < borda esquerda da Qtd.
+  assert.ok(40 + productWidth + 3 <= qtyEdge - 10 + 1e-9)
+  // O subtotal grande cabe sem invadir a coluna vizinha: bordas distintas e crescentes.
+  const edges = ['QTD', 'PREÇO-BASE', 'DESCONTO (%)', 'VALOR C/ DESC.', 'IPI', 'SUBTOTAL'].map((label) => callsOf(label)[0].x)
+  assert.deepEqual([...edges].sort((a, b) => a - b), edges)
 })

@@ -315,8 +315,10 @@ async def test_render_eu_en_gb_order():
     assert "COMPANY" in full_text
     assert "BILL TO" in full_text
     assert "PRODUCT" in full_text
-    assert "UNIT PRICE" in full_text
-    assert "DISCOUNT" in full_text
+    assert "BASE PRICE" in full_text
+    assert "DISCOUNT (%)" in full_text
+    assert "NET UNIT PRICE" in full_text
+    assert "SUBTOTAL" in full_text
     assert "Total items:" in full_text
     assert "GRAND TOTAL:" in full_text
     assert "VAT:" in full_text
@@ -413,7 +415,10 @@ async def test_render_item_discount():
 
     _, _, _, full_text = await _render(snapshot)
 
-    assert "-15%" in full_text
+    for label in ("PREÇO-BASE", "DESCONTO (%)", "VALOR C/ DESC.", "SUBTOTAL"):
+        assert label in full_text
+    assert "15%" in full_text
+    assert "- R$ 300,00" in full_text
     assert "R$ 2.000,00" in full_text
     assert "R$ 1.700,00" in full_text
 
