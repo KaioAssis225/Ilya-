@@ -16,6 +16,17 @@ test('en-GB traduz e cai para o portugues so quando falta a chave', () => {
   assert.equal(translateCadastro('en-GB', 'texto sem traducao'), 'texto sem traducao')
 })
 
+test('en-GB traduz as tabelas de preco; pt e PVP ficam iguais', () => {
+  const names = [['Lojista', 'Retailer'], ['Arquiteto', 'Architect'], ['Corporativo', 'Corporate']]
+  for (const [pt, en] of names) {
+    assert.equal(translateCadastro('en-GB', pt), en)
+    assert.equal(translateCadastro('pt-PT', pt), pt)
+  }
+  assert.equal(translateCadastro('en-GB', 'PVP'), 'PVP')
+  assert.equal(translateCadastro('en-GB', 'Preço Lojista ({currency}) *', { currency: '€' }), 'Retailer price (€) *')
+  assert.equal(translateCadastro('en-GB', 'Preço Corporativo ({currency}) *', { currency: '€' }), 'Corporate price (€) *')
+})
+
 test('variaveis reproduzem exatamente o texto antigo em portugues', () => {
   // Antes: `${totalItems} ${label.toLowerCase()} cadastrados`
   assert.equal(

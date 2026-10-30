@@ -34,6 +34,7 @@ import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPieces, previewArea } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
+import { priceListLabel } from '../lib/priceListLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
 import { calculateLinePricing, lineTax, roundMoney } from '../lib/linePricing'
@@ -356,7 +357,7 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
                         : 'border-line text-ink-3 hover:border-faint'
                     }`}
                   >
-                    {profile}
+                    {priceListLabel(profile, isEnglish)}
                   </button>
                 ))}
               </div>
@@ -1349,12 +1350,7 @@ export default function OrcamentoPage() {
     : (clientDefaultPriceProfile === 'pvp' || clientDefaultPriceProfile === 'arquiteto'
         ? 'lojista'
         : clientDefaultPriceProfile)
-  const priceProfileLabel = {
-    lojista: 'Lojista',
-    corporativo: 'Corporativo',
-    pvp: 'PVP',
-    arquiteto: 'Arquiteto',
-  }[priceProfile]
+  const priceProfileLabel = priceListLabel(priceProfile, isEnglish)
   const maxDiscount = orderMaxDiscount(
     market,
     priceProfile,
@@ -1991,7 +1987,7 @@ export default function OrcamentoPage() {
                         || cart.some(item => item._product.market_prices?.[code] != null))
                       .map(code => (
                         <option key={code} value={code}>
-                          {{ lojista: 'Lojista', arquiteto: 'Arquiteto', corporativo: 'Corporativo', pvp: 'PVP' }[code]}
+                          {priceListLabel(code, isEnglish)}
                         </option>
                       ))}
                   </select>
