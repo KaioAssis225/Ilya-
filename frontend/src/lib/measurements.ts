@@ -7,7 +7,6 @@ interface Dimensions {
   profundidade: number
 }
 
-const METRES_TO_INCHES = 39.3700787402
 const METRES_TO_MILLIMETRES = 1000
 
 function number(value: number, locale: string, decimals: number) {
@@ -19,8 +18,8 @@ function number(value: number, locale: string, decimals: number) {
 
 /**
  * Formata medidas sem alterar o valor canónico em metros armazenado no banco.
- * Portugal apresenta polegadas em inglês e milímetros em português; Brasil
- * mantém metros. O valor canónico armazenado no banco continua em metros.
+ * Portugal apresenta milímetros em qualquer idioma (só os rótulos mudam);
+ * Brasil mantém metros. O valor canónico armazenado no banco continua em metros.
  */
 export function formatDimensions(
   dimensions: Dimensions,
@@ -33,9 +32,7 @@ export function formatDimensions(
   const height = english ? 'H' : 'A'
 
   if (market === 'EU') {
-    const unit = english
-      ? (metres: number) => `${number(metres * METRES_TO_INCHES, locale, 2)}″`
-      : (metres: number) => `${number(metres * METRES_TO_MILLIMETRES, locale, 0)} mm`
+    const unit = (metres: number) => `${number(metres * METRES_TO_MILLIMETRES, locale, 0)} mm`
     return dimensions.is_circular
       ? `Ø ${unit(dimensions.largura)} × ${height} ${unit(dimensions.altura)}`
       : `${width} ${unit(dimensions.largura)} × ${depth} ${unit(dimensions.profundidade)} × ${height} ${unit(dimensions.altura)}`
@@ -45,10 +42,6 @@ export function formatDimensions(
   return dimensions.is_circular
     ? `Ø ${metre(dimensions.largura)} × ${height} ${metre(dimensions.altura)} m`
     : `${width} ${metre(dimensions.largura)} × ${depth} ${metre(dimensions.profundidade)} × ${height} ${metre(dimensions.altura)} m`
-}
-
-export function metresToInches(metres: number) {
-  return metres * METRES_TO_INCHES
 }
 
 export function metresToMillimetres(metres: number) {

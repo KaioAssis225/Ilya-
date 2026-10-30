@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { formatDimensions, metresToInches, metresToMillimetres } from './measurements.ts'
+import { formatDimensions, metresToMillimetres } from './measurements.ts'
 
 test('mantém metros e rótulos brasileiros no mercado BR', () => {
   assert.equal(
@@ -14,15 +14,22 @@ test('mantém metros e rótulos brasileiros no mercado BR', () => {
   )
 })
 
-test('converte a apresentação europeia para polegadas sem alterar o valor canónico', () => {
-  assert.equal(metresToInches(1), 39.3700787402)
+test('mostra a apresentação europeia em inglês em milímetros, com rótulos W/D/H', () => {
+  assert.equal(
+    formatDimensions(
+      { is_circular: false, largura: 1.2, profundidade: 0.5, altura: 0.75 },
+      'EU',
+      'en-GB',
+    ),
+    'W 1,200 mm × D 500 mm × H 750 mm',
+  )
   assert.equal(
     formatDimensions(
       { is_circular: true, largura: 1, profundidade: 0.5, altura: 0.75 },
       'EU',
       'en-GB',
     ),
-    'Ø 39.37″ × H 29.53″',
+    'Ø 1,000 mm × H 750 mm',
   )
 })
 
