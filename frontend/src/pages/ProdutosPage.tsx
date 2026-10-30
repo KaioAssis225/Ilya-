@@ -22,6 +22,7 @@ import type { OptionalChoiceInput, OptionalColor, PageResult, Product } from '..
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
 import { hasOptionalPhoto } from '../lib/optionalMedia'
+import { localizeFurnitureTerm } from '../lib/catalogTerminology'
 import {
   allowedForApplication,
   allowsCustomFor,
@@ -359,21 +360,6 @@ function freeOptionalCategories(product: Product): string[] {
     .split(',')
     .map(category => category.trim())
     .filter(Boolean)
-}
-
-function localizeFurnitureTerm(value: string, locale: 'pt-PT' | 'en-GB') {
-  const normalized = value.trim().toLocaleLowerCase('pt-PT')
-  const pt: Record<string, string> = {
-    banqueta: 'Banco alto', banquetas: 'Bancos altos', poltrona: 'Cadeirão', poltronas: 'Cadeirões',
-  }
-  const en: Record<string, string> = {
-    banqueta: 'Bar stool', banquetas: 'Bar stools', poltrona: 'Armchair', poltronas: 'Armchairs',
-    cadeira: 'Chair', cadeiras: 'Chairs', sofá: 'Sofa', sofás: 'Sofas', mesa: 'Table', mesas: 'Tables',
-    aparador: 'Console table', aparadores: 'Console tables', conjunto: 'Set', conjuntos: 'Sets',
-    luminária: 'Lamp', luminárias: 'Lamps', espreguiçadeira: 'Sun lounger', espreguiçadeiras: 'Sun loungers',
-    'carrinho bar': 'Bar trolley', chaise: 'Chaise longue', puff: 'Pouf',
-  }
-  return (locale === 'en-GB' ? en : pt)[normalized] ?? value
 }
 
 function groupOptionalsByCategory(optionals: Product['optionals']) {
