@@ -159,6 +159,9 @@ class Settings(BaseSettings):
     # E-mail do PDF do pedido. Desligado por padrão para que publicar o
     # backend não altere a finalização existente antes da ativação.
     ORDER_EMAIL_MODE: str = "off"
+    # "resend" continua sendo o padrão. "microsoft_graph" permite usar uma
+    # caixa Outlook já existente sem depender da verificação DNS do domínio.
+    ORDER_EMAIL_PROVIDER: str = "resend"
     ORDER_EMAIL_TEST_ALLOWLIST: str = ""
     RESEND_API_KEY: str = ""
     RESEND_API_BASE_URL: str = "https://api.resend.com"
@@ -180,6 +183,16 @@ class Settings(BaseSettings):
         normalized = value.strip().lower()
         if normalized not in {"off", "test", "live"}:
             raise ValueError("ORDER_EMAIL_MODE deve ser off, test ou live.")
+        return normalized
+
+    @field_validator("ORDER_EMAIL_PROVIDER")
+    @classmethod
+    def validate_order_email_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"resend", "microsoft_graph"}:
+            raise ValueError(
+                "ORDER_EMAIL_PROVIDER deve ser resend ou microsoft_graph."
+            )
         return normalized
 
     @field_validator("ORDER_EMAIL_PDF_RENDERER")

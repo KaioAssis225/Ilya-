@@ -18,6 +18,7 @@ from app.core.http_client import external_request as real_external_request
 from app.core.resend_webhook import verify_resend_signature
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
 from app.services.order_email_jobs import recipient_is_allowed
+from app.services.microsoft_graph_email import send_email as send_graph_email
 from app.services.pdf_renderer import (
     PdfRendererUnavailable,
     PlaywrightPdfRenderer,
@@ -221,6 +222,25 @@ def test_invalid_order_email_mode_has_clear_configuration_error():
         )
 
 
+def test_invalid_order_email_provider_has_clear_configuration_error():
+    with pytest.raises(
+        ValidationError,
+        match="ORDER_EMAIL_PROVIDER deve ser resend ou microsoft_graph",
+    ):
+        Settings(
+            SECRET_KEY="unit-test-secret",
+            PASSWORD_PEPPER="unit-test-pepper",
+            ORDER_EMAIL_PROVIDER="smtp",
+        )
+
+    cfg = Settings(
+        SECRET_KEY="unit-test-secret",
+        PASSWORD_PEPPER="unit-test-pepper",
+        ORDER_EMAIL_PROVIDER="Microsoft_Graph",
+    )
+    assert cfg.ORDER_EMAIL_PROVIDER == "microsoft_graph"
+
+
 def test_order_email_pdf_renderer_validation_and_selection(monkeypatch):
     with pytest.raises(
         ValidationError,
@@ -360,3 +380,117 @@ async def test_resend_success_returns_provider_id_and_encodes_attachment(monkeyp
     assert result == "resend-message-1"
     assert captured["attachments"][0]["content"] == base64.b64encode(b"%PDF").decode()
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_graph_success_refreshes_token_and_sends_pdf_with_reply_to(monkeypatch):
+    requests = []
+
+    async def request(method, url, **kwargs):
+        requests.append((method, url, kwargs))
+        if "oauth2/v2.0/token" in url:
+            return httpx.Response(200, json={"access_token": "access-token"})
+        return httpx.Response(202)
+
+    monkeypatch.setattr(
+        "app.services.microsoft_graph_email.external_request",
+        request,
+    )
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_CLIENT_ID", "client-id")
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_REFRESH_TOKEN", "refresh-token")
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "consumers")
+    monkeypatch.setattr(
+        settings,
+        "MICROSOFT_GRAPH_SENDER_EMAIL",
+        "procgh@outlook.com",
+    )
+    monkeypatch.setattr(
+        settings,
+        "ORDER_EMAIL_FROM",
+        "Ilya Pedidos <procgh@outlook.com>",
+    )
+    monkeypatch.setattr(settings, "ORDER_EMAIL_REPLY_TO", "procgh@outlook.com")
+
+    result = await send_graph_email(
+        idempotency_key="order-email/1",
+        to="recipient@example.com",
+        subject="Pedido PED-1",
+        text="texto",
+        html="<p>texto</p>",
+        attachments=[{"filename": "PED-1.pdf", "content": b"%PDF"}],
+    )
+
+    assert result == "graph-accepted:" + hashlib.sha256(
+        b"order-email/1"
+    ).hexdigest()
+    assert len(requests) == 2
+    token_method, token_url, token_kwargs = requests[0]
+    assert token_method == "post"
+    assert token_url.endswith("/consumers/oauth2/v2.0/token")
+    assert token_kwargs["data"]["refresh_token"] == "refresh-token"
+    assert token_kwargs["data"]["scope"].endswith("/Mail.Send")
+
+    send_method, send_url, send_kwargs = requests[1]
+    assert send_method == "post"
+    assert send_url == "https://graph.microsoft.com/v1.0/me/sendMail"
+    assert send_kwargs["headers"]["Authorization"] == "Bearer access-token"
+    message = send_kwargs["json"]["message"]
+    assert message["from"]["emailAddress"] == {
+        "address": "procgh@outlook.com",
+        "name": "Ilya Pedidos",
+    }
+    assert message["toRecipients"][0]["emailAddress"]["address"] == (
+        "recipient@example.com"
+    )
+    assert message["replyTo"][0]["emailAddress"]["address"] == (
+        "procgh@outlook.com"
+    )
+    assert message["attachments"][0]["contentBytes"] == base64.b64encode(
+        b"%PDF"
+    ).decode()
+    assert message["internetMessageHeaders"][0]["value"] == "order-email/1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "error_type", "code"),
+    [
+        (401, TemporaryEmailError, "provider_auth"),
+        (429, TemporaryEmailError, "provider_unavailable"),
+        (503, TemporaryEmailError, "provider_unavailable"),
+        (422, PermanentEmailError, "provider_rejected"),
+    ],
+)
+async def test_graph_classifies_send_errors(
+    monkeypatch, status_code, error_type, code
+):
+    async def request(method, url, **kwargs):
+        if "oauth2/v2.0/token" in url:
+            return httpx.Response(200, json={"access_token": "access-token"})
+        return httpx.Response(status_code)
+
+    monkeypatch.setattr(
+        "app.services.microsoft_graph_email.external_request",
+        request,
+    )
+    with pytest.raises(error_type) as caught:
+        await send_graph_email(
+            idempotency_key="order-email/1",
+            to="recipient@example.com",
+            subject="Pedido PED-1",
+            text="texto",
+            html="<p>texto</p>",
+            attachments=[{"filename": "PED-1.pdf", "content": b"%PDF"}],
+        )
+    assert caught.value.code == code
+
+
+def test_worker_selects_graph_provider_only_when_configured(monkeypatch):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_PROVIDER", "microsoft_graph")
+    monkeypatch.setattr(
+        order_email_sender,
+        "microsoft_graph_configured",
+        lambda: True,
+    )
+    assert order_email_sender._provider_configured()
+    assert order_email_sender._provider_sender() is order_email_sender.send_graph_email
