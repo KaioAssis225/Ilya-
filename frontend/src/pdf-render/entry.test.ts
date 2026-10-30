@@ -26,6 +26,7 @@ vi.mock('jspdf', () => {
     getNumberOfPages() { return 1 }
     setPage() {}
     addImage() {}
+    getTextWidth(text: string) { return String(text).length }
     splitTextToSize(text: string) {
       return [String(text)]
     }

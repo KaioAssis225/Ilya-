@@ -3,6 +3,7 @@
     "src/lib/areaProduct.ts",
     "src/lib/generatePDF.ts",
     "src/lib/ibtwLogoAssets.ts",
+    "src/lib/linePricing.ts",
     "src/lib/measurements.ts",
     "src/lib/optionalApplications.ts",
     "src/lib/optionalLabels.ts",
@@ -12,5 +13,5 @@
     "src/pdf-render/entry.ts"
   ],
   "jspdf_version": "4.2.1",
-  "sha256": "b8cdec1f2db1a5d024ecca21c765ad35cf10dd0b1d8bae315c0b3a10f8bbd439"
+  "sha256": "aea3af9680c2b2a9cf87d8b4d2d1d618b7e0d6c046dc27f06069037126773d20"
 }

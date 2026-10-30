@@ -6,6 +6,7 @@ import { resolveOrderDocument } from './orderPresentation'
 import { isConjuntoType } from './productType'
 import { orderOptionalSlots } from './optionalApplications'
 import { formatArea, formatRugPieces, formatRugSize } from './areaProduct'
+import { calculateLinePricing, lineTax, roundMoney } from './linePricing'
 import { IBTW_LOGO_LDA, IBTW_LOGO_LTD } from './ibtwLogoAssets'
 import { savePdf, type PdfDestination, type PdfSaveResult } from './pdfDestination'
 
@@ -308,6 +309,84 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     y += 7
   }
 
+  // ── Colunas numéricas, na mesma ordem da tela ──────────────────────────────
+  // Qtd · Preço-base · Desconto (%) · Valor c/ desc. · (IPI no Brasil) · Subtotal.
+  // O subtotal é o oficial (linha arredondada uma vez, como no servidor); o valor
+  // unitário com desconto é só informativo (ver lib/linePricing). As larguras são
+  // medidas com o texto real de todos os itens e o bloco do produto usa o espaço
+  // que sobra, então nenhum valor invade a coluna vizinha nem o nome do produto.
+  const COL_GAP = 3
+  const TABLE_RIGHT = 186
+  const PRODUCT_X = 40
+  const measure = (text: string, size: number, style: 'normal' | 'bold'): number => {
+    doc.setFont('helvetica', style)
+    doc.setFontSize(size)
+    return doc.getTextWidth(text)
+  }
+  const unitDiscountText = (value: number) => `- ${formatMoney(value, currency, locale)}`
+  const measurementLocale = locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
+  const itemRows = order.items.map((item) => {
+    const discount = Number(item.discount || 0)
+    const ipiRate = Number(item.ipi_rate || 0)
+    const pricing = calculateLinePricing(Number(item.unit_price), discount, Number(item.qty))
+    // Brasil: IPI entra na linha. Portugal: IVA só no fecho (Subtotal → IVA → Total).
+    const lineTotal = taxOnTotal
+      ? pricing.subtotal
+      : roundMoney(pricing.subtotal + lineTax(pricing.subtotal, ipiRate))
+    return {
+      discount,
+      ipiRate,
+      pricing,
+      lineTotal,
+      piecesText: item.sold_by_area && (item.area_pieces ?? 1) > 1
+        ? formatRugPieces(item.area_pieces ?? 1, measurementLocale)
+        : null,
+      qtyText: item.sold_by_area ? formatArea(item.qty, locale) : String(item.qty),
+      baseText: formatMoney(pricing.basePrice, currency, locale),
+      discountText: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(discount)}%`,
+      netText: formatMoney(pricing.netUnitPrice, currency, locale),
+      subtotalText: formatMoney(lineTotal, currency, locale),
+    }
+  })
+  type ColumnKey = 'qty' | 'base' | 'discount' | 'net' | 'ipi' | 'subtotal'
+  interface NumericColumn { key: ColumnKey; label: string; minWidth: number; right: number; width: number }
+  const columnDefs: Array<{ key: ColumnKey; label: string; minWidth: number }> = [
+    { key: 'qty', label: L.qty, minWidth: 10 },
+    { key: 'base', label: L.basePrice, minWidth: 17 },
+    { key: 'discount', label: L.discount, minWidth: 13 },
+    { key: 'net', label: L.netUnitPrice, minWidth: 17 },
+    ...(taxOnTotal ? [] : [{ key: 'ipi' as const, label: taxLabel, minWidth: 8 }]),
+    { key: 'subtotal', label: L.subtotal, minWidth: 19 },
+  ]
+  const columns: NumericColumn[] = columnDefs.map((column) => ({ ...column, right: 0, width: column.minWidth }))
+  const columnByKey = (key: ColumnKey) => columns.find((column) => column.key === key)
+  for (const column of columns) {
+    const widest = (texts: Array<[string, number, 'normal' | 'bold']>) => Math.max(0, ...texts.map(([text, size, style]) => measure(text, size, style)))
+    // O cabeçalho quebra em até 2 linhas, mas nenhuma palavra pode ser cortada.
+    const longestWord = Math.max(...column.label.split(' ').map((word) => measure(word, 7, 'bold')))
+    const contents = itemRows.flatMap((row): Array<[string, number, 'normal' | 'bold']> => {
+      switch (column.key) {
+        case 'qty': return row.piecesText ? [[row.qtyText, 8, 'normal'], [row.piecesText, 6, 'normal']] : [[row.qtyText, 8, 'normal']]
+        case 'base': return [[row.baseText, 7.5, 'normal']]
+        case 'discount': return row.discount > 0
+          ? [[row.discountText, 7.5, 'bold'], [unitDiscountText(row.pricing.unitDiscount), 6, 'normal']]
+          : [[row.discountText, 7.5, 'bold']]
+        case 'net': return [[row.netText, 7.5, 'normal']]
+        case 'ipi': return [[`${row.ipiRate}%`, 7.5, 'bold']]
+        default: return [[row.subtotalText, 8, 'bold']]
+      }
+    })
+    column.width = Math.max(column.minWidth, longestWord, widest(contents))
+  }
+  let columnRight = TABLE_RIGHT
+  for (const column of [...columns].reverse()) {
+    column.right = columnRight
+    columnRight -= column.width + COL_GAP
+  }
+  const firstColumnLeft = columns[0].right - columns[0].width
+  // Texto do produto limitado ao espaço real até a primeira coluna numérica.
+  const PRODUCT_TEXT_WIDTH = Math.max(20, firstColumnLeft - COL_GAP - PRODUCT_X)
+
   const drawTableHeader = (top: number): number => {
     doc.setDrawColor(...LINE)
     doc.setLineWidth(0.3)
@@ -317,10 +396,12 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     doc.setTextColor(...MUTED)
     doc.setFont('helvetica', 'bold')
     doc.text(L.product, 22, labelY)
-    doc.text(L.qty, 125, labelY, { align: 'right' })
-    doc.text(L.unitPrice, 150, labelY, { align: 'right' })
-    doc.text(taxOnTotal ? L.discount : taxLabel, 167, labelY, { align: 'right' })
-    doc.text(L.total, 186, labelY, { align: 'right' })
+    for (const column of columns) {
+      const labelLines: string[] = doc.splitTextToSize(column.label, column.width + COL_GAP - 1)
+      labelLines.forEach((line, index) => {
+        doc.text(line, column.right, labelY - (labelLines.length - 1 - index) * 3, { align: 'right' })
+      })
+    }
     doc.setDrawColor(...LINE)
     doc.line(20, labelY + 4, w - 20, labelY + 4)
     return labelY + 11
@@ -344,12 +425,12 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
 
-  const measurementLocale = locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
   // Respiro após a régua separadora. Sem este avanço, a próxima foto começava
   // apenas 1 mm abaixo da linha e o topo do texto ficava visualmente cortado.
   const ROW_SEPARATOR_GAP = 4
 
-  for (const item of order.items) {
+  for (const [itemIndex, item] of order.items.entries()) {
+    const row = itemRows[itemIndex]
     // Bloco 79: localiza o produto pelo SKU para extrair os componentes do conjunto
     // (se houver) e calcula a altura da linha dinamicamente, evitando sobreposição
     // entre dimensões, observação, opcionais e a lista de componentes.
@@ -374,10 +455,9 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
       || hasRugDims
     )
     const optSlots = orderOptionalSlots(item, locale === 'en-GB', catLabel)
-    // Bloco textual limitado a 70 mm: partindo de x=40, termina em x=110 e
-    // preserva 15 mm de respiro antes da coluna QTD em x=125. O rowH soma as
-    // linhas físicas reais para não colidir com o próximo item.
-    const PRODUCT_TEXT_WIDTH = 70
+    // O bloco textual vai de x=40 até a primeira coluna numérica (PRODUCT_TEXT_WIDTH,
+    // medido acima). O rowH soma as linhas físicas reais para não colidir com
+    // o próximo item.
     const dimText = hasDims
       ? item.sold_by_area
         ? `${L.dimensions}: ${formatRugSize(item.area_width_m, item.area_depth_m, item.qty, measurementLocale, pieces)}`
@@ -485,69 +565,43 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
       }
     }
 
-    // Colunas numéricas
-    const unitPrice = Number(item.unit_price)
-    const discount = Number(item.discount || 0)
-    const ipiRate = Number(item.ipi_rate || 0)
-    const effectivePrice = unitPrice * (1 - discount / 100)
-    // Brasil: IPI entra na linha. Portugal: IVA só no fecho (Subtotal → IVA → Total).
-    const lineTotal = effectivePrice * item.qty * (taxOnTotal ? 1 : 1 + ipiRate / 100)
-
-    doc.setTextColor(...DARK)
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'normal')
-    doc.text(item.sold_by_area ? formatArea(item.qty, locale) : String(item.qty), 125, y, { align: 'right' })
-
-    if (item.sold_by_area && pieces > 1) {
+    // Colunas numéricas (posições e larguras medidas em `columns`)
+    const rightOf = (key: ColumnKey) => columnByKey(key)!.right
+    // Linha miúda abaixo do valor: "/m²" no tapete, peças, desconto por unidade.
+    const SUB_LINE_OFFSET = 3.5
+    const drawSub = (text: string, x: number) => {
+      doc.setFont('helvetica', 'normal')
       doc.setFontSize(6)
       doc.setTextColor(...MUTED)
-      doc.text(formatRugPieces(pieces, measurementLocale), 125, y + 4, { align: 'right' })
-      doc.setFontSize(8)
-      doc.setTextColor(...DARK)
-      doc.setFont('helvetica', 'normal')
+      doc.text(text, x, y + SUB_LINE_OFFSET, { align: 'right' })
+    }
+    const drawMain = (text: string, x: number, size: number, style: 'normal' | 'bold', color: [number, number, number] = DARK) => {
+      doc.setFont('helvetica', style)
+      doc.setFontSize(size)
+      doc.setTextColor(...color)
+      doc.text(text, x, y, { align: 'right' })
     }
 
-    // Valor unitário (com desconto se houver)
-    if (discount > 0) {
-      doc.setFontSize(6)
-      doc.setTextColor(...MUTED)
-      doc.text(formatMoney(unitPrice, currency, locale), 150, y - 2, { align: 'right' })
-      doc.setFontSize(7.5)
-      doc.setTextColor(...DARK)
-      doc.text(formatMoney(effectivePrice, currency, locale), 150, y + 2.5, { align: 'right' })
-      if (!taxOnTotal) {
-        doc.setFontSize(5.5)
-        doc.setTextColor(...MUTED)
-        doc.text(`-${discount}%`, 150, y + 6.5, { align: 'right' })
-      }
-    } else {
-      doc.text(formatMoney(unitPrice, currency, locale), 150, y, { align: 'right' })
+    drawMain(row.qtyText, rightOf('qty'), 8, 'normal')
+    if (row.piecesText) drawSub(row.piecesText, rightOf('qty'))
+
+    drawMain(row.baseText, rightOf('base'), 7.5, 'normal')
+    if (item.sold_by_area) drawSub('/m²', rightOf('base'))
+
+    drawMain(row.discountText, rightOf('discount'), 7.5, row.discount > 0 ? 'bold' : 'normal', row.discount > 0 ? accentColor : MUTED)
+    if (row.discount > 0) drawSub(unitDiscountText(row.pricing.unitDiscount), rightOf('discount'))
+
+    drawMain(row.netText, rightOf('net'), 7.5, 'normal')
+    if (item.sold_by_area) drawSub('/m²', rightOf('net'))
+
+    // Brasil mantém a coluna histórica de IPI; Portugal leva o IVA só no fecho.
+    if (!taxOnTotal) {
+      if (row.ipiRate > 0) drawMain(`${row.ipiRate}%`, rightOf('ipi'), 7.5, 'bold', accentColor)
+      else drawMain('-', rightOf('ipi'), 7.5, 'normal', MUTED)
     }
 
-    // Portugal mostra o desconto; Brasil mantém a coluna histórica de IPI.
-    if (taxOnTotal) {
-      doc.setFontSize(7.5)
-      doc.setTextColor(...(discount > 0 ? accentColor : MUTED))
-      doc.setFont('helvetica', discount > 0 ? 'bold' : 'normal')
-      const discountText = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(discount)
-      doc.text(`${discountText}%`, 167, y, { align: 'right' })
-    } else if (ipiRate > 0) {
-      doc.setFontSize(7.5)
-      doc.setTextColor(...accentColor)
-      doc.setFont('helvetica', 'bold')
-      doc.text(`${ipiRate}%`, 167, y, { align: 'right' })
-    } else {
-      doc.setFontSize(7.5)
-      doc.setTextColor(...MUTED)
-      doc.setFont('helvetica', 'normal')
-      doc.text('-', 167, y, { align: 'right' })
-    }
-
-    // Total da linha (com IPI no Brasil, sem IVA em Portugal)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(...DARK)
-    doc.text(formatMoney(lineTotal, currency, locale), 186, y, { align: 'right' })
+    // Subtotal da linha (com IPI no Brasil, sem IVA em Portugal)
+    drawMain(row.subtotalText, rightOf('subtotal'), 8, 'bold')
 
     // Linha separadora leve
     doc.setFont('helvetica', 'normal')
