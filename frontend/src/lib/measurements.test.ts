@@ -21,7 +21,7 @@ test('mostra a apresentação europeia em inglês em milímetros, com rótulos W
       'EU',
       'en-GB',
     ),
-    'W 1,200 mm × D 500 mm × H 750 mm',
+    'W 1200 mm × D 500 mm × H 750 mm',
   )
   assert.equal(
     formatDimensions(
@@ -29,8 +29,14 @@ test('mostra a apresentação europeia em inglês em milímetros, com rótulos W
       'EU',
       'en-GB',
     ),
-    'Ø 1,000 mm × H 750 mm',
+    'Ø 1000 mm × H 750 mm',
   )
+})
+
+test('mm ≥ 1000 saem sem separador de milhar, com o mesmo número em en-GB e pt-PT', () => {
+  const sofa = { is_circular: false, largura: 1.2, profundidade: 0.8, altura: 0.755 }
+  assert.equal(formatDimensions(sofa, 'EU', 'en-GB'), 'W 1200 mm × D 800 mm × H 755 mm')
+  assert.equal(formatDimensions(sofa, 'EU', 'pt-PT'), 'L 1200 mm × P 800 mm × A 755 mm')
 })
 
 test('converte a apresentação europeia em português para milímetros', () => {

@@ -9,10 +9,11 @@ interface Dimensions {
 
 const METRES_TO_MILLIMETRES = 1000
 
-function number(value: number, locale: string, decimals: number) {
+function number(value: number, locale: string, decimals: number, useGrouping = true) {
   return Number(value).toLocaleString(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
+    useGrouping,
   })
 }
 
@@ -32,7 +33,8 @@ export function formatDimensions(
   const height = english ? 'H' : 'A'
 
   if (market === 'EU') {
-    const unit = (metres: number) => `${number(metres * METRES_TO_MILLIMETRES, locale, 0)} mm`
+    // Sem separador de milhar para o número ser idêntico em pt-PT e en-GB.
+    const unit = (metres: number) => `${number(metres * METRES_TO_MILLIMETRES, locale, 0, false)} mm`
     return dimensions.is_circular
       ? `Ø ${unit(dimensions.largura)} × ${height} ${unit(dimensions.altura)}`
       : `${width} ${unit(dimensions.largura)} × ${depth} ${unit(dimensions.profundidade)} × ${height} ${unit(dimensions.altura)}`
