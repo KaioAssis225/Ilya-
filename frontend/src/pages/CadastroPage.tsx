@@ -1516,7 +1516,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 }}>
                   {/* Tipo é opcional: "Outro" é o "sem tipo" aceito em qualquer mercado. */}
                   <option value="Outro">{tx('Sem tipo')}</option>
-                  {(formTypeNames.length > 0 ? formTypeNames : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador'])
+                  {(formTypeNames.length > 0 ? formTypeNames : (isEurope
+                    ? ['Poltrona','Sofá','Cadeira','Mesa de Jantar','Mesa de Centro','Mesa Lateral','Mesa Bistrô','Banqueta Alta','Banqueta Baixa','Chaise','Aparador']
+                    : ['Poltrona','Sofá','Cadeira','Mesa','Banqueta','Chaise','Aparador']))
                     .filter(typeName => typeName !== 'Outro')
                     .map(typeName => (
                       <option key={typeName} value={typeName}>{typeName}</option>
