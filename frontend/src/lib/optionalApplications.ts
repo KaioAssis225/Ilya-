@@ -89,10 +89,20 @@ export function requiredApplicationProgress(
   return { filled, total: required.length, missing: required.length - filled }
 }
 
-export function validateApplicationChoices(product: Product, choices: OptionalChoiceInput[], allOptionals: OptionalColor[]): string[] {
+export function validateApplicationChoices(
+  product: Product,
+  choices: OptionalChoiceInput[],
+  allOptionals: OptionalColor[],
+  requireAnySelection = false,
+  legacySelections: Partial<Record<string, string>> = {},
+): string[] {
   const applications = productApplications(product).map(entry => entry.application)
   const byId = new Map(applications.map(application => [application.id, application]))
   const errors: string[] = []
+  const hasLegacySelection = Object.values(legacySelections).some(value => value?.trim())
+  if (requireAnySelection && applications.length > 0 && choices.length === 0 && !hasLegacySelection) {
+    errors.push('Selecione ao menos um opcional para este produto')
+  }
   const seenApplications = new Set<string>()
   const used = new Map<string, OptionalApplication>()
   for (const choice of choices) {

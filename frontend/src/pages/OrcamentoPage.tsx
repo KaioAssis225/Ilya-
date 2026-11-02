@@ -707,8 +707,8 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
 const LINE_LABEL = 'type-label mb-1 flex h-8 items-end tracking-[0.08em]'
 const LINE_VALUE = 'flex h-9 flex-col items-end justify-center gap-0.5 whitespace-nowrap text-xs font-semibold tabular-nums'
 
-// Preço efetivo conforme o perfil de faturamento do cliente (Bloco 62).
-// Sem cliente selecionado, usa o preço de lojista por padrão.
+// Preço efetivo conforme a tabela escolhida no orçamento.
+// Sem seleção, usa o preço de lojista por padrão.
 function effectivePrice(product: Product, profile: string | undefined): number {
   // Bloco 96: a API omite (null) o preço que a role logada não pode ver. O
   // perfil pedido aqui é sempre o que o servidor liberou, então o `?? 0` só
@@ -1338,15 +1338,11 @@ export default function OrcamentoPage() {
   const createClientM = useCreateClient()
   const createRepM = useCreateRepresentative()
 
-  // Com cliente escolhido, o orçamento fecha na tabela de faturamento dele (o
-  // servidor recusa outra). Pedido em edição mantém a tabela com que foi
-  // feito. Sem cliente, o seletor EU só serve para consultar preços.
+  // Portugal escolhe a tabela no próprio orçamento. O cadastro do cliente
+  // continua como fallback legado, sem travar a escolha comercial atual.
   const clientDefaultPriceProfile = selectedClient?.price_profile ?? 'lojista'
-  const lockedEuPriceList: PriceListCode | null = market === 'EU'
-    ? ((editOrder?.price_list_code as PriceListCode | undefined) ?? selectedClient?.price_profile ?? null)
-    : null
   const priceProfile: PriceListCode = market === 'EU'
-    ? (lockedEuPriceList ?? selectedEuPriceList ?? 'lojista')
+    ? (selectedEuPriceList ?? (editOrder?.price_list_code as PriceListCode | undefined) ?? 'lojista')
     : (clientDefaultPriceProfile === 'pvp' || clientDefaultPriceProfile === 'arquiteto'
         ? 'lojista'
         : clientDefaultPriceProfile)
@@ -1355,7 +1351,7 @@ export default function OrcamentoPage() {
     market,
     priceProfile,
     user?.role,
-    user?.max_discount ?? 0,
+    resolvedRep?.max_discount ?? user?.max_discount ?? 0,
     isClientUser,
   )
 
@@ -1377,7 +1373,7 @@ export default function OrcamentoPage() {
   }
 
   useEffect(() => {
-    // A troca do cliente pode mudar a tabela e precisa reduzir descontos já
+    // A troca da tabela ou do representante precisa reduzir descontos já
     // presentes no carrinho antes que o orçamento seja enviado.
     // oxlint-disable-next-line react/set-state-in-effect
     setCart(previous => previous.map(item => {
@@ -1725,8 +1721,26 @@ export default function OrcamentoPage() {
 
   async function handleSubmit() {
     if (!cartHydrated || !selectedClient || cart.length === 0) return
-    const error = cart.filter(item => !item.preserve_optional_choices).flatMap(item => validateApplicationChoices(item._product, item.optional_choices, allOptionals))[0]
-    if (error) { setToast({ message: error, variant: 'error' }); return }
+    const invalidItem = cart
+      .filter(item => !item.preserve_optional_choices)
+      .map(item => ({
+        item,
+        error: validateApplicationChoices(
+          item._product,
+          item.optional_choices,
+          allOptionals,
+          market === 'EU',
+          item.opt_categories,
+        )[0],
+      }))
+      .find(({ error }) => error)
+    if (invalidItem) {
+      setToast({
+        message: `${invalidItem.item._product.description}: ${invalidItem.error}`,
+        variant: 'error',
+      })
+      return
+    }
     const missingAreaDimensions = cart.some(item => isAreaProduct(item._product) && !item.source_order_item_id && (item.area_width_m == null || item.area_depth_m == null))
     if (missingAreaDimensions) {
       setToast({
@@ -1956,22 +1970,7 @@ export default function OrcamentoPage() {
               <h2 id="budget-items-title" className="text-sm font-semibold text-gold uppercase tracking-wider flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4" /> {isEnglish ? 'Quote Items' : 'Itens do Orçamento'}
               </h2>
-              {market === 'EU' && lockedEuPriceList ? (
-                <output
-                  aria-live="polite"
-                  aria-label={isEnglish ? `Client price list: ${priceProfileLabel}` : `Tabela do cliente: ${priceProfileLabel}`}
-                  title={isEnglish ? 'Set by the client record' : 'Definida no cadastro do cliente'}
-                  className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider"
-                >
-                  <span className="px-2.5 text-muted inline-flex items-center gap-1">
-                    <Lock className="w-3 h-3" aria-hidden="true" />
-                    {isEnglish ? 'Client price list' : 'Tabela do cliente'}
-                  </span>
-                  <strong className="self-stretch border-l border-line bg-white px-2.5 inline-flex items-center font-semibold text-gold">
-                    {priceProfileLabel}
-                  </strong>
-                </output>
-              ) : market === 'EU' ? (
+              {market === 'EU' ? (
                 <label className="inline-flex min-h-8 items-center overflow-hidden rounded-lg border border-line bg-surface-2 text-[10px] uppercase tracking-wider">
                   <span className="px-2.5 text-muted">{isEnglish ? 'Price list' : 'Tabela de preço'}</span>
                   <select

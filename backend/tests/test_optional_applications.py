@@ -91,6 +91,21 @@ def test_required_and_optional_applications():
     assert len(resolve(product, [required, another], [optional], [(required.id, optional.id)])) == 1
 
 
+def test_portugal_requires_at_least_one_choice_when_product_has_applications():
+    product, application, optional = fixture(required=False)
+    with pytest.raises(HTTPException) as error:
+        resolve(product, [application], [optional], market="EU")
+    assert "ao menos um opcional" in error.value.detail
+    assert resolve(
+        product,
+        [application],
+        [optional],
+        legacy={"MADEIRA": "Canela"},
+        market="EU",
+    ) == []
+    assert resolve(product, [application], [optional], market="BR") == []
+
+
 def test_same_category_independent_selections_and_repetition():
     product, first, optional = fixture(allow_repeat=True)
     second = SimpleNamespace(**{**first.__dict__, "id": uuid.uuid4(), "name": "Pintura do encosto"})

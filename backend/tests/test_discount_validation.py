@@ -74,15 +74,21 @@ class TestResolveMaxDiscount:
             _user(UserRole.admin), _client("100.00"), None, "EU", "pvp"
         ) == Decimal("70.00")
 
-    def test_eu_pvp_operador_interno_recebe_trinta_por_cento(self):
+    def test_eu_pvp_operador_interno_usa_limite_do_representante(self):
         assert _resolve_max_discount(
-            _user(UserRole.vendedor), _client("100.00"), None, "EU", "pvp"
-        ) == Decimal("30.00")
+            _user(UserRole.vendedor), _client("100.00"), _rep("10.00"), "EU", "pvp"
+        ) == Decimal("10.00")
 
-    def test_eu_pvp_representante_recebe_trinta_por_cento(self):
+    def test_eu_pvp_representante_usa_proprio_limite(self):
         assert _resolve_max_discount(
-            _user(UserRole.representante), _client("100.00"), None, "EU", "pvp"
-        ) == Decimal("30.00")
+            _user(UserRole.representante), _client("100.00"), _rep("10.00"), "EU", "pvp"
+        ) == Decimal("10.00")
+
+    @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.representante])
+    def test_eu_pvp_sem_representante_tem_teto_zero(self, role):
+        assert _resolve_max_discount(
+            _user(role), _client("100.00"), None, "EU", "pvp"
+        ) == Decimal("0")
 
     def test_eu_pvp_conta_de_cliente_final_tem_teto_zero(self):
         assert _resolve_max_discount(
@@ -138,8 +144,9 @@ class TestValidateDiscount:
         ],
     )
     def test_nova_matriz_eu_validate_discount(self, role, price_list_code, discount, should_raise):
+        rep = _rep("10.00") if role == UserRole.representante else None
         max_discount = _resolve_max_discount(
-            _user(role), _client("100.00"), None, "EU", price_list_code,
+            _user(role), _client("100.00"), rep, "EU", price_list_code,
         )
         if should_raise:
             with pytest.raises(HTTPException):

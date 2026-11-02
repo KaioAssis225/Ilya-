@@ -2133,6 +2133,7 @@ function PeopleTab<T extends Client | Representative>({
     ? ['lojista', 'corporativo', 'pvp', 'arquiteto']
     : ['lojista', 'corporativo']
   const canEditPriceLists = entityType === 'rep' && (authUser?.role === 'admin' || authUser?.role === 'cadastros')
+  const showPriceListControls = activeMarket === 'BR' && canEditPriceLists
   const priceListCodeLabel = (code: string) => tx(code === 'pvp' ? 'PVP' : code.charAt(0).toUpperCase() + code.slice(1))
 
   const [search, setSearch] = useState('')
@@ -2230,7 +2231,10 @@ function PeopleTab<T extends Client | Representative>({
     setFormError(null)
     // Normaliza campos antes de enviar — evita 422 por espaços ou UF vazia/minúscula
     const cleaned = normalizePersonPayload(form)
-    if (!canEditPriceLists) {
+    if (activeMarket === 'EU' && entityType === 'rep') {
+      cleaned.all_price_lists = true
+      cleaned.price_list_codes = []
+    } else if (!canEditPriceLists) {
       delete cleaned.all_price_lists
       delete cleaned.price_list_codes
     }
@@ -2425,7 +2429,7 @@ function PeopleTab<T extends Client | Representative>({
               <div><span className="text-xs text-muted block">{tx('Estado')}</span><span className="text-ink-2">{viewing.state}</span></div>
               <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
               <div className="col-span-2"><span className="text-xs text-muted block">{tx('Endereço')}</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — {tx('CEP')} {viewing.cep}</span></div>
-              {entityType === 'rep' && (
+              {entityType === 'rep' && activeMarket === 'BR' && (
                 <div className="col-span-2">
                   <span className="text-xs text-muted block">{tx('Tabelas de preço')}</span>
                   <span className="text-ink-2">
@@ -2519,7 +2523,7 @@ function PeopleTab<T extends Client | Representative>({
         <Modal title={tx(editing ? 'Editar {item}' : 'Novo {item}', { item: tx(label).slice(0, -1) })} onClose={() => setShowForm(false)} accentColor={color}>
           <form onSubmit={handleSubmit} className="space-y-3">
             <AddressFields form={form} setForm={setForm} market={activeMarket} />
-            {entityType === 'client' && (
+            {entityType === 'client' && activeMarket === 'BR' && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{tx('Perfil de faturamento *')}</span>
                 <div className="flex gap-2">
@@ -2537,7 +2541,7 @@ function PeopleTab<T extends Client | Representative>({
                 </div>
               </div>
             )}
-            {canEditPriceLists && (
+            {showPriceListControls && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{tx('Tabelas de preço visíveis')}</span>
                 <div className="flex gap-2">
