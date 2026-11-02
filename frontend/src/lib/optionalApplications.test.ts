@@ -21,6 +21,19 @@ test('sem aplicações não exige escolha; uma aplicação obrigatória exige', 
   assert.deepEqual(validateApplicationChoices(product([app]), [{ application_id: app.id, optional_id: 'taupe' }], [option('taupe', 'PINTURA')]), [])
 })
 
+test('Portugal exige ao menos uma escolha quando o produto oferece aplicações', () => {
+  const optional = application('Almofada', 'TECIDO', false)
+  assert.match(
+    validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')], true)[0],
+    /ao menos um opcional/,
+  )
+  assert.deepEqual(
+    validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')], true, { MADEIRA: 'Canela' }),
+    [],
+  )
+  assert.deepEqual(validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')]), [])
+})
+
 test('duas aplicações da mesma categoria preservam escolhas independentes e repetição configurada', () => {
   const first = application('Pés')
   const second = application('Encosto')

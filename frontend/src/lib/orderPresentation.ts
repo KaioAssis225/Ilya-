@@ -63,6 +63,7 @@ export interface OrderDocumentLabels {
   product: string; qty: string; basePrice: string; discount: string; netUnitPrice: string; subtotal: string
   dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
   totalItems: string; grandTotal: string; notes: string
+  commercialTerms: string[]
   repSignature: string; clientSignature: string; footer: string
 }
 
@@ -91,6 +92,7 @@ const PT_LABELS: OrderDocumentLabels = {
   product: 'PRODUTO', qty: 'QTD', basePrice: 'PREÇO-BASE', discount: 'DESCONTO (%)', netUnitPrice: 'VALOR C/ DESC.', subtotal: 'SUBTOTAL',
   dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
   totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
+  commercialTerms: [],
   repSignature: 'Representante / Ilya', clientSignature: 'Cliente / Contratado',
   footer: 'Ilya — Documento gerado automaticamente',
 }
@@ -101,6 +103,11 @@ const PT_PT_LABELS: OrderDocumentLabels = {
   none: 'Nenhum', noEmail: 'E-mail não indicado', taxId: 'NIF / VAT', taxIdMissing: 'não indicado',
   commercialNotice: 'Confirmação de pedido comercial. Este documento não é uma fatura.',
   itemNote: 'Nota', repSignature: 'Representante / IBTW', clientSignature: 'Cliente',
+  commercialTerms: [
+    'FRETE - EX WORKS',
+    'CONDIÇÃO PAGAMENTO - 50% sinal',
+    '50% 7 dias antes da saída da fábrica',
+  ],
   footer: 'IBTW — Documento gerado automaticamente',
 }
 
@@ -111,6 +118,11 @@ const EN_LABELS: OrderDocumentLabels = {
   product: 'PRODUCT', qty: 'QTY', basePrice: 'BASE PRICE', discount: 'DISCOUNT (%)', netUnitPrice: 'NET UNIT PRICE', subtotal: 'SUBTOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
   totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
+  commercialTerms: [
+    'FREIGHT - EX WORKS',
+    'PAYMENT TERMS - 50% deposit',
+    '50% 7 days before dispatch from the factory',
+  ],
   repSignature: 'Representative / IBTW', clientSignature: 'Client',
   footer: 'IBTW — Automatically generated document',
 }

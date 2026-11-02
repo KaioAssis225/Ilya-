@@ -57,7 +57,6 @@ _HUNDRED = Decimal("100")
 _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
 _EU_DISCOUNT_PRICE_LIST = "pvp"
-_EU_PVP_MAX_DISCOUNT = Decimal("30.00")
 _EU_PVP_ADMIN_MAX_DISCOUNT = Decimal("70.00")
 
 
@@ -270,6 +269,12 @@ async def _resolve_item_choices(
     chosen = {row.application_id: row for row in item_in.optional_choices}
     if len(chosen) != len(item_in.optional_choices) or any(app_id not in application_map for app_id in chosen):
         raise HTTPException(status_code=422, detail="Aplicação inválida ou repetida neste produto.")
+    has_legacy_selection = any(str(value).strip() for value in item_in.opt_categories.values())
+    if market_code == "EU" and applications and not chosen and not has_legacy_selection:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Selecione ao menos um opcional para o produto '{item_in.product_code}'.",
+        )
     missing = [row.name for row in applications if row.required and row.id not in chosen]
     if missing:
         raise HTTPException(status_code=422, detail="Preencha as aplicações obrigatórias: " + ", ".join(missing))
@@ -538,7 +543,7 @@ def _resolve_max_discount(
         if current_user.role == UserRole.admin:
             return _EU_PVP_ADMIN_MAX_DISCOUNT
         if current_user.role == UserRole.representante or is_internal_operator(current_user):
-            return _EU_PVP_MAX_DISCOUNT
+            return _decimal(rep.max_discount) if rep else _ZERO
         return _ZERO
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO
@@ -916,14 +921,14 @@ async def create_order(
     )
     market_code = principal.code
     context = principal.market
-    # O orçamento fecha na tabela de faturamento do cliente; as tabelas
-    # visíveis do cadastro servem só para consulta no catálogo. Revisões
-    # preservam a tabela de origem, mesmo que o cadastro tenha mudado.
-    _ensure_order_price_list_allowed(
-        payload.price_list_code,
-        client,
-        source_order.price_list_code if source_order else None,
-    )
+    # Brasil fecha na tabela de faturamento do cliente. Em Portugal a tabela
+    # é escolha livre do próprio orçamento, sem trava do cadastro.
+    if market_code == "BR":
+        _ensure_order_price_list_allowed(
+            payload.price_list_code,
+            client,
+            source_order.price_list_code if source_order else None,
+        )
     requested_price_list_code = client.price_profile
     if market_code == "EU":
         requested_price_list_code = (
@@ -948,10 +953,11 @@ async def create_order(
             status_code=422,
             detail=f"A tabela de preço '{requested_price_list_code}' não está disponível no mercado ativo.",
         )
-    ensure_price_visible(
-        await visible_price_scope(db, current_user, principal.code),
-        price_list.code,
-    )
+    if market_code == "BR":
+        ensure_price_visible(
+            await visible_price_scope(db, current_user, principal.code),
+            price_list.code,
+        )
     max_discount = _resolve_max_discount(
         current_user, client, rep, market_code, price_list.code
     )
@@ -1488,12 +1494,14 @@ async def update_order(
         ))).scalar_one_or_none()
         if not client or not price_list:
             raise HTTPException(status_code=422, detail="Escopo comercial do pedido não está mais disponível.")
-        _ensure_order_price_list_allowed(payload.price_list_code, client, order.price_list_code)
+        if order.market_code == "BR":
+            _ensure_order_price_list_allowed(payload.price_list_code, client, order.price_list_code)
         require_launch_country(principal.code, client.country)
-        ensure_price_visible(
-            await visible_price_scope(db, current_user, principal.code),
-            price_list.code,
-        )
+        if order.market_code == "BR":
+            ensure_price_visible(
+                await visible_price_scope(db, current_user, principal.code),
+                price_list.code,
+            )
         product_ids = [product.id for product in product_map.values()]
         available_ids = set((await db.execute(select(ProductMarket.product_id).where(
             ProductMarket.market_code == order.market_code,

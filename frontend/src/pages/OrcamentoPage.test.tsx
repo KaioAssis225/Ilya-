@@ -409,23 +409,59 @@ describe('OrcamentoPage', () => {
 
     renderProductPage(<OrcamentoPage />, user)
 
-    // A tabela do catálogo (Corporativo) não vale com cliente Lojista: o
-    // orçamento trava na tabela do cadastro, inclusive para admin.
-    expect(await screen.findByRole('status', { name: 'Tabela do cliente: Lojista' })).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Tabela de preço do orçamento' })).toBeNull()
+    const selector = await screen.findByRole('combobox', { name: 'Tabela de preço do orçamento' })
+    expect(selector).toHaveValue('corporativo')
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
-    expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(100))
+    expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(90))
     const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
     await waitFor(() => expect(posted).not.toBeNull())
     expect(posted).toMatchObject({
       client_id: quoteClient.id,
-      price_list_code: 'lojista',
+      price_list_code: 'corporativo',
     })
   })
 
-  it('pedido antigo feito em PVP continua travado em PVP na edição', async () => {
+  it('Portugal não finaliza produto com aplicações sem nenhum opcional selecionado', async () => {
+    const user = productTestUser('admin', 'EU')
+    const product = buildProduct('EU')
+    const quoteClient = buildClient('client-eu-required-optional')
+    localStorage.setItem(
+      cartStorageKey(user.id, 'EU'),
+      JSON.stringify([{
+        line_id: 'line-eu-without-optional',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [],
+      }]),
+    )
+    sessionStorage.setItem(`orcamento_client_id:${user.id}:EU`, quoteClient.id)
+    installOrcamentoHandlers([product])
+    let posted = false
+    server.use(
+      http.get(`*/clients/${quoteClient.id}`, () => HttpResponse.json(quoteClient)),
+      http.post('*/orders', () => {
+        posted = true
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Mesa PT: Selecione ao menos um opcional para este produto',
+    )
+    expect(posted).toBe(false)
+  })
+
+  it('pedido antigo feito em PVP pode trocar de tabela na edição', async () => {
     const user = productTestUser('admin', 'EU')
     const product = buildProduct('EU', { optional_applications: [] })
     const client = buildClient('client-legacy-pvp')
@@ -460,15 +496,17 @@ describe('OrcamentoPage', () => {
 
     renderProductPage(<OrcamentoPage />, user, [`/orcamentos?edit=${orderId}`])
 
-    expect(await screen.findByRole('status', { name: 'Tabela do cliente: PVP' })).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Tabela de preço do orçamento' })).toBeNull()
+    const selector = await screen.findByRole('combobox', { name: 'Tabela de preço do orçamento' })
+    await waitFor(() => expect(selector).toHaveValue('pvp'))
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
     expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(120))
+    fireEvent.change(selector, { target: { value: 'corporativo' } })
+    expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(90))
     const submit = await screen.findByRole('button', { name: 'Salvar Alterações' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
     await waitFor(() => expect(updated).not.toBeNull())
-    expect(updated).toMatchObject({ price_list_code: 'pvp' })
+    expect(updated).toMatchObject({ price_list_code: 'corporativo' })
   })
 
   it('envia L × P do tapete sem qty e bloqueia tapete sem medidas', async () => {

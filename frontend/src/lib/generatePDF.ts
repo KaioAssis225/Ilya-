@@ -660,8 +660,22 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   doc.text(formatMoney(finalTotal, currency, locale), 186, y, { align: 'right' })
   y += 10
 
-  // ── Observações ────────────────────────────────────────────────────────────
-  if (order.notes) {
+  // ── Observações e condições comerciais ────────────────────────────────────
+  const obsLines = order.notes ? doc.splitTextToSize(order.notes, w - 48) : []
+  const commercialTerms = order.market_code === 'EU' ? L.commercialTerms : []
+  const hasNotesBlock = obsLines.length > 0 || commercialTerms.length > 0
+  const notesBlockHeight = hasNotesBlock
+    ? 11 + (obsLines.length > 0 ? obsLines.length * 4 + 3 : 0) + commercialTerms.length * 4 + 3
+    : 0
+
+  // Em Portugal, mantém observações, condições e assinaturas no mesmo bloco
+  // sempre que ele couber numa página nova.
+  if (order.market_code === 'EU' && y + notesBlockHeight + 31 > 278) {
+    doc.addPage()
+    y = 20
+  }
+
+  if (hasNotesBlock) {
     doc.setDrawColor(...LINE)
     doc.setLineWidth(0.3)
     doc.line(20, y, w - 20, y)
@@ -674,9 +688,18 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(...DARK)
-    const obsLines = doc.splitTextToSize(order.notes, w - 48)
-    doc.text(obsLines, 24, y)
-    y += obsLines.length * 4 + 3
+    if (obsLines.length > 0) {
+      doc.text(obsLines, 24, y)
+      y += obsLines.length * 4 + 3
+    }
+    if (commercialTerms.length > 0) {
+      doc.setFont('helvetica', 'bold')
+      for (const term of commercialTerms) {
+        doc.text(term, 24, y)
+        y += 4
+      }
+      y += 3
+    }
   }
 
   // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────

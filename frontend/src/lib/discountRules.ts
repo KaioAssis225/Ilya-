@@ -1,6 +1,5 @@
 import type { UserRole } from '../contexts/AuthContext'
 
-export const EU_PVP_MAX_DISCOUNT = 30
 export const EU_PVP_ADMIN_MAX_DISCOUNT = 70
 
 export function orderMaxDiscount(
@@ -13,7 +12,9 @@ export function orderMaxDiscount(
   if (market === 'BR') return configuredUserLimit
   if (priceProfile !== 'pvp' || isClientAccount) return 0
   if (role === 'admin') return EU_PVP_ADMIN_MAX_DISCOUNT
-  if (role === 'representante' || role === 'vendedor') return EU_PVP_MAX_DISCOUNT
+  if (role === 'representante' || role === 'vendedor') {
+    return Math.min(100, Math.max(0, configuredUserLimit))
+  }
   return 0
 }
 

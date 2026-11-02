@@ -175,4 +175,63 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     expect(screen.queryByText('Tabelas de preço visíveis')).toBeNull()
     expect(screen.getByText('Perfil de faturamento *')).toBeVisible()
   })
+
+  it('Portugal oculta o perfil de faturamento do cliente', async () => {
+    const user = userEvent.setup()
+    const euClient = { ...clients[0], id: 'client-eu', market_code: 'EU' as const, country: 'PT', state: '--' }
+    installProductHandlers()
+    server.use(
+      http.get('*/clients', () => HttpResponse.json([euClient], {
+        headers: { 'X-Total-Count': '1' },
+      })),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'EU'))
+    await user.click(screen.getAllByRole('button', { name: /Clientes/ })[0])
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText(euClient.name).closest('tr')
+    if (!row) throw new Error('Linha do cliente EU não encontrada')
+
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    expect(screen.queryByText('Perfil de faturamento *')).toBeNull()
+  })
+
+  it('Portugal oculta tabelas visíveis e força acesso a todas ao salvar representante', async () => {
+    const user = userEvent.setup()
+    let createPayload: Record<string, unknown> | null = null
+    installProductHandlers()
+    server.use(
+      http.get('*/representatives', () => HttpResponse.json([], {
+        headers: { 'X-Total-Count': '0' },
+      })),
+      http.post('*/representatives', async ({ request }) => {
+        createPayload = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ id: 'rep-eu-new' }, { status: 201 })
+      }),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'EU'))
+    await user.click(screen.getAllByRole('button', { name: /Representantes/ })[0])
+    const newRepresentativeButton = await waitFor(() => {
+      const button = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        .find((candidate) => candidate.textContent?.includes('Novo Representante'))
+      if (!button) throw new Error('Botão Novo Representante não encontrado')
+      return button
+    })
+    await user.click(newRepresentativeButton)
+
+    expect(screen.queryByText('Tabelas de preço visíveis')).toBeNull()
+    await user.type(screen.getByLabelText('Nome *'), 'Representante Portugal')
+    await user.type(screen.getByLabelText('Telefone *'), '+351 912 345 678')
+    await user.type(screen.getByLabelText('Código postal *'), '1000-001')
+    await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
+    await user.type(screen.getByLabelText('Localidade *'), 'Lisboa')
+    await user.click(screen.getByRole('button', { name: 'Criar' }))
+
+    await waitFor(() => {
+      expect(createPayload).toMatchObject({
+        all_price_lists: true,
+        price_list_codes: [],
+      })
+    })
+  })
 })
