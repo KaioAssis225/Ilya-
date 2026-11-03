@@ -24,8 +24,8 @@ import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { formatArea, formatRugSize } from '../lib/areaProduct'
 import { resolveOrderStage, stageLabel, describeStageChange, STAGE_BADGE_CLASS } from '../lib/orderStage'
 
-function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('pt-BR')
+function fmtDate(s: string, locale = 'pt-BR') {
+  return new Date(s).toLocaleDateString(locale)
 }
 
 function fmtDateTime(s: string) {
@@ -475,7 +475,16 @@ function OrderDetailModal({
             <div className="grid grid-cols-2 gap-3 text-sm mb-5">
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Cliente', 'Client')}</p><p className="text-ink font-medium">{clientName}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Representante', 'Representative')}</p><p className="text-ink font-medium">{repName || '—'}</p></div>
-              <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Data', 'Date')}</p><p className="text-ink">{new Date(order.created_at).toLocaleDateString(viewLocale)}</p></div>
+              <div className="bg-bg border border-line rounded-lg p-3">
+                <p className="text-xs text-muted mb-1">{order.is_finalized && order.finalized_at ? viewText('Finalizado em', 'Finalised on') : viewText('Data', 'Date')}</p>
+                <p className="text-ink">{new Date(order.is_finalized && order.finalized_at ? order.finalized_at : order.created_at).toLocaleDateString(viewLocale)}</p>
+              </div>
+              {order.order_stage === 'delivered' && order.delivered_at && (
+                <div className="bg-bg border border-line rounded-lg p-3">
+                  <p className="text-xs text-muted mb-1">{viewText('Entregue em', 'Delivered on')}</p>
+                  <p className="text-ink">{new Date(order.delivered_at).toLocaleDateString(viewLocale)}</p>
+                </div>
+              )}
               <div className="bg-bg border border-line rounded-lg p-3">
                 <p className="text-xs text-muted mb-1">{Number(order.total_ipi) > 0 ? viewText(`Total com ${order.market_code === 'EU' ? 'IVA' : 'IPI'}`, `Total with ${order.market_code === 'EU' ? 'VAT' : 'IPI'}`) : 'Total'}</p>
                 <p className="text-gold font-bold"><SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} /></p>
@@ -703,7 +712,16 @@ function MobileOrderCard({
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-sm font-bold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></p>
-            <p className="text-[10px] text-muted-3 mt-0.5">{fmtDate(order.created_at)}</p>
+            <p className="text-[10px] text-muted-3 mt-0.5">
+              {order.is_finalized && order.finalized_at
+                ? `${english ? 'Finalised on' : 'Finalizado em'} ${fmtDate(order.finalized_at, english ? 'en-GB' : 'pt-BR')}`
+                : fmtDate(order.created_at, english ? 'en-GB' : 'pt-BR')}
+            </p>
+            {order.order_stage === 'delivered' && order.delivered_at && (
+              <p className="text-[10px] text-muted-3 mt-0.5">
+                {english ? 'Delivered on' : 'Entregue em'} {fmtDate(order.delivered_at, english ? 'en-GB' : 'pt-BR')}
+              </p>
+            )}
           </div>
         </div>
         <div className="mt-2">
@@ -800,6 +818,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
     stage: isOrdersScope ? filterStage : '',
     date_from: filterDateFrom,
     date_to: filterDateTo,
+    date_basis: isOrdersScope ? 'finalized_at' : 'created_at',
   })
   const orders = ordersPage?.items ?? []
   const { data: optCategoriesList = [] } = useOptionalCategories()
@@ -1057,11 +1076,11 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
               </div>
             )}
             <div className="space-y-1">
-              <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">Data Inicial</label>
+              <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">{isOrdersScope ? (isEnglish ? 'Finalised from' : 'Finalizado de') : 'Data Inicial'}</label>
               <input id="orders-date-from" type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <label htmlFor="orders-date-to" className="text-xs text-muted font-medium uppercase tracking-wider">Data Final</label>
+              <label htmlFor="orders-date-to" className="text-xs text-muted font-medium uppercase tracking-wider">{isOrdersScope ? (isEnglish ? 'Finalised to' : 'Finalizado até') : 'Data Final'}</label>
               <input id="orders-date-to" type="date" className="input text-xs w-full" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
             </div>
             {hasFilters && (
@@ -1189,7 +1208,10 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Representative' : 'Representante'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Items' : 'Itens'}</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Total' : 'Total'}</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Date' : 'Data'}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isOrdersScope ? (isEnglish ? 'Finalised on' : 'Finalizado em') : (isEnglish ? 'Date' : 'Data')}</th>
+                      {isOrdersScope && (
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Delivered on' : 'Entregue em'}</th>
+                      )}
                       <th className="px-4 py-3 text-center text-xs font-semibold text-ink-3 uppercase">{isOrdersScope ? (isEnglish ? 'Stage' : 'Etapa') : (isEnglish ? 'Status' : 'Status')}</th>
                       <th className="px-4 py-3"></th>
                     </tr>
@@ -1203,7 +1225,14 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                         <td className="px-4 py-3 text-ink-3">{order.rep_name ?? '—'}</td>
                         <td className="px-4 py-3 text-ink-3 text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
                         <td className="px-4 py-3 text-right font-semibold text-ink whitespace-nowrap"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></td>
-                        <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">{fmtDate(order.created_at)}</td>
+                        <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">{fmtDate(order.finalized_at ?? order.created_at, isEnglish ? 'en-GB' : 'pt-BR')}</td>
+                        {isOrdersScope && (
+                          <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">
+                            {order.order_stage === 'delivered' && order.delivered_at
+                              ? fmtDate(order.delivered_at, isEnglish ? 'en-GB' : 'pt-BR')
+                              : <span className="text-muted-3">—</span>}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-center">
                           {(() => {
                             const stage = resolveOrderStage(order)
@@ -1240,7 +1269,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                       </tr>
                     ))}
                     {filtered.length === 0 && (
-                      <tr><td colSpan={9} className="px-4 py-12 text-center">
+                      <tr><td colSpan={isOrdersScope ? 10 : 9} className="px-4 py-12 text-center">
                         {filter || hasFilters ? (
                           <span className="text-ink-3">{isOrdersScope ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum orçamento encontrado com este filtro.'}</span>
                         ) : isOrdersScope ? (
