@@ -171,6 +171,33 @@ async def _product(db: AsyncSession, product_id: str | UUID, market: str) -> Pro
     ).execution_options(skip_market_scope=True))).scalar_one()
 
 
+async def test_product_filter_options_hide_empty_groups_and_types(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    token = await _token(db_session, "admin", "EU")
+    used_group, used_type = await _dimensions(db_session, "EU")
+    empty_group, empty_type = await _dimensions(db_session, "EU")
+    catalog = await make_catalog(db_session, market_code="EU")
+    response = await client.post(
+        "/api/v1/products",
+        json=_payload("EU", f"FILTER-{uuid4().hex[:10]}", catalog.id, used_type.name),
+        headers=_auth(token),
+    )
+    assert response.status_code == 201, response.text
+
+    options = await client.get(
+        "/api/v1/products/filter-options",
+        headers=_auth(token),
+    )
+    assert options.status_code == 200, options.text
+    group_ids = {item["id"] for item in options.json()["groups"]}
+    type_ids = {item["id"] for item in options.json()["types"]}
+    assert str(used_group.id) in group_ids
+    assert str(used_type.id) in type_ids
+    assert str(empty_group.id) not in group_ids
+    assert str(empty_type.id) not in type_ids
+
+
 async def test_reg_cat_01_list_pagination_and_cross_market_catalog_are_isolated(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:

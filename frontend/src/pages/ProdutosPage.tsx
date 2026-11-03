@@ -9,10 +9,8 @@ import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useImageRetry } from '../hooks/useImageRetry'
 import { useLocale } from '../hooks/useLocale'
-import { productsPageQueryOptions, useProductsPage } from '../hooks/useProducts'
-import { useProductTypes } from '../hooks/useProductTypes'
+import { productsPageQueryOptions, useProductFilterOptions, useProductsPage, type ProductFilterOptions } from '../hooks/useProducts'
 import { useCatalogs } from '../hooks/useCatalogs'
-import { useProductGroups } from '../hooks/useProductGroups'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
@@ -47,6 +45,7 @@ const CATALOG_SORTS: Record<CatalogSort, { sort_by: 'description' | 'product_cod
 
 const PAGE_SIZE = 24
 const FULL_IMAGE_WARMUP_COUNT = 4
+const EMPTY_PRODUCT_FILTER_OPTIONS: ProductFilterOptions = { groups: [], types: [] }
 
 const loadedFullImages = new Set<string>()
 const pendingFullImages = new Map<string, Promise<void>>()
@@ -1045,14 +1044,14 @@ export default function ProdutosPage() {
   const { locale, t } = useLocale()
   const english = locale === 'en-GB'
   const queryClient = useQueryClient()
-  const { data: productTypes = [] } = useProductTypes()
-  const { data: productGroups = [] } = useProductGroups()
   const { data: catalogs = [] } = useCatalogs()
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('')
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [selectedTypeName, setSelectedTypeName] = useState<string>('')
+  const { data: filterOptions } = useProductFilterOptions(selectedCatalogId || undefined)
+  const { groups: productGroups, types: productTypes } = filterOptions ?? EMPTY_PRODUCT_FILTER_OPTIONS
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sort, setSort] = useState<CatalogSort>('description_asc')
   const [selected, setSelected] = useState<Product | null>(null)
@@ -1276,6 +1275,8 @@ export default function ProdutosPage() {
                 value={selectedCatalogId}
                 onChange={(e) => {
                   setSelectedCatalogId(e.target.value)
+                  setSelectedGroupId('')
+                  setSelectedTypeName('')
                   setPage(1)
                 }}
                 className="w-full min-h-11 lg:min-h-0 py-2 px-3 text-sm bg-bg border border-line rounded-lg text-ink-2 focus:outline-none focus:ring-1 focus:ring-gold transition-all"

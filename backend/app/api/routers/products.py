@@ -12,6 +12,7 @@ from app.api.deps import get_current_principal, get_db_session, get_current_user
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
 from app.models.product import Product, ProductSetItem, ProductSetComponent
+from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
 from app.models.optional_category import OptionalCategory
@@ -24,6 +25,7 @@ from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
     ProductBatchRequest, OptionalApplicationWrite, OptionalApplicationRead,
+    ProductFilterOptionsRead,
 )
 from app.schemas.optional import OptionalColorRead
 from app.api.routers.optionals import fill_optional_media
@@ -466,6 +468,51 @@ async def list_article_categories(
         ).order_by(Product.article_category_path)
     )).scalars().all()
     return list(rows)
+
+
+@router.get("/filter-options", response_model=ProductFilterOptionsRead)
+async def list_product_filter_options(
+    catalog_id: uuid.UUID | None = Query(default=None),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ANY,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Grupos e subgrupos que possuem produtos visíveis no catálogo atual."""
+    market_code = principal.code
+    product_filters = [
+        Product.market_code == market_code,
+        Product.is_active.is_(True),
+        exists().where(
+            ProductMarket.product_id == Product.id,
+            ProductMarket.market_code == market_code,
+            ProductMarket.is_available.is_(True),
+        ),
+        *await _visible_catalog_filters(db, current_user, market_code),
+    ]
+    if catalog_id is not None:
+        product_filters.append(Product.catalog_id == catalog_id)
+
+    visible_type_keys = (
+        select(_normalized_product_type_expression(Product.type))
+        .where(*product_filters)
+        .distinct()
+    )
+    product_types = list((await db.execute(
+        select(ProductType).where(
+            ProductType.market_code == market_code,
+            _normalized_product_type_expression(ProductType.name).in_(visible_type_keys),
+        ).order_by(ProductType.name)
+    )).scalars().all())
+
+    group_ids = {product_type.group_id for product_type in product_types if product_type.group_id}
+    product_groups = list((await db.execute(
+        select(ProductGroup).where(
+            ProductGroup.market_code == market_code,
+            ProductGroup.id.in_(group_ids),
+        ).order_by(ProductGroup.name)
+    )).scalars().all()) if group_ids else []
+
+    return ProductFilterOptionsRead(groups=product_groups, types=product_types)
 
 
 @router.get("", response_model=List[ProductRead])
