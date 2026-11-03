@@ -339,6 +339,8 @@ export interface OrderSummaryItem {
   area_pieces?: number
 }
 
+export type OrderStage = 'production' | 'delivered'
+
 export interface OrderSummary {
   id: string
   code: string
@@ -355,6 +357,9 @@ export interface OrderSummary {
   is_cancelled: boolean
   finalized_at: string | null
   cancelled_at: string | null
+  order_stage?: OrderStage | null
+  production_started_at?: string | null
+  delivered_at?: string | null
   items: OrderSummaryItem[]
   created_at: string
 }
@@ -379,6 +384,9 @@ export interface Order {
   revision_number?: number
   finalized_at: string | null
   cancelled_at: string | null
+  order_stage?: OrderStage | null
+  production_started_at?: string | null
+  delivered_at?: string | null
   external_code: string | null
   notes: string | null
   items: OrderItem[]

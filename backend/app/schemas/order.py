@@ -5,6 +5,8 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+OrderStage = Literal["production", "delivered"]
+
 
 # Valor da escolha customizada no seletor antigo (opt_categories). Pedidos
 # anteriores podem trazer "Customizado: <texto>", da época da caixa de texto.
@@ -186,6 +188,9 @@ class OrderRead(BaseModel):
     is_cancelled: bool = False
     finalized_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
+    order_stage: Optional[OrderStage] = None
+    production_started_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
     document_version: int = 1
     supersedes_order_id: Optional[uuid.UUID] = None
     revision_number: int = 1
@@ -197,6 +202,10 @@ class OrderRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class OrderStageUpdate(BaseModel):
+    stage: OrderStage
 
 
 class OrderListItemRead(BaseModel):
@@ -231,5 +240,8 @@ class OrderListRead(BaseModel):
     is_cancelled: bool = False
     finalized_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
+    order_stage: Optional[OrderStage] = None
+    production_started_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
     items: List[OrderListItemRead] = Field(default_factory=list)
     created_at: datetime

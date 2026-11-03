@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Lock, Ban, ChevronDown } from 'lucide-react'
-import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory } from '../hooks/useOrders'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2 } from 'lucide-react'
+import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useChangeOrderStage } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
@@ -15,13 +15,14 @@ import { PdfDestinationControl } from '../components/PdfDestinationControl'
 import { describePdfSave, resolvePdfDestination, type PdfSaveNotice } from '../lib/pdfDestination'
 import { SafePrice } from '../components/SafePrice'
 import api from '../lib/api'
-import type { Order, OrderHistory, OrderSummary, Product, Client, Representative } from '../types'
+import type { Order, OrderHistory, OrderSummary, OrderStage, Product, Client, Representative } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { choiceValue } from '../lib/optionalApplications'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { formatArea, formatRugSize } from '../lib/areaProduct'
+import { resolveOrderStage, stageLabel, describeStageChange, STAGE_BADGE_CLASS } from '../lib/orderStage'
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('pt-BR')
@@ -55,6 +56,7 @@ const ACTION_LABEL: Record<string, string> = {
   edited: 'Editado',
   finalized: 'Finalizado',
   cancelled: 'Cancelado',
+  stage_changed: 'Etapa alterada',
 }
 
 const ACTION_DOT: Record<string, string> = {
@@ -62,6 +64,7 @@ const ACTION_DOT: Record<string, string> = {
   edited: 'bg-gold',
   finalized: 'bg-info',
   cancelled: 'bg-terracotta',
+  stage_changed: 'bg-info',
 }
 
 const ACTION_BADGE: Record<string, string> = {
@@ -69,6 +72,7 @@ const ACTION_BADGE: Record<string, string> = {
   edited: 'bg-gold/10 text-gold',
   finalized: 'bg-info-soft text-info',
   cancelled: 'bg-terracotta/10 text-terracotta',
+  stage_changed: 'bg-info-soft text-info',
 }
 
 // ── Audit Timeline ─────────────────────────────────────────────────────────────
@@ -93,7 +97,7 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
               {h.user && <span className="text-xs text-ink-2 font-medium">{h.user.full_name}</span>}
               <span className="text-[11px] text-muted-3 ml-auto whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
             </div>
-            {h.details && <p className="text-xs text-ink-3 mt-0.5 break-words">{h.details}</p>}
+            {h.details && <p className="text-xs text-ink-3 mt-0.5 break-words">{h.action === 'stage_changed' ? (describeStageChange(h.details, false) ?? h.details) : h.details}</p>}
             {h.items_snapshot?.map((item, itemIndex) => <div key={itemIndex} className="text-xs text-ink-3 mt-1">
               <strong>{item.product_code}</strong>
               {Object.entries(item.legacy_optionals).map(([category, value]) => <span key={category} className="block">{category}: {value}</span>)}
@@ -106,6 +110,16 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
         </div>
       ))}
     </div>
+  )
+}
+
+function StageBadge({ stage, english }: { stage: OrderStage; english: boolean }) {
+  const Icon = stage === 'production' ? Factory : PackageCheck
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full ${STAGE_BADGE_CLASS[stage]}`}>
+      <Icon className="w-2.5 h-2.5" />
+      {stageLabel(stage, english)}
+    </span>
   )
 }
 
@@ -221,6 +235,8 @@ function OrderDetailModal({
   canResendEmail: boolean
   onClose: () => void; onEdit: () => void; onFinalize: () => void; onCancel: () => void
 }) {
+  const changeStageM = useChangeOrderStage()
+  const [stageError, setStageError] = useState(false)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { locale } = useLocale()
@@ -365,12 +381,12 @@ function OrderDetailModal({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-semibold text-ink">{order.code}</h3>
-              {order.is_finalized
-                ? <span className="flex items-center gap-1 text-[11px] font-bold bg-success-soft text-success border border-success/25 px-1.5 py-0.5 rounded-full"><Lock className="w-2.5 h-2.5" /> Finalizado</span>
-                : order.is_cancelled
-                ? <span className="flex items-center gap-1 text-[11px] font-bold bg-danger-soft text-danger border border-danger/25 px-1.5 py-0.5 rounded-full"><Ban className="w-2.5 h-2.5" /> Cancelado</span>
-                : <span className="text-[11px] font-bold bg-warning-soft text-warning border border-warning/25 px-1.5 py-0.5 rounded-full">{viewText('Em andamento', 'In progress')}</span>
-              }
+              {(() => {
+                const stage = resolveOrderStage(order)
+                if (stage) return <StageBadge stage={stage} english={isEuOrder && locale === 'en-GB'} />
+                if (order.is_cancelled) return <span className="flex items-center gap-1 text-[11px] font-bold bg-danger-soft text-danger border border-danger/25 px-1.5 py-0.5 rounded-full"><Ban className="w-2.5 h-2.5" /> Cancelado</span>
+                return <span className="text-[11px] font-bold bg-warning-soft text-warning border border-warning/25 px-1.5 py-0.5 rounded-full">{viewText('Em andamento', 'In progress')}</span>
+              })()}
             </div>
             <p className="text-sm text-ink-3">{viewText('Orçamento:', 'Quote:')} <span className="text-gold">{order.orc_id}</span>
               {order.external_code && <span className="ml-2 font-mono text-xs text-ink-2">· {order.external_code}</span>}
@@ -401,9 +417,33 @@ function OrderDetailModal({
                 </button>
               </>
             )}
+            {canManage && order.is_finalized && !order.is_cancelled && (() => {
+              const stage = resolveOrderStage(order)
+              if (!stage) return null
+              const targetStage: OrderStage = stage === 'production' ? 'delivered' : 'production'
+              return (
+                <button
+                  disabled={changeStageM.isPending}
+                  onClick={async () => {
+                    setStageError(false)
+                    try {
+                      await changeStageM.mutateAsync({ id: order.id, stage: targetStage })
+                    } catch {
+                      setStageError(true)
+                    }
+                  }}
+                  className="btn-secondary text-xs disabled:opacity-50"
+                >
+                  {stage === 'production'
+                    ? viewText('Marcar como entregue', 'Mark as delivered')
+                    : <span className="inline-flex items-center gap-1"><Undo2 className="w-3.5 h-3.5" />{viewText('Voltar para Produção', 'Back to production')}</span>}
+                </button>
+              )
+            })()}
           </div>
         </div>
         {revisionError && <p role="alert" className="text-xs font-medium text-danger mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}
+        {stageError && <p role="alert" className="text-xs font-medium text-danger mb-3">{viewText('Não foi possível alterar a etapa do pedido. Tente novamente.', 'Could not change the order stage. Please try again.')}</p>}
         {order.supersedes_order_id && <p className="text-xs text-muted mb-3">Revisão {order.revision_number} de um orçamento anterior.</p>}
 
         {/* Tabs */}
@@ -645,11 +685,11 @@ function OrderDetailModal({
 // ── Mobile order card ───────────────────────────────────────────────────────
 
 function MobileOrderCard({
-  order, clientName, repName, onView, onPDF, onFinalize, onDelete, pdfLoading,
+  order, clientName, repName, onView, onPDF, onFinalize, onDelete, onDeliver, pdfLoading, english,
 }: {
   order: OrderSummary; clientName: string; repName: string
-  onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void
-  pdfLoading: boolean
+  onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void; onDeliver?: () => void
+  pdfLoading: boolean; english: boolean
 }) {
   return (
     <div className="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
@@ -668,10 +708,16 @@ function MobileOrderCard({
         </div>
         <div className="mt-2">
           {order.items.length > 0 && <p className="mb-2 truncate text-xs text-ink-3">{itemsSummary(order)}</p>}
-          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
-            {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-            {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
-          </span>
+          {(() => {
+            const stage = resolveOrderStage(order)
+            if (stage) return <StageBadge stage={stage} english={english} />
+            return (
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full ${order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
+                {order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+                {order.is_cancelled ? 'Cancelado' : 'Em andamento'}
+              </span>
+            )
+          })()}
         </div>
       </div>
       <div className="flex border-t border-bg-2 divide-x divide-bg-2">
@@ -679,6 +725,9 @@ function MobileOrderCard({
         <button disabled={pdfLoading} onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors disabled:opacity-50" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> {pdfLoading ? 'Gerando…' : 'PDF'}</button>
         {onFinalize && (
           <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar orçamento"><CheckCircle className="w-4 h-4" /> Finalizar</button>
+        )}
+        {onDeliver && (
+          <button onClick={onDeliver} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label={english ? 'Mark as delivered' : 'Marcar como entregue'}><PackageCheck className="w-4 h-4" /> {english ? 'Delivered' : 'Entregue'}</button>
         )}
         {onDelete && (
           <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-danger-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
@@ -711,6 +760,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
   const [filterClient, setFilterClient] = useState('')
   const [filterRep, setFilterRep] = useState('')
   const [filterStatus, setFilterStatus] = useState<'in_progress' | 'cancelled' | ''>('')
+  const [filterStage, setFilterStage] = useState<OrderStage | ''>('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -720,6 +770,8 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfNotice, setPdfNotice] = useState<PdfSaveNotice | null>(null)
   const [finalizedNotice, setFinalizedNotice] = useState<{ code: string } | null>(null)
+  const [stageNotice, setStageNotice] = useState<{ code: string; id: string; stage: OrderStage } | null>(null)
+  const [stageError, setStageError] = useState(false)
   useEffect(() => {
     if (!pdfNotice) return
     const timer = window.setTimeout(() => setPdfNotice(null), 8000)
@@ -731,7 +783,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
   // A paginação pertence a um conjunto de filtros: quando os filtros mudam, a
   // pilha de cursores é reiniciada durante o render (sem efeito/estado extra).
   const serverStatus = isOrdersScope ? 'finalized' : (filterStatus || 'not_finalized')
-  const filtersKey = JSON.stringify([debouncedFilter, debouncedClient, debouncedRep, serverStatus, filterDateFrom, filterDateTo])
+  const filtersKey = JSON.stringify([debouncedFilter, debouncedClient, debouncedRep, serverStatus, filterDateFrom, filterDateTo, isOrdersScope ? filterStage : ''])
   const cursorStack: Array<string | undefined> = cursorPager.key === filtersKey ? cursorPager.stack : [undefined]
   const setCursorStack = (update: (current: Array<string | undefined>) => Array<string | undefined>) => {
     const base = cursorPager.key === filtersKey ? cursorPager.stack : [undefined]
@@ -745,6 +797,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
     client_name: debouncedClient,
     rep_name: debouncedRep,
     status: serverStatus,
+    stage: isOrdersScope ? filterStage : '',
     date_from: filterDateFrom,
     date_to: filterDateTo,
   })
@@ -761,6 +814,22 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
   )
   const globalHistory = globalHistoryPage?.items ?? []
   const deleteM = useDeleteOrder()
+  const changeStageM = useChangeOrderStage()
+
+  function changeStage(order: { id: string; code: string }, stage: OrderStage) {
+    setStageError(false)
+    changeStageM.mutate(
+      { id: order.id, stage },
+      {
+        onSuccess: () => {
+          setStageNotice({ code: order.code, id: order.id, stage })
+        },
+        onError: () => {
+          setStageError(true)
+        },
+      },
+    )
+  }
 
   async function handlePDF(orderLight: OrderSummary) {
     if (pdfOrderId) return
@@ -821,7 +890,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
 
   const filtered = orders
 
-  const hasFilters = !!(filterClient || filterRep || filterStatus || filterDateFrom || filterDateTo)
+  const hasFilters = !!(filterClient || filterRep || filterStatus || filterStage || filterDateFrom || filterDateTo)
   const listLabel = isEnglish ? (isOrdersScope ? 'Orders' : 'Quotes') : (isOrdersScope ? 'Pedidos' : 'Orçamentos')
 
   return (
@@ -903,6 +972,37 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
           </div>
         )}
 
+        {stageError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger-soft px-4 py-2 text-sm text-danger" role="alert">
+            <span>{isEnglish ? 'Could not change the order stage. Please try again.' : 'Não foi possível alterar a etapa do pedido. Tente novamente.'}</span>
+            <button className="text-xs font-semibold" onClick={() => setStageError(false)}>
+              {isEnglish ? 'Close' : 'Fechar'}
+            </button>
+          </div>
+        )}
+
+        {stageNotice && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-2 text-sm text-ink" role="status">
+            <span className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-gold shrink-0" aria-hidden="true" />
+              {stageNotice.stage === 'delivered'
+                ? (isEnglish ? `Order ${stageNotice.code} marked as delivered.` : `Pedido ${stageNotice.code} marcado como entregue.`)
+                : (isEnglish ? `Order ${stageNotice.code} moved back to production.` : `Pedido ${stageNotice.code} voltou para Produção.`)}
+            </span>
+            <span className="flex items-center gap-2">
+              <button
+                className="text-xs font-semibold text-gold hover:text-gold-600"
+                onClick={() => changeStage({ id: stageNotice.id, code: stageNotice.code }, stageNotice.stage === 'delivered' ? 'production' : 'delivered')}
+              >
+                {isEnglish ? 'Undo' : 'Desfazer'}
+              </button>
+              <button className="text-xs font-semibold text-muted hover:text-ink" onClick={() => setStageNotice(null)}>
+                {isEnglish ? 'Close' : 'Fechar'}
+              </button>
+            </span>
+          </div>
+        )}
+
         {/* Advanced filters */}
         {!isAuditActive && showFilters && (
           <div className="bg-white border border-line rounded-xl p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -941,6 +1041,21 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                 </select>
               </div>
             )}
+            {isOrdersScope && (
+              <div className="space-y-1">
+                <label htmlFor="orders-stage-filter" className="text-xs text-muted font-medium uppercase tracking-wider">{isEnglish ? 'Stage' : 'Etapa'}</label>
+                <select
+                  id="orders-stage-filter"
+                  className="input text-xs w-full"
+                  value={filterStage}
+                  onChange={(e) => setFilterStage(e.target.value as OrderStage | '')}
+                >
+                  <option value="">{isEnglish ? 'All' : 'Todas'}</option>
+                  <option value="production">{isEnglish ? 'In production' : 'Produção'}</option>
+                  <option value="delivered">{isEnglish ? 'Delivered' : 'Entregue'}</option>
+                </select>
+              </div>
+            )}
             <div className="space-y-1">
               <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">Data Inicial</label>
               <input id="orders-date-from" type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
@@ -951,7 +1066,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
             </div>
             {hasFilters && (
               <div className="col-span-2 md:col-span-3 xl:col-span-5 flex justify-end">
-                <button onClick={() => { setFilterClient(''); setFilterRep(''); setFilterStatus(''); setFilterDateFrom(''); setFilterDateTo('') }} className="px-2 text-xs text-terracotta hover:text-terracotta-700 transition-colors">Limpar filtros</button>
+                <button onClick={() => { setFilterClient(''); setFilterRep(''); setFilterStatus(''); setFilterStage(''); setFilterDateFrom(''); setFilterDateTo('') }} className="px-2 text-xs text-terracotta hover:text-terracotta-700 transition-colors">Limpar filtros</button>
               </div>
             )}
           </div>
@@ -1037,8 +1152,10 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                     onView={() => setViewing(order)}
                     onPDF={() => handlePDF(order)}
                     onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
+                    onDeliver={canManage && resolveOrderStage(order) === 'production' ? () => changeStage(order, 'delivered') : undefined}
                     onDelete={canDelete ? () => setDeleting(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
+                    english={isEnglish}
                   />
                 ))}
                 {filtered.length === 0 && (
@@ -1073,7 +1190,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Items' : 'Itens'}</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Total' : 'Total'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Date' : 'Data'}</th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Status' : 'Status'}</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-ink-3 uppercase">{isOrdersScope ? (isEnglish ? 'Stage' : 'Etapa') : (isEnglish ? 'Status' : 'Status')}</th>
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
@@ -1088,10 +1205,16 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                         <td className="px-4 py-3 text-right font-semibold text-ink whitespace-nowrap"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></td>
                         <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full ${order.is_finalized ? 'bg-success-soft text-success' : order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
-                            {order.is_finalized ? <Lock className="w-2.5 h-2.5" /> : order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
-                            {order.is_finalized ? 'Finalizado' : order.is_cancelled ? 'Cancelado' : 'Em andamento'}
-                          </span>
+                          {(() => {
+                            const stage = resolveOrderStage(order)
+                            if (stage) return <StageBadge stage={stage} english={isEnglish} />
+                            return (
+                              <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold px-2 py-0.5 rounded-full ${order.is_cancelled ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>
+                                {order.is_cancelled ? <Ban className="w-2.5 h-2.5" /> : <Clock className="w-2.5 h-2.5" />}
+                                {order.is_cancelled ? 'Cancelado' : 'Em andamento'}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-0.5 items-center">
@@ -1099,6 +1222,9 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                             <button type="button" disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} aria-label={`Gerar PDF do orçamento ${order.code}`} className="btn-icon hover:text-mineral" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
                             {canManage && !order.is_finalized && !order.is_cancelled && (
                               <button type="button" title="Finalizar orçamento" aria-label={`Finalizar orçamento ${order.code}`} className="btn-icon hover:text-success" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
+                            )}
+                            {canManage && resolveOrderStage(order) === 'production' && (
+                              <button type="button" title={isEnglish ? 'Mark as delivered' : 'Marcar como entregue'} aria-label={`${isEnglish ? 'Mark as delivered' : 'Marcar como entregue'} ${order.code}`} className="btn-icon hover:text-success" disabled={changeStageM.isPending} onClick={() => changeStage(order, 'delivered')}><PackageCheck className="w-4 h-4" /></button>
                             )}
                             {canManage && !order.is_finalized && !order.is_cancelled && (
                               <>

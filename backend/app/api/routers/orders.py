@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +24,7 @@ from app.api.deps import (
 from app.api.catalog_access import CatalogScope, allows, order_catalog_scope
 from app.api.price_access import ensure_price_visible, visible_price_scope
 from app.core.lifecycle import touch_client_activity
+from app.core.limiter import limiter
 from app.core.config import settings
 from app.models.catalog import Catalog
 from app.core.search import literal_contains_pattern
@@ -41,7 +42,7 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
-from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderUpdate, OrderHistoryRead
+from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderStageUpdate, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.services.area_products import area_from_dimensions, is_area_product
 
@@ -1170,6 +1171,7 @@ async def list_orders(
         default=None,
         alias="status",
     ),
+    order_stage: Literal["production", "delivered"] | None = Query(default=None, alias="stage"),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     db: AsyncSession = Depends(get_db_session),
@@ -1218,6 +1220,8 @@ async def list_orders(
                 Representative.name.ilike(pattern, escape="\\"),
             )
         )
+    if order_stage:
+        conditions.append(Order.order_stage == order_stage)
     if order_status == "finalized":
         conditions.append(Order.is_finalized.is_(True))
     elif order_status == "cancelled":
@@ -1266,6 +1270,9 @@ async def list_orders(
             Order.is_cancelled,
             Order.finalized_at,
             Order.cancelled_at,
+            Order.order_stage,
+            Order.production_started_at,
+            Order.delivered_at,
             Order.created_at,
         )
         .select_from(Order)
@@ -1718,6 +1725,8 @@ async def finalize_order(
     terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
     order.finalized_at = terminal_at
+    order.order_stage = "production"
+    order.production_started_at = terminal_at
     order.source_version += 1
     order.document_version += 1
     if payload.external_code:
@@ -1750,6 +1759,65 @@ async def finalize_order(
     await db.commit()
     order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido finalizado: id=%s ext=%s user=%s", order_id, payload.external_code, current_user.id)
+    return order
+
+
+@router.post("/{order_id}/stage", response_model=OrderRead)
+@limiter.limit("30/minute")
+async def change_order_stage(
+    request: Request,
+    response: Response,
+    order_id: uuid.UUID,
+    payload: OrderStageUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    if not _can_operate_order(current_user):
+        raise HTTPException(403, "Acesso negado.")
+    result = await db.execute(
+        select(Order).where(
+            Order.id == order_id,
+            Order.market_code == principal.code,
+            *_order_visibility_filters(current_user),
+        ).with_for_update()
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    if order.is_cancelled or not order.is_finalized:
+        raise HTTPException(status_code=409, detail="Somente pedido finalizado pode mudar de etapa.")
+    etapa_anterior = order.order_stage or "production"
+    if payload.stage == etapa_anterior and order.order_stage is not None:
+        return await _reload_order_for_response(db, order.id)
+    now = datetime.now(timezone.utc)
+    if payload.stage == "delivered":
+        order.order_stage = "delivered"
+        order.delivered_at = now
+        if order.production_started_at is None:
+            order.production_started_at = order.finalized_at
+    else:
+        order.order_stage = "production"
+        order.delivered_at = None
+        if order.production_started_at is None:
+            order.production_started_at = order.finalized_at
+    order.source_version += 1
+    db.add(OrderHistory(
+        id=uuid.uuid4(),
+        order_id=order.id,
+        user_id=current_user.id,
+        action="stage_changed",
+        details=f"{etapa_anterior} -> {payload.stage}",
+    ))
+    await db.commit()
+    order = await _reload_order_for_response(db, order.id)
+    logger.info(
+        "Etapa do pedido alterada: id=%s de=%s para=%s user=%s",
+        order_id,
+        etapa_anterior,
+        payload.stage,
+        current_user.id,
+    )
     return order
 
 
