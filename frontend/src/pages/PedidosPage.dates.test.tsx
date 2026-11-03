@@ -10,6 +10,8 @@ import type { Order, OrderSummary } from '../types'
 // Datas ao meio-dia UTC: o dia exibido não muda com o fuso do navegador.
 const CREATED = '2024-01-01T12:00:00.000Z'
 const FINALIZED = '2024-03-15T12:00:00.000Z'
+// Diferente de propósito: prova que a tela lê production_started_at, não finalized_at.
+const STARTED = '2024-03-16T12:00:00.000Z'
 const DELIVERED = '2024-04-20T12:00:00.000Z'
 
 const makeSummary = (overrides: Partial<OrderSummary> = {}): OrderSummary => ({
@@ -27,6 +29,7 @@ const makeSummary = (overrides: Partial<OrderSummary> = {}): OrderSummary => ({
   is_finalized: true,
   is_cancelled: false,
   finalized_at: FINALIZED,
+  production_started_at: STARTED,
   cancelled_at: null,
   order_stage: 'production',
   delivered_at: null,
@@ -69,18 +72,18 @@ describe('PedidosPage: datas de finalização e entrega', () => {
     server.resetHandlers()
   })
 
-  it('aba Pedido ordena e filtra pela finalização e mostra a data de finalização, não a de criação', async () => {
+  it('aba Pedido ordena e filtra pela finalização (servidor) e mostra o início de produção, não a data de criação', async () => {
     const requests = installBackend([makeSummary()])
 
     renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
 
     expect(requests.some((query) => query.date_basis === 'finalized_at')).toBe(true)
-    expect(screen.getByRole('columnheader', { name: 'Finalizado em' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Início de produção' })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Data' })).not.toBeInTheDocument()
-    expect(screen.getAllByText('15/03/2024').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('16/03/2024').length).toBeGreaterThan(0)
     expect(screen.queryByText('01/01/2024')).not.toBeInTheDocument()
-    expect(screen.getByText('Finalizado em 15/03/2024')).toBeInTheDocument()
+    expect(screen.getByText('Início de produção 16/03/2024')).toBeInTheDocument()
   })
 
   it('coluna "Entregue em" mostra a data só quando a etapa é Entregue', async () => {
@@ -117,7 +120,17 @@ describe('PedidosPage: datas de finalização e entrega', () => {
     expect(screen.getAllByText('01/01/2024').length).toBeGreaterThan(0)
   })
 
-  it('rotula os filtros de data como finalização na aba Pedido', async () => {
+  it('sem production_started_at, cai para a data de finalização', async () => {
+    installBackend([makeSummary({ production_started_at: null })])
+
+    renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
+    await screen.findAllByText('PED-0001')
+
+    expect(screen.getByText('Início de produção 15/03/2024')).toBeInTheDocument()
+    expect(screen.queryByText('16/03/2024')).not.toBeInTheDocument()
+  })
+
+  it('rotula os filtros de data como início de produção na aba Pedido', async () => {
     const user = userEvent.setup()
     installBackend([makeSummary()])
 
@@ -125,11 +138,11 @@ describe('PedidosPage: datas de finalização e entrega', () => {
     await screen.findAllByText('PED-0001')
     await user.click(screen.getByRole('button', { name: /Filtros/ }))
 
-    expect(screen.getByLabelText('Finalizado de')).toBeInTheDocument()
-    expect(screen.getByLabelText('Finalizado até')).toBeInTheDocument()
+    expect(screen.getByLabelText('Início de produção de')).toBeInTheDocument()
+    expect(screen.getByLabelText('Início de produção até')).toBeInTheDocument()
   })
 
-  it('detalhe mostra "Finalizado em" e, entregue, "Entregue em"; em Produção não mostra a entrega', async () => {
+  it('detalhe mostra "Início de produção" e, entregue, "Entregue em"; em Produção não mostra a entrega', async () => {
     const user = userEvent.setup()
     installBackend([
       makeSummary({ id: 'a', code: 'PED-0001', order_stage: 'production', delivered_at: null }),
@@ -139,8 +152,8 @@ describe('PedidosPage: datas de finalização e entrega', () => {
     const { unmount } = renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
     await user.click(screen.getByLabelText('Ver detalhes do orçamento PED-0001'))
-    expect(await screen.findByText('Finalizado em', { selector: 'p' })).toBeInTheDocument()
-    expect(screen.getByText('15/03/2024', { selector: 'p' })).toBeInTheDocument()
+    expect(await screen.findByText('Início de produção', { selector: 'p' })).toBeInTheDocument()
+    expect(screen.getByText('16/03/2024', { selector: 'p' })).toBeInTheDocument()
     expect(screen.queryByText('Entregue em', { selector: 'p' })).not.toBeInTheDocument()
     unmount()
 
@@ -161,9 +174,9 @@ describe('PedidosPage: datas de finalização e entrega', () => {
     renderProductPage(<PedidosPage scope="orders" />, euUser)
     await screen.findAllByText('PED-0001')
 
-    expect(screen.getByRole('columnheader', { name: 'Finalised on' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Production started' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Delivered on' })).toBeInTheDocument()
-    expect(screen.getByText('Finalised on 15/03/2024')).toBeInTheDocument()
+    expect(screen.getByText('Production started 16/03/2024')).toBeInTheDocument()
     expect(screen.getByText('Delivered on 20/04/2024')).toBeInTheDocument()
   })
 })

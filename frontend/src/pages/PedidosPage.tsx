@@ -476,8 +476,8 @@ function OrderDetailModal({
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Cliente', 'Client')}</p><p className="text-ink font-medium">{clientName}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3"><p className="text-xs text-muted mb-1">{viewText('Representante', 'Representative')}</p><p className="text-ink font-medium">{repName || '—'}</p></div>
               <div className="bg-bg border border-line rounded-lg p-3">
-                <p className="text-xs text-muted mb-1">{order.is_finalized && order.finalized_at ? viewText('Finalizado em', 'Finalised on') : viewText('Data', 'Date')}</p>
-                <p className="text-ink">{new Date(order.is_finalized && order.finalized_at ? order.finalized_at : order.created_at).toLocaleDateString(viewLocale)}</p>
+                <p className="text-xs text-muted mb-1">{order.is_finalized && order.finalized_at ? viewText('Início de produção', 'Production started') : viewText('Data', 'Date')}</p>
+                <p className="text-ink">{new Date(order.is_finalized && order.finalized_at ? (order.production_started_at ?? order.finalized_at) : order.created_at).toLocaleDateString(viewLocale)}</p>
               </div>
               {order.order_stage === 'delivered' && order.delivered_at && (
                 <div className="bg-bg border border-line rounded-lg p-3">
@@ -714,7 +714,7 @@ function MobileOrderCard({
             <p className="text-sm font-bold text-ink"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></p>
             <p className="text-[10px] text-muted-3 mt-0.5">
               {order.is_finalized && order.finalized_at
-                ? `${english ? 'Finalised on' : 'Finalizado em'} ${fmtDate(order.finalized_at, english ? 'en-GB' : 'pt-BR')}`
+                ? `${english ? 'Production started' : 'Início de produção'} ${fmtDate(order.production_started_at ?? order.finalized_at, english ? 'en-GB' : 'pt-BR')}`
                 : fmtDate(order.created_at, english ? 'en-GB' : 'pt-BR')}
             </p>
             {order.order_stage === 'delivered' && order.delivered_at && (
@@ -1076,11 +1076,11 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
               </div>
             )}
             <div className="space-y-1">
-              <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">{isOrdersScope ? (isEnglish ? 'Finalised from' : 'Finalizado de') : 'Data Inicial'}</label>
+              <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">{isOrdersScope ? (isEnglish ? 'Production started from' : 'Início de produção de') : 'Data Inicial'}</label>
               <input id="orders-date-from" type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <label htmlFor="orders-date-to" className="text-xs text-muted font-medium uppercase tracking-wider">{isOrdersScope ? (isEnglish ? 'Finalised to' : 'Finalizado até') : 'Data Final'}</label>
+              <label htmlFor="orders-date-to" className="text-xs text-muted font-medium uppercase tracking-wider">{isOrdersScope ? (isEnglish ? 'Production started to' : 'Início de produção até') : 'Data Final'}</label>
               <input id="orders-date-to" type="date" className="input text-xs w-full" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
             </div>
             {hasFilters && (
@@ -1208,7 +1208,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Representative' : 'Representante'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Items' : 'Itens'}</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Total' : 'Total'}</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isOrdersScope ? (isEnglish ? 'Finalised on' : 'Finalizado em') : (isEnglish ? 'Date' : 'Data')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isOrdersScope ? (isEnglish ? 'Production started' : 'Início de produção') : (isEnglish ? 'Date' : 'Data')}</th>
                       {isOrdersScope && (
                         <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Delivered on' : 'Entregue em'}</th>
                       )}
@@ -1225,7 +1225,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                         <td className="px-4 py-3 text-ink-3">{order.rep_name ?? '—'}</td>
                         <td className="px-4 py-3 text-ink-3 text-xs max-w-[160px] truncate">{itemsSummary(order)}</td>
                         <td className="px-4 py-3 text-right font-semibold text-ink whitespace-nowrap"><SafePrice value={Number(order.total_with_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'} /></td>
-                        <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">{fmtDate(order.finalized_at ?? order.created_at, isEnglish ? 'en-GB' : 'pt-BR')}</td>
+                        <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">{fmtDate(order.production_started_at ?? order.finalized_at ?? order.created_at, isEnglish ? 'en-GB' : 'pt-BR')}</td>
                         {isOrdersScope && (
                           <td className="px-4 py-3 text-ink-3 text-xs whitespace-nowrap">
                             {order.order_stage === 'delivered' && order.delivered_at
