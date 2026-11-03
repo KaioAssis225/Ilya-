@@ -521,6 +521,7 @@ async def _load_products_and_types(
                 Product.altura,
                 Product.largura,
                 Product.profundidade,
+                Product.all_optionals_categories,
                 Product.price_lojista,
                 Product.price_corporativo,
                 Product.observacao,
