@@ -111,7 +111,7 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
 
 // ── Finalize Modal ─────────────────────────────────────────────────────────────
 
-function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () => void }) {
+function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; onClose: () => void; onFinalized?: (order: OrderSummary) => void }) {
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const finalizeM = useFinalizeOrder()
@@ -120,6 +120,7 @@ function FinalizeModal({ order, onClose }: { order: OrderSummary; onClose: () =>
     setLoading(true)
     try {
       await finalizeM.mutateAsync({ id: order.id, external_code: code.trim() || undefined })
+      onFinalized?.(order)
       onClose()
     } finally {
       setLoading(false)
@@ -689,7 +690,10 @@ function MobileOrderCard({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function PedidosPage() {
+export type PedidosScope = 'quotes' | 'orders'
+
+export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope }) {
+  const isOrdersScope = scope === 'orders'
   const { user } = useAuth()
   const { locale } = useLocale()
   const isEnglish = locale === 'en-GB'
@@ -706,7 +710,7 @@ export default function PedidosPage() {
   const [filter, setFilter] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterRep, setFilterRep] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'in_progress' | 'finalized' | 'cancelled' | ''>('')
+  const [filterStatus, setFilterStatus] = useState<'in_progress' | 'cancelled' | ''>('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [showFilters, setShowFilters] = useState(false)
@@ -715,6 +719,7 @@ export default function PedidosPage() {
   const [pdfOrderId, setPdfOrderId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfNotice, setPdfNotice] = useState<PdfSaveNotice | null>(null)
+  const [finalizedNotice, setFinalizedNotice] = useState<{ code: string } | null>(null)
   useEffect(() => {
     if (!pdfNotice) return
     const timer = window.setTimeout(() => setPdfNotice(null), 8000)
@@ -725,7 +730,8 @@ export default function PedidosPage() {
   const debouncedRep = useDebouncedValue(filterRep.trim(), 300)
   // A paginação pertence a um conjunto de filtros: quando os filtros mudam, a
   // pilha de cursores é reiniciada durante o render (sem efeito/estado extra).
-  const filtersKey = JSON.stringify([debouncedFilter, debouncedClient, debouncedRep, filterStatus, filterDateFrom, filterDateTo])
+  const serverStatus = isOrdersScope ? 'finalized' : (filterStatus || 'not_finalized')
+  const filtersKey = JSON.stringify([debouncedFilter, debouncedClient, debouncedRep, serverStatus, filterDateFrom, filterDateTo])
   const cursorStack: Array<string | undefined> = cursorPager.key === filtersKey ? cursorPager.stack : [undefined]
   const setCursorStack = (update: (current: Array<string | undefined>) => Array<string | undefined>) => {
     const base = cursorPager.key === filtersKey ? cursorPager.stack : [undefined]
@@ -738,7 +744,7 @@ export default function PedidosPage() {
     q: debouncedFilter,
     client_name: debouncedClient,
     rep_name: debouncedRep,
-    status: filterStatus,
+    status: serverStatus,
     date_from: filterDateFrom,
     date_to: filterDateTo,
   })
@@ -816,6 +822,7 @@ export default function PedidosPage() {
   const filtered = orders
 
   const hasFilters = !!(filterClient || filterRep || filterStatus || filterDateFrom || filterDateTo)
+  const listLabel = isEnglish ? (isOrdersScope ? 'Orders' : 'Quotes') : (isOrdersScope ? 'Pedidos' : 'Orçamentos')
 
   return (
     <div className="min-h-screen bg-bg text-ink">
@@ -825,14 +832,14 @@ export default function PedidosPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl text-ink font-medium">
-              {isAuditActive ? (isEnglish ? 'General audit' : 'Auditoria Geral') : (isEnglish ? 'Quotes' : 'Orçamentos')}
+              {isAuditActive ? (isEnglish ? 'General audit' : 'Auditoria Geral') : listLabel}
               <span className="ml-2 text-xs bg-bg-2 text-gold px-2 py-0.5 rounded-full">
                 {isEnglish ? 'On this page' : 'Nesta página'}: {isAuditActive ? globalHistory.length : orders.length}
               </span>
             </h1>
             {canViewGlobalAudit && (
               <div className="flex gap-1 border border-line rounded-lg p-0.5 bg-white">
-                <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>{isEnglish ? 'Quotes' : 'Orçamentos'}</button>
+                <button onClick={() => setActiveTab('orders')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeTab === 'orders' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>{listLabel}</button>
                 <button onClick={() => setActiveTab('audit')} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${activeTab === 'audit' ? 'bg-gold text-white' : 'text-muted hover:text-ink-2'}`}>
                   <History className="w-3 h-3" /> {isEnglish ? 'Audit' : 'Auditoria'}
                 </button>
@@ -844,7 +851,7 @@ export default function PedidosPage() {
             <div className="flex items-center gap-2">
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-3" />
-                <input aria-label={isEnglish ? 'Filter quotes by client or number' : 'Filtrar orçamentos por cliente ou número'} className="input pl-9" placeholder={isEnglish ? 'Filter by client, quote...' : 'Filtrar por cliente, orçamento...'} value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <input aria-label={isOrdersScope ? (isEnglish ? 'Filter orders by client or number' : 'Filtrar pedidos por cliente ou número') : (isEnglish ? 'Filter quotes by client or number' : 'Filtrar orçamentos por cliente ou número')} className="input pl-9" placeholder={isOrdersScope ? (isEnglish ? 'Filter by client, order...' : 'Filtrar por cliente, pedido...') : (isEnglish ? 'Filter by client, quote...' : 'Filtrar por cliente, orçamento...')} value={filter} onChange={(e) => setFilter(e.target.value)} />
               </div>
               <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors ${hasFilters ? 'border-gold text-gold bg-gold-wash' : 'border-line text-muted hover:border-faint'}`}>
                 <Filter className="w-3.5 h-3.5" /> {isEnglish ? 'Filters' : 'Filtros'}{hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-gold" />}
@@ -879,6 +886,23 @@ export default function PedidosPage() {
           </div>
         )}
 
+        {!isOrdersScope && finalizedNotice && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-2 text-sm text-ink" role="status">
+            <span className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-gold shrink-0" aria-hidden="true" />
+              {isEnglish ? `Quote ${finalizedNotice.code} finalised and moved to the Order tab.` : `Orçamento ${finalizedNotice.code} finalizado e movido para a aba Pedido.`}
+            </span>
+            <span className="flex items-center gap-2">
+              <button className="text-xs font-semibold text-gold hover:text-gold-600" onClick={() => navigate('/pedidos-finalizados')}>
+                {isEnglish ? 'View in Orders' : 'Ver em Pedido'}
+              </button>
+              <button className="text-xs font-semibold text-muted hover:text-ink" onClick={() => setFinalizedNotice(null)}>
+                {isEnglish ? 'Close' : 'Fechar'}
+              </button>
+            </span>
+          </div>
+        )}
+
         {/* Advanced filters */}
         {!isAuditActive && showFilters && (
           <div className="bg-white border border-line rounded-xl p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -902,20 +926,21 @@ export default function PedidosPage() {
                 placeholder="Nome do representante"
               />
             </div>
-            <div className="space-y-1">
-              <label htmlFor="orders-status-filter" className="text-xs text-muted font-medium uppercase tracking-wider">Status</label>
-              <select
-                id="orders-status-filter"
-                className="input text-xs w-full"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as 'in_progress' | 'finalized' | 'cancelled' | '')}
-              >
-                <option value="">Todos</option>
-                <option value="in_progress">Em andamento</option>
-                <option value="finalized">Finalizados</option>
-                <option value="cancelled">Cancelados</option>
-              </select>
-            </div>
+            {!isOrdersScope && (
+              <div className="space-y-1">
+                <label htmlFor="orders-status-filter" className="text-xs text-muted font-medium uppercase tracking-wider">Status</label>
+                <select
+                  id="orders-status-filter"
+                  className="input text-xs w-full"
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as 'in_progress' | 'cancelled' | '')}
+                >
+                  <option value="">Todos</option>
+                  <option value="in_progress">Em andamento</option>
+                  <option value="cancelled">Cancelados</option>
+                </select>
+              </div>
+            )}
             <div className="space-y-1">
               <label htmlFor="orders-date-from" className="text-xs text-muted font-medium uppercase tracking-wider">Data Inicial</label>
               <input id="orders-date-from" type="date" className="input text-xs w-full" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
@@ -1019,7 +1044,12 @@ export default function PedidosPage() {
                 {filtered.length === 0 && (
                   <div className="rounded-xl border border-line bg-white px-4 py-12 text-center">
                     {filter || hasFilters ? (
-                      <p className="text-ink-3 text-sm">Nenhum orçamento encontrado com este filtro.</p>
+                      <p className="text-ink-3 text-sm">{isOrdersScope ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum orçamento encontrado com este filtro.'}</p>
+                    ) : isOrdersScope ? (
+                      <>
+                        <p className="text-ink-3 text-sm">{isEnglish ? 'No finalized orders yet.' : 'Nenhum pedido finalizado ainda.'}</p>
+                        <button onClick={() => navigate('/pedidos')} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'View quotes' : 'Ver orçamentos'}</button>
+                      </>
                     ) : (
                       <>
                         <p className="text-ink-3 text-sm">{isEnglish ? 'No quotes yet.' : 'Nenhum orçamento ainda.'}</p>
@@ -1086,7 +1116,12 @@ export default function PedidosPage() {
                     {filtered.length === 0 && (
                       <tr><td colSpan={9} className="px-4 py-12 text-center">
                         {filter || hasFilters ? (
-                          <span className="text-ink-3">Nenhum orçamento encontrado com este filtro.</span>
+                          <span className="text-ink-3">{isOrdersScope ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum orçamento encontrado com este filtro.'}</span>
+                        ) : isOrdersScope ? (
+                          <div className="flex flex-col items-center gap-3">
+                            <span className="text-ink-3">{isEnglish ? 'No finalized orders yet.' : 'Nenhum pedido finalizado ainda.'}</span>
+                            <button onClick={() => navigate('/pedidos')} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gold text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors">{isEnglish ? 'View quotes' : 'Ver orçamentos'}</button>
+                          </div>
                         ) : (
                           <div className="flex flex-col items-center gap-3">
                             <span className="text-ink-3">{isEnglish ? 'No quotes yet.' : 'Nenhum orçamento ainda.'}</span>
@@ -1143,7 +1178,7 @@ export default function PedidosPage() {
         />
       )}
 
-      {finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} />}
+      {finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} onFinalized={(o) => setFinalizedNotice({ code: o.code })} />}
       {canceling && <CancelModal order={canceling} onClose={() => setCanceling(null)} />}
 
       {deleting && (

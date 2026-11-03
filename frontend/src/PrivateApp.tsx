@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
+import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -104,7 +104,7 @@ function BottomNav() {
   // Bloco 95: Dashboard é um módulo isolado, sem a navegação padrão do app.
   if (location.pathname.startsWith('/dashboard')) return null
 
-  const active = (path: string) => location.pathname.startsWith(path)
+  const active = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`)
 
   const itemClass = (path: string) =>
     `flex shrink-0 flex-col items-center gap-0.5 min-w-[60px] min-h-[44px] justify-center px-2 transition-colors ${
@@ -146,6 +146,12 @@ function BottomNav() {
         <NavLink to="/pedidos" className={itemClass('/pedidos')} aria-label={t('orders')}>
           <ClipboardList className="w-5 h-5" />
           <span className="text-[11px] font-semibold uppercase tracking-wider">{t('orders')}</span>
+        </NavLink>
+      )}
+      {canSeeOrcamentoPedidos(user) && (
+        <NavLink to="/pedidos-finalizados" className={itemClass('/pedidos-finalizados')} aria-label={t('placedOrders')}>
+          <PackageCheck className="w-5 h-5" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{t('placedOrders')}</span>
         </NavLink>
       )}
       {canSeeCadastros(user) && (
@@ -223,6 +229,7 @@ function Nav() {
               </NavLink>
             )}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label={t('orders')}>{t('orders')}</NavLink>}
+              {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos-finalizados" className={linkClass} aria-label={t('placedOrders')}>{t('placedOrders')}</NavLink>}
               {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
             </div>
           )}
@@ -363,7 +370,15 @@ export default function PrivateApp() {
                     path="/pedidos"
                     element={
                       <RoleGuard allowed={canSeeOrcamentoPedidos}>
-                        <PedidosPage />
+                        <PedidosPage key="quotes" scope="quotes" />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/pedidos-finalizados"
+                    element={
+                      <RoleGuard allowed={canSeeOrcamentoPedidos}>
+                        <PedidosPage key="orders" scope="orders" />
                       </RoleGuard>
                     }
                   />

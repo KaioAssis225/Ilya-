@@ -1085,3 +1085,37 @@ async def test_legacy_rug_without_measurements_keeps_area_per_piece(client, db_s
     assert item["area_pieces"] == 2
     assert item["area_width_m"] is None
     assert item["area_depth_m"] is None
+
+
+async def test_list_orders_status_splits_quotes_from_finalized_orders(client, db_session):
+    admin = await _admin(db_session, 'BR')
+    price_list = await _price_list(db_session, 'BR', 'lojista')
+    product = await _create_product_with_price(
+        db_session, 'BR', price_list, Decimal('100.00')
+    )
+    client_id = await _create_client(db_session, 'BR', price_list)
+    items = [{'product_code': product.product_code, 'qty': 1}]
+
+    ids = {}
+    for label in ('open', 'cancelled', 'finalized'):
+        response = await _post_order(client, admin, client_id, items)
+        assert response.status_code == 201, response.text
+        ids[label] = response.json()['id']
+    assert (await _cancel_order(client, admin, uuid.UUID(ids['cancelled']))).status_code == 200
+    assert (await _finalize_order(client, admin, uuid.UUID(ids['finalized']))).status_code == 200
+
+    async def listed(status_filter: str) -> set[str]:
+        response = await client.get(
+            f'/api/v1/orders?limit=100&status={status_filter}',
+            headers=_auth(admin.token),
+        )
+        assert response.status_code == 200, response.text
+        return {row['id'] for row in response.json()}
+
+    # Aba "Orçamento": tudo que não foi finalizado (em andamento + cancelados).
+    assert await listed('not_finalized') == {ids['open'], ids['cancelled']}
+    # Aba "Pedido": apenas os finalizados.
+    assert await listed('finalized') == {ids['finalized']}
+    # Valores antigos seguem com o mesmo contrato.
+    assert await listed('in_progress') == {ids['open']}
+    assert await listed('cancelled') == {ids['cancelled']}

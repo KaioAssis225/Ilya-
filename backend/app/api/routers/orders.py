@@ -1166,7 +1166,7 @@ async def list_orders(
     rep_id: uuid.UUID | None = Query(default=None),
     client_name: str | None = Query(default=None, max_length=100),
     rep_name: str | None = Query(default=None, max_length=100),
-    order_status: Literal["in_progress", "finalized", "cancelled"] | None = Query(
+    order_status: Literal["in_progress", "finalized", "cancelled", "not_finalized"] | None = Query(
         default=None,
         alias="status",
     ),
@@ -1222,6 +1222,10 @@ async def list_orders(
         conditions.append(Order.is_finalized.is_(True))
     elif order_status == "cancelled":
         conditions.append(Order.is_cancelled.is_(True))
+    elif order_status == "not_finalized":
+        # Aba "Orçamento": em andamento + cancelados (só orçamento não finalizado
+        # pode ser cancelado); o que foi finalizado vive na aba "Pedido".
+        conditions.append(Order.is_finalized.is_(False))
     elif order_status == "in_progress":
         conditions.extend(
             (Order.is_finalized.is_(False), Order.is_cancelled.is_(False))
