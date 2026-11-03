@@ -119,8 +119,7 @@ def refresh_token_expiry() -> datetime:
     return (datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS)).replace(tzinfo=None)
 
 
-# ── Convite de assinatura (10 min, opaco e persistido somente como hash) ───────
-SIGN_TOKEN_TTL_MINUTES = 10
+# ── Convite de assinatura (opaco e persistido somente como hash) ───────────────
 
 
 def generate_sign_invitation_token() -> str:
@@ -129,7 +128,3 @@ def generate_sign_invitation_token() -> str:
 
 def hash_sign_invitation_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
-
-
-def sign_invitation_expiry() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(minutes=SIGN_TOKEN_TTL_MINUTES)

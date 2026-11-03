@@ -33,7 +33,6 @@ import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, isAreaCatalogName, isAreaProduct } from '../lib/areaProduct'
 import { withMarketProductNames } from '../lib/productPayload'
-import { shouldCloseModal } from '../lib/modalDismissal'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
 type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao'
@@ -357,7 +356,7 @@ function Modal({ title, onClose, children, accentColor, closeOnlyByButton = fals
 }) {
   const tx = useCadastroText()
   const closeFrom = (reason: 'backdrop' | 'escape' | 'close-button') => {
-    if (shouldCloseModal(reason, closeOnlyByButton)) onClose()
+    if (!closeOnlyByButton || reason === 'close-button') onClose()
   }
   return (
     <div className="modal-overlay" onClick={() => closeFrom('backdrop')}>

@@ -1,11 +1,10 @@
 import uuid
-from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.db.session import get_db
+from app.db.session import get_db as get_db_session
 from app.models.user import User, UserRole
 from app.models.market import BR_MARKET, UserPlatformPermission
 from app.core.security import decode_access_token
@@ -56,11 +55,6 @@ async def _load_token_identity(
     if user is None or payload.get("ver") != user.auth_version:
         raise credentials_exception
     return user
-
-
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    async for session in get_db():
-        yield session
 
 
 def _enforce_readonly_canary(principal: MarketPrincipal, request: Request | None) -> None:

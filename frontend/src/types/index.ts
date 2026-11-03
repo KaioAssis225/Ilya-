@@ -4,11 +4,6 @@ export interface ProductGroup {
   ipi: number
 }
 
-export interface ProductGroupCreate {
-  name: string
-  ipi: number
-}
-
 export type OptionalBrand = 'ILYA' | 'IBTW'
 
 export interface OptionalColor {
