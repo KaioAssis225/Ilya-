@@ -1174,11 +1174,17 @@ async def list_orders(
     order_stage: Literal["production", "delivered"] | None = Query(default=None, alias="stage"),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    date_basis: Literal["created_at", "finalized_at"] = Query(default="created_at"),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_order_access),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
     conditions = []
+    # A aba Pedido (finalizados) ordena e filtra pela data de finalização;
+    # a aba Orçamento continua usando a data de criação.
+    basis_column = Order.finalized_at if date_basis == "finalized_at" else Order.created_at
+    if date_basis == "finalized_at":
+        conditions.append(Order.is_finalized.is_(True))
     if current_user.role == UserRole.representante:
         if not current_user.rep_id:
             response.headers["X-Has-More"] = "false"
@@ -1238,12 +1244,12 @@ async def list_orders(
         raise HTTPException(status_code=422, detail="Data inicial não pode ser posterior à data final.")
     if date_from:
         conditions.append(
-            Order.created_at
+            basis_column
             >= datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
         )
     if date_to:
         conditions.append(
-            Order.created_at
+            basis_column
             < datetime.combine(
                 date_to + timedelta(days=1),
                 datetime.min.time(),
@@ -1279,13 +1285,13 @@ async def list_orders(
         .join(Client, Client.id == Order.client_id)
         .outerjoin(Representative, Representative.id == Order.rep_id)
         .where(Order.market_code == principal.code, *conditions)
-        .order_by(Order.created_at.desc(), Order.id.desc())
+        .order_by(basis_column.desc(), Order.id.desc())
     )
 
     if cursor:
         cursor_created_at, cursor_id = _decode_order_cursor(cursor)
         stmt = stmt.where(
-            tuple_(Order.created_at, Order.id) < tuple_(cursor_created_at, cursor_id)
+            tuple_(basis_column, Order.id) < tuple_(cursor_created_at, cursor_id)
         )
     elif skip:
         # Mantém compatibilidade com consumidores antigos; a interface nova usa cursor.
@@ -1314,7 +1320,7 @@ async def list_orders(
     if has_more and page_rows:
         last = page_rows[-1]
         response.headers["X-Next-Cursor"] = _encode_order_cursor(
-            last["created_at"],
+            last["finalized_at"] if date_basis == "finalized_at" else last["created_at"],
             last["id"],
         )
     response.headers["X-Has-More"] = "true" if has_more else "false"

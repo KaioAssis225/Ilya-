@@ -363,3 +363,62 @@ async def test_database_rejects_inconsistent_stage(client, db_session):
     assert "ck_orders_stage_requires_finalized" in await rejected(
         "UPDATE orders SET order_stage = 'production' WHERE id = :id", id=quote_id
     )
+
+
+async def test_list_date_basis_orders_filters_and_pages_by_finalization(client, db_session):
+    admin = await _admin(db_session, "BR")
+    price_list = await _price_list(db_session, "BR", "lojista")
+    product = await _create_product_with_price(db_session, "BR", price_list, Decimal("100.00"))
+    client_id = await _create_client(db_session, "BR", price_list)
+    await db_session.commit()
+    items = [{"product_code": product.product_code, "qty": 1}]
+
+    ids = {}
+    for label in ("first", "second", "open"):
+        created = await _post_order(client, admin, client_id, items)
+        assert created.status_code == 201, created.text
+        ids[label] = created.json()["id"]
+    # "first" foi criado antes de "second", mas é finalizado depois dele.
+    assert (await _finalize_order(client, admin, uuid.UUID(ids["second"]))).status_code == 200
+    assert (await _finalize_order(client, admin, uuid.UUID(ids["first"]))).status_code == 200
+    first = await _order_row(db_session, uuid.UUID(ids["first"]))
+    second = await _order_row(db_session, uuid.UUID(ids["second"]))
+    open_order = await _order_row(db_session, uuid.UUID(ids["open"]))
+    # Dentro da transação do teste o now() é o mesmo para todos: fixa as datas.
+    first.created_at = datetime(2024, 1, 1, 12, tzinfo=timezone.utc)
+    second.created_at = datetime(2024, 2, 1, 12, tzinfo=timezone.utc)
+    open_order.created_at = datetime(2024, 6, 1, 12, tzinfo=timezone.utc)
+    first.finalized_at = datetime(2024, 5, 1, 12, tzinfo=timezone.utc)
+    second.finalized_at = datetime(2024, 3, 15, 12, tzinfo=timezone.utc)
+    await db_session.commit()
+
+    async def listed(query: str) -> list[str]:
+        response = await client.get(f"/api/v1/orders?limit=100&{query}", headers=_auth(admin.token))
+        assert response.status_code == 200, response.text
+        return [row["id"] for row in response.json()]
+
+    # Pela finalização: mais recente primeiro, e o orçamento aberto fica de fora.
+    assert await listed("date_basis=finalized_at") == [ids["first"], ids["second"]]
+    # Pela criação (padrão): ordem de criação inversa, incluindo o aberto.
+    assert await listed("") == [ids["open"], ids["second"], ids["first"]]
+
+    # O filtro de data segue a base escolhida.
+    assert await listed("date_basis=finalized_at&date_from=2024-04-01") == [ids["first"]]
+    assert await listed("date_basis=finalized_at&date_to=2024-03-31") == [ids["second"]]
+    assert await listed("date_from=2024-04-01") == [ids["open"]]
+
+    # A paginação por cursor usa a mesma data da ordenação.
+    page_one = await client.get(
+        "/api/v1/orders?limit=1&date_basis=finalized_at", headers=_auth(admin.token)
+    )
+    assert [row["id"] for row in page_one.json()] == [ids["first"]]
+    assert page_one.headers["X-Has-More"] == "true"
+    cursor = page_one.headers["X-Next-Cursor"]
+    page_two = await client.get(
+        f"/api/v1/orders?limit=1&date_basis=finalized_at&cursor={cursor}", headers=_auth(admin.token)
+    )
+    assert [row["id"] for row in page_two.json()] == [ids["second"]]
+    assert page_two.headers["X-Has-More"] == "false"
+
+    invalid = await client.get("/api/v1/orders?date_basis=delivered_at", headers=_auth(admin.token))
+    assert invalid.status_code == 422

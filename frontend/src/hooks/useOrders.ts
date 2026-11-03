@@ -16,6 +16,7 @@ export interface OrderListFilters {
   stage?: OrderStage | ''
   date_from?: string
   date_to?: string
+  date_basis?: 'created_at' | 'finalized_at'
 }
 
 export interface OrderListPage {
