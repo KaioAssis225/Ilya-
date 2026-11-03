@@ -5,7 +5,6 @@ import copy
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Protocol
 
 from app.core.config import settings
 from app.core.uploads import (
@@ -22,10 +21,6 @@ _RENDER_SEMAPHORE = asyncio.Semaphore(1)
 _BUNDLE_PATH = Path(__file__).resolve().parent.parent / "pdf_bundle" / "pdf-render.js"
 
 
-class PdfRenderer(Protocol):
-    async def render(self, snapshot: dict) -> bytes: ...
-
-
 class PdfRendererUnavailable(Exception):
     pass
 
@@ -34,11 +29,6 @@ class PdfRenderFailed(Exception):
     def __init__(self, code: str = "render_failed") -> None:
         super().__init__(code)
         self.code = code
-
-
-class _UnavailableRenderer:
-    async def render(self, snapshot: dict) -> bytes:
-        raise PdfRendererUnavailable("renderer_unavailable")
 
 
 @lru_cache(maxsize=1)
@@ -90,7 +80,13 @@ async def _prepare_payload(snapshot: dict) -> dict:
 
 
 class PlaywrightPdfRenderer:
+    def __init__(self, *, _unavailable: bool = False) -> None:
+        self._unavailable = _unavailable
+
     async def render(self, snapshot: dict) -> bytes:
+        if self._unavailable:
+            raise PdfRendererUnavailable("renderer_unavailable")
+
         if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 2:
             raise PdfRenderFailed("unsupported_snapshot")
 
@@ -166,7 +162,7 @@ class PlaywrightPdfRenderer:
         return pdf_bytes
 
 
-def get_pdf_renderer() -> PdfRenderer:
+def get_pdf_renderer() -> PlaywrightPdfRenderer:
     if settings.ORDER_EMAIL_PDF_RENDERER == "playwright":
         return PlaywrightPdfRenderer()
-    return _UnavailableRenderer()
+    return PlaywrightPdfRenderer(_unavailable=True)
