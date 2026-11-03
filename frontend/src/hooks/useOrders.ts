@@ -99,14 +99,6 @@ export function useChangeOrderStage() {
   })
 }
 
-export function useOrderHistory(orderId: string | null) {
-  return useQuery<OrderHistory[]>({
-    queryKey: [KEY, orderId, 'history'],
-    queryFn: async () => (await api.get(`/orders/${orderId}/history`)).data,
-    enabled: !!orderId,
-  })
-}
-
 export function useGlobalOrderHistory(cursor?: string, enabled = true) {
   return useQuery<OrderHistoryPage>({
     queryKey: [KEY, 'history', cursor],
