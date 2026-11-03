@@ -128,14 +128,21 @@ function StageBadge({ stage, english }: { stage: OrderStage; english: boolean })
 function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; onClose: () => void; onFinalized?: (order: OrderSummary) => void }) {
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const finalizeM = useFinalizeOrder()
 
   async function handleSubmit() {
+    setError('')
     setLoading(true)
     try {
       await finalizeM.mutateAsync({ id: order.id, external_code: code.trim() || undefined })
       onFinalized?.(order)
       onClose()
+    } catch (error: unknown) {
+      const detail = error != null && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+        : undefined
+      setError(typeof detail === 'string' ? detail : 'Não foi possível finalizar o orçamento. Tente novamente.')
     } finally {
       setLoading(false)
     }
@@ -153,6 +160,7 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
         <p className="text-sm text-ink-2 mb-4">
           Orçamento <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como finalizado e não poderá mais ser editado.
         </p>
+        {error ? <div role="alert" className="mb-4 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div> : null}
         <label className="block space-y-1 mb-5">
           <span className="text-xs text-muted font-medium">Código Externo (opcional)</span>
           <input

@@ -151,4 +151,25 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     expect(await screen.findByText('Quote PED-0001 finalised and moved to the Order tab.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View in Orders' })).toBeInTheDocument()
   })
+
+  it('mantém modal aberto e mostra erro da API ao finalizar', async () => {
+    const user = userEvent.setup()
+    installOrdersBackend([makeSummary()])
+    server.use(
+      http.post('*/orders/:id/finalize', () => HttpResponse.json({
+        detail: 'Selecione todos os opcionais antes de finalizar. Pendências: MESA-1: Base',
+      }, { status: 422 })),
+    )
+
+    renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
+    await screen.findAllByText('PED-0001')
+
+    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getByRole('button', { name: 'Finalizar Orçamento' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Selecione todos os opcionais antes de finalizar. Pendências: MESA-1: Base',
+    )
+    expect(screen.getByRole('button', { name: 'Finalizar Orçamento' })).toBeInTheDocument()
+  })
 })

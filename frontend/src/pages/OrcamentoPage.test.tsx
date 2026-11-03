@@ -456,7 +456,45 @@ describe('OrcamentoPage', () => {
     fireEvent.click(submit)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Mesa PT: Selecione ao menos um opcional para este produto',
+      'Mesa PT: Tampo: escolha pendente',
+    )
+    expect(posted).toBe(false)
+  })
+
+  it('Brasil não finaliza produto com aplicação pendente', async () => {
+    const user = productTestUser('admin', 'BR')
+    const product = buildProduct('BR')
+    const quoteClient = { ...buildClient('client-br-pending-base'), market_code: 'BR', country: 'BR' }
+    localStorage.setItem(
+      cartStorageKey(user.id, 'BR'),
+      JSON.stringify([{
+        line_id: 'line-br-with-top',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [{ application_id: 'app-topo', optional_id: 'opt-branco' }],
+      }]),
+    )
+    sessionStorage.setItem(`orcamento_client_id:${user.id}:BR`, quoteClient.id)
+    installOrcamentoHandlers([product])
+    let posted = false
+    server.use(
+      http.get(`*/clients/${quoteClient.id}`, () => HttpResponse.json(quoteClient)),
+      http.post('*/orders', () => {
+        posted = true
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Mesa BR: Base: escolha pendente',
     )
     expect(posted).toBe(false)
   })

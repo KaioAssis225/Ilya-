@@ -6,7 +6,8 @@ em products.py), lido como regra e não como oráculo:
 * cada aplicação do produto é uma escolha independente; duas aplicações da
   mesma categoria guardam opções distintas, e duas linhas do mesmo SKU não
   compartilham escolhas;
-* aplicação obrigatória ausente → 422; aplicação opcional pode ficar vazia;
+* todas as aplicações e categorias configuradas precisam estar preenchidas ao
+  salvar ou finalizar o orçamento;
 * repetir a mesma opção na mesma categoria só passa se TODAS as aplicações
   envolvidas permitem repetição;
 * aplicação repetida no payload ou de outro produto → 422;
@@ -32,7 +33,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
@@ -296,17 +297,108 @@ async def test_reg_opt_two_lines_same_sku_do_not_share_choices(
 
 # ── Obrigatório × opcional ─────────────────────────────────────────────────────
 
-async def test_reg_opt_optional_application_may_stay_empty(
+@pytest.mark.parametrize("market", ["BR", "EU"])
+async def test_reg_opt_missing_optional_application_is_422_without_order(
+    client: AsyncClient, db_session: AsyncSession, market: str
+) -> None:
+    s = await _scenario(db_session, market)
+
+    response = await _post_order(client, s, [_item(s, _choice(s.app_feet, s.opt_black))])
+    assert response.status_code == 422, response.text
+    assert "Encosto" in response.json()["detail"]
+    await _assert_no_partial_order(db_session, s)
+
+
+async def test_reg_opt_missing_legacy_category_is_422_and_complete_line_succeeds(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    s = await _scenario(db_session, "BR", free_fabric=True)
+    applications = (
+        _choice(s.app_feet, s.opt_black),
+        _choice(s.app_back, s.opt_taupe),
+    )
+
+    missing = await _post_order(client, s, [_item(s, *applications)])
+    assert missing.status_code == 422, missing.text
+    assert s.other_category_code in missing.json()["detail"]
+    await _assert_no_partial_order(db_session, s)
+
+    complete = await _post_order(client, s, [
+        _item(
+            s,
+            *applications,
+            opt_categories={s.other_category_code: "Linho"},
+        ),
+    ])
+    assert complete.status_code == 201, complete.text
+
+
+async def test_finalize_rejects_incomplete_line_without_mutating_order(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     s = await _scenario(db_session, "BR")
+    created = await _post_order(client, s, [
+        _item(
+            s,
+            _choice(s.app_feet, s.opt_black),
+            _choice(s.app_back, s.opt_taupe),
+        ),
+    ])
+    assert created.status_code == 201, created.text
+    order_id = uuid.UUID(created.json()["id"])
+    before = (await db_session.execute(
+        select(Order)
+        .where(Order.id == order_id)
+        .execution_options(**_SKIP_SCOPE)
+    )).scalar_one()
+    versions = (before.source_version, before.document_version)
 
-    response = await _post_order(client, s, [_item(s, _choice(s.app_feet, s.opt_black))])
-    assert response.status_code == 201, response.text
-    body = response.json()
+    await db_session.execute(delete(OrderItemOptionalChoice).where(
+        OrderItemOptionalChoice.application_id == s.app_back,
+    ))
+    await db_session.commit()
+    db_session.expunge_all()
 
-    persisted = await _persisted_choices(db_session, body["id"])
-    assert list(persisted.values()) == [{(s.app_feet, s.opt_black)}]
+    response = await client.post(
+        f"/api/v1/orders/{order_id}/finalize",
+        json={},
+        headers=_auth(s.token),
+    )
+    assert response.status_code == 422, response.text
+    assert "Encosto" in response.json()["detail"]
+
+    after = (await db_session.execute(
+        select(Order)
+        .where(Order.id == order_id)
+        .execution_options(populate_existing=True, **_SKIP_SCOPE)
+    )).scalar_one()
+    assert after.is_finalized is False
+    assert after.finalized_at is None
+    assert after.order_stage is None
+    assert after.production_started_at is None
+    assert (after.source_version, after.document_version) == versions
+
+
+async def test_finalize_accepts_line_with_every_optional_selected(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    s = await _scenario(db_session, "BR")
+    created = await _post_order(client, s, [
+        _item(
+            s,
+            _choice(s.app_feet, s.opt_black),
+            _choice(s.app_back, s.opt_taupe),
+        ),
+    ])
+    assert created.status_code == 201, created.text
+
+    response = await client.post(
+        f"/api/v1/orders/{created.json()['id']}/finalize",
+        json={},
+        headers=_auth(s.token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["is_finalized"] is True
 
 
 @pytest.mark.parametrize("market", ["BR", "EU"])
@@ -406,8 +498,20 @@ async def test_each_item_keeps_its_own_comment(
     s = await _scenario(db_session, market)
 
     response = await _post_order(client, s, [
-        _item(s, _choice(s.app_feet, s.opt_taupe), qty=1, comment="  Entregar montado  "),
-        _item(s, _choice(s.app_feet, s.opt_black), qty=2, comment="   "),
+        _item(
+            s,
+            _choice(s.app_feet, s.opt_taupe),
+            _choice(s.app_back, s.opt_black),
+            qty=1,
+            comment="  Entregar montado  ",
+        ),
+        _item(
+            s,
+            _choice(s.app_feet, s.opt_black),
+            _choice(s.app_back, s.opt_taupe),
+            qty=2,
+            comment="   ",
+        ),
     ])
     assert response.status_code == 201, response.text
     comments = {item["qty"]: item["comment"] for item in response.json()["items"]}
@@ -533,7 +637,11 @@ async def test_reg_opt_valid_first_line_is_not_saved_when_second_line_fails(
     s = await _scenario(db_session, "BR")
 
     response = await _post_order(client, s, [
-        _item(s, _choice(s.app_feet, s.opt_taupe)),
+        _item(
+            s,
+            _choice(s.app_feet, s.opt_taupe),
+            _choice(s.app_back, s.opt_black),
+        ),
         _item(s, _choice(s.app_back, s.opt_black)),
     ])
     assert response.status_code == 422, response.text
