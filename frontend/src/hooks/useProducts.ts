@@ -20,6 +20,11 @@ export interface ProductPageParams {
   language?: 'pt-PT' | 'en-GB'
 }
 
+export interface ProductFilterOptions {
+  groups: Array<{ id: string; name: string }>
+  types: Array<{ id: string; name: string; group_id: string | null }>
+}
+
 export function productsPageQueryOptions(params: ProductPageParams) {
   return queryOptions<PageResult<Product>>({
     queryKey: [KEY, 'page', params],
@@ -50,6 +55,18 @@ export function useArticleCategories() {
     queryKey: [KEY, 'article-categories', user?.active_market],
     queryFn: () => api.get<string[]>('/products/article-categories').then((response) => response.data),
     enabled: Boolean(user?.active_market),
+  })
+}
+
+export function useProductFilterOptions(catalogId?: string) {
+  const { user } = useAuth()
+  return useQuery<ProductFilterOptions>({
+    queryKey: [KEY, 'filter-options', user?.active_market, catalogId ?? ''],
+    queryFn: () => api.get<ProductFilterOptions>('/products/filter-options', {
+      params: { catalog_id: catalogId || undefined },
+    }).then((response) => response.data),
+    enabled: Boolean(user?.active_market),
+    staleTime: 30_000,
   })
 }
 

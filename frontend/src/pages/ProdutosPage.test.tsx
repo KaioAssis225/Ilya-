@@ -83,6 +83,32 @@ function readCart(user: AuthUser) {
 }
 
 describe('ProdutosPage de catálogo em DOM', () => {
+  it('oculta grupos e subgrupos sem produtos na aba Produtos', async () => {
+    installProductHandlers({
+      products: [productFixture('BR', { type: 'Cadeira' })],
+      filterOptions: {
+        groups: [{ id: 'group-with-product', name: 'Assentos' }],
+        types: [{ id: 'type-with-product', name: 'Cadeira', group_id: 'group-with-product' }],
+      },
+    })
+    server.use(
+      http.get('*/product-groups', () => HttpResponse.json([
+        { id: 'group-with-product', name: 'Assentos' },
+        { id: 'empty-group', name: 'Grupo vazio' },
+      ])),
+      http.get('*/product-types', () => HttpResponse.json([
+        { id: 'type-with-product', name: 'Cadeira', group_id: 'group-with-product' },
+        { id: 'empty-type', name: 'Subgrupo vazio', group_id: 'empty-group' },
+      ])),
+    )
+    renderProductPage(<ProdutosPage />, productTestUser('admin', 'BR'))
+
+    expect(await screen.findByRole('option', { name: 'ASSENTOS' })).toBeVisible()
+    expect(screen.getByRole('option', { name: 'CADEIRA' })).toBeVisible()
+    expect(screen.queryByRole('option', { name: 'GRUPO VAZIO' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'SUBGRUPO VAZIO' })).not.toBeInTheDocument()
+  })
+
   it('REG-CAT-01: mercado BR mostra apenas produtos BR fornecidos pelo MSW', async () => {
     privateAppHandlers(() => [productFixture('BR')])
     renderPrivate(productTestUser('admin', 'BR'))
@@ -123,6 +149,7 @@ describe('ProdutosPage de catálogo em DOM', () => {
         })
       }),
       http.get('*/notifications', empty),
+      http.get('*/products/filter-options', () => HttpResponse.json({ groups: [], types: [] })),
       http.get('*/product-types', empty),
       http.get('*/product-groups', empty),
       http.get('*/catalogs', empty),

@@ -108,6 +108,10 @@ export function productFixture(
 export function installProductHandlers(options: {
   products?: ProductFixture[]
   catalogs?: Array<{ id: string; name: string }>
+  filterOptions?: {
+    groups: Array<{ id: string; name: string }>
+    types: Array<{ id: string; name: string; group_id: string | null }>
+  }
   onCreate?: (payload: Record<string, unknown>) => Response | Promise<Response>
   onPatch?: (id: string, payload: Record<string, unknown>) => Response | Promise<Response>
 } = {}) {
@@ -117,6 +121,7 @@ export function installProductHandlers(options: {
       headers: { 'X-Total-Count': String(products.length), 'X-Has-More': 'false', 'X-Page-Size': String(products.length) },
     })),
     http.get('*/products/article-categories', () => HttpResponse.json([])),
+    http.get('*/products/filter-options', () => HttpResponse.json(options.filterOptions ?? { groups: [], types: [] })),
     http.get('*/catalogs', () => HttpResponse.json(options.catalogs ?? [])),
     http.get('*/product-types', () => HttpResponse.json([])),
     http.get('*/product-groups', () => HttpResponse.json([])),

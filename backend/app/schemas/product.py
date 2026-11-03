@@ -213,6 +213,26 @@ class ProductBatchRequest(BaseModel):
         return values
 
 
+class ProductFilterGroupRead(BaseModel):
+    id: uuid.UUID
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class ProductFilterTypeRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    group_id: Optional[uuid.UUID] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ProductFilterOptionsRead(BaseModel):
+    groups: List[ProductFilterGroupRead] = Field(default_factory=list)
+    types: List[ProductFilterTypeRead] = Field(default_factory=list)
+
+
 class ProductRead(ProductBase):
     id: uuid.UUID
     # Bloco 96: preço que a role logada não pode ver sai como null em vez de
