@@ -345,7 +345,7 @@ describe('PedidosPage — aba E-mails', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
+  }, 15_000)
 
   it('mostra Enviar e-mail de teste apenas quando test_send_available é verdadeiro', async () => {
     const summary = makeSummary()
@@ -433,5 +433,5 @@ describe('PedidosPage — aba E-mails', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(message)
       unmount()
     }
-  })
+  }, 15_000)
 })

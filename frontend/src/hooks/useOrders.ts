@@ -12,7 +12,7 @@ export interface OrderListFilters {
   rep_id?: string
   client_name?: string
   rep_name?: string
-  status?: 'in_progress' | 'finalized' | 'cancelled' | ''
+  status?: 'in_progress' | 'finalized' | 'cancelled' | 'not_finalized' | ''
   date_from?: string
   date_to?: string
 }

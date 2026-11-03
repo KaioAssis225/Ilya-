@@ -137,6 +137,52 @@ describe('PrivateApp em DOM', () => {
     await waitFor(() => expect(productsByCall).toHaveLength(2))
   })
 
+  it.each(roles)('mostra a aba Pedido ao lado de Orçamento só para quem vê orçamentos: %s', async role => {
+    mapRequests()
+    renderPrivate(userFor(role), '/produtos')
+    await screen.findByRole('heading', { name: 'Catálogo de produtos', level: 1 })
+    const allowed = !['cadastros', 'executivo'].includes(role)
+    expect(screen.queryAllByRole('link', { name: 'Pedido' })).toHaveLength(allowed ? 2 : 0)
+    expect(screen.queryAllByRole('link', { name: 'Orçamento' })).toHaveLength(allowed ? 2 : 0)
+  })
+
+  it('rotula a aba Pedido como Order em en-GB (Portugal)', async () => {
+    mapRequests()
+    const user = userFor('admin', 'EU')
+    localStorage.setItem(`ilya-locale:${user.id}:EU`, 'en-GB')
+    renderPrivate(user, '/produtos')
+    await screen.findByRole('heading', { name: 'Product catalogue', level: 1 })
+    expect(screen.getAllByRole('link', { name: 'Order' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Quote' })).toHaveLength(2)
+  })
+
+  it('/pedidos-finalizados abre a lista de pedidos e marca só a aba Pedido como ativa', async () => {
+    mapRequests()
+    const statuses: Array<string | null> = []
+    server.use(http.get('*/orders', ({ request }) => {
+      statuses.push(new URL(request.url).searchParams.get('status'))
+      return HttpResponse.json([], { headers: { 'X-Has-More': 'false' } })
+    }))
+    renderPrivate(userFor('admin'), '/pedidos-finalizados')
+    expect(await screen.findByRole('heading', { name: /Pedidos/, level: 1 })).toBeInTheDocument()
+    await waitFor(() => expect(statuses).toContain('finalized'))
+    const navigation = screen.getAllByRole('navigation', { name: 'Navegação principal' })[0]
+    expect(within(navigation).getByRole('link', { name: 'Pedido' })).toHaveAttribute('aria-current', 'page')
+    expect(within(navigation).getByRole('link', { name: 'Orçamento' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('/pedidos continua abrindo a lista de orçamentos (não finalizados)', async () => {
+    mapRequests()
+    const statuses: Array<string | null> = []
+    server.use(http.get('*/orders', ({ request }) => {
+      statuses.push(new URL(request.url).searchParams.get('status'))
+      return HttpResponse.json([], { headers: { 'X-Has-More': 'false' } })
+    }))
+    renderPrivate(userFor('admin'), '/pedidos')
+    expect(await screen.findByRole('heading', { name: /Orçamentos/, level: 1 })).toBeInTheDocument()
+    await waitFor(() => expect(statuses).toContain('not_finalized'))
+  })
+
   it('rejeita request sem handler MSW usando URL absoluta', async () => {
     await expect(fetch('http://localhost/api/v1/unmapped-test')).rejects.toThrow()
   })
