@@ -93,15 +93,23 @@ export function validateApplicationChoices(
   product: Product,
   choices: OptionalChoiceInput[],
   allOptionals: OptionalColor[],
-  requireAnySelection = false,
+  requireCompleteSelection = false,
   legacySelections: Partial<Record<string, string>> = {},
 ): string[] {
   const applications = productApplications(product).map(entry => entry.application)
   const byId = new Map(applications.map(application => [application.id, application]))
   const errors: string[] = []
-  const hasLegacySelection = Object.values(legacySelections).some(value => value?.trim())
-  if (requireAnySelection && applications.length > 0 && choices.length === 0 && !hasLegacySelection) {
-    errors.push('Selecione ao menos um opcional para este produto')
+  const applicationCategoryCodes = new Set(applications.map(application => application.category_code))
+  const configuredLegacyCategoryCodes = new Set<string>()
+  for (const optional of product.optionals ?? []) {
+    configuredLegacyCategoryCodes.add(optional.category)
+  }
+  for (const raw of (product.all_optionals_categories ?? '').split(',')) {
+    const code = raw.trim()
+    if (code) configuredLegacyCategoryCodes.add(code)
+  }
+  for (const code of applicationCategoryCodes) {
+    configuredLegacyCategoryCodes.delete(code)
   }
   const seenApplications = new Set<string>()
   const used = new Map<string, OptionalApplication>()
@@ -123,8 +131,16 @@ export function validateApplicationChoices(
     if (previous && (!previous.allow_repeat || !application.allow_repeat)) errors.push(`${application.name}: escolha repetida`)
     used.set(key, application)
   }
+  if (requireCompleteSelection) {
+    for (const application of applications) {
+      if (!seenApplications.has(application.id)) errors.push(`${application.name}: escolha pendente`)
+    }
+    for (const categoryCode of configuredLegacyCategoryCodes) {
+      if (!legacySelections[categoryCode]?.trim()) errors.push(`${categoryCode}: escolha pendente`)
+    }
+  }
   for (const application of applications) {
-    if (application.required && !seenApplications.has(application.id)) errors.push(`${application.name}: escolha obrigatória`)
+    if (!requireCompleteSelection && application.required && !seenApplications.has(application.id)) errors.push(`${application.name}: escolha obrigatória`)
   }
   return errors
 }

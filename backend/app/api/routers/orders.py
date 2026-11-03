@@ -210,6 +210,87 @@ def _rug_snapshot(item: OrderItem) -> dict:
     }
 
 
+async def _batch_load_optional_slots(
+    db: AsyncSession, products: list[Product],
+) -> tuple[
+    dict[uuid.UUID, list[ProductOptionalApplication]],
+    dict[uuid.UUID, set[str]],
+]:
+    if not products:
+        return {}, {}
+
+    product_ids = [product.id for product in products]
+    applications = (
+        await db.execute(
+            select(ProductOptionalApplication)
+            .where(ProductOptionalApplication.product_id.in_(product_ids))
+            .options(selectinload(ProductOptionalApplication.category))
+        )
+    ).scalars().all()
+
+    applications_by_product_id: dict[
+        uuid.UUID, list[ProductOptionalApplication]
+    ] = {}
+    for application in applications:
+        applications_by_product_id.setdefault(
+            application.product_id, []
+        ).append(application)
+
+    direct_pairs = (
+        await db.execute(
+            select(product_optionals.c.product_id, OptionalColor.category)
+            .join(
+                OptionalColor,
+                product_optionals.c.optional_id == OptionalColor.id,
+            )
+            .where(product_optionals.c.product_id.in_(product_ids))
+        )
+    ).all()
+
+    direct_by_product_id: dict[uuid.UUID, set[str]] = {}
+    for product_id, category in direct_pairs:
+        direct_by_product_id.setdefault(product_id, set()).add(category)
+
+    legacy_categories_by_product_id: dict[uuid.UUID, set[str]] = {}
+    for product in products:
+        application_categories = {
+            application.category.code
+            for application in applications_by_product_id.get(product.id, [])
+        }
+        declared_categories = {
+            category.strip()
+            for category in (product.all_optionals_categories or "").split(",")
+            if category.strip()
+        }
+        legacy_categories_by_product_id[product.id] = (
+            direct_by_product_id.get(product.id, set()) | declared_categories
+        ) - application_categories
+
+    return applications_by_product_id, legacy_categories_by_product_id
+
+
+def _missing_optional_labels(
+    applications: list[ProductOptionalApplication],
+    expected_legacy_categories: set[str],
+    selected_application_ids: set[uuid.UUID],
+    opt_categories: dict | None,
+) -> list[str]:
+    missing = [
+        application.name
+        for application in applications
+        if application.id not in selected_application_ids
+    ]
+    selected_legacy_categories = {
+        category
+        for category, value in (opt_categories or {}).items()
+        if value is not None and str(value).strip()
+    }
+    missing.extend(sorted(
+        expected_legacy_categories - selected_legacy_categories
+    ))
+    return missing
+
+
 async def _resolve_item_choices(
     db: AsyncSession, product: Product, market_code: str, item_in: OrderItemCreate,
     source: OrderItem | None = None,
@@ -234,9 +315,11 @@ async def _resolve_item_choices(
                 component_name=row.component_name, display_order=row.display_order,
             ) for row in source.optional_choices]
 
-    applications = (await db.execute(select(ProductOptionalApplication).where(
-        ProductOptionalApplication.product_id == product.id,
-    ))).scalars().all()
+    (
+        applications_by_product_id,
+        legacy_categories_by_product_id,
+    ) = await _batch_load_optional_slots(db, [product])
+    applications = applications_by_product_id.get(product.id, [])
     application_map = {row.id: row for row in applications}
     category_codes = {row.category.code for row in applications}
     if category_codes.intersection(item_in.opt_categories):
@@ -270,15 +353,6 @@ async def _resolve_item_choices(
     chosen = {row.application_id: row for row in item_in.optional_choices}
     if len(chosen) != len(item_in.optional_choices) or any(app_id not in application_map for app_id in chosen):
         raise HTTPException(status_code=422, detail="Aplicação inválida ou repetida neste produto.")
-    has_legacy_selection = any(str(value).strip() for value in item_in.opt_categories.values())
-    if market_code == "EU" and applications and not chosen and not has_legacy_selection:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Selecione ao menos um opcional para o produto '{item_in.product_code}'.",
-        )
-    missing = [row.name for row in applications if row.required and row.id not in chosen]
-    if missing:
-        raise HTTPException(status_code=422, detail="Preencha as aplicações obrigatórias: " + ", ".join(missing))
     option_ids = {row.optional_id for row in chosen.values() if row.optional_id is not None}
     optionals = (await db.execute(select(OptionalColor).where(
         OptionalColor.id.in_(option_ids), OptionalColor.market_code == market_code,
@@ -330,6 +404,20 @@ async def _resolve_item_choices(
             component_name=component_name,
             display_order=app.display_order,
         ))
+    missing_labels = _missing_optional_labels(
+        applications,
+        legacy_categories_by_product_id.get(product.id, set()),
+        set(chosen),
+        item_in.opt_categories,
+    )
+    if missing_labels:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Selecione todos os opcionais para o produto "
+                f"'{item_in.product_code}': {', '.join(missing_labels)}."
+            ),
+        )
     return result
 
 
@@ -1716,10 +1804,17 @@ async def finalize_order(
     if not _can_operate_order(current_user):
         raise HTTPException(status_code=403, detail="Acesso negado.")
     result = await db.execute(
-        select(Order).where(
+        select(Order)
+        .where(
             Order.id == order_id,
             *_order_visibility_filters(current_user),
-        ).with_for_update()
+        )
+        .options(
+            selectinload(Order.items).selectinload(
+                OrderItem.optional_choices
+            )
+        )
+        .with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -1728,6 +1823,49 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
+    item_codes = [item.product_code for item in order.items]
+    products = (
+        await db.execute(
+            select(Product).where(
+                Product.market_code == order.market_code,
+                Product.product_code.in_(item_codes),
+            )
+        )
+    ).scalars().all() if item_codes else []
+    products_by_code = {
+        product.product_code: product for product in products
+    }
+    (
+        applications_by_product_id,
+        legacy_categories_by_product_id,
+    ) = await _batch_load_optional_slots(db, products)
+    pending_items = []
+    for item in order.items:
+        product = products_by_code.get(item.product_code)
+        if product is None:
+            continue
+        missing_labels = _missing_optional_labels(
+            applications_by_product_id.get(product.id, []),
+            legacy_categories_by_product_id.get(product.id, set()),
+            {
+                choice.application_id
+                for choice in item.optional_choices
+                if choice.application_id is not None
+            },
+            item.opt_categories,
+        )
+        if missing_labels:
+            pending_items.append(
+                f"{item.product_code}: {', '.join(missing_labels)}"
+            )
+    if pending_items:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Selecione todos os opcionais antes de finalizar. "
+                "Pendências: " + "; ".join(pending_items)
+            ),
+        )
     terminal_at = datetime.now(timezone.utc)
     order.is_finalized = True
     order.finalized_at = terminal_at

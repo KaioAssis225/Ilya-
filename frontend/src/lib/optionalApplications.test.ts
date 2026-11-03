@@ -21,17 +21,35 @@ test('sem aplicações não exige escolha; uma aplicação obrigatória exige', 
   assert.deepEqual(validateApplicationChoices(product([app]), [{ application_id: app.id, optional_id: 'taupe' }], [option('taupe', 'PINTURA')]), [])
 })
 
-test('Portugal exige ao menos uma escolha quando o produto oferece aplicações', () => {
+test('finalização exige todas as aplicações, independentemente de escolhas legadas', () => {
   const optional = application('Almofada', 'TECIDO', false)
   assert.match(
     validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')], true)[0],
-    /ao menos um opcional/,
+    /Almofada: escolha pendente/,
   )
-  assert.deepEqual(
-    validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')], true, { MADEIRA: 'Canela' }),
-    [],
+  assert.match(
+    validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')], true, { MADEIRA: 'Canela' })[0],
+    /Almofada: escolha pendente/,
   )
+  assert.deepEqual(validateApplicationChoices(
+    product([optional]),
+    [{ application_id: optional.id, optional_id: 'taupe' }],
+    [option('taupe', 'TECIDO')],
+    true,
+  ), [])
   assert.deepEqual(validateApplicationChoices(product([optional]), [], [option('taupe', 'TECIDO')]), [])
+})
+
+test('finalização exige cada categoria legada configurada', () => {
+  const item = {
+    ...product([]),
+    optionals: [option('taupe', 'PINTURA')],
+    all_optionals_categories: ' TECIDO ',
+  } as Product
+  assert.match(validateApplicationChoices(item, [], [], true)[0], /PINTURA: escolha pendente/)
+  assert.deepEqual(validateApplicationChoices(
+    item, [], [], true, { PINTURA: 'Taupe', TECIDO: 'Linho' },
+  ), [])
 })
 
 test('duas aplicações da mesma categoria preservam escolhas independentes e repetição configurada', () => {

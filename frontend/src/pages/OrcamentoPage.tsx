@@ -1729,7 +1729,7 @@ export default function OrcamentoPage() {
           item._product,
           item.optional_choices,
           allOptionals,
-          market === 'EU',
+          true,
           item.opt_categories,
         )[0],
       }))

@@ -39,6 +39,8 @@ class Session:
 
     async def execute(self, statement):
         entity = statement.column_descriptions[0]["entity"]
+        if entity is None:
+            return Result([])
         rows = self.rows[entity]
         if entity is OptionalColor:
             rows = [row for row in rows if row.market_code == self.market]
@@ -46,7 +48,7 @@ class Session:
 
 
 def fixture(category="PINTURA", required=True, allow_repeat=True, component_id=None, allowed=True):
-    product = SimpleNamespace(id=uuid.uuid4())
+    product = SimpleNamespace(id=uuid.uuid4(), all_optionals_categories="")
     cat = SimpleNamespace(code=category, name=category.title())
     optional = SimpleNamespace(id=uuid.uuid4(), market_code="BR", category=category, color_name="Taupe")
     application = SimpleNamespace(
@@ -88,22 +90,35 @@ def test_required_and_optional_applications():
     with pytest.raises(HTTPException) as error:
         resolve(product, [required, another], [optional])
     assert "Pintura dos pés" in error.value.detail
-    assert len(resolve(product, [required, another], [optional], [(required.id, optional.id)])) == 1
-
-
-def test_portugal_requires_at_least_one_choice_when_product_has_applications():
-    product, application, optional = fixture(required=False)
-    with pytest.raises(HTTPException) as error:
-        resolve(product, [application], [optional], market="EU")
-    assert "ao menos um opcional" in error.value.detail
-    assert resolve(
+    assert len(resolve(
         product,
-        [application],
+        [required, another],
         [optional],
-        legacy={"MADEIRA": "Canela"},
-        market="EU",
-    ) == []
-    assert resolve(product, [application], [optional], market="BR") == []
+        [(required.id, optional.id), (another.id, optional.id)],
+    )) == 2
+
+
+@pytest.mark.parametrize("market", ["BR", "EU"])
+def test_submission_requires_every_application(market):
+    product, application, optional = fixture(required=False)
+    optional.market_code = market
+    with pytest.raises(HTTPException) as error:
+        resolve(product, [application], [optional], market=market)
+    assert "Pintura dos pés" in error.value.detail
+    rows = resolve(
+        product, [application], [optional],
+        [(application.id, optional.id)], market=market,
+    )
+    assert len(rows) == 1
+
+
+def test_submission_requires_every_declared_legacy_category():
+    product, _, _ = fixture()
+    product.all_optionals_categories = " TECIDO "
+    with pytest.raises(HTTPException) as error:
+        resolve(product)
+    assert "TECIDO" in error.value.detail
+    assert resolve(product, legacy={"TECIDO": "Linho"}) == []
 
 
 def test_same_category_independent_selections_and_repetition():
