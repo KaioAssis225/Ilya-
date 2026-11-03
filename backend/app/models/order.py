@@ -40,6 +40,9 @@ class Order(Base, TimestampMixin):
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    order_stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    production_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     external_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Migration/01: frescor para consumidores externos (leitura cross-database
     # do Ilya Estoque).
@@ -93,6 +96,18 @@ class Order(Base, TimestampMixin):
         CheckConstraint(
             "order_number > 0",
             name="ck_orders_order_number_positive",
+        ),
+        CheckConstraint(
+            "order_stage IS NULL OR order_stage IN ('production', 'delivered')",
+            name="ck_orders_stage_valid",
+        ),
+        CheckConstraint(
+            "order_stage IS NULL OR is_finalized",
+            name="ck_orders_stage_requires_finalized",
+        ),
+        CheckConstraint(
+            "(order_stage = 'delivered' AND delivered_at IS NOT NULL) OR (order_stage IS DISTINCT FROM 'delivered' AND delivered_at IS NULL)",
+            name="ck_orders_stage_delivered_at",
         ),
         UniqueConstraint(
             "market_code", "number_owner_id",

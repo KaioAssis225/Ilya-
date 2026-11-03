@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Order, OrderCreate, OrderUpdate, OrderHistory, OrderSummary } from '../types'
+import type { Order, OrderCreate, OrderUpdate, OrderHistory, OrderSummary, OrderStage } from '../types'
 
 const KEY = 'orders'
 
@@ -13,6 +13,7 @@ export interface OrderListFilters {
   client_name?: string
   rep_name?: string
   status?: 'in_progress' | 'finalized' | 'cancelled' | 'not_finalized' | ''
+  stage?: OrderStage | ''
   date_from?: string
   date_to?: string
 }
@@ -84,6 +85,15 @@ export function useCancelOrder() {
   return useMutation<Order, Error, { id: string; reason?: string }>({
     mutationFn: ({ id, reason }) =>
       api.post(`/orders/${id}/cancel`, { reason: reason ?? null }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
+export function useChangeOrderStage() {
+  const qc = useQueryClient()
+  return useMutation<Order, Error, { id: string; stage: OrderStage }>({
+    mutationFn: ({ id, stage }) =>
+      api.post(`/orders/${id}/stage`, { stage }).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
   })
 }
