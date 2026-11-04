@@ -104,6 +104,7 @@ const PT_PT_LABELS: OrderDocumentLabels = {
   commercialNotice: 'Confirmação de pedido comercial. Este documento não é uma fatura.',
   itemNote: 'Nota', repSignature: 'Representante / IBTW', clientSignature: 'Cliente',
   commercialTerms: [
+    'ORÇAMENTO VÁLIDO POR 30 DIAS',
     'FRETE - EX WORKS',
     'CONDIÇÃO PAGAMENTO - 50% sinal',
     '50% 7 dias antes da saída da fábrica',
@@ -119,6 +120,7 @@ const EN_LABELS: OrderDocumentLabels = {
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
   totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES', vatExempt: 'EXEMPT',
   commercialTerms: [
+    'QUOTATION VALID FOR 30 DAYS',
     'FREIGHT - EX WORKS',
     'PAYMENT TERMS - 50% deposit',
     '50% 7 days before dispatch from the factory',

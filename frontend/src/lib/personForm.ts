@@ -3,8 +3,7 @@ import type { ClientCreate } from '../types'
 function normalizeCountry(value?: string): string | undefined {
   const trimmed = value?.trim()
   if (!trimmed) return undefined
-  const comparison = trimmed.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
-  return comparison === 'PORTUGAL' || comparison === 'PT' ? 'PT' : trimmed.toUpperCase()
+  return trimmed
 }
 
 // Normalização e tradução de erro compartilhadas pelos formulários de pessoa

@@ -27,7 +27,7 @@ class Client(Base, TimestampMixin):
     state: Mapped[str] = mapped_column(String(2), nullable=False)
     price_profile: Mapped[str] = mapped_column(String(20), nullable=False, default="lojista")
     price_list_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("price_lists.id"), nullable=False)
-    country: Mapped[str] = mapped_column(String(2), nullable=False, default="BR", server_default="BR")
+    country: Mapped[str] = mapped_column(String(120), nullable=False, default="BR", server_default="BR")
     region: Mapped[str | None] = mapped_column(String(120), nullable=True)
     tax_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

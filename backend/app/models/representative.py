@@ -13,7 +13,7 @@ class Representative(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR")
-    country: Mapped[str] = mapped_column(String(2), nullable=False, default="BR", server_default="BR")
+    country: Mapped[str] = mapped_column(String(120), nullable=False, default="BR", server_default="BR")
     region: Mapped[str | None] = mapped_column(String(120), nullable=True)
     tax_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)

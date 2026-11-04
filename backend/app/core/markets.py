@@ -104,15 +104,14 @@ def market_is_enabled(code: str) -> bool:
 
 
 def require_launch_country(market_code: str, country: str | None) -> str:
-    """Restringe EU ao país aprovado para a primeira liberação."""
-    normalized = (country or "").strip().upper()
+    """Mantém BR fixo e aceita o país EU como texto comercial livre."""
     if market_code == BR_MARKET:
         return BR_MARKET
-    launch_country = settings.EU_LAUNCH_COUNTRY.strip().upper()
-    if market_code == EU_MARKET and normalized != launch_country:
+    normalized = (country or "").strip()
+    if market_code == EU_MARKET and not normalized:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            f"A primeira liberação do mercado EU aceita somente o país {launch_country}.",
+            "Informe o país.",
         )
     return normalized
 

@@ -237,7 +237,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
         name: 'Casa Atlântico',
         contact_name: 'Maria Silva',
         client_type: 'arquiteto',
-        country: 'PT',
+        country: 'Portugal',
         observation: 'Contato após as 14h.',
         price_profile: 'lojista',
       })
@@ -273,6 +273,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
     await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
     await user.type(screen.getByLabelText('Localidade *'), 'Lisboa')
+    await user.type(screen.getByLabelText('País da primeira liberação'), 'Portugal')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     await waitFor(() => {

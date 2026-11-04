@@ -216,13 +216,11 @@ def test_uf_usa_sentinela_para_que_eu_nao_precise_de_estado_brasileiro():
         )
 
 
-def test_pais_do_mercado_eu_fica_restrito_ao_pais_de_lancamento():
-    """BR sempre normaliza para BR, qualquer que seja o país enviado. EU aceita
-    somente o país aprovado para a primeira liberação, então um cliente EU não
-    nasce com `country='BR'` por default — o handler exige o campo explícito
-    (`clients.py:344`)."""
+def test_pais_do_mercado_eu_aceita_texto_livre():
+    """BR permanece fixo; EU preserva o texto comercial informado."""
     assert require_launch_country("BR", "PT") == "BR"
-    assert require_launch_country("EU", " pt ") == "PT"
+    assert require_launch_country("EU", " Portugal ") == "Portugal"
+    assert require_launch_country("EU", "Portugal e Espanha") == "Portugal e Espanha"
     with pytest.raises(HTTPException) as exc:
-        require_launch_country("EU", "ES")
+        require_launch_country("EU", "")
     assert exc.value.status_code == 422

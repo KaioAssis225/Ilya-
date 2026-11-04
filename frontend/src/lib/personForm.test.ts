@@ -27,7 +27,7 @@ test('normaliza país, região e campos opcionais sem inventar dados', () => {
   assert.equal(normalized.tax_id, 'PT123')
   assert.equal(normalized.contact_name, 'Maria Silva')
   assert.equal(normalized.observation, 'Prefere contato por telefone.')
-  assert.equal(normalized.country, 'PT')
+  assert.equal(normalized.country, 'Portugal')
   assert.equal(normalized.region, 'Lisboa')
   assert.equal(normalized.numero, null)
 })
