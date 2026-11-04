@@ -44,23 +44,23 @@ function installHandlers(product = specialProduct()) {
   )
 }
 
-function seedCart(userId: string, market: 'EU' | 'BR' = 'EU') {
-  localStorage.setItem(cartStorageKey(userId, market), JSON.stringify([{
-    line_id: 'parent-line', product_code: 'PAI', qty: 1, discount: 0,
+function seedCart(userId: string, market: 'EU' | 'BR' = 'EU', lines = 1) {
+  localStorage.setItem(cartStorageKey(userId, market), JSON.stringify(Array.from({ length: lines }, (_, index) => ({
+    line_id: `parent-line-${index + 1}`, product_code: 'PAI', qty: index + 1, discount: 0,
     opt_categories: {}, optional_choices: [],
-  }]))
+  }))))
 }
 
-function renderQuote(role: Parameters<typeof productTestUser>[0] = 'admin', market: 'EU' | 'BR' = 'EU') {
+function renderQuote(role: Parameters<typeof productTestUser>[0] = 'admin', market: 'EU' | 'BR' = 'EU', lines = 1) {
   const user = productTestUser(role, market)
-  seedCart(user.id, market)
+  seedCart(user.id, market, lines)
   if (market === 'EU') sessionStorage.setItem(`orcamento_client_id:${user.id}:EU`, client.id)
   renderProductPage(<OrcamentoPage />, user)
   return user
 }
 
 async function addSpecial() {
-  const [button] = await screen.findAllByRole('button', { name: 'Especial' })
+  const [button] = await screen.findAllByRole('button', { name: /^Tornar especial/ })
   fireEvent.click(button)
   await screen.findAllByText('PAI-E1')
 }
@@ -71,17 +71,58 @@ describe('OrcamentoPage — especiais EU', () => {
     sessionStorage.clear()
   })
 
-  it('cria PAI-E1 e PAI-E2 sem remover o item pai', async () => {
+  it('transforma a própria linha em PAI-E1 (sem linha nova) e o segundo clique desfaz', async () => {
     installHandlers()
     const user = renderQuote()
+    const storedLines = () => JSON.parse(localStorage.getItem(cartStorageKey(user.id, 'EU')) ?? '[]') as Array<{ line_id: string; qty: number }>
 
-    await addSpecial()
-    expect(screen.getAllByText('PAI')).not.toHaveLength(0)
-    expect(screen.getAllByText('PAI-E1')).not.toHaveLength(0)
+    const [toggle] = await screen.findAllByRole('button', { name: /^Tornar especial/ })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('title', 'Tornar especial')
+    expect(screen.getAllByText('Desconto (%)').length).toBeGreaterThan(0)
+    fireEvent.click(toggle)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Especial' })[0])
-    await waitFor(() => expect(screen.getAllByText('PAI-E2')).not.toHaveLength(0))
-    expect(JSON.parse(localStorage.getItem(cartStorageKey(user.id, 'EU')) ?? '[]')).toHaveLength(3)
+    await screen.findAllByText('PAI-E1')
+    expect(screen.queryAllByText('PAI')).toHaveLength(0)
+    expect(screen.getAllByText(/Mesa Portugal - ESPECIAL/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Especial (%)').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Desconto (%)')).toBeNull()
+    const pressed = screen.getAllByRole('button', { name: /^Remover especial/ })[0]
+    expect(pressed).toHaveAttribute('aria-pressed', 'true')
+    expect(pressed).toHaveAttribute('title', 'Remover especial')
+    // Mesma linha: nada novo no carrinho, quantidade mantida.
+    await waitFor(() => expect(storedLines()).toHaveLength(1))
+    expect(storedLines()[0].line_id).toBe('parent-line-1')
+
+    fireEvent.click(pressed)
+    await waitFor(() => expect(screen.queryAllByText('PAI-E1')).toHaveLength(0))
+    expect(screen.getAllByText('PAI').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Desconto (%)').length).toBeGreaterThan(0)
+    expect(screen.queryAllByText(/ESPECIAL/)).toHaveLength(0)
+    expect(screen.getAllByRole('button', { name: /^Tornar especial/ })[0]).toHaveAttribute('aria-pressed', 'false')
+    expect(storedLines()).toHaveLength(1)
+  })
+
+  it('numera E1, E2… por pai dentro do orçamento e reaproveita o número livre', async () => {
+    installHandlers()
+    renderQuote('admin', 'EU', 2)
+    const clickToggle = async (index: number) => {
+      const buttons = await screen.findAllByRole('button', { name: /^(Tornar|Remover) especial/ })
+      // Ordem no DOM: cartões mobile (linha 1, 2) e depois a tabela (linha 1, 2).
+      fireEvent.click(buttons[index])
+    }
+
+    await clickToggle(0)
+    await screen.findAllByText('PAI-E1')
+    await clickToggle(1)
+    await screen.findAllByText('PAI-E2')
+
+    // Desfaz a primeira: E1 volta a ficar livre e é a próxima a ser usada.
+    await clickToggle(0)
+    await waitFor(() => expect(screen.queryAllByText('PAI-E1')).toHaveLength(0))
+    await clickToggle(0)
+    await screen.findAllByText('PAI-E1')
+    expect(screen.getAllByText('PAI-E2').length).toBeGreaterThan(0)
   })
 
   it('usa Especial (%) nos dois sentidos e mostra a prévia calculada', async () => {
@@ -147,7 +188,7 @@ describe('OrcamentoPage — especiais EU', () => {
     await addSpecial()
     const specialField = screen.getAllByRole('spinbutton', { name: 'Especial em Mesa Portugal' })[0]
     fireEvent.change(specialField, { target: { value: '15' } })
-    fireEvent.click(screen.getAllByRole('button', { name: /Mesa Portugal - ESPECIAL/ })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /Comentário de Mesa Portugal - ESPECIAL/ })[0])
     fireEvent.change(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0], { target: { value: 'Nota' } })
 
     let body: { items: Array<Record<string, unknown>> } | null = null
@@ -169,6 +210,6 @@ describe('OrcamentoPage — especiais EU', () => {
     installHandlers()
     renderQuote(role, market)
     await screen.findAllByText('PAI')
-    expect(screen.queryByRole('button', { name: 'Especial' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /especial/i })).toBeNull()
   })
 })
