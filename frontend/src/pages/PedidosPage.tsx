@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2 } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2, MoreHorizontal } from 'lucide-react'
 import { priceListLabelFor } from '../lib/priceListLabels'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useChangeOrderStage } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
@@ -339,6 +339,31 @@ function OrderDetailModal({
   // Mesma regra de quem cria orçamento; o servidor confere de novo.
   const canCopy = userRole === 'admin' || userRole === 'representante' || userRole === 'vendedor'
   const [copyOpen, setCopyOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const actionsRef = useRef<HTMLDivElement>(null)
+  const hasMoreActions = (canRevise && order.is_finalized && !order.is_cancelled)
+    || (canManage && !order.is_finalized && !order.is_cancelled)
+    || (canManage && order.is_finalized && !order.is_cancelled && resolveOrderStage(order) !== null)
+
+  useEffect(() => {
+    if (!actionsOpen) return
+    const closeOutside = (event: MouseEvent) => {
+      if (!actionsRef.current?.contains(event.target as Node)) setActionsOpen(false)
+    }
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      // O primeiro Escape fecha só o menu; o modal continua aberto.
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setActionsOpen(false)
+    }
+    document.addEventListener('mousedown', closeOutside)
+    document.addEventListener('keydown', closeEscape, true)
+    return () => {
+      document.removeEventListener('mousedown', closeOutside)
+      document.removeEventListener('keydown', closeEscape, true)
+    }
+  }, [actionsOpen])
 
   // Amostras de 16–28 px usam a miniatura; o original só abre no modal.
   function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null; photo: string | null }[] {
@@ -432,56 +457,117 @@ function OrderDetailModal({
           <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
             {canCopy && (
               <button type="button" disabled={order.items.length === 0} onClick={() => setCopyOpen(true)} className="btn-secondary text-xs disabled:opacity-50">
-                {viewText('Copiar pedido', 'Copy order')}
+                {order.is_finalized
+                  ? viewText('Copiar pedido', 'Copy order')
+                  : viewText('Copiar orçamento', 'Copy quote')}
               </button>
             )}
-            {canRevise && order.is_finalized && !order.is_cancelled && (
-              <button disabled={revisionLoading} onClick={async () => {
-                setRevisionLoading(true); setRevisionError(false)
-                try {
-                  const response = await api.post<Order>(`/orders/${order.id}/revision`)
-                  await queryClient.invalidateQueries({ queryKey: ['orders'] })
-                  onClose()
-                  navigate(`/orcamentos?edit=${response.data.id}`)
-                } catch { setRevisionError(true) } finally { setRevisionLoading(false) }
-              }} className="btn-secondary text-xs disabled:opacity-50">{revisionLoading ? viewText('Criando revisão...', 'Creating revision...') : viewText('Criar revisão', 'Create revision')}</button>
-            )}
-            {canManage && !order.is_finalized && !order.is_cancelled && (
-              <>
-                <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 border border-line text-ink-2 rounded-lg text-xs font-medium hover:bg-bg-2 transition-colors">
-                  <PenLine className="w-3.5 h-3.5" /> Editar
-                </button>
-                <button onClick={onCancel} className="flex items-center gap-1.5 px-3 py-1.5 border border-terracotta text-terracotta rounded-lg text-xs font-semibold hover:bg-danger-soft transition-colors">
-                  <Ban className="w-3.5 h-3.5" /> Cancelar
-                </button>
-                <button onClick={onFinalize} disabled={pendingItems.length > 0} title={pendingReason || undefined} className="flex items-center gap-1.5 px-3 py-1.5 bg-gold text-white rounded-lg text-xs font-semibold hover:bg-gold-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  <CheckCircle className="w-3.5 h-3.5" /> Finalizar
-                </button>
-              </>
-            )}
-            {canManage && order.is_finalized && !order.is_cancelled && (() => {
-              const stage = resolveOrderStage(order)
-              if (!stage) return null
-              const targetStage: OrderStage = stage === 'production' ? 'delivered' : 'production'
-              return (
+            {hasMoreActions && (
+              <div ref={actionsRef} className="relative">
                 <button
-                  disabled={changeStageM.isPending}
-                  onClick={async () => {
-                    setStageError(false)
-                    try {
-                      await changeStageM.mutateAsync({ id: order.id, stage: targetStage })
-                    } catch {
-                      setStageError(true)
-                    }
-                  }}
-                  className="btn-secondary text-xs disabled:opacity-50"
+                  type="button"
+                  onClick={() => setActionsOpen(value => !value)}
+                  className="btn-secondary flex h-9 w-9 items-center justify-center p-0"
+                  aria-label={viewText('Mais ações', 'More actions')}
+                  aria-haspopup="menu"
+                  aria-expanded={actionsOpen}
+                  title={viewText('Mais ações', 'More actions')}
                 >
-                  {stage === 'production'
-                    ? viewText('Marcar como entregue', 'Mark as delivered')
-                    : <span className="inline-flex items-center gap-1"><Undo2 className="w-3.5 h-3.5" />{viewText('Voltar para Produção', 'Back to production')}</span>}
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                 </button>
-              )
-            })()}
+                {actionsOpen && (
+                  <div
+                    role="menu"
+                    aria-label={viewText('Ações do orçamento', 'Quote actions')}
+                    className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-line bg-white py-1.5 shadow-lg"
+                  >
+                    {canManage && !order.is_finalized && !order.is_cancelled && (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={pendingItems.length > 0}
+                          title={pendingReason || undefined}
+                          onClick={() => { setActionsOpen(false); onFinalize() }}
+                          className="flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-semibold text-success hover:bg-success-soft focus-visible:bg-success-soft focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <CheckCircle className="h-4 w-4" aria-hidden="true" />
+                          {viewText('Finalizar orçamento', 'Finalise quote')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => { setActionsOpen(false); onEdit() }}
+                          className="flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-ink-2 hover:bg-bg-2 focus-visible:bg-bg-2 focus-visible:outline-none"
+                        >
+                          <PenLine className="h-4 w-4" aria-hidden="true" />
+                          {viewText('Editar orçamento', 'Edit quote')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => { setActionsOpen(false); onCancel() }}
+                          className="flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-semibold text-terracotta hover:bg-danger-soft focus-visible:bg-danger-soft focus-visible:outline-none"
+                        >
+                          <Ban className="h-4 w-4" aria-hidden="true" />
+                          {viewText('Cancelar orçamento', 'Cancel quote')}
+                        </button>
+                      </>
+                    )}
+                    {canRevise && order.is_finalized && !order.is_cancelled && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={revisionLoading}
+                        onClick={async () => {
+                          setActionsOpen(false)
+                          setRevisionLoading(true); setRevisionError(false)
+                          try {
+                            const response = await api.post<Order>(`/orders/${order.id}/revision`)
+                            await queryClient.invalidateQueries({ queryKey: ['orders'] })
+                            onClose()
+                            navigate(`/orcamentos?edit=${response.data.id}`)
+                          } catch { setRevisionError(true) } finally { setRevisionLoading(false) }
+                        }}
+                        className="flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-ink-2 hover:bg-bg-2 focus-visible:bg-bg-2 focus-visible:outline-none disabled:opacity-50"
+                      >
+                        <History className="h-4 w-4" aria-hidden="true" />
+                        {revisionLoading ? viewText('Criando revisão...', 'Creating revision...') : viewText('Criar revisão', 'Create revision')}
+                      </button>
+                    )}
+                    {canManage && order.is_finalized && !order.is_cancelled && (() => {
+                      const stage = resolveOrderStage(order)
+                      if (!stage) return null
+                      const targetStage: OrderStage = stage === 'production' ? 'delivered' : 'production'
+                      return (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          disabled={changeStageM.isPending}
+                          onClick={async () => {
+                            setActionsOpen(false)
+                            setStageError(false)
+                            try {
+                              await changeStageM.mutateAsync({ id: order.id, stage: targetStage })
+                            } catch {
+                              setStageError(true)
+                            }
+                          }}
+                          className="flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium text-ink-2 hover:bg-bg-2 focus-visible:bg-bg-2 focus-visible:outline-none disabled:opacity-50"
+                        >
+                          {stage === 'production'
+                            ? <PackageCheck className="h-4 w-4" aria-hidden="true" />
+                            : <Undo2 className="h-4 w-4" aria-hidden="true" />}
+                          {stage === 'production'
+                            ? viewText('Marcar como entregue', 'Mark as delivered')
+                            : viewText('Voltar para Produção', 'Back to production')}
+                        </button>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         {revisionError && <p role="alert" className="text-xs font-medium text-danger mb-3">Não foi possível criar a revisão. Verifique a disponibilidade atual dos produtos e preços.</p>}

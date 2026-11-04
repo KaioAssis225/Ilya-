@@ -208,7 +208,8 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     const alert = await screen.findByText("Escolha os opcionais pendentes antes de finalizar: MESA-1 (Base, Tampo).")
     expect(alert).toBeInTheDocument()
     expect(screen.getByText(/Pendente: Base, Tampo/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Finalizar' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Mais ações' }))
+    expect(screen.getByRole('menuitem', { name: 'Finalizar orçamento' })).toBeDisabled()
   })
 
   it('Finalizar abre a confirmação com o catálogo e a tabela; Cancelar não finaliza', async () => {

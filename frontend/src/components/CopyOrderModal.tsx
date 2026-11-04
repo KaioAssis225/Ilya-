@@ -18,6 +18,9 @@ export function CopyOrderModal({ order, english, onClose }: {
   const [error, setError] = useState('')
   const [result, setResult] = useState<OrderCopyResult | null>(null)
   const t = (pt: string, en: string) => english ? en : pt
+  const sourceLabel = order.is_finalized
+    ? t('pedido', 'order')
+    : t('orçamento', 'quote')
   const allSelected = order.items.length > 0 && selected.size === order.items.length
 
   function toggle(id: string) {
@@ -45,7 +48,7 @@ export function CopyOrderModal({ order, english, onClose }: {
       else openCopy(copied.order)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-      setError(typeof detail === 'string' ? detail : t('Não foi possível copiar o pedido. Tente novamente.', 'Could not copy the order. Please try again.'))
+      setError(typeof detail === 'string' ? detail : t(`Não foi possível copiar o ${sourceLabel}. Tente novamente.`, `Could not copy the ${sourceLabel}. Please try again.`))
     }
   }
 
@@ -53,7 +56,9 @@ export function CopyOrderModal({ order, english, onClose }: {
     <div className="modal-overlay" onClick={onClose}>
       <DialogPanel onClose={onClose} className="modal-panel w-full max-w-lg p-6 mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-ink">{t('Copiar pedido', 'Copy order')}</h3>
+          <h3 className="text-base font-semibold text-ink">
+            {order.is_finalized ? t('Copiar pedido', 'Copy order') : t('Copiar orçamento', 'Copy quote')}
+          </h3>
           <button type="button" onClick={onClose} aria-label={t('Fechar', 'Close')} className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
