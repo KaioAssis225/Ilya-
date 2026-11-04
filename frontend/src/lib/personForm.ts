@@ -15,6 +15,8 @@ export function normalizePersonPayload(form: ClientCreate): ClientCreate {
     email: form.email?.trim() || null,
     cpf_cnpj: form.cpf_cnpj?.trim() || null,
     tax_id: form.tax_id?.trim() || null,
+    contact_name: form.contact_name?.trim() || null,
+    observation: form.observation?.trim() || null,
     country: form.country?.trim().toUpperCase(),
     region: form.region?.trim() || null,
     cep: form.cep.trim(),
@@ -31,6 +33,7 @@ const FIELD_LABEL: Record<string, string> = {
   name: 'Nome', phone: 'Telefone', email: 'E-mail', cpf_cnpj: 'CPF/CNPJ', cep: 'CEP',
   numero: 'Número', address: 'Endereço', city: 'Cidade', state: 'Estado (UF)',
   country: 'País', region: 'Região', tax_id: 'VAT / Tax ID',
+  contact_name: 'Contato', client_type: 'Tipo de catálogo', observation: 'Observação',
 }
 
 export function parseApiError(err: unknown): string {

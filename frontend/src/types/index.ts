@@ -211,6 +211,9 @@ export interface Client {
   country: string
   region: string | null
   tax_id: string | null
+  contact_name?: string | null
+  client_type?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto' | null
+  observation?: string | null
   market_code: 'BR' | 'EU'
   price_profile: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   all_price_lists?: boolean
@@ -238,6 +241,9 @@ export interface ClientCreate {
   country?: string
   region?: string | null
   tax_id?: string | null
+  contact_name?: string | null
+  client_type?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto' | null
+  observation?: string | null
   price_profile?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   all_price_lists?: boolean
   price_list_codes?: string[]

@@ -10,6 +10,8 @@ test('normaliza país, região e campos opcionais sem inventar dados', () => {
     email: ' ',
     cpf_cnpj: '',
     tax_id: ' PT123 ',
+    contact_name: '  Maria Silva  ',
+    observation: '  Prefere contato por telefone.  ',
     country: ' pt ',
     region: ' Lisboa ',
     cep: ' 1000-001 ',
@@ -23,6 +25,8 @@ test('normaliza país, região e campos opcionais sem inventar dados', () => {
   assert.equal(normalized.email, null)
   assert.equal(normalized.cpf_cnpj, null)
   assert.equal(normalized.tax_id, 'PT123')
+  assert.equal(normalized.contact_name, 'Maria Silva')
+  assert.equal(normalized.observation, 'Prefere contato por telefone.')
   assert.equal(normalized.country, 'PT')
   assert.equal(normalized.region, 'Lisboa')
   assert.equal(normalized.numero, null)

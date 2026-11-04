@@ -23,6 +23,11 @@ class ClientBase(BaseModel):
     country: str = Field("BR", min_length=2, max_length=2)
     region: Optional[str] = Field(None, max_length=120)
     tax_id: Optional[str] = Field(None, max_length=40)
+    contact_name: Optional[str] = Field(None, max_length=255)
+    # Classificação apenas informativa do cliente EU. Não seleciona lista de
+    # preços, catálogo, desconto ou qualquer outra regra comercial.
+    client_type: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
+    observation: Optional[str] = Field(None, max_length=2000)
     price_profile: Literal["lojista", "corporativo", "pvp", "arquiteto"] = "lojista"
     max_discount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
 
@@ -79,6 +84,9 @@ class ClientUpdate(BaseModel):
     country: Optional[str] = Field(None, min_length=2, max_length=2)
     region: Optional[str] = Field(None, max_length=120)
     tax_id: Optional[str] = Field(None, max_length=40)
+    contact_name: Optional[str] = Field(None, max_length=255)
+    client_type: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
+    observation: Optional[str] = Field(None, max_length=2000)
     price_profile: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
     # Permite reatribuir a carteira e consertar cliente órfão (ver ClientCreate).
