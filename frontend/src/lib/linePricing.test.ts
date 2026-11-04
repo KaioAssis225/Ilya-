@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateLinePricing, lineTax, roundMoney } from './linePricing'
+import { calculateLinePricing, calculateSpecialLinePricing, lineTax, roundMoney } from './linePricing'
 
 describe('roundMoney', () => {
   it('arredonda meio centavo para cima, como ROUND_HALF_UP do servidor', () => {
@@ -56,6 +56,16 @@ describe('calculateLinePricing', () => {
 
   it('tolera desconto vazio (NaN/0) como sem desconto', () => {
     expect(calculateLinePricing(80, 0, 2).subtotal).toBe(160)
+  })
+})
+
+describe('calculateSpecialLinePricing', () => {
+  it('applies a positive percentage and rounds the unit price once', () => {
+    expect(calculateSpecialLinePricing(100, 15, 2)).toMatchObject({ netUnitPrice: 115, subtotal: 230 })
+  })
+
+  it('accepts a negative percentage without treating it as a discount cap', () => {
+    expect(calculateSpecialLinePricing(1731.18, -20, 3)).toMatchObject({ netUnitPrice: 1384.94, subtotal: 4154.82 })
   })
 })
 

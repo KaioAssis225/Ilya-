@@ -16,6 +16,12 @@ const source = {
   id: 'order-1', code: 'PED-0001', items: [item('i1', 'MESA-1', 1), item('i2', 'CAD-2', 4)],
 } as unknown as Order
 
+const sourceWithSpecial = {
+  id: 'order-special', code: 'PED-0002', items: [
+    { ...item('i-special', 'PAI', 1), is_special: true, special_code: 'PAI-E1', description: 'Mesa Portugal - ESPECIAL' },
+  ],
+} as unknown as Order
+
 function Landing() {
   const location = useLocation()
   return <p>destino:{location.pathname}{location.search}</p>
@@ -32,6 +38,17 @@ function renderModal(english = false) {
 }
 
 describe('CopyOrderModal', () => {
+  it('mostra o código e o badge do especial no item copiado', () => {
+    renderProductPage(
+      <CopyOrderModal order={sourceWithSpecial} english={false} onClose={() => {}} />,
+      productTestUser('admin', 'EU'),
+    )
+
+    expect(screen.getByText('PAI-E1')).toBeInTheDocument()
+    expect(screen.getByText('ESPECIAL')).toBeInTheDocument()
+    expect(screen.getByText('Mesa Portugal - ESPECIAL')).toBeInTheDocument()
+  })
+
   it('envia só os itens marcados e abre o orçamento novo', async () => {
     const user = userEvent.setup()
     let body: unknown = null

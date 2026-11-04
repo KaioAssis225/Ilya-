@@ -688,6 +688,38 @@ test('Brasil mantém a coluna de IPI e o subtotal da linha inclui o IPI', async 
   assert.equal(callsOf('10%').filter((call) => call.x === ipiEdge).length, 1)
 })
 
+test('item especial no PDF mostra código, descrição, percentual e preço resultante', async () => {
+  const order = euOrder([
+    makeOrderItem({
+      product_code: 'PAI',
+      description: 'Mesa Portugal - ESPECIAL',
+      qty: 1,
+      unit_price: 115,
+      discount: 0,
+      is_special: true,
+      special_code: 'PAI-E1',
+      special_percent: 15,
+      ipi_rate: 0,
+      ipi_value: 0,
+      tax_label: 'IVA',
+      currency: 'EUR',
+    }),
+  ], 'pt-PT')
+
+  await buildOrderPdf({
+    order,
+    client: euClient(),
+    rep: null,
+    products: [makeProduct({ product_code: 'PAI', market_code: 'EU', currency: 'EUR' })],
+    documentLocale: 'pt-PT',
+  })
+
+  assert.ok(renderedTexts.includes('PAI-E1'))
+  assert.ok(renderedTexts.includes('Mesa Portugal - ESPECIAL'))
+  assert.ok(renderedTexts.includes('Especial +15%'))
+  assert.ok(renderedTexts.includes(money(115, 'pt-PT', 'EUR')))
+})
+
 test('tapete: valor por m², peças sob a quantidade e área em m²', async () => {
   const order = makeOrder({
     items: [makeOrderItem({

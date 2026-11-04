@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -231,7 +232,10 @@ def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
     # Termos financeiros como string decimal: o JSON não aceita Decimal e float
     # perderia exatidão. Cada versão do histórico fica reconstituível.
     return [
-        {"product_code": item.product_code, "legacy_optionals": item.opt_categories,
+        {"product_code": item.product_code, "is_special": getattr(item, "is_special", False),
+         "special_code": getattr(item, "special_code", None),
+         "special_percent": None if getattr(item, "special_percent", None) is None else str(item.special_percent),
+         "legacy_optionals": item.opt_categories,
          "applications": _choice_snapshot(item), "comment": item.comment,
          **{field: str(_decimal(getattr(item, field)))
             for field in ("qty", "unit_price", "discount", "ipi_rate", "ipi_value")},
@@ -921,6 +925,70 @@ def _calculate_order_line(
     )
 
 
+_SPECIAL_CODE_RE = re.compile(r"^(?P<parent>.+)-E(?P<number>[1-9][0-9]*)$")
+
+
+def _resolve_special_code(
+    item_in: OrderItemCreate,
+    parent_code: str,
+    used_codes: set[str],
+) -> str:
+    """Valida o código estável enviado pelo cliente ou gera o próximo E livre."""
+    if item_in.special_code is not None:
+        match = _SPECIAL_CODE_RE.fullmatch(item_in.special_code)
+        if not match or match.group("parent") != parent_code:
+            raise HTTPException(status_code=422, detail="Código de especial inválido / Invalid special code.")
+        code = item_in.special_code
+        if code in used_codes:
+            raise HTTPException(status_code=422, detail="Código de especial repetido no orçamento / Duplicate special code in quote.")
+        used_codes.add(code)
+        return code
+    number = 1
+    while f"{parent_code}-E{number}" in used_codes:
+        number += 1
+    code = f"{parent_code}-E{number}"
+    used_codes.add(code)
+    return code
+
+
+def _calculate_special_order_line(
+    *, base_price: Decimal | float, qty: Decimal | int, special_percent: Decimal,
+    tax_rate: Decimal | float, product_code: str,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
+    """Calcula uma linha especial: percentagem livre, preço final gravado e desconto zero."""
+    percent = _decimal(special_percent)
+    if percent <= Decimal("-100") or percent > Decimal("1000"):
+        raise HTTPException(status_code=422, detail="Percentagem especial fora do limite / Special percentage out of range.")
+    unit_price = _money(_money(base_price) * (_HUNDRED + percent) / _HUNDRED)
+    subtotal = _money(_decimal(qty) * unit_price)
+    decimal_tax_rate = _decimal(tax_rate)
+    tax_value = _money(subtotal * decimal_tax_rate / _HUNDRED)
+    return unit_price, _ZERO, subtotal, decimal_tax_rate, tax_value
+
+
+def _special_description(description: str) -> str:
+    return f"{description} - ESPECIAL"
+
+
+def _ensure_special_scope(current_user: User, market_code: str, items: list[OrderItemCreate]) -> None:
+    if not any(item.is_special for item in items):
+        return
+    if market_code != "EU":
+        raise HTTPException(status_code=422, detail="Itens especiais só estão disponíveis no mercado EU / Special items are only available in EU.")
+    if is_client_account(current_user):
+        raise HTTPException(status_code=403, detail="Contas de cliente não podem criar ou editar itens especiais / Client accounts cannot create or edit special items.")
+
+
+def _ensure_special_comments(items: list[OrderItem]) -> None:
+    missing = [item.special_code or item.product_code for item in items if item.is_special and not (item.comment or "").strip()]
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail="Itens especiais exigem comentário antes de finalizar: " + ", ".join(missing)
+            + " / Special items require a comment before finalization: " + ", ".join(missing),
+        )
+
+
 async def _get_order(
     db: AsyncSession,
     id_or_code: str,
@@ -1083,6 +1151,9 @@ async def _create_order_core(
         # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para este cliente.")
 
+    if copy_source is None:
+        _ensure_special_scope(current_user, principal.code, payload.items)
+
     client = (await db.execute(select(Client).where(
         Client.id == payload.client_id,
         Client.market_code == principal.code,
@@ -1203,8 +1274,12 @@ async def _create_order_core(
     total_ipi = _ZERO
     order_items: list[OrderItem] = []
     source_items = {item.id: item for item in source_order.items} if source_order else {}
+    used_special_codes: set[str] = set()
     catalog_scope = order_catalog_scope(current_user, client, rep)
     for item_in in payload.items:
+        if item_in.is_special and is_client_account(current_user) and copy_source is not None:
+            skipped.append({"product_code": item_in.product_code, "reason": "Conta de cliente não pode criar itens especiais / Client accounts cannot create special items."})
+            continue
         if copy_source is not None:
             copy_product = product_map.get(item_in.product_code)
             skip_reason = None
@@ -1248,20 +1323,20 @@ async def _create_order_core(
             qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, source_items.get(item_in.source_order_item_id)
             )
-            unit_price, discount, subtotal, ipi_rate, ipi_value = (
-                _calculate_order_line(
-                    unit_price=price_map[product.id],
-                    qty=qty,
-                    discount=(
-                        min(item_in.discount or _ZERO, max_discount)
-                        if copy_source is not None
-                        else item_in.discount or _ZERO
-                    ),
-                    max_discount=max_discount,
+            special_code = None
+            if item_in.is_special:
+                special_code = _resolve_special_code(item_in, product.product_code, used_special_codes)
+                unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_special_order_line(
+                    base_price=price_map[product.id], qty=qty,
+                    special_percent=item_in.special_percent, tax_rate=ipi_rate,
                     product_code=product.product_code,
-                    tax_rate=ipi_rate,
                 )
-            )
+            else:
+                unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_order_line(
+                    unit_price=price_map[product.id], qty=qty,
+                    discount=(min(item_in.discount or _ZERO, max_discount) if copy_source is not None else item_in.discount or _ZERO),
+                    max_discount=max_discount, product_code=product.product_code, tax_rate=ipi_rate,
+                )
             total += subtotal
             total_ipi += ipi_value
 
@@ -1269,6 +1344,8 @@ async def _create_order_core(
             if market_code == "EU":
                 pt_pt, en = localized_descriptions.get(product.id, (None, None))
                 localized_description = (en if payload.locale == "en-GB" else pt_pt) or product.description
+            if item_in.is_special:
+                localized_description = _special_description(localized_description)
             order_items.append(OrderItem(
                 id=uuid.uuid4(),
                 product_code=product.product_code,
@@ -1292,6 +1369,9 @@ async def _create_order_core(
                 currency=context.currency,
                 observacao=product.observacao,
                 comment=item_in.comment,
+                is_special=item_in.is_special,
+                special_code=special_code,
+                special_percent=item_in.special_percent,
             ))
         except HTTPException as exc:
             if copy_source is None:
@@ -1372,6 +1452,9 @@ def _copy_item_payload(item: OrderItem) -> OrderItemCreate:
         area_depth_m=item.area_depth_m if item.sold_by_area else None,
         area_pieces=(item.area_pieces or 1) if item.sold_by_area else None,
         discount=item.discount or _ZERO,
+        is_special=item.is_special,
+        special_code=item.special_code,
+        special_percent=item.special_percent,
         opt_categories=dict(item.opt_categories or {}),
         optional_choices=[
             OptionalChoiceCreate(
@@ -1484,6 +1567,8 @@ async def create_order_revision(
             area_pieces=item.area_pieces if item.sold_by_area else None,
             discount=item.discount, opt_categories=item.opt_categories,
             source_order_item_id=item.id, comment=item.comment,
+            is_special=item.is_special, special_code=item.special_code,
+            special_percent=item.special_percent,
         ) for item in source.items],
     )
     # O fluxo normal recalcula preços e impostos atuais e cria novo número;
@@ -1642,14 +1727,15 @@ async def list_orders(
     if items_by_order:
         item_rows = (
             await db.execute(
-                select(OrderItem.order_id, OrderItem.product_code, OrderItem.qty)
+                select(OrderItem.order_id, OrderItem.product_code, OrderItem.is_special, OrderItem.special_code, OrderItem.special_percent, OrderItem.qty)
                 .where(OrderItem.order_id.in_(items_by_order))
                 .order_by(OrderItem.order_id, OrderItem.created_at, OrderItem.id)
             )
         ).all()
-        for order_id_value, product_code, qty in item_rows:
+        for order_id_value, product_code, is_special, special_code, special_percent, qty in item_rows:
             items_by_order[order_id_value].append(
-                {"product_code": product_code, "qty": float(qty)}
+                {"product_code": product_code, "is_special": is_special, "special_code": special_code,
+                 "special_percent": special_percent, "qty": float(qty)}
             )
 
     if has_more and page_rows:
@@ -1824,6 +1910,7 @@ async def update_order(
             )
 
     if payload.items is not None:
+        _ensure_special_scope(current_user, principal.code, payload.items)
         old_item_map = {item.id: item for item in order.items}
         old_codes = {i.product_code for i in order.items}
         new_codes = {i.product_code for i in payload.items}
@@ -1919,6 +2006,7 @@ async def update_order(
         total_ipi = _ZERO
         new_items: list[OrderItem] = []
         used_source_ids: set[uuid.UUID] = set()
+        used_special_codes: set[str] = set()
         for item_in in payload.items:
             product = product_map.get(item_in.product_code)
             if not product:
@@ -1960,16 +2048,20 @@ async def update_order(
                             product.product_code,
                             price_list.code == order.price_list_code,
                         )
-            unit_price, discount, subtotal, ipi_rate, ipi_value = (
-                _calculate_order_line(
-                    unit_price=price_map[product.id],
-                    qty=qty,
-                    discount=item_in.discount or _ZERO,
-                    max_discount=line_max_discount,
+            special_code = None
+            if item_in.is_special:
+                special_code = _resolve_special_code(item_in, product.product_code, used_special_codes)
+                unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_special_order_line(
+                    base_price=price_map[product.id], qty=qty,
+                    special_percent=item_in.special_percent, tax_rate=ipi_rate,
                     product_code=product.product_code,
-                    tax_rate=ipi_rate,
                 )
-            )
+            else:
+                unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_order_line(
+                    unit_price=price_map[product.id], qty=qty,
+                    discount=item_in.discount or _ZERO, max_discount=line_max_discount,
+                    product_code=product.product_code, tax_rate=ipi_rate,
+                )
             total += subtotal
             total_ipi += ipi_value
 
@@ -1977,6 +2069,8 @@ async def update_order(
             if order.market_code == "EU":
                 pt_pt, en = localized_descriptions.get(product.id, (None, None))
                 localized_description = (en if order.locale == "en-GB" else pt_pt) or product.description
+            if item_in.is_special:
+                localized_description = _special_description(localized_description)
             new_items.append(OrderItem(
                 id=uuid.uuid4(),
                 order_id=order.id,
@@ -2001,6 +2095,9 @@ async def update_order(
                 currency=order.currency,
                 observacao=product.observacao,
                 comment=item_in.comment,
+                is_special=item_in.is_special,
+                special_code=special_code,
+                special_percent=item_in.special_percent,
             ))
 
         catalog = await _order_catalog(
@@ -2089,6 +2186,7 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
+    _ensure_special_comments(order.items)
     pending = await _pending_optionals_by_item(db, order)
     pending_items = [
         f"{item.product_code}: {', '.join(pending[item.id])}"

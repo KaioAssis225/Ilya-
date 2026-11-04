@@ -763,7 +763,11 @@ def _order_personal_data(order: Order) -> dict:
         "atualizado_em": order.updated_at,
         "itens": [
             {
-                "codigo_produto": item.product_code,
+                "codigo_produto": item.special_code or item.product_code,
+                "codigo_produto_pai": item.product_code,
+                "is_special": item.is_special,
+                "special_code": item.special_code,
+                "special_percent": item.special_percent,
                 "descricao": item.description,
                 "quantidade": item.qty,
                 "valor_unitario": item.unit_price,

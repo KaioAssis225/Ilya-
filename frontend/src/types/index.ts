@@ -265,6 +265,9 @@ export interface RepresentativeUpdate extends Partial<RepresentativeCreate> {}
 
 export interface OrderItemCreate {
   product_code: string
+  is_special?: boolean
+  special_code?: string | null
+  special_percent?: number | null
   // Tapete com medidas não envia qty: o servidor calcula L × P.
   qty?: number
   area_width_m?: number
@@ -303,6 +306,9 @@ export interface OrderItem {
   id: string
   order_id: string
   product_code: string
+  is_special?: boolean
+  special_code?: string | null
+  special_percent?: number | null
   description: string
   sold_by_area?: boolean
   area_width_m?: number | string | null
@@ -337,12 +343,14 @@ export interface OrderHistory {
   user: { id: string; full_name: string } | null
   action: string
   details: string | null
-  items_snapshot?: { product_code: string; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; component_name: string | null }[]; comment?: string | null }[] | null
+  items_snapshot?: { product_code: string; is_special?: boolean; special_code?: string | null; special_percent?: number | null; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; component_name: string | null }[]; comment?: string | null }[] | null
   created_at: string
 }
 
 export interface OrderSummaryItem {
   product_code: string
+  is_special?: boolean
+  special_code?: string | null
   qty: number
   area_pieces?: number
 }
