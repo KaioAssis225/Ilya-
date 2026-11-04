@@ -365,6 +365,8 @@ export interface OrderSummary {
   client_name: string
   rep_id: string | null
   rep_name: string | null
+  /** Catálogo do orçamento; vazio quando os itens misturam catálogos. */
+  catalog_name?: string | null
   total_value: number
   total_with_ipi: number
   is_finalized: boolean
@@ -384,6 +386,8 @@ export interface Order {
   orc_id: string
   market_code: 'BR' | 'EU'
   price_list_code: string
+  /** Catálogo do pedido; vazio quando os itens misturam catálogos. */
+  catalog_name?: string | null
   currency: 'BRL' | 'EUR'
   locale: 'pt-BR' | 'pt-PT' | 'en-GB'
   client_id: string
