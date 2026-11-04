@@ -268,6 +268,14 @@ function OrderDetailModal({
   const viewLocale = order.market_code === 'EU' ? locale : 'pt-BR'
   const isEuOrder = order.market_code === 'EU'
   const viewText = (pt: string, en: string) => isEuOrder && locale === 'en-GB' ? en : pt
+  // Orçamento EU salva sem opcionais, mas só vira pedido com todos escolhidos.
+  const pendingItems = order.is_finalized ? [] : order.items.filter(item => (item.pending_optionals?.length ?? 0) > 0)
+  const pendingReason = pendingItems.length > 0
+    ? viewText(
+        `Escolha os opcionais pendentes antes de finalizar: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
+        `Choose the pending options before finalising: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
+      )
+    : ''
   const { data: products = [] } = useProductsByCodes(
     orderDetail?.items.map((item) => item.product_code) ?? [],
     !!orderDetail,
@@ -420,7 +428,7 @@ function OrderDetailModal({
                 <button onClick={onCancel} className="flex items-center gap-1.5 px-3 py-1.5 border border-terracotta text-terracotta rounded-lg text-xs font-semibold hover:bg-danger-soft transition-colors">
                   <Ban className="w-3.5 h-3.5" /> Cancelar
                 </button>
-                <button onClick={onFinalize} className="flex items-center gap-1.5 px-3 py-1.5 bg-gold text-white rounded-lg text-xs font-semibold hover:bg-gold-600 transition-colors">
+                <button onClick={onFinalize} disabled={pendingItems.length > 0} title={pendingReason || undefined} className="flex items-center gap-1.5 px-3 py-1.5 bg-gold text-white rounded-lg text-xs font-semibold hover:bg-gold-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   <CheckCircle className="w-3.5 h-3.5" /> Finalizar
                 </button>
               </>
@@ -502,6 +510,7 @@ function OrderDetailModal({
               )}
             </div>
 
+            {pendingReason && <div role="alert" className="mb-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">{pendingReason}</div>}
             <div className="flex items-center justify-between gap-3 mb-2">
               <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">{viewText('Itens', 'Items')}</h4>
               {optionalItemIds.length > 0 && (
@@ -539,7 +548,7 @@ function OrderDetailModal({
                     const photoUrl = product?.photo_url ?? null
                     const thumbnailUrl = product?.thumbnail_url ?? photoUrl
                     return (
-                      <tr key={item.id} className="border-t border-line">
+                      <tr key={item.id} className={`border-t border-line ${(item.pending_optionals?.length ?? 0) > 0 && !order.is_finalized ? 'bg-warning-soft/40' : ''}`}>
                         <td className="px-2 py-2" style={{ width: '40px', minWidth: '40px' }}>
                           {photoUrl
                             ? <img src={thumbnailUrl ?? photoUrl} alt="" loading="lazy" decoding="async" onClick={() => setActivePhotoModal(photoUrl)} className="object-cover rounded-lg border border-line cursor-pointer hover:opacity-80 transition-opacity" style={{ width: '36px', height: '36px', minWidth: '36px', minHeight: '36px' }} />
@@ -567,6 +576,7 @@ function OrderDetailModal({
                             : formatDimensions(item, order.market_code, viewLocale)}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs">
+                          {(item.pending_optionals?.length ?? 0) > 0 && !order.is_finalized && <div className="mb-1 text-[10px] font-semibold text-warning">{viewText('Pendente', 'Pending')}: {item.pending_optionals?.join(', ')}</div>}
                           {(() => {
                             const parsed = parseOptCategories(item.opt_categories)
                             const choices = item.optional_choices ?? []

@@ -319,6 +319,8 @@ export interface OrderItem {
   observacao: string | null
   /** Comentário livre do usuário sobre o item. */
   comment?: string | null
+  /** Opcionais ainda sem escolha (orçamento EU em aberto); vazio quando completo. */
+  pending_optionals?: string[]
   created_at: string
   updated_at: string
 }

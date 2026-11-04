@@ -294,6 +294,7 @@ def _missing_optional_labels(
 async def _resolve_item_choices(
     db: AsyncSession, product: Product, market_code: str, item_in: OrderItemCreate,
     source: OrderItem | None = None,
+    require_complete: bool = True,
 ) -> list[OrderItemOptionalChoice]:
     if market_code != CUSTOM_OPTION_MARKET and (
         any(row.custom_text is not None for row in item_in.optional_choices)
@@ -410,7 +411,9 @@ async def _resolve_item_choices(
         set(chosen),
         item_in.opt_categories,
     )
-    if missing_labels:
+    # Portugal salva o orçamento com opcionais pendentes; a exigência vale na
+    # finalização (finalize_order). O Brasil continua exigindo ao salvar.
+    if missing_labels and require_complete:
         raise HTTPException(
             status_code=422,
             detail=(
@@ -926,6 +929,54 @@ async def _get_order(
     return order
 
 
+async def _pending_optionals_by_item(
+    db: AsyncSession, order: Order
+) -> dict[uuid.UUID, list[str]]:
+    """Opcionais ainda sem escolha em cada linha, por id da linha."""
+    item_codes = [item.product_code for item in order.items]
+    products = (
+        await db.execute(
+            select(Product).where(
+                Product.market_code == order.market_code,
+                Product.product_code.in_(item_codes),
+            )
+        )
+    ).scalars().all() if item_codes else []
+    products_by_code = {product.product_code: product for product in products}
+    (
+        applications_by_product_id,
+        legacy_categories_by_product_id,
+    ) = await _batch_load_optional_slots(db, products)
+    pending: dict[uuid.UUID, list[str]] = {}
+    for item in order.items:
+        product = products_by_code.get(item.product_code)
+        if product is None:
+            continue
+        missing_labels = _missing_optional_labels(
+            applications_by_product_id.get(product.id, []),
+            legacy_categories_by_product_id.get(product.id, set()),
+            {
+                choice.application_id
+                for choice in item.optional_choices
+                if choice.application_id is not None
+            },
+            item.opt_categories,
+        )
+        if missing_labels:
+            pending[item.id] = missing_labels
+    return pending
+
+
+async def _annotate_pending_optionals(db: AsyncSession, order: Order) -> Order:
+    """Expõe `pending_optionals` por linha em orçamentos EU ainda abertos."""
+    if order.market_code != "EU" or order.is_finalized or order.is_cancelled:
+        return order
+    pending = await _pending_optionals_by_item(db, order)
+    for item in order.items:
+        item.pending_optionals = pending.get(item.id, [])
+    return order
+
+
 async def _reload_order_for_response(db, order_id) -> Order:
     result = await db.execute(
         select(Order)
@@ -933,7 +984,7 @@ async def _reload_order_for_response(db, order_id) -> Order:
         .options(selectinload(Order.items).selectinload(OrderItem.optional_choices))
         .execution_options(populate_existing=True)
     )
-    return result.scalar_one()
+    return await _annotate_pending_optionals(db, result.scalar_one())
 
 
 @router.post("", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
@@ -1103,6 +1154,7 @@ async def create_order(
         optional_choices = await _resolve_item_choices(
             db, product, market_code, item_in,
             source_items.get(item_in.source_order_item_id),
+            require_complete=market_code != "EU",
         )
         product_type = type_map.get(product.type)
         if market_code == "EU":
@@ -1670,6 +1722,7 @@ async def update_order(
             optional_choices = await _resolve_item_choices(
                 db, product, principal.code, item_in,
                 old_item_map.get(item_in.source_order_item_id),
+                require_complete=principal.code != "EU",
             )
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
@@ -1824,41 +1877,12 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
-    item_codes = [item.product_code for item in order.items]
-    products = (
-        await db.execute(
-            select(Product).where(
-                Product.market_code == order.market_code,
-                Product.product_code.in_(item_codes),
-            )
-        )
-    ).scalars().all() if item_codes else []
-    products_by_code = {
-        product.product_code: product for product in products
-    }
-    (
-        applications_by_product_id,
-        legacy_categories_by_product_id,
-    ) = await _batch_load_optional_slots(db, products)
-    pending_items = []
-    for item in order.items:
-        product = products_by_code.get(item.product_code)
-        if product is None:
-            continue
-        missing_labels = _missing_optional_labels(
-            applications_by_product_id.get(product.id, []),
-            legacy_categories_by_product_id.get(product.id, set()),
-            {
-                choice.application_id
-                for choice in item.optional_choices
-                if choice.application_id is not None
-            },
-            item.opt_categories,
-        )
-        if missing_labels:
-            pending_items.append(
-                f"{item.product_code}: {', '.join(missing_labels)}"
-            )
+    pending = await _pending_optionals_by_item(db, order)
+    pending_items = [
+        f"{item.product_code}: {', '.join(pending[item.id])}"
+        for item in order.items
+        if item.id in pending
+    ]
     if pending_items:
         raise HTTPException(
             status_code=422,
@@ -2036,7 +2060,8 @@ async def get_order(
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_order_access),
 ):
-    return await _get_order(db, id_or_code, current_user)
+    order = await _get_order(db, id_or_code, current_user)
+    return await _annotate_pending_optionals(db, order)
 
 
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)

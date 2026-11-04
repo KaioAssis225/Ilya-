@@ -562,9 +562,11 @@ function ItemCommentBox({ comment, english, onChange }: {
   </label>
 }
 
-function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english, allowCustom }: {
+function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english, allowCustom, incompleteAllowed = false }: {
   product: Product
   allowCustom: boolean
+  /** Portugal: o orçamento salva sem os opcionais; eles só travam a finalização. */
+  incompleteAllowed?: boolean
   choices: CartItem['optional_choices']
   allOptionals: OptionalColor[]
   onChange: (applicationId: string, choice: OptionalChoiceInput | null) => void
@@ -589,7 +591,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
         <span className={`inline-flex items-center gap-1.5 font-semibold ${progress.missing > 0 ? 'text-warning' : 'text-success'}`}>
           {progress.missing > 0 ? <CircleAlert className="h-3 w-3" aria-hidden="true" /> : <CheckCircle className="h-3 w-3" aria-hidden="true" />}
           {progress.missing > 0
-            ? (english ? `${progress.missing} required ${progress.missing === 1 ? 'choice' : 'choices'} remaining` : `${progress.missing} ${progress.missing === 1 ? 'escolha obrigatória pendente' : 'escolhas obrigatórias pendentes'}`)
+            ? (english ? `${progress.missing} required ${progress.missing === 1 ? 'choice' : 'choices'} remaining${incompleteAllowed ? ' — needed to finalise' : ''}` : `${progress.missing} ${progress.missing === 1 ? 'escolha obrigatória pendente' : 'escolhas obrigatórias pendentes'}${incompleteAllowed ? ' — necessárias para finalizar' : ''}`)
             : (english ? 'Required options complete' : 'Opcionais obrigatórios completos')}
         </span>
         <span className="tabular-nums text-ink-3">{progress.filled}/{progress.total}</span>
@@ -868,7 +870,7 @@ function MobileCartCard({
           {item.preserve_optional_choices ? <div className="mt-2 text-xs text-ink-2">
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
-          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} />}
+          </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} incompleteAllowed={measurementMarket === 'EU'} />}
           <ItemCommentBox comment={item.comment} english={isEnglish} onChange={onCommentChange} />
         </div>
       </div>
@@ -1551,7 +1553,7 @@ export default function OrcamentoPage() {
 
   function handleAddProductToCart() {
     if (!cartHydrated || !selectedProduct) return
-    const errors = validateApplicationChoices(selectedProduct, selectedChoices, allOptionals)
+    const errors = validateApplicationChoices(selectedProduct, selectedChoices, allOptionals, false, {}, market === 'EU')
     if (errors.length) { setToast({ message: errors[0], variant: 'error' }); return }
     const auto_categories = initialLegacyOptionCategories(selectedProduct)
     const areaProduct = isAreaProduct(selectedProduct)
@@ -1731,6 +1733,7 @@ export default function OrcamentoPage() {
           allOptionals,
           true,
           item.opt_categories,
+          market === 'EU',
         )[0],
       }))
       .find(({ error }) => error)
@@ -1914,6 +1917,7 @@ export default function OrcamentoPage() {
       {selectedProduct && <ApplicationSelectors
         product={selectedProduct} choices={selectedChoices} allOptionals={allOptionals} english={isEnglish}
         allowCustom={allowsCustomOption(market) && optionalsReady}
+        incompleteAllowed={market === 'EU'}
         onPreview={photoUrl => setActivePhotoModal(photoUrl)}
         onChange={(applicationId, choice) => setSelectedChoices(previous => [
           ...previous.filter(candidate => candidate.application_id !== applicationId),
@@ -2131,7 +2135,7 @@ export default function OrcamentoPage() {
                               {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
-                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market) && optionalsReady} />}
+                            {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market) && optionalsReady} incompleteAllowed={market === 'EU'} />}
                             <ItemCommentBox comment={item.comment} english={isEnglish} onChange={comment => updateComment(item.line_id, comment)} />
                           </div>
                         </div>
