@@ -57,7 +57,7 @@ const EN: Record<string, string> = {
   'Endereço': 'Address',
   'Endereço *': 'Address *',
   'Localidade *': 'Town / city *',
-  'País da primeira liberação': 'Launch country',
+  'País': 'Country',
   'Região': 'Region',
   'Cidade': 'City',
   'Estado': 'State',

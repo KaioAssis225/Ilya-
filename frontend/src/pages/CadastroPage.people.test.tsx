@@ -219,7 +219,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     })
     await user.click(newClientButton)
 
-    expect(screen.getByLabelText('País da primeira liberação')).toHaveValue('')
+    expect(screen.getByLabelText('País')).toHaveValue('')
     expect(screen.queryByText('Desconto Máximo (%)')).toBeNull()
     await user.type(screen.getByLabelText('Cliente *'), 'Casa Atlântico')
     await user.type(screen.getByLabelText('Contato'), 'Maria Silva')
@@ -228,7 +228,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
     await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
     await user.type(screen.getByLabelText('Localidade *'), 'Lisboa')
-    await user.type(screen.getByLabelText('País da primeira liberação'), 'Portugal')
+    await user.type(screen.getByLabelText('País'), 'Portugal')
     await user.type(screen.getByLabelText('Observação'), 'Contato após as 14h.')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
@@ -273,7 +273,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
     await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
     await user.type(screen.getByLabelText('Localidade *'), 'Lisboa')
-    await user.type(screen.getByLabelText('País da primeira liberação'), 'Portugal')
+    await user.type(screen.getByLabelText('País'), 'Portugal')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 
     await waitFor(() => {
