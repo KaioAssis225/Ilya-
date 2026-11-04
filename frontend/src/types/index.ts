@@ -285,6 +285,9 @@ export interface OrderCreate {
   notes?: string | null
   items: OrderItemCreate[]
   locale?: 'pt-PT' | 'en-GB'
+  /** EU: orçamento sem IVA; o servidor zera o imposto e exige o motivo. */
+  vat_exempt?: boolean
+  vat_exemption_code?: string | null
 }
 
 export interface OrderUpdate {
@@ -292,6 +295,8 @@ export interface OrderUpdate {
   price_list_code?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   notes?: string | null
   items?: OrderItemCreate[]
+  vat_exempt?: boolean
+  vat_exemption_code?: string | null
 }
 
 export interface OrderItem {
@@ -397,6 +402,10 @@ export interface Order {
   production_started_at?: string | null
   delivered_at?: string | null
   external_code: string | null
+  vat_exempt?: boolean
+  vat_exemption_code?: string | null
+  /** Texto do motivo no idioma do documento (calculado no servidor). */
+  vat_exemption_label?: string | null
   notes: string | null
   items: OrderItem[]
   history: OrderHistory[]

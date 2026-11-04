@@ -423,6 +423,84 @@ describe('OrcamentoPage', () => {
     })
   })
 
+  it('Portugal: "Sem IVA" exige o motivo e envia o flag no contrato de criação', async () => {
+    const user = productTestUser('admin', 'EU')
+    const product = buildProduct('EU', { optional_applications: [] })
+    const quoteClient: Client = {
+      id: 'client-eu-vat-exempt',
+      name: 'Cliente Portugal',
+      phone: '+351 912 345 678',
+      email: null,
+      cpf_cnpj: null,
+      cep: '1000-001',
+      numero: null,
+      address: 'Rua de Teste',
+      city: 'Lisboa',
+      state: 'Lisboa',
+      country: 'PT',
+      region: null,
+      tax_id: 'PT123456789',
+      market_code: 'EU',
+      price_profile: 'lojista',
+      max_discount: 0,
+      rep_id: null,
+      created_at: '2026-10-27T12:00:00Z',
+      updated_at: '2026-10-27T12:00:00Z',
+      last_activity_at: '2026-10-27T12:00:00Z',
+    }
+    localStorage.setItem(
+      cartStorageKey(user.id, 'EU'),
+      JSON.stringify([{
+        line_id: 'line-eu-vat-exempt',
+        product_code: product.product_code,
+        qty: 1,
+        discount: 0,
+        opt_categories: {},
+        optional_choices: [],
+      }]),
+    )
+    sessionStorage.setItem(`orcamento_client_id:${user.id}:EU`, quoteClient.id)
+    installOrcamentoHandlers([product])
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.get(`*/clients/${quoteClient.id}`, () => HttpResponse.json(quoteClient)),
+      http.post('*/orders', async ({ request }) => {
+        posted = await request.json() as Record<string, unknown>
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+
+    renderProductPage(<OrcamentoPage />, user)
+
+    const checkbox = (await screen.findAllByLabelText('Sem IVA (isento)'))[0]
+    fireEvent.click(checkbox)
+    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    await waitFor(() => expect(submit).toBeEnabled())
+
+    // Sem o motivo não envia.
+    fireEvent.click(submit)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Escolha o motivo da isenção de IVA.')
+    expect(posted).toBeNull()
+
+    fireEvent.change(screen.getAllByLabelText('Motivo da isenção de IVA')[0], { target: { value: 'M16' } })
+    fireEvent.click(submit)
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toMatchObject({ vat_exempt: true, vat_exemption_code: 'M16' })
+  })
+
+  it('Portugal: representante também vê o "Sem IVA"; no Brasil o campo não existe', async () => {
+    const eu = productTestUser('representante', 'EU')
+    installOrcamentoHandlers([buildProduct('EU', { optional_applications: [] })])
+    const { unmount } = renderProductPage(<OrcamentoPage />, eu)
+    expect((await screen.findAllByLabelText('Sem IVA (isento)')).length).toBeGreaterThan(0)
+    unmount()
+
+    installOrcamentoHandlers([buildProduct('BR', { optional_applications: [] })])
+    renderProductPage(<OrcamentoPage />, productTestUser('admin', 'BR'))
+    await screen.findAllByText('Novo Orçamento')
+    expect(screen.queryByLabelText('Sem IVA (isento)')).toBeNull()
+  })
+
   it('Portugal salva o orçamento com aplicações sem nenhum opcional selecionado (a exigência vale ao finalizar)', async () => {
     const user = productTestUser('admin', 'EU')
     const product = buildProduct('EU')

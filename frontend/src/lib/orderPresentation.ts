@@ -62,7 +62,7 @@ export interface OrderDocumentLabels {
   taxId: string; taxIdMissing: string; commercialNotice: string; page: string
   product: string; qty: string; basePrice: string; discount: string; netUnitPrice: string; subtotal: string
   dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
-  totalItems: string; grandTotal: string; notes: string
+  totalItems: string; grandTotal: string; notes: string; vatExempt: string
   commercialTerms: string[]
   repSignature: string; clientSignature: string; footer: string
 }
@@ -91,7 +91,7 @@ const PT_LABELS: OrderDocumentLabels = {
   taxId: 'CPF/CNPJ', taxIdMissing: 'não informado', commercialNotice: 'Pedido comercial. Este documento não substitui a nota fiscal.', page: 'Página',
   product: 'PRODUTO', qty: 'QTD', basePrice: 'PREÇO-BASE', discount: 'DESCONTO (%)', netUnitPrice: 'VALOR C/ DESC.', subtotal: 'SUBTOTAL',
   dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
-  totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES',
+  totalItems: 'Total de Itens:', grandTotal: 'VALOR TOTAL:', notes: 'OBSERVAÇÕES', vatExempt: 'isento',
   commercialTerms: [],
   repSignature: 'Representante / Ilya', clientSignature: 'Cliente / Contratado',
   footer: 'Ilya — Documento gerado automaticamente',
@@ -117,7 +117,7 @@ const EN_LABELS: OrderDocumentLabels = {
   taxId: 'VAT / TAX ID', taxIdMissing: 'not provided', commercialNotice: 'Commercial order confirmation. This document is not an invoice.', page: 'Page',
   product: 'PRODUCT', qty: 'QTY', basePrice: 'BASE PRICE', discount: 'DISCOUNT (%)', netUnitPrice: 'NET UNIT PRICE', subtotal: 'SUBTOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',
-  totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES',
+  totalItems: 'Total items:', grandTotal: 'GRAND TOTAL:', notes: 'NOTES', vatExempt: 'exempt',
   commercialTerms: [
     'FREIGHT - EX WORKS',
     'PAYMENT TERMS - 50% deposit',

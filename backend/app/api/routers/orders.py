@@ -42,6 +42,7 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
+from app.core.vat_exemption import VAT_EXEMPTION_REASONS
 from app.schemas.order import is_legacy_custom, OptionalChoiceCreate, OrderCopyRead, OrderCopyRequest, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderStageUpdate, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.services.area_products import area_from_dimensions, is_area_product
@@ -103,6 +104,45 @@ def _can_create_order(current_user: User) -> bool:
         or is_internal_operator(current_user)
         or is_client_account(current_user)
     )
+
+
+def _ensure_can_set_vat_exemption(current_user: User) -> None:
+    allowed = not is_client_account(current_user) and (
+        current_user.role in {UserRole.admin, UserRole.representante}
+        or is_internal_operator(current_user)
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Somente administrador, operador interno ou representante pode isentar o IVA.",
+        )
+
+
+def _resolve_vat_exemption(
+    current_user: User,
+    market_code: str,
+    requested: bool | None,
+    requested_code: str | None,
+    current: tuple[bool, str | None],
+) -> tuple[bool, str | None]:
+    """Isenção de IVA do orçamento (só EU). Ausente mantém o estado atual.
+
+    Marcar ou desmarcar a isenção é decisão de admin, operador interno ou
+    representante; conta de cliente nunca altera. O motivo é obrigatório.
+    """
+    if requested is None:
+        return current
+    if requested is False:
+        if current[0]:
+            _ensure_can_set_vat_exemption(current_user)
+        return False, None
+    if market_code != "EU":
+        raise HTTPException(status_code=422, detail="Isenção de IVA só existe em Portugal.")
+    if requested_code not in VAT_EXEMPTION_REASONS:
+        raise HTTPException(status_code=422, detail="Informe o motivo da isenção de IVA.")
+    if current != (True, requested_code):
+        _ensure_can_set_vat_exemption(current_user)
+    return True, requested_code
 
 
 def _apply_order_rep_assignment(current_user: User, payload: OrderCreate) -> None:
@@ -1078,6 +1118,10 @@ async def _create_order_core(
     )
     market_code = principal.code
     context = principal.market
+    vat_exempt, vat_exemption_code = _resolve_vat_exemption(
+        current_user, market_code, payload.vat_exempt, payload.vat_exemption_code,
+        (source_order.vat_exempt, source_order.vat_exemption_code) if source_order else (False, None),
+    )
     # Brasil fecha na tabela de faturamento do cliente. Em Portugal a tabela
     # é escolha livre do próprio orçamento, sem trava do cadastro.
     if market_code == "BR":
@@ -1197,6 +1241,8 @@ async def _create_order_core(
                 )
             else:
                 ipi_rate = _resolve_br_ipi(product.product_code, product_type)
+            if vat_exempt:
+                ipi_rate = _ZERO
             qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, source_items.get(item_in.source_order_item_id)
             )
@@ -1283,6 +1329,8 @@ async def _create_order_core(
         total_value=total,
         total_ipi=total_ipi,
         total_with_ipi=total_with_ipi,
+        vat_exempt=vat_exempt,
+        vat_exemption_code=vat_exemption_code,
         notes=payload.notes,
         supersedes_order_id=source_order.id if source_order else None,
         revision_number=(source_order.revision_number + 1) if source_order else 1,
@@ -1291,7 +1339,10 @@ async def _create_order_core(
     db.add(OrderHistory(
         id=uuid.uuid4(), order_id=order.id, user_id=current_user.id,
         action="created", items_snapshot=_items_history_snapshot(order_items),
-        details=f"copiado de {copy_source.code}" if copy_source is not None else None,
+        details="; ".join(filter(None, [
+            f"copiado de {copy_source.code}" if copy_source is not None else None,
+            f"IVA isento ({vat_exemption_code})" if vat_exempt else None,
+        ])) or None,
     ))
     try:
         db.add(order)
@@ -1423,6 +1474,8 @@ async def create_order_revision(
         price_list_code=source.price_list_code,
         locale=source.locale if source.market_code == "EU" else None,
         supersedes_order_id=source.id,
+        vat_exempt=source.vat_exempt,
+        vat_exemption_code=source.vat_exemption_code,
         items=[OrderItemCreate(
             product_code=item.product_code, qty=item.qty,
             area_width_m=item.area_width_m, area_depth_m=item.area_depth_m,
@@ -1703,6 +1756,22 @@ async def update_order(
 
     changes: list[str] = []
 
+    vat_exempt, vat_exemption_code = _resolve_vat_exemption(
+        current_user, order.market_code, payload.vat_exempt, payload.vat_exemption_code,
+        (order.vat_exempt, order.vat_exemption_code),
+    )
+    if (vat_exempt, vat_exemption_code) != (order.vat_exempt, order.vat_exemption_code):
+        if payload.items is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Alterar a isenção de IVA exige reenviar os itens para recalcular o orçamento.",
+            )
+        changes.append(
+            f"IVA: isento ({vat_exemption_code})" if vat_exempt else "IVA: isenção removida"
+        )
+        order.vat_exempt = vat_exempt
+        order.vat_exemption_code = vat_exemption_code
+
     if payload.notes is not None and payload.notes != order.notes:
         changes.append(f"observações alteradas")
         order.notes = payload.notes
@@ -1872,6 +1941,8 @@ async def update_order(
                 )
             else:
                 ipi_rate = _resolve_br_ipi(product.product_code, product_type)
+            if vat_exempt:
+                ipi_rate = _ZERO
             qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, old_item_map.get(item_in.source_order_item_id)
             )

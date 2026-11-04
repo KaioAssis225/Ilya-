@@ -681,6 +681,15 @@ function OrderDetailModal({
                   })}
                 </tbody>
                 <tfoot>
+                  {order.market_code === 'EU' && order.vat_exempt && (
+                    <tr className="border-t border-line bg-bg">
+                      <td colSpan={8} className="px-3 py-1.5 text-right text-xs text-muted">
+                        <span className="uppercase tracking-wider">{viewText('IVA', 'VAT')}: {viewText('isento', 'exempt')}</span>
+                        <span className="block normal-case">{[order.vat_exemption_code, order.vat_exemption_label].filter(Boolean).join(' — ')}</span>
+                      </td>
+                      <td />
+                    </tr>
+                  )}
                   {order.market_code === 'EU' && Number(order.total_ipi) > 0 && (
                     <>
                       <tr className="border-t border-line bg-bg">

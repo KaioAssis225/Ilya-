@@ -316,6 +316,35 @@ test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', 
   assert.ok(!renderedTexts.some((text) => text.includes('″')))
 })
 
+test('EU sem IVA: o PDF mostra "IVA: isento" com o código e o motivo e não lista Subtotal/IVA', async () => {
+  const order = makeOrder({
+    code: 'ORD-0003',
+    market_code: 'EU',
+    currency: 'EUR',
+    locale: 'pt-PT',
+    total_value: 2000,
+    total_ipi: 0,
+    total_with_ipi: 2000,
+    vat_exempt: true,
+    vat_exemption_code: 'M16',
+    vat_exemption_label: 'Isento nos termos do artigo 14.º do RITI (transmissão intracomunitária)',
+    items: [
+      makeOrderItem({
+        description: 'Poltrona Ilya', qty: 1, unit_price: 2000, ipi_rate: 0, ipi_value: 0, tax_label: 'IVA', currency: 'EUR',
+      }),
+    ],
+  })
+
+  await generateOrderPDF(order, makeClient({ market_code: 'EU', country: 'PT', price_profile: 'pvp' }), null, [
+    makeProduct({ market_code: 'EU', currency: 'EUR' }),
+  ])
+
+  assert.ok(renderedTexts.includes('IVA:'))
+  assert.ok(renderedTexts.includes('isento'))
+  assert.ok(renderedTexts.some((text) => text.startsWith('M16 — Isento nos termos do artigo 14.º do RITI')))
+  assert.ok(!renderedTexts.includes('Subtotal:'))
+})
+
 test('regressão EU: preserva item.description histórico do snapshot mesmo se product.description_en mudou', async () => {
   const client = makeClient({
     name: 'Client Snapshot',
