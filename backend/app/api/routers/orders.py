@@ -2391,10 +2391,11 @@ async def get_order(
 async def _order_delete_blocker(db: AsyncSession, order: Order) -> str | None:
     """Motivo pelo qual o pedido não pode ser excluído, ou None se pode.
 
-    As FKs de revisão, Moloni e e-mail são RESTRICT de propósito: guardam
-    evidência fiscal e de envio. Em vez de deixar o banco estourar um 409
-    genérico, dizemos qual registro bloqueia. Cancelar não é saída: o endpoint
-    /cancel recusa pedido finalizado, e todos esses registros só existem nele.
+    As FKs de revisão e e-mail são RESTRICT de propósito: guardam evidência de
+    envio. Em vez de deixar o banco estourar um 409 genérico, dizemos qual
+    registro bloqueia. Cancelar não é saída: o endpoint /cancel recusa pedido
+    finalizado, e esses registros só existem nele. O job do Moloni NÃO bloqueia:
+    `delete_order` o apaga junto, registrando o documento no log.
     """
     async def has(model, column) -> bool:
         stmt = select(model.id).where(column == order.id).limit(1)
@@ -2402,8 +2403,6 @@ async def _order_delete_blocker(db: AsyncSession, order: Order) -> str | None:
 
     if await has(Order, Order.supersedes_order_id):
         return "Este pedido tem uma revisão. Exclua a revisão primeiro."
-    if await has(MoloniExportJob, MoloniExportJob.order_id):
-        return "Pedido já tem documento no Moloni e não pode ser excluído."
     if await has(OrderEmailDocument, OrderEmailDocument.order_id) or await has(
         OrderEmailDelivery, OrderEmailDelivery.order_id
     ):
@@ -2451,6 +2450,26 @@ async def delete_order(
             "deleted_by": str(current_user.id),
         },
     )
+    # A FK moloni_export_jobs.order_id é RESTRICT: apagamos o(s) job(s) aqui,
+    # explicitamente e na mesma transação da exclusão. Documento já emitido no
+    # Moloni não é desfeito; o log guarda o número para conferência fiscal e
+    # eventual nota de crédito. Job `processing` também vai: o worker está
+    # bloqueado (MOLONI_BLOCKED) e, se voltar, não acha mais o job.
+    moloni_jobs = (await db.execute(
+        select(MoloniExportJob).where(MoloniExportJob.order_id == order.id)
+    )).scalars().all()
+    for job in moloni_jobs:
+        if job.moloni_document_id is not None or job.status in ("delivered", "processing"):
+            logger.warning(
+                "Pedido excluído com registro Moloni: code=%s job_id=%s status=%s moloni_document_id=%s",
+                order.code,
+                job.id,
+                job.status,
+                job.moloni_document_id,
+            )
+        await db.delete(job)
+    if moloni_jobs:
+        await db.flush()
     try:
         await db.delete(order)
         await db.commit()
