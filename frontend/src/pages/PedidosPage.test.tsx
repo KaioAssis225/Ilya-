@@ -48,6 +48,7 @@ describe('PedidosPage', () => {
   })
 
   it('admin with open order sees Editar, Finalizar, Cancelar, Excluir actions', async () => {
+    const user = userEvent.setup()
     const summary = makeSummary()
     setupHandlers(summary)
 
@@ -56,6 +57,8 @@ describe('PedidosPage', () => {
     await screen.findAllByText(summary.code)
 
     expect(screen.getByRole('heading', { name: /Orçamentos/ })).toBeInTheDocument()
+    expect(screen.getAllByLabelText(`Copiar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
@@ -91,6 +94,12 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     await screen.findAllByText(summary.code)
+    await user.click(screen.getAllByLabelText(`Copiar orçamento ${summary.code}`)[0])
+    const copyDialog = await screen.findByRole('dialog', { name: 'Copiar orçamento' })
+    expect(within(copyDialog).getByRole('button', { name: 'Criar orçamento' })).toBeVisible()
+    await user.click(within(copyDialog).getByRole('button', { name: 'Fechar' }))
+
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
 
     const dialog = await screen.findByRole('dialog')
@@ -109,6 +118,7 @@ describe('PedidosPage', () => {
   })
 
   it('admin with finalized order hides Editar/Finalizar/Cancelar but keeps Excluir', async () => {
+    const user = userEvent.setup()
     const summary = makeSummary({
       is_finalized: true,
       finalized_at: '2024-01-02T00:00:00.000Z',
@@ -119,13 +129,16 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
+    expect(screen.getAllByLabelText(`Copiar pedido ${summary.code}`).length).toBeGreaterThan(0)
+    await user.click(screen.getAllByLabelText(`Mais ações do pedido ${summary.code}`)[0])
     expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
-    expect(screen.getAllByLabelText(`Excluir orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Excluir pedido ${summary.code}`).length).toBeGreaterThan(0)
   })
 
   it('produtos role sees Editar/Finalizar/Cancelar but not Excluir; cliente linked does not see mutation actions', async () => {
+    const user = userEvent.setup()
     const summary = makeSummary()
     setupHandlers(summary)
 
@@ -133,6 +146,8 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
+    expect(screen.queryAllByLabelText(`Copiar orçamento ${summary.code}`)).toHaveLength(0)
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
@@ -147,6 +162,7 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
@@ -253,6 +269,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     await screen.findAllByText(summary.code)
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
 
     const itemToggle = await screen.findByRole('button', { name: '3 opcionais' })
@@ -311,6 +328,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     expect((await screen.findAllByText('TAP-001(4,5 m²)')).length).toBeGreaterThan(0)
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
 
     const code = await screen.findByText('TAP-001')
