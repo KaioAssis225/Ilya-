@@ -913,13 +913,12 @@ function OrderListActions({
     ? (english ? 'order' : 'pedido')
     : (english ? 'quote' : 'orçamento')
   const actions: RowAction[] = [
-    {
-      key: 'view',
-      label: english ? 'View details' : 'Ver detalhes',
-      ariaLabel: english ? `View ${source} details` : `Ver detalhes do ${source}`,
-      icon: <Eye className="h-4 w-4" aria-hidden="true" />,
-      onSelect: onView,
-    },
+    ...(onCopy ? [{
+      key: 'copy',
+      label: english ? `Copy ${source}` : `Copiar ${source}`,
+      icon: <CopyIcon className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onCopy,
+    }] : []),
     {
       key: 'pdf',
       label: pdfLoading ? (english ? 'Generating PDF…' : 'Gerando PDF…') : (english ? 'Generate PDF' : 'Gerar PDF'),
@@ -1000,24 +999,22 @@ function OrderListActions({
     }
   }, [open])
 
-  const copyLabel = english ? 'Copy' : 'Copiar'
+  const viewLabel = english ? 'View' : 'Visualizar'
   const moreLabel = english ? `More actions for ${source} ${order.code}` : `Mais ações do ${source} ${order.code}`
 
   return (
     <div className={mobile ? 'flex w-full divide-x divide-bg-2' : 'flex items-center justify-end gap-1.5 whitespace-nowrap'}>
-      {onCopy && (
-        <button
-          type="button"
-          onClick={onCopy}
-          aria-label={`${english ? 'Copy' : 'Copiar'} ${source} ${order.code}`}
-          className={mobile
-            ? 'flex min-h-11 flex-1 items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold text-gold active:bg-gold-bg'
-            : 'inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-xs font-semibold text-ink-2 transition-colors hover:border-gold/40 hover:bg-gold-bg hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30'}
-        >
-          <CopyIcon className="h-4 w-4" aria-hidden="true" />
-          {copyLabel}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onView}
+        aria-label={`${viewLabel} ${source} ${order.code}`}
+        className={mobile
+          ? 'flex min-h-11 flex-1 items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold text-gold active:bg-gold-bg'
+          : 'inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-xs font-semibold text-ink-2 transition-colors hover:border-gold/40 hover:bg-gold-bg hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30'}
+      >
+        <Eye className="h-4 w-4" aria-hidden="true" />
+        {viewLabel}
+      </button>
       <button
         ref={triggerRef}
         type="button"
@@ -1027,7 +1024,7 @@ function OrderListActions({
         aria-expanded={open}
         title={english ? 'More actions' : 'Mais ações'}
         className={mobile
-          ? `flex min-h-11 items-center justify-center gap-1.5 px-4 py-3 text-xs font-medium text-ink-2 active:bg-bg ${onCopy ? '' : 'flex-1'}`
+          ? 'flex min-h-11 items-center justify-center gap-1.5 px-4 py-3 text-xs font-medium text-ink-2 active:bg-bg'
           : 'btn-icon h-9 w-9 rounded-lg border border-line bg-white hover:border-gold/40 hover:bg-bg-2'}
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />

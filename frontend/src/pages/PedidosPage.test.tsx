@@ -57,15 +57,17 @@ describe('PedidosPage', () => {
     await screen.findAllByText(summary.code)
 
     expect(screen.getByRole('heading', { name: /Orçamentos/ })).toBeInTheDocument()
-    expect(screen.getAllByLabelText(`Copiar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.queryAllByLabelText(`Copiar orçamento ${summary.code}`)).toHaveLength(0)
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
+    expect(screen.getByLabelText(`Copiar orçamento ${summary.code}`)).toBeVisible()
     expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Excluir orçamento ${summary.code}`).length).toBeGreaterThan(0)
   })
 
-  it('keeps copy visible and groups the other detail actions in the ellipsis menu', async () => {
+  it('keeps view visible and groups copy and the other actions in the ellipsis menu', async () => {
     const user = userEvent.setup()
     const summary = makeSummary({ items: [{ product_code: 'POL-001', qty: 1 }] })
     const detail: Order = {
@@ -94,13 +96,13 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     await screen.findAllByText(summary.code)
-    await user.click(screen.getAllByLabelText(`Copiar orçamento ${summary.code}`)[0])
+    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
+    await user.click(screen.getByLabelText(`Copiar orçamento ${summary.code}`))
     const copyDialog = await screen.findByRole('dialog', { name: 'Copiar orçamento' })
     expect(within(copyDialog).getByRole('button', { name: 'Criar orçamento' })).toBeVisible()
     await user.click(within(copyDialog).getByRole('button', { name: 'Fechar' }))
 
-    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
-    await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
+    await user.click(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`)[0])
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('button', { name: 'Copiar orçamento' })).toBeVisible()
@@ -129,8 +131,10 @@ describe('PedidosPage', () => {
 
     await screen.findAllByText(summary.code)
 
-    expect(screen.getAllByLabelText(`Copiar pedido ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Visualizar pedido ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.queryAllByLabelText(`Copiar pedido ${summary.code}`)).toHaveLength(0)
     await user.click(screen.getAllByLabelText(`Mais ações do pedido ${summary.code}`)[0])
+    expect(screen.getByLabelText(`Copiar pedido ${summary.code}`)).toBeVisible()
     expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
@@ -269,8 +273,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     await screen.findAllByText(summary.code)
-    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
-    await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
+    await user.click(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`)[0])
 
     const itemToggle = await screen.findByRole('button', { name: '3 opcionais' })
     const labels = [
@@ -328,8 +331,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
     expect((await screen.findAllByText('TAP-001(4,5 m²)')).length).toBeGreaterThan(0)
-    await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
-    await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
+    await user.click(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`)[0])
 
     const code = await screen.findByText('TAP-001')
     const row = code.closest('tr')!
