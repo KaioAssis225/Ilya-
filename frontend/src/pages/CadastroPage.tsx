@@ -378,15 +378,14 @@ function AddressFields({ form, setForm, market, portugalClient = false }: {
         <>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted">{tx('País da primeira liberação')}</span>
-            <select
+            <input
               className="input"
               value={form.country ?? ''}
               onChange={(e) => setForm({ ...form, country: e.target.value })}
+              placeholder="Digite o país"
+              maxLength={120}
               required
-            >
-              <option value="">Selecione</option>
-              <option value="PT">Portugal</option>
-            </select>
+            />
           </label>
           <label className="col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">{tx('Região')}</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} maxLength={120} /></label>
         </>
@@ -2158,7 +2157,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
 const emptyAddress = (market: 'BR' | 'EU', entityType: 'client' | 'rep' = 'client'): ClientCreate => ({
   name: '', contact_name: '', client_type: null, observation: '', phone: '', email: '', cpf_cnpj: '', tax_id: '',
-  country: market === 'BR' ? 'BR' : entityType === 'client' ? '' : 'PT',
+  country: market === 'BR' ? 'BR' : entityType === 'client' ? '' : 'Portugal',
   region: '', cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--', price_profile: 'lojista',
 })
 
@@ -2251,7 +2250,8 @@ function PeopleTab<T extends Client | Representative>({
     setForm({
       name: item.name, contact_name: item.contact_name ?? '', client_type: item.client_type ?? null,
       observation: item.observation ?? '', phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
-      tax_id: item.tax_id, country: item.country, region: item.region, cep: item.cep, numero: item.numero ?? '',
+      tax_id: item.tax_id, country: activeMarket === 'EU' && item.country === 'PT' ? 'Portugal' : item.country,
+      region: item.region, cep: item.cep, numero: item.numero ?? '',
       address: item.address, city: item.city, state: item.state,
       price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount,
       all_price_lists: item.all_price_lists ?? entityType === 'rep',

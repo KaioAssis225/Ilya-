@@ -12,7 +12,7 @@ test('normaliza país, região e campos opcionais sem inventar dados', () => {
     tax_id: ' PT123 ',
     contact_name: '  Maria Silva  ',
     observation: '  Prefere contato por telefone.  ',
-    country: ' pt ',
+    country: ' Portugal ',
     region: ' Lisboa ',
     cep: ' 1000-001 ',
     numero: ' ',

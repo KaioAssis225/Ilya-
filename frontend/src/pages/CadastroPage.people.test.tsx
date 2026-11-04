@@ -228,7 +228,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
     await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
     await user.type(screen.getByLabelText('Localidade *'), 'Lisboa')
-    await user.selectOptions(screen.getByLabelText('País da primeira liberação'), 'PT')
+    await user.type(screen.getByLabelText('País da primeira liberação'), 'Portugal')
     await user.type(screen.getByLabelText('Observação'), 'Contato após as 14h.')
     await user.click(screen.getByRole('button', { name: 'Criar' }))
 

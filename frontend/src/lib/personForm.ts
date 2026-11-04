@@ -1,5 +1,12 @@
 import type { ClientCreate } from '../types'
 
+function normalizeCountry(value?: string): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  const comparison = trimmed.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+  return comparison === 'PORTUGAL' || comparison === 'PT' ? 'PT' : trimmed.toUpperCase()
+}
+
 // Normalização e tradução de erro compartilhadas pelos formulários de pessoa
 // (cliente e representante), usados tanto na tela de Cadastro quanto no
 // cadastro rápido dentro do Orçamento. Ficavam só na tela de Cadastro: o
@@ -17,7 +24,7 @@ export function normalizePersonPayload(form: ClientCreate): ClientCreate {
     tax_id: form.tax_id?.trim() || null,
     contact_name: form.contact_name?.trim() || null,
     observation: form.observation?.trim() || null,
-    country: form.country?.trim().toUpperCase(),
+    country: normalizeCountry(form.country),
     region: form.region?.trim() || null,
     cep: form.cep.trim(),
     numero: form.numero?.trim() || null,
