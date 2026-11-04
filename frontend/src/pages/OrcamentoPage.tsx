@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useId, useMemo, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, MessageSquare } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, MessageSquare, Sparkles } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useClient, useClientsPage, useCreateClient } from '../hooks/useClients'
@@ -525,6 +525,28 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
   )
 }
 
+// Transforma a linha em especial (e desfaz). Só ícone, no estilo do comentário e
+// da lixeira; `aria-pressed` marca a linha especial.
+function SpecialToggle({ active, label, english, onToggle }: {
+  active: boolean
+  label: string
+  english: boolean
+  onToggle: () => void
+}) {
+  const action = active ? (english ? 'Remove special' : 'Remover especial') : (english ? 'Make special' : 'Tornar especial')
+  return <button
+    type="button"
+    onClick={onToggle}
+    aria-pressed={active}
+    aria-label={`${action}: ${label}`}
+    title={action}
+    className={`w-11 h-11 flex items-center justify-center flex-shrink-0 transition-colors ${active ? 'text-gold' : 'text-muted hover:text-gold'}`}
+    style={{ touchAction: 'manipulation' }}
+  >
+    <Sparkles className="w-4 h-4" fill={active ? 'currentColor' : 'none'} />
+  </button>
+}
+
 // Comentário livre do item no pedido. O botão fica ao lado de excluir; a caixa
 // fecha pelo botão só enquanto está vazia, para não esconder o que foi escrito.
 function ItemCommentToggle({ comment, label, english, onToggle }: {
@@ -912,8 +934,7 @@ function MobileCartCard({
           </div>
         </div>
 
-        {item.is_special && <span className="rounded bg-gold-soft px-1.5 py-1 text-[10px] font-bold text-gold">ESPECIAL</span>}
-        {!item.is_special && onSpecial && <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={onSpecial}>Especial</button>}
+        {onSpecial && <SpecialToggle active={!!item.is_special} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={onSpecial} />}
         {/* Desconto / especial percentual */}
         <div className="flex items-center gap-1.5">
           <label htmlFor={`mobile-disc-${item.line_id}`} className="type-label">
@@ -1603,7 +1624,7 @@ export default function OrcamentoPage() {
     const areaProduct = isAreaProduct(selectedProduct)
     setCart((prev) => {
       const signature = JSON.stringify({ legacy: auto_categories, choices: [...selectedChoices].sort((a, b) => a.application_id.localeCompare(b.application_id)) })
-      const existing = prev.find((i) => i.product_code === selectedProduct.product_code && i.discount === 0 &&
+      const existing = prev.find((i) => i.product_code === selectedProduct.product_code && !i.is_special && i.discount === 0 &&
         JSON.stringify({ legacy: i.opt_categories, choices: [...i.optional_choices].sort((a, b) => a.application_id.localeCompare(b.application_id)) }) === signature)
       if (existing && !areaProduct) {
         return prev.map((i) => i.line_id === existing.line_id ? { ...i, qty: i.qty + 1 } : i)
@@ -1694,28 +1715,34 @@ export default function OrcamentoPage() {
       : i))
   }
 
-  function addSpecial(lineId: string) {
+  // Transforma a própria linha em especial (código PAI-En, descrição "- ESPECIAL")
+  // ou desfaz. Posição, quantidade, opcionais e comentário ficam como estão; o
+  // preço continua sendo calculado pelo servidor.
+  function toggleSpecial(lineId: string) {
     if (market !== 'EU' || isClientUser) return
     setCart(previous => {
-      const parent = previous.find(item => item.line_id === lineId)
-      if (!parent || parent.is_special) return previous
+      const line = previous.find(item => item.line_id === lineId)
+      if (!line) return previous
+      if (line.is_special) {
+        return previous.map(item => item.line_id === lineId
+          ? { ...item, is_special: false, special_code: null, special_percent: null, discount: 0, displayDescription: undefined }
+          : item)
+      }
       const used = new Set(previous
-        .filter(item => item.is_special && item.product_code === parent.product_code)
+        .filter(item => item.is_special && item.line_id !== lineId && item.product_code === line.product_code)
         .map(item => item.special_code))
       let sequence = 1
-      while (used.has(`${parent.product_code}-E${sequence}`)) sequence += 1
-      const specialCode = `${parent.product_code}-E${sequence}`
-      return [...previous.slice(0, previous.indexOf(parent) + 1), {
-        ...parent,
-        line_id: crypto.randomUUID(),
-        is_special: true,
-        special_code: specialCode,
-        special_percent: 0,
-        discount: 0,
-        displayDescription: `${parent.displayDescription ?? parent._product.description} - ESPECIAL`,
-        comment: undefined,
-        source_order_item_id: undefined,
-      }, ...previous.slice(previous.indexOf(parent) + 1)]
+      while (used.has(`${line.product_code}-E${sequence}`)) sequence += 1
+      return previous.map(item => item.line_id === lineId
+        ? {
+          ...item,
+          is_special: true,
+          special_code: `${line.product_code}-E${sequence}`,
+          special_percent: 0,
+          discount: 0,
+          displayDescription: `${item.displayDescription ?? item._product.description} - ESPECIAL`,
+        }
+        : item)
     })
   }
 
@@ -2166,7 +2193,7 @@ export default function OrcamentoPage() {
                       onEditApplications={() => editApplications(item.line_id)}
                       onToggleComment={() => toggleComment(item.line_id)}
                       onCommentChange={comment => updateComment(item.line_id, comment)}
-                      onSpecial={!isClientUser && market === 'EU' && !item.is_special ? () => addSpecial(item.line_id) : undefined}
+                      onSpecial={!isClientUser && market === 'EU' ? () => toggleSpecial(item.line_id) : undefined}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
                       currency={currency}
@@ -2238,7 +2265,7 @@ export default function OrcamentoPage() {
                         {/* Ações: no canto do bloco do produto quando a linha empilha; ao lado dos valores no layout largo. */}
                         <div className="col-start-2 row-start-1 flex items-start @min-[960px]:col-start-3 @min-[960px]:pt-8">
                           <ItemCommentToggle comment={item.comment} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
-                          {!isClientUser && market === 'EU' && !item.is_special && <button type="button" className="btn-secondary mx-1 h-11 px-2 text-xs" onClick={() => addSpecial(item.line_id)}>Especial</button>}
+                          {!isClientUser && market === 'EU' && <SpecialToggle active={!!item.is_special} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleSpecial(item.line_id)} />}
                           <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                             <Trash2 className="w-4 h-4" />
                           </button>
