@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import platformApi from '../lib/platformApi'
 
 type MoloniStatus = {
+  blocked: boolean
   configured: boolean
   active: boolean
   enabled: boolean
@@ -76,12 +77,13 @@ export default function MoloniIntegrationPanel() {
   return <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="font-semibold text-ink">Moloni · pedidos EU</h2><p className="mt-1 text-xs text-muted">O Ilya cria um orçamento em rascunho no Moloni para cada pedido EU finalizado.</p></div>
-      <span className={status?.active && status?.enabled ? 'text-sm text-emerald-700' : 'text-sm text-muted'}>{status?.active && status?.enabled ? 'Pronto para configurar' : 'Ainda não conectado'}</span>
+      <span className={status?.active && status?.enabled ? 'text-sm text-emerald-700' : 'text-sm text-muted'}>{status?.blocked ? 'Temporariamente bloqueado' : status?.active && status?.enabled ? 'Pronto para configurar' : 'Ainda não conectado'}</span>
     </div>
+    {status?.blocked && <p className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">A integração está temporariamente bloqueada. Nenhum pedido será enviado ao Moloni.</p>}
     {error && <p className="mt-4 rounded-xl border border-terracotta/30 bg-white p-3 text-sm text-terracotta">{error}</p>}
     {notice && <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!status?.active && <div className="mt-4 flex flex-wrap items-end gap-3"><label className="flex min-w-56 flex-col gap-1"><span className="text-xs text-muted">ID da empresa Moloni</span><input className="input" inputMode="numeric" value={companyId} onChange={event => setCompanyId(event.target.value)} /></label><button className="btn-primary" disabled={busy || !Number(companyId)} onClick={connect}>{busy ? 'Abrindo…' : 'Conectar Moloni'}</button></div>}
-    {status?.active && <div className="mt-5 space-y-4">
+    {!status?.blocked && !status?.active && <div className="mt-4 flex flex-wrap items-end gap-3"><label className="flex min-w-56 flex-col gap-1"><span className="text-xs text-muted">ID da empresa Moloni</span><input className="input" inputMode="numeric" value={companyId} onChange={event => setCompanyId(event.target.value)} /></label><button className="btn-primary" disabled={busy || !Number(companyId)} onClick={connect}>{busy ? 'Abrindo…' : 'Conectar Moloni'}</button></div>}
+    {!status?.blocked && status?.active && <div className="mt-5 space-y-4">
       <div className="rounded-xl bg-surface-2 p-4 text-sm"><strong>Empresa conectada:</strong> {status.company_id}<br /><span className="text-muted">Fila: pendentes {status.jobs.pending} · enviados {status.jobs.delivered} · com falha {status.jobs.dead_letter}</span></div>
       <div><h3 className="font-medium text-ink">Mapeamento fiscal</h3><p className="mt-1 text-xs text-muted">Informe o ID do imposto já criado no Moloni para cada IVA utilizado pelos produtos EU.</p></div>
       <div className="space-y-2">{mappings.map((mapping, index) => <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><label className="flex flex-col gap-1"><span className="text-xs text-muted">IVA (%)</span><input className="input" inputMode="decimal" value={mapping.vat_rate} onChange={event => setMappings(rows => rows.map((row, rowIndex) => rowIndex === index ? { ...row, vat_rate: event.target.value } : row))} /></label><label className="flex flex-col gap-1"><span className="text-xs text-muted">ID de imposto Moloni</span><input className="input" inputMode="numeric" value={mapping.moloni_tax_id} onChange={event => setMappings(rows => rows.map((row, rowIndex) => rowIndex === index ? { ...row, moloni_tax_id: event.target.value } : row))} /></label><button className="self-end min-h-11 text-sm text-terracotta" disabled={mappings.length === 1} onClick={() => setMappings(rows => rows.filter((_, rowIndex) => rowIndex !== index))}>Remover</button></div>)}</div>

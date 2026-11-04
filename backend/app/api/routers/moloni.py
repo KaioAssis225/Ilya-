@@ -41,9 +41,15 @@ def _require_oauth_settings() -> None:
     if not all((settings.MOLONI_CLIENT_ID, settings.MOLONI_CLIENT_SECRET, settings.MOLONI_REDIRECT_URI)):
         raise HTTPException(503, "Integração Moloni ainda não foi configurada no ambiente.")
 
+
+def _require_moloni_unblocked() -> None:
+    if settings.MOLONI_BLOCKED:
+        raise HTTPException(503, "Integração Moloni temporariamente bloqueada.")
+
 @router.post("/connect", status_code=201)
 async def connect(payload: ConnectRequest, db: AsyncSession = Depends(get_db_session), platform: PlatformPrincipal = _ADMIN):
     """Cria estado único e devolve a URL de consentimento do Moloni."""
+    _require_moloni_unblocked()
     _require_oauth_settings()
     state = secrets.token_urlsafe(32)
     db.add(MoloniOAuthState(state=state, company_id=payload.company_id, user_id=platform.user.id, expires_at=datetime.now(timezone.utc) + timedelta(minutes=10)))
@@ -54,6 +60,7 @@ async def connect(payload: ConnectRequest, db: AsyncSession = Depends(get_db_ses
 @router.get("/callback", include_in_schema=False)
 async def callback(code: str = Query(min_length=1), state: str = Query(min_length=20), db: AsyncSession = Depends(get_db_session)):
     """Callback público: a autorização vem do estado opaco, de uso único."""
+    _require_moloni_unblocked()
     row = (await db.execute(select(MoloniOAuthState).where(MoloniOAuthState.state == state).with_for_update())).scalar_one_or_none()
     now = datetime.now(timezone.utc)
     if not row or row.used_at or row.expires_at <= now:
@@ -94,12 +101,13 @@ async def status(db: AsyncSession = Depends(get_db_session), _: PlatformPrincipa
             .where(MoloniTaxMapping.connection_id == connection.id)
             .order_by(MoloniTaxMapping.vat_rate)
         )).all())
-    return {"enabled": settings.MOLONI_ENABLED, "configured": bool(connection), "active": bool(connection and connection.is_active), "company_id": connection.company_id if connection else None, "jobs": counts, "tax_mappings": [{"vat_rate": str(rate), "moloni_tax_id": tax_id} for rate, tax_id in mappings]}
+    return {"blocked": settings.MOLONI_BLOCKED, "enabled": settings.MOLONI_ENABLED and not settings.MOLONI_BLOCKED, "configured": bool(connection), "active": bool(connection and connection.is_active), "company_id": connection.company_id if connection else None, "jobs": counts, "tax_mappings": [{"vat_rate": str(rate), "moloni_tax_id": tax_id} for rate, tax_id in mappings]}
 
 
 @router.put("/tax-mappings")
 async def save_tax_mappings(payload: TaxMappingsRequest, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):
     """Registra a correspondencia explicita IVA Ilya para imposto Moloni."""
+    _require_moloni_unblocked()
     try:
         connection = await active_moloni_connection(db)
     except MoloniError as exc:
@@ -123,6 +131,7 @@ async def save_tax_mappings(payload: TaxMappingsRequest, db: AsyncSession = Depe
 
 @router.post("/orders/{order_id}/enqueue", status_code=202)
 async def enqueue_existing(order_id: uuid.UUID, db: AsyncSession = Depends(get_db_session), _: PlatformPrincipal = _ADMIN):
+    _require_moloni_unblocked()
     order = (await db.execute(select(Order).where(Order.id == order_id))).scalar_one_or_none()
     if not order:
         raise HTTPException(404, "Pedido não encontrado.")

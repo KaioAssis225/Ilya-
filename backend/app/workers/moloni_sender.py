@@ -68,6 +68,8 @@ async def _record_failure(db: AsyncSession, job: MoloniExportJob, exc: Exception
 
 async def process_due_jobs(db: AsyncSession, *, limit: int = 10, deliver=deliver_job) -> int:
     """Entrega até `limit` jobs, cada um com commit próprio."""
+    if settings.MOLONI_BLOCKED:
+        return 0
     processed = 0
     while processed < limit:
         job = await claim_next_job(db, datetime.now(timezone.utc))
@@ -87,7 +89,7 @@ async def process_due_jobs(db: AsyncSession, *, limit: int = 10, deliver=deliver
 
 
 async def run_once():
-    if not settings.MOLONI_ENABLED:
+    if settings.MOLONI_BLOCKED or not settings.MOLONI_ENABLED:
         return
     async with AsyncSessionLocal() as db:
         await process_due_jobs(db)

@@ -3,6 +3,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
+
 from app.services.moloni_jobs import enqueue_finalized_eu_order
 
 
@@ -21,6 +24,40 @@ def test_finalized_eu_enqueue_uses_conflict_safe_insert():
     asyncio.run(enqueue_finalized_eu_order(db, uuid.uuid4()))
     compiled = str(db.statements[0].compile(dialect=__import__('sqlalchemy').dialects.postgresql.dialect()))
     assert "ON CONFLICT ON CONSTRAINT uq_moloni_export_jobs_order DO NOTHING" in compiled
+
+
+def test_blocked_moloni_does_not_enqueue(monkeypatch):
+    from app.services import moloni_jobs
+
+    monkeypatch.setattr(moloni_jobs.settings, "MOLONI_BLOCKED", True)
+    db = _Db()
+    asyncio.run(enqueue_finalized_eu_order(db, uuid.uuid4()))
+    assert db.statements == []
+
+
+def test_blocked_moloni_refuses_delivery_before_database_or_http(monkeypatch):
+    from app.services import moloni_exporter
+
+    monkeypatch.setattr(moloni_exporter.settings, "MOLONI_BLOCKED", True)
+    with pytest.raises(moloni_exporter.MoloniError, match="temporariamente bloqueada"):
+        asyncio.run(moloni_exporter.deliver_job(None, None))
+
+
+def test_blocked_moloni_does_not_process_pending_jobs(monkeypatch):
+    from app.workers import moloni_sender
+
+    monkeypatch.setattr(moloni_sender.settings, "MOLONI_BLOCKED", True)
+    assert asyncio.run(moloni_sender.process_due_jobs(None)) == 0
+
+
+def test_blocked_moloni_rejects_connection_route(monkeypatch):
+    from app.api.routers import moloni
+
+    monkeypatch.setattr(moloni.settings, "MOLONI_BLOCKED", True)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(moloni.connect(moloni.ConnectRequest(company_id=5), None, None))
+    assert getattr(exc.value, "status_code", None) == 503
+    assert getattr(exc.value, "detail", None) == "Integração Moloni temporariamente bloqueada."
 
 
 def test_oauth_url_encodes_redirect(monkeypatch):

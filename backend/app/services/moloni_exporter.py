@@ -79,6 +79,8 @@ class MoloniApi:
         await self.db.flush()
 
     async def post(self, endpoint, data):
+        if settings.MOLONI_BLOCKED:
+            raise MoloniError("Integração Moloni temporariamente bloqueada.")
         await self._refresh_if_needed()
         url = settings.MOLONI_API_BASE_URL.rstrip("/") + "/" + endpoint.lstrip("/") + "/"
         try:
@@ -299,6 +301,8 @@ async def active_moloni_connection(db: AsyncSession) -> MoloniConnection | None:
     return connections[0] if connections else None
 
 async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
+    if settings.MOLONI_BLOCKED:
+        raise MoloniError("Integração Moloni temporariamente bloqueada.")
     if not _configured(): raise MoloniError("Configuração Moloni incompleta (série, prazo, pagamento, categoria ou unidade).")
     connection = await active_moloni_connection(db)
     if not connection: raise MoloniError("Nenhuma conexão Moloni ativa.")
