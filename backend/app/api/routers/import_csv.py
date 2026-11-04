@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.core.addresses import UF_SENTINEL, is_valid_uf
 from app.core.documents import normalize_cpf_cnpj
+from app.core.product_dimensions import ensure_dimension_within_limit
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -1037,27 +1038,29 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
                     50,
                 ),
                 is_circular=is_circular,
-                altura=_dec(
+                # Medidas em metros: mm digitado como metros (470 em vez de 0,47)
+                # vira erro da linha em vez de entrar no catálogo.
+                altura=ensure_dimension_within_limit(_dec(
                     _first(row, "altura", "height"),
                     "altura",
                     min_value=Decimal("0"),
                     max_value=numeric_limit,
-                ),
-                largura=_dec(
+                )),
+                largura=ensure_dimension_within_limit(_dec(
                     _first(row, "largura", "width"),
                     "largura",
                     min_value=Decimal("0"),
                     max_value=numeric_limit,
-                ),
+                )),
                 profundidade=(
                     Decimal("0")
                     if is_circular
-                    else _dec(
+                    else ensure_dimension_within_limit(_dec(
                         _first(row, "profundidade", "depth"),
                         "profundidade",
                         min_value=Decimal("0"),
                         max_value=numeric_limit,
-                    )
+                    ))
                 ),
                 price=price_lojista,  # coluna legada espelha o preço lojista (Bloco 62)
                 price_lojista=price_lojista,

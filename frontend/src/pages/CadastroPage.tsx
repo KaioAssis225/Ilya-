@@ -32,6 +32,7 @@ import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, isAreaCatalogName, isAreaProduct } from '../lib/areaProduct'
+import { PRODUCT_DIMENSION_LIMIT_MESSAGE, hasDimensionOverLimit } from '../lib/productMeasureLimit'
 import { withMarketProductNames } from '../lib/productPayload'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
@@ -1148,6 +1149,15 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       return
     }
     const isConjunto = isConjuntoType(form.type)
+    // mm digitado como metros (470 em vez de 0,47) é barrado aqui; o backend
+    // recusa o mesmo valor, mas o aviso evita a ida e volta.
+    const dimensionsOverLimit = isConjunto
+      ? (form.components ?? []).some((comp) => hasDimensionOverLimit(comp, comp.is_circular))
+      : !formIsAreaProduct && hasDimensionOverLimit(form, form.is_circular)
+    if (dimensionsOverLimit) {
+      setFormError(tx(PRODUCT_DIMENSION_LIMIT_MESSAGE))
+      return
+    }
     const activeCatsSet = new Set(activeCategories)
     // Exclude optionals from "all" categories — those are selected freely in the cart
     const filteredOptionalIds = isConjunto ? [] : (form.optional_ids ?? []).filter((optId) => {
@@ -1646,6 +1656,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
               </div>
             )}
 
+            {!isConjuntoType(form.type) && !formIsAreaProduct && hasDimensionOverLimit(form, form.is_circular) && (
+              <p role="alert" className="text-xs text-warning -mt-2">{tx(PRODUCT_DIMENSION_LIMIT_MESSAGE)}</p>
+            )}
+
             {!isConjuntoType(form.type) && formIsAreaProduct && (
               <fieldset className="rounded-xl border border-line bg-surface-quiet p-4 space-y-3">
                 <legend className="px-1 text-sm font-semibold text-ink">{tx('Vendido por m²')}</legend>
@@ -1781,6 +1795,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                       </label>
                     </div>
                   )}
+                  {hasDimensionOverLimit(compForm, compForm.is_circular) && (
+                    <p role="alert" className="text-xs text-warning">{tx(PRODUCT_DIMENSION_LIMIT_MESSAGE)}</p>
+                  )}
                   <label className="flex flex-col gap-1 w-24">
                     <span className="text-xs text-muted">{tx('Quantidade')}</span>
                     <input className="input text-center" type="number" min="1" value={compForm.qty}
@@ -1855,6 +1872,8 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                     <button type="button"
                       onClick={() => {
                         if (!compForm.description.trim()) return
+                        // O aviso acima já está na tela; sem medida plausível o componente não entra.
+                        if (hasDimensionOverLimit(compForm, compForm.is_circular)) return
                         setForm(prev => {
                           const components = [...(prev.components ?? [])]
                           if (editingCompIndex !== null) components[editingCompIndex] = compForm

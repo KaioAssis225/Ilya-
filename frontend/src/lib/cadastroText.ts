@@ -114,6 +114,8 @@ const EN: Record<string, string> = {
   'Máximo por item (m²)': 'Maximum per item (m²)',
   'Máx. {area} m² por item': 'Max. {area} m² per item',
   'Informe um máximo por item maior que zero.': 'Enter a maximum per item greater than zero.',
+  'Medida acima de 20 m — as medidas são em metros (ex.: 470 mm = 0,47).':
+    'Measurement above 20 m — measurements are in metres (e.g. 470 mm = 0.47).',
   'Foto': 'Photo',
   'Todos': 'All',
   'Novo Tipo de Móvel': 'New furniture type',
