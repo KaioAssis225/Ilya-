@@ -35,6 +35,7 @@ import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPie
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { priceListLabel } from '../lib/priceListLabels'
+import { Dialog } from '../components/Dialog'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
 import { calculateLinePricing, calculateSpecialLinePricing, lineTax, roundMoney } from '../lib/linePricing'
@@ -549,11 +550,13 @@ function SpecialToggle({ active, label, english, onToggle }: {
 
 // Comentário livre do item no pedido. O botão fica ao lado de excluir; a caixa
 // fecha pelo botão só enquanto está vazia, para não esconder o que foi escrito.
-function ItemCommentToggle({ comment, label, english, onToggle }: {
+function ItemCommentToggle({ comment, label, english, onToggle, invalid = false }: {
   comment: string | undefined
   label: string
   english: boolean
   onToggle: () => void
+  /** Especial sem comentário: realça o ícone até o texto ser preenchido. */
+  invalid?: boolean
 }) {
   const filled = Boolean(comment?.trim())
   return <button
@@ -562,18 +565,20 @@ function ItemCommentToggle({ comment, label, english, onToggle }: {
     aria-expanded={comment !== undefined}
     aria-label={english ? `Comment on ${label}` : `Comentário de ${label}`}
     title={english ? 'Item comment' : 'Comentário do item'}
-    className={`w-11 h-11 flex items-center justify-center flex-shrink-0 transition-colors ${comment !== undefined ? 'text-gold' : 'text-muted hover:text-gold'}`}
+    data-invalid={invalid || undefined}
+    className={`w-11 h-11 flex items-center justify-center flex-shrink-0 transition-colors ${invalid ? 'text-danger' : comment !== undefined ? 'text-gold' : 'text-muted hover:text-gold'}`}
     style={{ touchAction: 'manipulation' }}
   >
     <MessageSquare className="w-4 h-4" fill={filled ? 'currentColor' : 'none'} />
   </button>
 }
 
-function ItemCommentBox({ comment, english, onChange, required = false }: {
+function ItemCommentBox({ comment, english, onChange, required = false, invalid = false }: {
   comment: string | undefined
   english: boolean
   onChange: (comment: string) => void
   required?: boolean
+  invalid?: boolean
 }) {
   if (comment === undefined) return null
   return <label className="mt-2 block">
@@ -584,8 +589,10 @@ function ItemCommentBox({ comment, english, onChange, required = false }: {
       maxLength={1000}
       rows={2}
       autoFocus={!comment}
+      data-item-comment=""
+      aria-invalid={invalid || undefined}
       placeholder={english ? 'Write a comment about this item' : 'Escreva um comentário sobre este item'}
-      className="w-full min-w-0 resize-y rounded-md border border-line bg-white px-2 py-1.5 text-xs leading-snug text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold/35"
+      className={`w-full min-w-0 resize-y rounded-md border bg-white px-2 py-1.5 text-xs leading-snug text-ink placeholder:text-muted focus:outline-none focus:ring-2 ${invalid ? 'border-danger focus:ring-danger/35' : 'border-line focus:ring-gold/35'}`}
     />
   </label>
 }
@@ -813,7 +820,7 @@ function RugMeasureFields({ item, english, locale, qtyLimitWarning, onAreaDimens
 }
 
 function MobileCartCard({
-  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, onSpecial, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, commentInvalid, onSpecial, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -832,6 +839,7 @@ function MobileCartCard({
   onEditApplications: () => void
   onToggleComment: () => void
   onCommentChange: (comment: string) => void
+  commentInvalid?: boolean
   onSpecial?: () => void
   priceProfile: string
   catLabel: (code: string) => string
@@ -886,7 +894,7 @@ function MobileCartCard({
               {soldByArea && <div className="mt-2"><RugMeasureFields item={item} english={isEnglish} locale={measurementLocale} qtyLimitWarning={qtyLimitWarning} onAreaDimensionsChange={onAreaDimensionsChange} /></div>}
             </div>
             <div className="flex flex-shrink-0">
-              <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={onToggleComment} />
+              <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={onToggleComment} invalid={commentInvalid} />
               <button
                 onClick={() => onRemove(item.line_id)}
                 className="text-muted active:text-danger transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
@@ -902,7 +910,7 @@ function MobileCartCard({
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
           </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} incompleteAllowed={measurementMarket === 'EU'} />}
-          <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} onChange={onCommentChange} />
+          <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} invalid={commentInvalid} onChange={onCommentChange} />
         </div>
       </div>
 
@@ -1746,6 +1754,12 @@ export default function OrcamentoPage() {
     })
   }
 
+  // Especiais que o último envio recusou por falta de comentário.
+  const [commentErrorLines, setCommentErrorLines] = useState<string[]>([])
+  const [catalogConfirmOpen, setCatalogConfirmOpen] = useState(false)
+  const isCommentInvalid = (item: CartItem) =>
+    commentErrorLines.includes(item.line_id) && !!item.is_special && !item.comment?.trim()
+
   function updateComment(lineId: string, comment: string | undefined) {
     setCart(previous => previous.map(item => item.line_id === lineId ? { ...item, comment } : item))
   }
@@ -1869,6 +1883,31 @@ export default function OrcamentoPage() {
       })
       return
     }
+    // 1º o comentário do especial, 2º a confirmação do catálogo.
+    const specialsWithoutComment = cart.filter(item => item.is_special && !item.comment?.trim())
+    if (specialsWithoutComment.length > 0) {
+      const lineIds = specialsWithoutComment.map(item => item.line_id)
+      setCommentErrorLines(lineIds)
+      // Abre a caixa de comentário das linhas pendentes e leva o foco à primeira.
+      setCart(previous => previous.map(item => lineIds.includes(item.line_id) && item.comment === undefined ? { ...item, comment: '' } : item))
+      setTimeout(() => document.querySelector<HTMLElement>('textarea[data-item-comment][aria-invalid="true"]')?.focus(), 0)
+      const codes = specialsWithoutComment.map(item => item.special_code).join(', ')
+      setToast({
+        message: isEnglish ? `Add a comment to the special item(s): ${codes}.` : `Adicione um comentário aos itens especiais: ${codes}.`,
+        variant: 'error',
+      })
+      return
+    }
+    setCommentErrorLines([])
+    if (!editId && cart.some(item => item.is_special)) {
+      setCatalogConfirmOpen(true)
+      return
+    }
+    await submitOrder()
+  }
+
+  async function submitOrder() {
+    if (!selectedClient) return
     setIsGenerating(true)
     try {
       if (editId) {
@@ -2193,6 +2232,7 @@ export default function OrcamentoPage() {
                       onEditApplications={() => editApplications(item.line_id)}
                       onToggleComment={() => toggleComment(item.line_id)}
                       onCommentChange={comment => updateComment(item.line_id, comment)}
+                      commentInvalid={isCommentInvalid(item)}
                       onSpecial={!isClientUser && market === 'EU' ? () => toggleSpecial(item.line_id) : undefined}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
@@ -2258,13 +2298,13 @@ export default function OrcamentoPage() {
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
                             {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market) && optionalsReady} incompleteAllowed={market === 'EU'} />}
-                            <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} onChange={comment => updateComment(item.line_id, comment)} />
+                            <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} invalid={isCommentInvalid(item)} onChange={comment => updateComment(item.line_id, comment)} />
                           </div>
                         </div>
 
                         {/* Ações: no canto do bloco do produto quando a linha empilha; ao lado dos valores no layout largo. */}
                         <div className="col-start-2 row-start-1 flex items-start @min-[960px]:col-start-3 @min-[960px]:pt-8">
-                          <ItemCommentToggle comment={item.comment} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
+                          <ItemCommentToggle comment={item.comment} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} invalid={isCommentInvalid(item)} />
                           {!isClientUser && market === 'EU' && <SpecialToggle active={!!item.is_special} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleSpecial(item.line_id)} />}
                           <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                             <Trash2 className="w-4 h-4" />
@@ -2422,6 +2462,33 @@ export default function OrcamentoPage() {
           )}
         </button>
       </div>
+
+      {catalogConfirmOpen && (() => {
+        // Linha comercial do orçamento (Ilya, IBTW…): vem dos produtos do carrinho.
+        const catalogNames = [...new Set(cart.map(item => item._product.catalog?.name).filter((name): name is string => !!name))]
+        const catalogLabel = catalogNames.length > 0 ? catalogNames.join(', ') : (isEnglish ? 'no catalogue' : 'sem catálogo')
+        const closeConfirm = () => setCatalogConfirmOpen(false)
+        return <Dialog title={isEnglish ? 'Confirm the catalogue' : 'Confirmar o catálogo'} onClose={closeConfirm} className="max-w-md">
+          <p className="text-sm text-ink" data-testid="catalog-confirmation">
+            {isEnglish ? 'This quote will be made in the ' : 'Este orçamento será feito no catálogo '}
+            <strong className="font-semibold">{catalogLabel}</strong>
+            {isEnglish ? ' catalogue, ' : ', '}
+            {isEnglish ? 'price list ' : 'tabela '}
+            <strong className="font-semibold">{priceProfileLabel}</strong>
+            {isEnglish ? '. Is that correct?' : '. Está correto?'}
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={closeConfirm}>{isEnglish ? 'Back' : 'Voltar'}</button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => { closeConfirm(); void submitOrder() }}
+            >
+              {isEnglish ? 'Confirm' : 'Confirmar'}
+            </button>
+          </div>
+        </Dialog>
+      })()}
 
       {/* ── Mobile bottom drawer ───────────────────────────────────────────── */}
       <BottomDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>

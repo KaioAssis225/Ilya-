@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import OrcamentoPage from './OrcamentoPage'
 import { cartStorageKey } from '../lib/cart'
@@ -23,6 +23,7 @@ function specialProduct(): Product {
     description_pt_pt: 'Mesa Portugal',
     market_prices: { lojista: 100, corporativo: 90, arquiteto: 80, pvp: 120 },
     optional_applications: [],
+    catalog: { id: 'catalog-ibtw', name: 'IBTW' },
   } as Product
 }
 
@@ -139,25 +140,81 @@ describe('OrcamentoPage — especiais EU', () => {
     expect(screen.getAllByText(/€\s*80,00|80,00\s*€/).length).toBeGreaterThan(0)
   })
 
-  it('permite salvar o orçamento com especial sem comentário (só a finalização exige)', async () => {
+  async function submitButton(name: 'Finalizar Orçamento' | 'Salvar Alterações' = 'Finalizar Orçamento') {
+    const button = await screen.findByRole('button', { name })
+    await waitFor(() => expect(button).toBeEnabled())
+    return button
+  }
+
+  function trackPosts() {
+    const calls = { post: 0, put: 0 }
+    server.use(
+      http.post('*/orders', async () => { calls.post += 1; return HttpResponse.json({}, { status: 201 }) }),
+      http.put('*/orders/edit-special', async () => { calls.put += 1; return HttpResponse.json({}) }),
+    )
+    return calls
+  }
+
+  it('bloqueia a finalização com especial sem comentário: avisa, realça o ícone e não chama a API', async () => {
     installHandlers()
     renderQuote()
     await addSpecial()
+    const calls = trackPosts()
 
-    let posted = 0
-    server.use(http.post('*/orders', async ({ request }) => {
-      posted += 1
-      const payload = await request.json() as { items: unknown[] }
-      return HttpResponse.json({ items: payload.items }, { status: 201 })
-    }))
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
-    await waitFor(() => expect(submit).toBeEnabled())
-    fireEvent.click(submit)
-    await waitFor(() => expect(posted).toBe(1))
-    expect(screen.queryByText(/Adicione um comentário aos especiais/)).toBeNull()
+    fireEvent.click(await submitButton())
 
-    // O modo de edição salva o rascunho mesmo sem comentário.
-    cleanup()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Adicione um comentário aos itens especiais: PAI-E1')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const boxes = await screen.findAllByPlaceholderText('Escreva um comentário sobre este item')
+    expect(boxes[0]).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getAllByRole('button', { name: /^Comentário de ESPECIAL - Mesa Portugal/ })[0]).toHaveAttribute('data-invalid', 'true')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(calls.post).toBe(0)
+
+    // Comentário só com espaços continua recusado; com texto, o realce some.
+    fireEvent.change(boxes[0], { target: { value: '   ' } })
+    fireEvent.click(await submitButton())
+    expect(await screen.findByRole('alert')).toHaveTextContent('PAI-E1')
+    expect(calls.post).toBe(0)
+    fireEvent.change(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0], { target: { value: 'Tampo sob medida' } })
+    await waitFor(() => expect(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0]).not.toHaveAttribute('aria-invalid'))
+  })
+
+  it('com especial comentado, confirma o catálogo antes de enviar; Voltar não envia', async () => {
+    installHandlers()
+    renderQuote()
+    await addSpecial()
+    fireEvent.click(screen.getAllByRole('button', { name: /^Comentário de ESPECIAL - Mesa Portugal/ })[0])
+    fireEvent.change(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0], { target: { value: 'Nota' } })
+    const calls = trackPosts()
+
+    fireEvent.click(await submitButton())
+    const dialog = await screen.findByRole('dialog', { name: 'Confirmar o catálogo' })
+    expect(dialog).toHaveTextContent('Este orçamento será feito no catálogo IBTW, tabela Lojista. Está correto?')
+    expect(calls.post).toBe(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(calls.post).toBe(0)
+
+    fireEvent.click(await submitButton())
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(calls.post).toBe(1))
+  })
+
+  it('sem item especial não pede confirmação e envia direto', async () => {
+    installHandlers()
+    renderQuote()
+    const calls = trackPosts()
+    await screen.findAllByText('PAI')
+
+    fireEvent.click(await submitButton())
+    await waitFor(() => expect(calls.post).toBe(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('edição: especial sem comentário também é bloqueado; com comentário salva sem diálogo', async () => {
+    installHandlers()
     const editUser = productTestUser('admin', 'EU')
     sessionStorage.setItem(`orcamento_client_id:${editUser.id}:EU`, client.id)
     server.use(http.get('*/orders/edit-special', () => HttpResponse.json({
@@ -172,14 +229,19 @@ describe('OrcamentoPage — especiais EU', () => {
         altura: 0, largura: 1, profundidade: 1, opt_categories: {}, optional_choices: [],
         ipi_rate: 0, ipi_value: 0, tax_label: 'IVA', currency: 'EUR', observacao: null,
         comment: null, created_at: '2026-01-01', updated_at: '2026-01-01' }],
-    } as Order)),
-    http.put('*/orders/edit-special', () => HttpResponse.json({})),
-  )
+    } as Order)))
+    const calls = trackPosts()
     renderProductPage(<OrcamentoPage />, editUser, ['/orcamentos?edit=edit-special'])
-    const save = await screen.findByRole('button', { name: 'Salvar Alterações' })
-    await waitFor(() => expect(save).toBeEnabled())
-    fireEvent.click(save)
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+
+    fireEvent.click(await submitButton('Salvar Alterações'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('PAI-E1')
+    expect(calls.put).toBe(0)
+
+    const boxes = await screen.findAllByPlaceholderText('Escreva um comentário sobre este item')
+    fireEvent.change(boxes[0], { target: { value: 'Nota' } })
+    fireEvent.click(await submitButton('Salvar Alterações'))
+    await waitFor(() => expect(calls.put).toBe(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('envia o pai como product_code e os campos especiais no payload', async () => {
@@ -199,6 +261,7 @@ describe('OrcamentoPage — especiais EU', () => {
     const finalize = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
     await waitFor(() => expect(finalize).toBeEnabled())
     fireEvent.click(finalize)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(body).not.toBeNull())
     const special = body!.items.find(item => item.is_special)
     expect(special).toMatchObject({ product_code: 'PAI', is_special: true, special_code: 'PAI-E1', special_percent: 15, discount: 0 })
