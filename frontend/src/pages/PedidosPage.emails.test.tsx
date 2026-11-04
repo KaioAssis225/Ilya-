@@ -122,7 +122,12 @@ function setupHandlers(summary: OrderSummary, history: OrderEmailHistory | 'empt
 async function openOrder(summary: OrderSummary) {
   const user = userEvent.setup()
   await screen.findAllByText(summary.code)
-  await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
+  const sourcePt = summary.is_finalized ? 'pedido' : 'orçamento'
+  const sourceEn = summary.is_finalized ? 'order' : 'quote'
+  const portugueseMenu = screen.queryAllByLabelText(`Mais ações do ${sourcePt} ${summary.code}`)[0]
+  await user.click(portugueseMenu ?? screen.getAllByLabelText(`More actions for ${sourceEn} ${summary.code}`)[0])
+  const portugueseView = screen.queryByLabelText(`Ver detalhes do ${sourcePt} ${summary.code}`)
+  await user.click(portugueseView ?? screen.getByLabelText(`View ${sourceEn} details ${summary.code}`))
   return user
 }
 
@@ -312,7 +317,8 @@ describe('PedidosPage — aba E-mails', () => {
     renderProductPage(<PedidosPage />, euUser)
     const user = userEvent.setup()
     await screen.findAllByText(summary.code)
-    await user.click(screen.getByLabelText('Ver detalhes do orçamento PED-0001'))
+    await user.click(screen.getAllByLabelText('More actions for order PED-0001')[0])
+    await user.click(screen.getByLabelText('View order details PED-0001'))
     await user.click(await screen.findByRole('button', { name: 'Emails' }))
     const items = screen.getAllByRole('listitem')
     expect(items[0]).toHaveTextContent('Accepted by the service')
@@ -406,7 +412,8 @@ describe('PedidosPage — aba E-mails', () => {
     renderProductPage(<PedidosPage />, euUser)
     const euInteraction = userEvent.setup()
     await screen.findAllByText(euSummary.code)
-    await euInteraction.click(screen.getByLabelText('Ver detalhes do orçamento PED-0001'))
+    await euInteraction.click(screen.getAllByLabelText('More actions for order PED-0001')[0])
+    await euInteraction.click(screen.getByLabelText('View order details PED-0001'))
     await euInteraction.click(await screen.findByRole('button', { name: 'Emails' }))
     expect(screen.getByRole('button', { name: 'Send test email' })).toBeInTheDocument()
   })

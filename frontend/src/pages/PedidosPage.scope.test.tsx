@@ -125,6 +125,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     renderProductPage(<Tabs />, productTestUser('admin', 'BR'), ['/pedidos'])
     await screen.findAllByText('PED-0001')
 
+    await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
@@ -150,7 +151,8 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     expect(await screen.findByRole('heading', { name: /Quotes/ })).toBeInTheDocument()
     await screen.findAllByText('PED-0001')
 
-    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('More actions for quote PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Finalise quote PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     expect(await screen.findByText('Quote PED-0001 finalised and moved to the Order tab.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View in Orders' })).toBeInTheDocument()
@@ -168,6 +170,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
 
+    await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
@@ -203,6 +206,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'EU'))
     await screen.findAllByText('PED-0001')
+    await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Ver detalhes do orçamento PED-0001')[0])
 
     const alert = await screen.findByText("Escolha os opcionais pendentes antes de finalizar: MESA-1 (Base, Tampo).")
@@ -227,6 +231,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
 
+    await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
     const confirmation = await screen.findByTestId('finalize-confirmation')
     expect(confirmation).toHaveTextContent('Finalizar este orçamento com o catálogo Catálogo Sala')
@@ -247,7 +252,8 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     renderProductPage(<PedidosPage scope="quotes" />, euUser)
     await screen.findAllByText('PED-0001')
 
-    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('More actions for quote PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Finalise quote PED-0001')[0])
     expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('Finalise this quote with the Living catalogue')
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
@@ -260,6 +266,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
 
+    await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
     expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('itens de mais de um catálogo')
   })

@@ -82,7 +82,8 @@ describe('PedidosPage: etapa do pedido (Produção x Entregue)', () => {
     renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
 
-    await user.click(screen.getByRole('button', { name: 'Marcar como entregue PED-0001' }))
+    await user.click(screen.getAllByLabelText('Mais ações do pedido PED-0001')[0])
+    await user.click(screen.getByLabelText('Marcar como entregue PED-0001'))
 
     expect(await screen.findByText('Pedido PED-0001 marcado como entregue.')).toBeInTheDocument()
     expect(stagePosts).toEqual([{ id: 'order-1', stage: 'delivered' }])
@@ -104,7 +105,8 @@ describe('PedidosPage: etapa do pedido (Produção x Entregue)', () => {
 
     renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
-    await user.click(screen.getByRole('button', { name: 'Marcar como entregue PED-0001' }))
+    await user.click(screen.getAllByLabelText('Mais ações do pedido PED-0001')[0])
+    await user.click(screen.getByLabelText('Marcar como entregue PED-0001'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível alterar a etapa do pedido. Tente novamente.')
     expect(screen.queryByText('Pedido PED-0001 marcado como entregue.')).not.toBeInTheDocument()

@@ -151,7 +151,8 @@ describe('PedidosPage: datas de finalização e entrega', () => {
 
     const { unmount } = renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0001')
-    await user.click(screen.getByLabelText('Ver detalhes do orçamento PED-0001'))
+    await user.click(screen.getAllByLabelText('Mais ações do pedido PED-0001')[0])
+    await user.click(screen.getByLabelText('Ver detalhes do pedido PED-0001'))
     expect(await screen.findByText('Início de produção', { selector: 'p' })).toBeInTheDocument()
     expect(screen.getByText('16/03/2024', { selector: 'p' })).toBeInTheDocument()
     expect(screen.queryByText('Entregue em', { selector: 'p' })).not.toBeInTheDocument()
@@ -159,7 +160,8 @@ describe('PedidosPage: datas de finalização e entrega', () => {
 
     renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     await screen.findAllByText('PED-0002')
-    await user.click(screen.getByLabelText('Ver detalhes do orçamento PED-0002'))
+    await user.click(screen.getAllByLabelText('Mais ações do pedido PED-0002')[0])
+    await user.click(screen.getByLabelText('Ver detalhes do pedido PED-0002'))
     expect(await screen.findByText('Entregue em', { selector: 'p' })).toBeInTheDocument()
     expect(screen.getByText('20/04/2024', { selector: 'p' })).toBeInTheDocument()
   })

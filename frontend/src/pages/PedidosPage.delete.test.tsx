@@ -43,9 +43,11 @@ function installBackend(status: number, body: Record<string, unknown> | null) {
 }
 
 async function openDeleteDialog() {
+  const user = userEvent.setup()
   renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
-  const [trigger] = await screen.findAllByLabelText(`Excluir orçamento ${summary.code}`)
-  await userEvent.click(trigger)
+  const [more] = await screen.findAllByLabelText(`Mais ações do pedido ${summary.code}`)
+  await user.click(more)
+  await user.click(screen.getByLabelText(`Excluir pedido ${summary.code}`))
   return screen.getByText('Confirmar exclusão').closest('div') as HTMLElement
 }
 

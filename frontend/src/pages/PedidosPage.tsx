@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2, MoreHorizontal } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2, MoreHorizontal, Copy as CopyIcon } from 'lucide-react'
 import { priceListLabelFor } from '../lib/priceListLabels'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useChangeOrderStage } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
@@ -831,13 +832,243 @@ function OrderDetailModal({
   )
 }
 
+type RowAction = {
+  key: string
+  label: string
+  ariaLabel?: string
+  icon: ReactNode
+  onSelect: () => void
+  disabled?: boolean
+  title?: string
+  tone?: 'default' | 'success' | 'danger'
+  separated?: boolean
+}
+
+function CopyOrderFromListModal({ order, english, onClose }: {
+  order: OrderSummary
+  english: boolean
+  onClose: () => void
+}) {
+  const { data, isError, refetch } = useOrder(order.id)
+  if (data) return <CopyOrderModal order={data} english={english} onClose={onClose} />
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <DialogPanel
+        onClose={onClose}
+        label={english ? 'Prepare copy' : 'Preparar cópia'}
+        className="modal-panel w-full max-w-md p-8 mx-4"
+      >
+        {isError ? (
+          <>
+            <p className="text-sm text-terracotta text-center">
+              {english ? 'Could not prepare this copy.' : 'Não foi possível preparar esta cópia.'}
+            </p>
+            <div className="mt-5 flex justify-center gap-3">
+              <button type="button" className="btn-secondary" onClick={onClose}>{english ? 'Close' : 'Fechar'}</button>
+              <button type="button" className="btn-primary" onClick={() => void refetch()}>{english ? 'Try again' : 'Tentar novamente'}</button>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center gap-3 text-sm text-muted" role="status">
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-gold/25 border-t-gold" />
+            {english ? 'Preparing copy…' : 'Preparando cópia…'}
+          </div>
+        )}
+      </DialogPanel>
+    </div>
+  )
+}
+
+function OrderListActions({
+  order, english, mobile = false, onCopy, onView, onPDF, onFinalize, onDeliver, onEdit, onCancel, onDelete, pdfLoading,
+}: {
+  order: OrderSummary
+  english: boolean
+  mobile?: boolean
+  onCopy?: () => void
+  onView: () => void
+  onPDF: () => void
+  onFinalize?: () => void
+  onDeliver?: () => void
+  onEdit?: () => void
+  onCancel?: () => void
+  onDelete?: () => void
+  pdfLoading: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top?: number; bottom?: number }>({ left: 0, top: 0 })
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const source = order.is_finalized
+    ? (english ? 'order' : 'pedido')
+    : (english ? 'quote' : 'orçamento')
+  const actions: RowAction[] = [
+    {
+      key: 'view',
+      label: english ? 'View details' : 'Ver detalhes',
+      ariaLabel: english ? `View ${source} details` : `Ver detalhes do ${source}`,
+      icon: <Eye className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onView,
+    },
+    {
+      key: 'pdf',
+      label: pdfLoading ? (english ? 'Generating PDF…' : 'Gerando PDF…') : (english ? 'Generate PDF' : 'Gerar PDF'),
+      ariaLabel: english ? `Generate ${source} PDF` : `Gerar PDF do ${source}`,
+      icon: <FileText className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onPDF,
+      disabled: pdfLoading,
+    },
+    ...(onFinalize ? [{
+      key: 'finalize',
+      label: english ? 'Finalise quote' : 'Finalizar orçamento',
+      icon: <CheckCircle className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onFinalize,
+      tone: 'success' as const,
+    }] : []),
+    ...(onDeliver ? [{
+      key: 'deliver',
+      label: english ? 'Mark as delivered' : 'Marcar como entregue',
+      icon: <PackageCheck className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onDeliver,
+      tone: 'success' as const,
+    }] : []),
+    ...(onEdit ? [{
+      key: 'edit',
+      label: english ? 'Edit quote' : 'Editar orçamento',
+      icon: <PenLine className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onEdit,
+    }] : []),
+    ...(onCancel ? [{
+      key: 'cancel',
+      label: english ? 'Cancel quote' : 'Cancelar orçamento',
+      icon: <Ban className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onCancel,
+      tone: 'danger' as const,
+    }] : []),
+    ...(onDelete ? [{
+      key: 'delete',
+      label: english ? `Delete ${source}` : `Excluir ${source}`,
+      icon: <Trash2 className="h-4 w-4" aria-hidden="true" />,
+      onSelect: onDelete,
+      tone: 'danger' as const,
+      separated: true,
+    }] : []),
+  ]
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return
+    const rect = triggerRef.current.getBoundingClientRect()
+    const menuWidth = 224
+    const estimatedHeight = actions.length * 40 + 12
+    const left = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, rect.right - menuWidth))
+    if (rect.bottom + estimatedHeight + 8 <= window.innerHeight || rect.top < estimatedHeight + 8) {
+      setPosition({ left, top: rect.bottom + 6 })
+    } else {
+      setPosition({ left, bottom: window.innerHeight - rect.top + 6 })
+    }
+  }, [open, actions.length])
+
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
+    }
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    const closeOnViewportChange = () => setOpen(false)
+    document.addEventListener('mousedown', closeOutside)
+    document.addEventListener('keydown', closeEscape)
+    window.addEventListener('resize', closeOnViewportChange)
+    window.addEventListener('scroll', closeOnViewportChange, true)
+    return () => {
+      document.removeEventListener('mousedown', closeOutside)
+      document.removeEventListener('keydown', closeEscape)
+      window.removeEventListener('resize', closeOnViewportChange)
+      window.removeEventListener('scroll', closeOnViewportChange, true)
+    }
+  }, [open])
+
+  const copyLabel = english ? 'Copy' : 'Copiar'
+  const moreLabel = english ? `More actions for ${source} ${order.code}` : `Mais ações do ${source} ${order.code}`
+
+  return (
+    <div className={mobile ? 'flex w-full divide-x divide-bg-2' : 'flex items-center justify-end gap-1.5 whitespace-nowrap'}>
+      {onCopy && (
+        <button
+          type="button"
+          onClick={onCopy}
+          aria-label={`${english ? 'Copy' : 'Copiar'} ${source} ${order.code}`}
+          className={mobile
+            ? 'flex min-h-11 flex-1 items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold text-gold active:bg-gold-bg'
+            : 'inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-xs font-semibold text-ink-2 transition-colors hover:border-gold/40 hover:bg-gold-bg hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30'}
+        >
+          <CopyIcon className="h-4 w-4" aria-hidden="true" />
+          {copyLabel}
+        </button>
+      )}
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen(value => !value)}
+        aria-label={moreLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={english ? 'More actions' : 'Mais ações'}
+        className={mobile
+          ? `flex min-h-11 items-center justify-center gap-1.5 px-4 py-3 text-xs font-medium text-ink-2 active:bg-bg ${onCopy ? '' : 'flex-1'}`
+          : 'btn-icon h-9 w-9 rounded-lg border border-line bg-white hover:border-gold/40 hover:bg-bg-2'}
+      >
+        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        {mobile && <span>{english ? 'More' : 'Mais'}</span>}
+      </button>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={english ? `Actions for ${source} ${order.code}` : `Ações do ${source} ${order.code}`}
+          className="fixed z-[100] w-56 overflow-hidden rounded-xl border border-line bg-white py-1.5 shadow-lg"
+          style={position}
+        >
+          {actions.map(action => {
+            const tone = action.tone === 'danger'
+              ? 'text-terracotta hover:bg-danger-soft focus-visible:bg-danger-soft'
+              : action.tone === 'success'
+                ? 'text-success hover:bg-success-soft focus-visible:bg-success-soft'
+                : 'text-ink-2 hover:bg-bg-2 focus-visible:bg-bg-2'
+            return (
+              <button
+                key={action.key}
+                type="button"
+                role="menuitem"
+                aria-label={`${action.ariaLabel ?? action.label} ${order.code}`}
+                disabled={action.disabled}
+                title={action.title}
+                onClick={() => { setOpen(false); action.onSelect() }}
+                className={`flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-medium focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${tone} ${action.separated ? 'mt-1 border-t border-line pt-2.5' : ''}`}
+              >
+                {action.icon}
+                {action.label}
+              </button>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
 // ── Mobile order card ───────────────────────────────────────────────────────
 
 function MobileOrderCard({
-  order, clientName, repName, onView, onPDF, onFinalize, onDelete, onDeliver, pdfLoading, english,
+  order, clientName, repName, onCopy, onView, onPDF, onFinalize, onDelete, onDeliver, onEdit, onCancel, pdfLoading, english,
 }: {
   order: OrderSummary; clientName: string; repName: string
-  onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void; onDeliver?: () => void
+  onCopy?: () => void; onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void; onDeliver?: () => void
+  onEdit?: () => void; onCancel?: () => void
   pdfLoading: boolean; english: boolean
 }) {
   return (
@@ -878,18 +1109,21 @@ function MobileOrderCard({
           })()}
         </div>
       </div>
-      <div className="flex border-t border-bg-2 divide-x divide-bg-2">
-        <button onClick={onView} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Visualizar"><Eye className="w-4 h-4 text-gold" /> Ver</button>
-        <button disabled={pdfLoading} onClick={onPDF} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-ink-2 active:bg-bg transition-colors disabled:opacity-50" style={{ touchAction: 'manipulation' }}><FileText className="w-4 h-4 text-gold" /> {pdfLoading ? 'Gerando…' : 'PDF'}</button>
-        {onFinalize && (
-          <button onClick={onFinalize} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Finalizar orçamento"><CheckCircle className="w-4 h-4" /> Finalizar</button>
-        )}
-        {onDeliver && (
-          <button onClick={onDeliver} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-success active:bg-success-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label={english ? 'Mark as delivered' : 'Marcar como entregue'}><PackageCheck className="w-4 h-4" /> {english ? 'Delivered' : 'Entregue'}</button>
-        )}
-        {onDelete && (
-          <button onClick={onDelete} className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-terracotta active:bg-danger-soft transition-colors" style={{ touchAction: 'manipulation' }} aria-label="Excluir"><Trash2 className="w-4 h-4" /> Excluir</button>
-        )}
+      <div className="border-t border-bg-2">
+        <OrderListActions
+          mobile
+          order={order}
+          english={english}
+          onCopy={onCopy}
+          onView={onView}
+          onPDF={onPDF}
+          onFinalize={onFinalize}
+          onDeliver={onDeliver}
+          onEdit={onEdit}
+          onCancel={onCancel}
+          onDelete={onDelete}
+          pdfLoading={pdfLoading}
+        />
       </div>
     </div>
   )
@@ -907,6 +1141,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
   const navigate = useNavigate()
   const isInternalSeller = user?.role === 'vendedor' && !user.linked_id
   const canManage = user?.role === 'admin' || user?.role === 'representante' || user?.role === 'produtos' || isInternalSeller
+  const canCopy = user?.role === 'admin' || user?.role === 'representante' || user?.role === 'vendedor'
   const canViewGlobalAudit = user?.role === 'admin' || isInternalSeller
   const canDelete = user?.role === 'admin'
   const [requestedTab, setActiveTab] = useState<'orders' | 'audit'>('orders')
@@ -1042,6 +1277,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
   }
 
   const [viewing, setViewing] = useState<OrderSummary | null>(null)
+  const [copying, setCopying] = useState<OrderSummary | null>(null)
   const [deleting, setDeleting] = useState<OrderSummary | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   function askDelete(order: OrderSummary) {
@@ -1326,10 +1562,13 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                     order={order}
                     clientName={order.client_name}
                     repName={order.rep_name ?? '—'}
+                    onCopy={canCopy ? () => setCopying(order) : undefined}
                     onView={() => setViewing(order)}
                     onPDF={() => handlePDF(order)}
                     onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
-                    onDeliver={canManage && resolveOrderStage(order) === 'production' ? () => changeStage(order, 'delivered') : undefined}
+                    onDeliver={canManage && !changeStageM.isPending && resolveOrderStage(order) === 'production' ? () => changeStage(order, 'delivered') : undefined}
+                    onEdit={canManage && !order.is_finalized && !order.is_cancelled ? () => navigate(`/orcamentos?edit=${order.id}`) : undefined}
+                    onCancel={canManage && !order.is_finalized && !order.is_cancelled ? () => setCanceling(order) : undefined}
                     onDelete={canDelete ? () => askDelete(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                     english={isEnglish}
@@ -1404,25 +1643,19 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                           })()}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-0.5 items-center">
-                            <button type="button" title="Ver detalhes" aria-label={`Ver detalhes do orçamento ${order.code}`} className="btn-icon" onClick={() => setViewing(order)}><Eye className="w-4 h-4" /></button>
-                            <button type="button" disabled={pdfOrderId === order.id} title={pdfOrderId === order.id ? 'Gerando PDF…' : 'Gerar PDF'} aria-label={`Gerar PDF do orçamento ${order.code}`} className="btn-icon hover:text-mineral" onClick={() => handlePDF(order)}><FileText className="w-4 h-4" /></button>
-                            {canManage && !order.is_finalized && !order.is_cancelled && (
-                              <button type="button" title="Finalizar orçamento" aria-label={`Finalizar orçamento ${order.code}`} className="btn-icon hover:text-success" onClick={() => setFinalizing(order)}><CheckCircle className="w-4 h-4" /></button>
-                            )}
-                            {canManage && resolveOrderStage(order) === 'production' && (
-                              <button type="button" title={isEnglish ? 'Mark as delivered' : 'Marcar como entregue'} aria-label={`${isEnglish ? 'Mark as delivered' : 'Marcar como entregue'} ${order.code}`} className="btn-icon hover:text-success" disabled={changeStageM.isPending} onClick={() => changeStage(order, 'delivered')}><PackageCheck className="w-4 h-4" /></button>
-                            )}
-                            {canManage && !order.is_finalized && !order.is_cancelled && (
-                              <>
-                                <button type="button" title="Editar" aria-label={`Editar orçamento ${order.code}`} className="btn-icon" onClick={() => navigate(`/orcamentos?edit=${order.id}`)}><PenLine className="w-4 h-4" /></button>
-                                <button type="button" title="Cancelar" aria-label={`Cancelar orçamento ${order.code}`} className="btn-icon hover:text-terracotta" onClick={() => setCanceling(order)}><Ban className="w-4 h-4" /></button>
-                              </>
-                            )}
-                            {canDelete && (
-                              <button type="button" title="Excluir" aria-label={`Excluir orçamento ${order.code}`} className="btn-icon hover:text-danger" onClick={() => askDelete(order)}><Trash2 className="w-4 h-4" /></button>
-                            )}
-                          </div>
+                          <OrderListActions
+                            order={order}
+                            english={isEnglish}
+                            onCopy={canCopy ? () => setCopying(order) : undefined}
+                            onView={() => setViewing(order)}
+                            onPDF={() => handlePDF(order)}
+                            onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
+                            onDeliver={canManage && !changeStageM.isPending && resolveOrderStage(order) === 'production' ? () => changeStage(order, 'delivered') : undefined}
+                            onEdit={canManage && !order.is_finalized && !order.is_cancelled ? () => navigate(`/orcamentos?edit=${order.id}`) : undefined}
+                            onCancel={canManage && !order.is_finalized && !order.is_cancelled ? () => setCanceling(order) : undefined}
+                            onDelete={canDelete ? () => askDelete(order) : undefined}
+                            pdfLoading={pdfOrderId === order.id}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -1488,6 +1721,15 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
           onEdit={() => { setViewing(null); navigate(`/orcamentos?edit=${viewing.id}`) }}
           onFinalize={() => { setFinalizing(viewing); setViewing(null) }}
           onCancel={() => { setCanceling(viewing); setViewing(null) }}
+        />
+      )}
+
+      {copying && (
+        <CopyOrderFromListModal
+          key={copying.id}
+          order={copying}
+          english={copying.market_code === 'EU' && isEnglish}
+          onClose={() => setCopying(null)}
         />
       )}
 
