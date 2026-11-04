@@ -10,6 +10,7 @@ import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { useAuth } from '../hooks/useAuth'
 import { OptionalWithPreview } from '../components/OptionalWithPreview'
 import { OrderEmailsPanel } from '../components/OrderEmailsPanel'
+import { CopyOrderModal } from '../components/CopyOrderModal'
 import { useOrderEmails } from '../hooks/useOrderEmails'
 import { PdfDestinationControl } from '../components/PdfDestinationControl'
 import { describePdfSave, resolvePdfDestination, type PdfSaveNotice } from '../lib/pdfDestination'
@@ -310,6 +311,9 @@ function OrderDetailModal({
     || userRole === 'vendedor'
   const canRevise = userRole === 'admin' || userRole === 'representante'
     || userRole === 'vendedor'
+  // Mesma regra de quem cria orçamento; o servidor confere de novo.
+  const canCopy = userRole === 'admin' || userRole === 'representante' || userRole === 'vendedor'
+  const [copyOpen, setCopyOpen] = useState(false)
 
   // Amostras de 16–28 px usam a miniatura; o original só abre no modal.
   function parseOptCategories(cats: Record<string, string>): { label: string; swatch: string | null; thumbnail: string | null; photo: string | null }[] {
@@ -401,6 +405,11 @@ function OrderDetailModal({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
+            {canCopy && (
+              <button type="button" disabled={order.items.length === 0} onClick={() => setCopyOpen(true)} className="btn-secondary text-xs disabled:opacity-50">
+                {viewText('Copiar pedido', 'Copy order')}
+              </button>
+            )}
             {canRevise && order.is_finalized && !order.is_cancelled && (
               <button disabled={revisionLoading} onClick={async () => {
                 setRevisionLoading(true); setRevisionError(false)
@@ -694,6 +703,7 @@ function OrderDetailModal({
             </div>
           </div>
         )}
+        {copyOpen && <CopyOrderModal order={order} english={isEuOrder && locale === 'en-GB'} onClose={() => setCopyOpen(false)} />}
       </DialogPanel>
     </div>
   )
