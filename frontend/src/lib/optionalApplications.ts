@@ -95,6 +95,8 @@ export function validateApplicationChoices(
   allOptionals: OptionalColor[],
   requireCompleteSelection = false,
   legacySelections: Partial<Record<string, string>> = {},
+  /** Portugal salva o orçamento incompleto; a exigência vale ao finalizar. */
+  allowIncomplete = false,
 ): string[] {
   const applications = productApplications(product).map(entry => entry.application)
   const byId = new Map(applications.map(application => [application.id, application]))
@@ -131,7 +133,7 @@ export function validateApplicationChoices(
     if (previous && (!previous.allow_repeat || !application.allow_repeat)) errors.push(`${application.name}: escolha repetida`)
     used.set(key, application)
   }
-  if (requireCompleteSelection) {
+  if (requireCompleteSelection && !allowIncomplete) {
     for (const application of applications) {
       if (!seenApplications.has(application.id)) errors.push(`${application.name}: escolha pendente`)
     }
@@ -140,7 +142,7 @@ export function validateApplicationChoices(
     }
   }
   for (const application of applications) {
-    if (!requireCompleteSelection && application.required && !seenApplications.has(application.id)) errors.push(`${application.name}: escolha obrigatória`)
+    if (!requireCompleteSelection && !allowIncomplete && application.required && !seenApplications.has(application.id)) errors.push(`${application.name}: escolha obrigatória`)
   }
   return errors
 }

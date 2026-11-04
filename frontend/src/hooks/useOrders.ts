@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Order, OrderCreate, OrderUpdate, OrderHistory, OrderSummary, OrderStage } from '../types'
+import type { Order, OrderCopyResult, OrderCreate, OrderUpdate, OrderHistory, OrderSummary, OrderStage } from '../types'
 
 const KEY = 'orders'
 
@@ -68,6 +68,15 @@ export function useUpdateOrder() {
   const qc = useQueryClient()
   return useMutation<Order, Error, { id: string; data: OrderUpdate }>({
     mutationFn: ({ id, data }) => api.put(`/orders/${id}`, data).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
+export function useCopyOrder() {
+  const qc = useQueryClient()
+  return useMutation<OrderCopyResult, Error, { id: string; item_ids: string[] }>({
+    mutationFn: ({ id, item_ids }) =>
+      api.post(`/orders/${id}/copy`, { item_ids }).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
   })
 }

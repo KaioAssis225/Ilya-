@@ -324,6 +324,8 @@ export interface OrderItem {
   observacao: string | null
   /** Comentário livre do usuário sobre o item. */
   comment?: string | null
+  /** Opcionais ainda sem escolha (orçamento EU em aberto); vazio quando completo. */
+  pending_optionals?: string[]
   created_at: string
   updated_at: string
 }
@@ -343,6 +345,12 @@ export interface OrderSummaryItem {
   product_code: string
   qty: number
   area_pieces?: number
+}
+
+/** Resposta de POST /orders/{id}/copy: o orçamento novo e os itens não copiados. */
+export interface OrderCopyResult {
+  order: Order
+  skipped: { product_code: string; reason: string }[]
 }
 
 export type OrderStage = 'production' | 'delivered'

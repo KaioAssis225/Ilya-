@@ -172,4 +172,38 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     )
     expect(screen.getByRole('button', { name: 'Finalizar Orçamento' })).toBeInTheDocument()
   })
+
+  it('EU: detalhe do orçamento destaca opcionais pendentes e bloqueia Finalizar com o motivo', async () => {
+    const user = userEvent.setup()
+    installOrdersBackend([makeSummary({ market_code: 'EU', currency: 'EUR' })])
+    server.use(
+      http.post('*/products/batch', () => HttpResponse.json([])),
+      http.get('*/orders/order-1', () => HttpResponse.json({
+        ...makeSummary({ market_code: 'EU', currency: 'EUR' }),
+        price_list_code: 'lojista',
+        locale: 'pt-PT',
+        total_ipi: 23,
+        external_code: null,
+        notes: null,
+        updated_at: '2024-01-01T00:00:00.000Z',
+        history: [],
+        items: [{
+          id: 'item-1', order_id: 'order-1', product_code: 'MESA-1', description: 'Mesa',
+          is_circular: false, altura: 0, largura: 0, profundidade: 0, opt_categories: {}, optional_choices: [],
+          qty: 1, unit_price: 100, discount: 0, ipi_rate: 23, ipi_value: 23, tax_label: 'IVA', currency: 'EUR',
+          observacao: null, comment: null, pending_optionals: ['Base', 'Tampo'],
+          created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z',
+        }],
+      })),
+    )
+
+    renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'EU'))
+    await screen.findAllByText('PED-0001')
+    await user.click(screen.getAllByLabelText('Ver detalhes do orçamento PED-0001')[0])
+
+    const alert = await screen.findByText("Escolha os opcionais pendentes antes de finalizar: MESA-1 (Base, Tampo).")
+    expect(alert).toBeInTheDocument()
+    expect(screen.getByText(/Pendente: Base, Tampo/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Finalizar' })).toBeDisabled()
+  })
 })

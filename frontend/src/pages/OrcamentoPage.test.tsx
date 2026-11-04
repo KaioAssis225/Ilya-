@@ -501,7 +501,7 @@ describe('OrcamentoPage', () => {
     expect(screen.queryByLabelText('Sem IVA (isento)')).toBeNull()
   })
 
-  it('Portugal não finaliza produto com aplicações sem nenhum opcional selecionado', async () => {
+  it('Portugal salva o orçamento com aplicações sem nenhum opcional selecionado (a exigência vale ao finalizar)', async () => {
     const user = productTestUser('admin', 'EU')
     const product = buildProduct('EU')
     const quoteClient = buildClient('client-eu-required-optional')
@@ -533,10 +533,7 @@ describe('OrcamentoPage', () => {
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Mesa PT: Tampo: escolha pendente',
-    )
-    expect(posted).toBe(false)
+    await waitFor(() => expect(posted).toBe(true))
   })
 
   it('Brasil não finaliza produto com aplicação pendente', async () => {

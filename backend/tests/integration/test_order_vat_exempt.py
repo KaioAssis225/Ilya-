@@ -127,7 +127,8 @@ async def test_edit_keeps_flag_and_can_toggle_it_with_items(
     assert removed.status_code == 200, removed.text
     assert removed.json()["vat_exempt"] is False and removed.json()["vat_exemption_code"] is None
     assert Decimal(removed.json()["total_ipi"]) == Decimal("46.00")
-    assert "IVA: isenção removida" in removed.json()["history"][-1]["details"]
+    # Os eventos compartilham o created_at da transação do teste: sem depender da ordem.
+    assert any("IVA: isenção removida" in (row["details"] or "") for row in removed.json()["history"])
 
 
 async def test_revision_preserves_exemption(

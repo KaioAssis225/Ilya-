@@ -152,6 +152,8 @@ class OrderItemRead(BaseModel):
     currency: str = "BRL"
     observacao: Optional[str] = None
     comment: Optional[str] = None
+    # Opcionais ainda sem escolha (só preenchido em orçamento EU em aberto).
+    pending_optionals: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -261,3 +263,18 @@ class OrderListRead(BaseModel):
     delivered_at: Optional[datetime] = None
     items: List[OrderListItemRead] = Field(default_factory=list)
     created_at: datetime
+
+
+class OrderCopyRequest(BaseModel):
+    """Itens do pedido de origem a copiar para um novo orçamento."""
+    item_ids: List[uuid.UUID] = Field(..., min_length=1, max_length=500)
+
+
+class OrderCopySkipped(BaseModel):
+    product_code: str
+    reason: str
+
+
+class OrderCopyRead(BaseModel):
+    order: OrderRead
+    skipped: List[OrderCopySkipped] = Field(default_factory=list)
