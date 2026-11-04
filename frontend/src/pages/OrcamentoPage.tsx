@@ -38,6 +38,7 @@ import { priceListLabel } from '../lib/priceListLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
 import { calculateLinePricing, lineTax, roundMoney } from '../lib/linePricing'
+import { canSetVatExemption, VAT_EXEMPTION_REASONS } from '../lib/vatExemption'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -971,7 +972,7 @@ function OrderForm({
   onQuickAddRep, onQuickAddClient,
   budgetCode, cart, onSubmit, isGenerating,
   repLocked, clientLocked,
-  editMode, editCode, isEnglish,
+  editMode, editCode, isEnglish, vatControl,
 }: {
   reps: Representative[]; clients: Client[]
   selectedRep: Representative | null; selectedClient: Client | null; notes: string
@@ -989,6 +990,8 @@ function OrderForm({
   repLocked?: boolean; clientLocked?: boolean
   editMode?: boolean; editCode?: string
   isEnglish?: boolean
+  /** EU: checkbox "Sem IVA" com o motivo da isenção (quem pode marcar). */
+  vatControl?: { checked: boolean; code: string; onChecked: (checked: boolean) => void; onCode: (code: string) => void }
 }) {
   const missingAreaDimensions = cart.some(item => isAreaProduct(item._product) && !item.source_order_item_id && (item.area_width_m == null || item.area_depth_m == null))
   return (
@@ -1059,6 +1062,28 @@ function OrderForm({
           onChange={(e) => onNotesChange(e.target.value)}
         />
       </div>
+
+      {vatControl && (
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-2 text-xs font-medium text-ink">
+            <input type="checkbox" checked={vatControl.checked} onChange={(e) => vatControl.onChecked(e.target.checked)} />
+            {isEnglish ? 'No VAT (exempt)' : 'Sem IVA (isento)'}
+          </label>
+          {vatControl.checked && (
+            <select
+              className="input text-xs"
+              aria-label={isEnglish ? 'VAT exemption reason' : 'Motivo da isenção de IVA'}
+              value={vatControl.code}
+              onChange={(e) => vatControl.onCode(e.target.value)}
+            >
+              <option value="">{isEnglish ? 'Choose the exemption reason' : 'Escolha o motivo da isenção'}</option>
+              {VAT_EXEMPTION_REASONS.map(reason => (
+                <option key={reason.code} value={reason.code}>{reason.code} — {isEnglish ? reason.en : reason.pt}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
 
       {(!selectedClient || cart.length === 0) && !isGenerating && (
@@ -1154,6 +1179,8 @@ export default function OrcamentoPage() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [selectedRep, setSelectedRep] = useState<Representative | null>(null)
   const [notes, setNotes] = useState('')
+  const [vatExempt, setVatExempt] = useState(false)
+  const [vatExemptionCode, setVatExemptionCode] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [persistedCart] = useState<PersistedCartItem[]>(
     () => readPersistedCart(user?.id, user?.active_market),
@@ -1507,6 +1534,8 @@ export default function OrcamentoPage() {
         setSelectedClient(resolvedClient)
         setSelectedRep(editOrder.rep_id ? resolvedRep ?? null : null)
         setNotes(editOrder.notes ?? '')
+        setVatExempt(editOrder.vat_exempt ?? false)
+        setVatExemptionCode(editOrder.vat_exemption_code ?? '')
         setCartHydrated(true)
       }
     }
@@ -1680,7 +1709,7 @@ export default function OrcamentoPage() {
   // Brasil: IPI do grupo do tipo. Portugal: IVA aprovado do próprio produto,
   // o mesmo que o servidor grava no pedido (o grupo EU tem IPI 0).
   const taxRate = (product: Product) => product.market_code === 'EU'
-    ? Number(product.vat_rate ?? 0)
+    ? (vatExempt ? 0 : Number(product.vat_rate ?? 0))
     : Number(productTypes.find(t => t.name === product.type)?.group?.ipi ?? 0)
 
   const ipiTotal = roundMoney(cart.reduce((sum, i) => sum + lineTax(lineSubtotal(i), taxRate(i._product)), 0))
@@ -1715,12 +1744,27 @@ export default function OrcamentoPage() {
     }
     return { ...base, qty: Math.max(1, Math.round(qty)) }
   })
+  const canExemptVat = market === 'EU' && canSetVatExemption(user?.role)
+  // Só quem pode isentar envia o flag; os demais preservam o estado do servidor.
+  const vatPayload = canExemptVat
+    ? { vat_exempt: vatExempt, vat_exemption_code: vatExempt ? vatExemptionCode : null }
+    : {}
+  const vatControl = canExemptVat
+    ? { checked: vatExempt, code: vatExemptionCode, onChecked: setVatExempt, onCode: setVatExemptionCode }
+    : undefined
   const repIdForSubmit = editId
     ? selectedRep?.id ?? null
     : selectedRep?.id ?? (targetRepId || null)
 
   async function handleSubmit() {
     if (!cartHydrated || !selectedClient || cart.length === 0) return
+    if (canExemptVat && vatExempt && !vatExemptionCode) {
+      setToast({
+        message: isEnglish ? 'Choose the VAT exemption reason.' : 'Escolha o motivo da isenção de IVA.',
+        variant: 'error',
+      })
+      return
+    }
     const invalidItem = cart
       .filter(item => !item.preserve_optional_choices)
       .map(item => ({
@@ -1760,6 +1804,7 @@ export default function OrcamentoPage() {
               price_list_code: market === 'EU' ? priceProfile : undefined,
               notes: notes || null,
               items: itemsPayload,
+              ...vatPayload,
             },
           }),
           new Promise<void>((r) => setTimeout(r, 1500)),
@@ -1775,6 +1820,7 @@ export default function OrcamentoPage() {
             notes: notes || null,
             items: itemsPayload,
             locale: market === 'EU' ? europeanLocale : undefined,
+            ...vatPayload,
           }),
           new Promise<void>((r) => setTimeout(r, 3000)),
         ])
@@ -2225,6 +2271,9 @@ export default function OrcamentoPage() {
                 <div><span>{isEnglish ? 'Products: ' : 'Produtos: '}</span><span className="font-semibold text-ink">{cart.length}</span></div>
               </div>
               <div className="flex items-center gap-2">
+                {market === 'EU' && vatExempt && (
+                  <div className="mr-4 text-xs text-muted-2"><span>{taxLabel}: </span><span className="font-semibold text-ink">{isEnglish ? 'exempt' : 'isento'}</span></div>
+                )}
                 {market === 'EU' && ipiTotal > 0 && (
                   <div className="flex items-center gap-4 mr-4 text-xs text-muted-2">
                     <div><span>Subtotal: </span><span className="font-semibold text-ink tabular-nums"><SafePrice value={total} currency={currency} locale={locale} /></span></div>
@@ -2256,7 +2305,7 @@ export default function OrcamentoPage() {
                 budgetCode={budgetCode} cart={cart}
                 onSubmit={handleSubmit} isGenerating={isGenerating}
                 repLocked={repLocked} clientLocked={clientLocked}
-                editMode={!!editId} editCode={editOrder?.code} isEnglish={isEnglish}
+                editMode={!!editId} editCode={editOrder?.code} isEnglish={isEnglish} vatControl={vatControl}
               />
             </fieldset>
             {productSearchCard}
@@ -2310,7 +2359,7 @@ export default function OrcamentoPage() {
             budgetCode={budgetCode} cart={cart}
             onSubmit={handleSubmit} isGenerating={isGenerating}
             repLocked={repLocked} clientLocked={clientLocked}
-            editMode={!!editId} editCode={editOrder?.code} isEnglish={isEnglish}
+            editMode={!!editId} editCode={editOrder?.code} isEnglish={isEnglish} vatControl={vatControl}
           />
         </fieldset>
       </BottomDrawer>

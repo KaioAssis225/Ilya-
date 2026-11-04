@@ -17,7 +17,7 @@ def _script() -> ScriptDirectory:
         return ScriptDirectory.from_config(config)
 
 
-def test_client_registration_is_the_single_head_after_order_stage():
+def test_vat_exempt_is_the_single_head_after_client_registration():
     script = _script()
     order_stage = script.get_revision("order_stage_r34")
     client_registration = script.get_revision("eu_client_registration_r35")
@@ -25,4 +25,7 @@ def test_client_registration_is_the_single_head_after_order_stage():
     assert order_stage.down_revision == "eu_subgroups_br_r33"
     assert client_registration is not None
     assert client_registration.down_revision == "order_stage_r34"
-    assert script.get_heads() == ["eu_client_registration_r35"]
+    vat_exempt = script.get_revision("order_vat_exempt_r36")
+    assert vat_exempt is not None
+    assert vat_exempt.down_revision == "eu_client_registration_r35"
+    assert script.get_heads() == ["order_vat_exempt_r36"]

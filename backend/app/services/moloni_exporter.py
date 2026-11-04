@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.moloni_crypto import decrypt_token, encrypt_token
 from app.core.observability import external_exception, external_invalid, httpx_event_hooks
 from app.models.client import Client
+from app.models.market import ProductMarket
 from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExportJob, MoloniProductLink, MoloniTaxMapping
 from app.models.order import Order, OrderItem
 from app.models.product import Product
@@ -226,6 +227,26 @@ async def _resolve_tax_mappings(api: MoloniApi, company_id: int, configured: dic
     return resolved
 
 
+async def _exempt_tax(api: MoloniApi, company_id: int) -> dict:
+    """Imposto de 0% da empresa Moloni, usado nas linhas de orçamento sem IVA."""
+    taxes = await api.post("taxes/getAll", {"company_id": company_id, "country_id": 1, "qty": 50, "offset": 0})
+    if isinstance(taxes, dict):
+        taxes = taxes.get("taxes") or taxes.get("data") or []
+    zero = []
+    for tax in taxes or []:
+        if not isinstance(tax, dict) or tax.get("tax_id") is None or tax.get("value") is None:
+            continue
+        try:
+            if Decimal(str(tax["value"])) == 0:
+                zero.append(tax)
+        except (InvalidOperation, TypeError):
+            continue
+    if not zero:
+        raise MoloniError(f"Moloni não devolveu imposto de 0% (isento) para a empresa {company_id}.")
+    chosen = next((tax for tax in zero if int(tax.get("active_by_default", 0) or 0) == 1), zero[0])
+    return {"tax_id": int(chosen["tax_id"]), "value": 0.0, "order": 1, "cumulative": 0}
+
+
 def _tax_for_rate(rate: str, mappings: dict[str, int]) -> dict:
     if rate not in mappings:
         raise MoloniError("IVA sem mapeamento Moloni: " + rate)
@@ -307,12 +328,25 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
         db.add(MoloniCustomerLink(connection_id=connection.id, client_id=client.id, moloni_customer_id=customer_id))
     mappings = {str(rate): int(tax_id) for rate, tax_id in (await db.execute(select(MoloniTaxMapping.vat_rate, MoloniTaxMapping.moloni_tax_id).where(MoloniTaxMapping.connection_id == connection.id))).all()}
     mappings = await _resolve_tax_mappings(api, connection.company_id, mappings)
+    exempt_tax = None
+    if order.vat_exempt:
+        if not order.vat_exemption_code:
+            raise MoloniError("Pedido sem IVA precisa do código do motivo de isenção.")
+        exempt_tax = await _exempt_tax(api, connection.company_id)
     products = []
     for index, item in enumerate(order.items):
         product = (await db.execute(select(Product).where(Product.market_code == "EU", Product.product_code == item.product_code))).scalar_one_or_none()
         if not product: raise MoloniError("Produto EU não encontrado: " + item.product_code)
-        rate = str(item.ipi_rate)
-        tax = _tax_for_rate(rate, mappings)
+        if exempt_tax is not None:
+            # A linha vai a 0% com o motivo; o artigo novo no Moloni mantém o
+            # IVA normal do produto para não virar isento no cadastro deles.
+            product_vat = (await db.execute(select(ProductMarket.vat_rate).where(ProductMarket.product_id == product.id, ProductMarket.market_code == "EU"))).scalar_one_or_none()
+            if product_vat is None:
+                raise MoloniError("Produto EU sem IVA aprovado: " + item.product_code)
+            article_tax = _tax_for_rate(str(product_vat), mappings)
+            tax = exempt_tax
+        else:
+            tax = article_tax = _tax_for_rate(str(item.ipi_rate), mappings)
         plink = (await db.execute(select(MoloniProductLink).where(MoloniProductLink.connection_id == connection.id, MoloniProductLink.product_id == product.id))).scalar_one_or_none()
         if plink: pid = plink.moloni_product_id
         else:
@@ -331,12 +365,12 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
                 "unit_id": settings.MOLONI_PRODUCT_UNIT_ID,
                 "has_stock": 0,
                 "stock": 0,
-                "taxes": [tax],
+                "taxes": [article_tax],
             }
             created = _record(await api.post("products/insert", article), "products/insert")
             pid = _entity_id(created, "product_id", "productId", "id", endpoint="products/insert"); db.add(MoloniProductLink(connection_id=connection.id, product_id=product.id, moloni_product_id=pid))
         line_summary = _line_summary(product.summary, item, order.locale)
-        products.append({"product_id": pid, "name": item.description, "summary": line_summary, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [tax]})
+        products.append({"product_id": pid, "name": item.description, "summary": line_summary, "qty": str(item.qty), "price": str(item.unit_price), "discount": str(item.discount), "order": index + 1, "taxes": [tax], **({"exemption_reason": order.vat_exemption_code} if exempt_tax is not None else {})})
     try:
         estimate = {"company_id": connection.company_id, "date": (order.finalized_at or datetime.now(timezone.utc)).date().isoformat(), "expiration_date": date.today().isoformat(), "maturity_date_id": settings.MOLONI_MATURITY_DATE_ID, "document_set_id": settings.MOLONI_DOCUMENT_SET_ID, "customer_id": customer_id, "salesman_id": salesman_id, "your_reference": order.code, "products": products, "notes": order.notes or "", "status": 0}
         response = _record(await api.post("estimates/insert", estimate), "estimates/insert")

@@ -618,7 +618,14 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   // na linha do produto e não gera um total separado no resumo. Em Portugal
   // entram mais duas linhas (Subtotal e IVA) antes do total.
   const showTaxBreakdown = taxOnTotal && Number(order.total_ipi) > 0
-  if (y + 59 + (showTaxBreakdown ? 16 : 0) > 278) {
+  // Orçamento sem IVA: o documento diz "isento" e traz o código e o motivo.
+  const showVatExemption = taxOnTotal && order.vat_exempt === true
+  const exemptionText = showVatExemption
+    ? [order.vat_exemption_code, order.vat_exemption_label].filter(Boolean).join(' — ')
+    : ''
+  const exemptionLines: string[] = exemptionText ? doc.splitTextToSize(exemptionText, 110) : []
+  const exemptionHeight = showVatExemption ? 8 + exemptionLines.length * 4 : 0
+  if (y + 59 + (showTaxBreakdown ? 16 : 0) + exemptionHeight > 278) {
     doc.addPage()
     y = drawContinuationHeader()
   }
@@ -635,6 +642,22 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   doc.setFont('helvetica', 'bold')
   doc.text(String(totalItems), 186, y, { align: 'right' })
   y += 8
+
+  if (showVatExemption) {
+    doc.setFont('helvetica', 'normal')
+    doc.text(`${taxLabel}:`, 148, y, { align: 'right' })
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.vatExempt, 186, y, { align: 'right' })
+    y += 5
+    doc.setFontSize(7)
+    doc.setFont('helvetica', 'normal')
+    for (const line of exemptionLines) {
+      doc.text(line, 186, y, { align: 'right' })
+      y += 4
+    }
+    doc.setFontSize(9)
+    y += 3
+  }
 
   if (showTaxBreakdown) {
     doc.setFont('helvetica', 'normal')

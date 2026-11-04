@@ -35,6 +35,10 @@ class Order(Base, TimestampMixin):
     total_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     total_with_ipi: Mapped[float] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Orçamento EU sem IVA: o servidor zera o imposto de todas as linhas e o
+    # documento (PDF/Moloni) sai com o código do motivo de isenção.
+    vat_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    vat_exemption_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     is_finalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -92,6 +96,11 @@ class Order(Base, TimestampMixin):
         CheckConstraint(
             "is_cancelled = (cancelled_at IS NOT NULL)",
             name="ck_orders_cancelled_timestamp",
+        ),
+        CheckConstraint(
+            "(vat_exempt AND vat_exemption_code IS NOT NULL AND market_code = 'EU') "
+            "OR (NOT vat_exempt AND vat_exemption_code IS NULL)",
+            name="ck_orders_vat_exemption_consistent",
         ),
         CheckConstraint(
             "order_number > 0",

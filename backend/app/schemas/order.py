@@ -3,7 +3,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
+
+from app.core.vat_exemption import VatExemptionCode, vat_exemption_label
 
 OrderStage = Literal["production", "delivered"]
 
@@ -99,6 +101,10 @@ class OrderItemCreate(BaseModel):
 class OrderCreate(BaseModel):
     client_id: uuid.UUID
     rep_id: Optional[uuid.UUID] = None
+    # Só EU. Ausente herda da revisão de origem (ou fica com IVA); com isenção
+    # o motivo é obrigatório.
+    vat_exempt: Optional[bool] = None
+    vat_exemption_code: Optional[VatExemptionCode] = None
     # Só aceita a tabela de faturamento do cliente (ou a da revisão de
     # origem); outra tabela é 422. Ausente usa o perfil do cliente.
     price_list_code: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
@@ -110,6 +116,9 @@ class OrderCreate(BaseModel):
 
 class OrderUpdate(BaseModel):
     rep_id: Optional[uuid.UUID] = None
+    # Ausente mantém o estado atual; mudar exige reenviar os itens.
+    vat_exempt: Optional[bool] = None
+    vat_exemption_code: Optional[VatExemptionCode] = None
     price_list_code: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     notes: Optional[str] = Field(None, max_length=10_000)
     items: Optional[List[OrderItemCreate]] = Field(
@@ -195,11 +204,18 @@ class OrderRead(BaseModel):
     supersedes_order_id: Optional[uuid.UUID] = None
     revision_number: int = 1
     external_code: Optional[str] = None
+    vat_exempt: bool = False
+    vat_exemption_code: Optional[str] = None
     notes: Optional[str]
     items: List[OrderItemRead]
     history: List[OrderHistoryRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def vat_exemption_label(self) -> Optional[str]:
+        return vat_exemption_label(self.vat_exemption_code, self.locale)
 
     model_config = {"from_attributes": True}
 
