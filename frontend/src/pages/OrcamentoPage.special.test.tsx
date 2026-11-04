@@ -84,7 +84,7 @@ describe('OrcamentoPage — especiais EU', () => {
 
     await screen.findAllByText('PAI-E1')
     expect(screen.queryAllByText('PAI')).toHaveLength(0)
-    expect(screen.getAllByText(/Mesa Portugal - ESPECIAL/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/ESPECIAL - Mesa Portugal/).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Especial (%)').length).toBeGreaterThan(0)
     expect(screen.queryByText('Desconto (%)')).toBeNull()
     const pressed = screen.getAllByRole('button', { name: /^Remover especial/ })[0]
@@ -167,7 +167,7 @@ describe('OrcamentoPage — especiais EU', () => {
       is_cancelled: false, finalized_at: null, cancelled_at: null, external_code: null,
       notes: null, history: [], created_at: '2026-01-01', updated_at: '2026-01-01',
       items: [{ id: 'special-item', order_id: 'edit-special', product_code: 'PAI',
-        description: 'Mesa Portugal - ESPECIAL', is_special: true, special_code: 'PAI-E1',
+        description: 'ESPECIAL - Mesa Portugal', is_special: true, special_code: 'PAI-E1',
         special_percent: 0, qty: 1, unit_price: 100, discount: 0, is_circular: false,
         altura: 0, largura: 1, profundidade: 1, opt_categories: {}, optional_choices: [],
         ipi_rate: 0, ipi_value: 0, tax_label: 'IVA', currency: 'EUR', observacao: null,
@@ -188,7 +188,7 @@ describe('OrcamentoPage — especiais EU', () => {
     await addSpecial()
     const specialField = screen.getAllByRole('spinbutton', { name: 'Especial em Mesa Portugal' })[0]
     fireEvent.change(specialField, { target: { value: '15' } })
-    fireEvent.click(screen.getAllByRole('button', { name: /Comentário de Mesa Portugal - ESPECIAL/ })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /Comentário de ESPECIAL - Mesa Portugal/ })[0])
     fireEvent.change(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0], { target: { value: 'Nota' } })
 
     let body: { items: Array<Record<string, unknown>> } | null = null
