@@ -223,7 +223,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     expect(screen.queryByText('Desconto Máximo (%)')).toBeNull()
     await user.type(screen.getByLabelText('Cliente *'), 'Casa Atlântico')
     await user.type(screen.getByLabelText('Contato'), 'Maria Silva')
-    await user.selectOptions(screen.getByLabelText('Tipo de catálogo *'), 'arquiteto')
+    await user.selectOptions(screen.getByLabelText('Tipo de cliente *'), 'arquiteto')
     await user.type(screen.getByLabelText('Telefone *'), '+351 912 345 678')
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
     await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
