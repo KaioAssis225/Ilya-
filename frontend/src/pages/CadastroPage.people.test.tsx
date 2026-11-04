@@ -196,6 +196,54 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     expect(screen.queryByText('Perfil de faturamento *')).toBeNull()
   })
 
+  it('Portugal cadastra os dados informativos sem preencher o país automaticamente', async () => {
+    const user = userEvent.setup()
+    let createPayload: Record<string, unknown> | null = null
+    installProductHandlers()
+    server.use(
+      http.get('*/clients', () => HttpResponse.json([], {
+        headers: { 'X-Total-Count': '0' },
+      })),
+      http.post('*/clients', async ({ request }) => {
+        createPayload = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ id: 'client-eu-new' }, { status: 201 })
+      }),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'EU'))
+    await user.click(screen.getAllByRole('button', { name: /Clientes/ })[0])
+    const newClientButton = await waitFor(() => {
+      const button = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        .find((candidate) => candidate.textContent?.includes('Novo Cliente'))
+      if (!button) throw new Error('Botão Novo Cliente não encontrado')
+      return button
+    })
+    await user.click(newClientButton)
+
+    expect(screen.getByLabelText('País da primeira liberação')).toHaveValue('')
+    expect(screen.queryByText('Desconto Máximo (%)')).toBeNull()
+    await user.type(screen.getByLabelText('Cliente *'), 'Casa Atlântico')
+    await user.type(screen.getByLabelText('Contato'), 'Maria Silva')
+    await user.selectOptions(screen.getByLabelText('Tipo de catálogo *'), 'arquiteto')
+    await user.type(screen.getByLabelText('Telefone *'), '+351 912 345 678')
+    await user.type(screen.getByLabelText('Código postal *'), '1000-001')
+    await user.type(screen.getByLabelText('Endereço *'), 'Rua Teste')
+    await user.type(screen.getByLabelText('Localidade *'), 'Lisboa')
+    await user.selectOptions(screen.getByLabelText('País da primeira liberação'), 'PT')
+    await user.type(screen.getByLabelText('Observação'), 'Contato após as 14h.')
+    await user.click(screen.getByRole('button', { name: 'Criar' }))
+
+    await waitFor(() => {
+      expect(createPayload).toMatchObject({
+        name: 'Casa Atlântico',
+        contact_name: 'Maria Silva',
+        client_type: 'arquiteto',
+        country: 'PT',
+        observation: 'Contato após as 14h.',
+        price_profile: 'lojista',
+      })
+    })
+  })
+
   it('Portugal oculta tabelas visíveis e força acesso a todas ao salvar representante', async () => {
     const user = userEvent.setup()
     let createPayload: Record<string, unknown> | null = null

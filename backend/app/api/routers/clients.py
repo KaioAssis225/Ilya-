@@ -444,6 +444,10 @@ async def create_client(
                 detail="Já existe um cliente com este CPF/CNPJ.",
             )
     data = sanitize_client_create_fields(data, current_user)
+    if market != "EU":
+        data.pop("contact_name", None)
+        data.pop("client_type", None)
+        data.pop("observation", None)
     if market == "BR" and data.get("state") == "--":
         raise HTTPException(status_code=422, detail="UF é obrigatória no mercado Brasil.")
     if market == "EU" and "country" not in payload.model_fields_set:
@@ -540,6 +544,10 @@ async def update_client(
     update_data = sanitize_client_update_fields(
         payload.model_dump(exclude_unset=True), current_user
     )
+    if market != "EU":
+        update_data.pop("contact_name", None)
+        update_data.pop("client_type", None)
+        update_data.pop("observation", None)
     if "country" in update_data or market == "EU":
         update_data["country"] = require_launch_country(
             market, update_data.get("country", client.country)

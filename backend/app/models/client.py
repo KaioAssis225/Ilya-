@@ -30,6 +30,9 @@ class Client(Base, TimestampMixin):
     country: Mapped[str] = mapped_column(String(2), nullable=False, default="BR", server_default="BR")
     region: Mapped[str | None] = mapped_column(String(120), nullable=True)
     tax_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    observation: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id", ondelete="SET NULL"), nullable=True)
     max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("0.00"))
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -122,4 +125,6 @@ def anonymize_client_fields(client: Client) -> None:
     client.city = "—"
     client.region = None
     client.tax_id = None
+    client.contact_name = None
+    client.observation = None
     # A UF é agregada e precisa continuar válida para a constraint brasileira.
