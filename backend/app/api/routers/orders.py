@@ -2281,7 +2281,8 @@ async def _order_delete_blocker(db: AsyncSession, order: Order) -> str | None:
 
     As FKs de revisão, Moloni e e-mail são RESTRICT de propósito: guardam
     evidência fiscal e de envio. Em vez de deixar o banco estourar um 409
-    genérico, dizemos qual registro bloqueia e apontamos Cancelar.
+    genérico, dizemos qual registro bloqueia. Cancelar não é saída: o endpoint
+    /cancel recusa pedido finalizado, e todos esses registros só existem nele.
     """
     async def has(model, column) -> bool:
         stmt = select(model.id).where(column == order.id).limit(1)
@@ -2290,11 +2291,11 @@ async def _order_delete_blocker(db: AsyncSession, order: Order) -> str | None:
     if await has(Order, Order.supersedes_order_id):
         return "Este pedido tem uma revisão. Exclua a revisão primeiro."
     if await has(MoloniExportJob, MoloniExportJob.order_id):
-        return "Pedido já registrado para faturação no Moloni e não pode ser excluído. Use Cancelar."
+        return "Pedido já tem documento no Moloni e não pode ser excluído."
     if await has(OrderEmailDocument, OrderEmailDocument.order_id) or await has(
         OrderEmailDelivery, OrderEmailDelivery.order_id
     ):
-        return "Pedido já tem envio de e-mail registrado e não pode ser excluído. Use Cancelar."
+        return "Pedido já teve envio de e-mail registrado e não pode ser excluído."
     return None
 
 

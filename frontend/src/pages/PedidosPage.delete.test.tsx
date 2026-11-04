@@ -55,7 +55,7 @@ describe('PedidosPage: exclusão de pedido', () => {
   })
 
   it('mostra no modal o motivo devolvido pela API quando o pedido não pode ser excluído', async () => {
-    const message = 'Pedido já registrado para faturação no Moloni e não pode ser excluído. Use Cancelar.'
+    const message = 'Pedido já tem documento no Moloni e não pode ser excluído.'
     const deletes = installBackend(409, { detail: message })
     const dialog = await openDeleteDialog()
 

@@ -1,8 +1,8 @@
 """Exclusão de pedido pela API (DELETE /orders/{id}) contra Postgres real.
 
 Contrato: orçamento e pedido sem evidência apagam; pedido com revisão, job do
-Moloni ou envio de e-mail é bloqueado com 409 e uma mensagem que diz o motivo e
-aponta Cancelar. Nada é apagado nem enfileirado quando bloqueia.
+Moloni ou envio de e-mail é bloqueado com 409 e uma mensagem que diz o motivo.
+Nada é apagado nem enfileirado quando bloqueia.
 """
 import uuid
 
@@ -95,7 +95,7 @@ async def test_finalized_br_with_email_is_blocked_with_clear_message(client, db_
 
     assert response.status_code == 409, response.text
     detail = response.json()["detail"]
-    assert "e-mail" in detail and "Cancelar" in detail
+    assert detail == "Pedido já teve envio de e-mail registrado e não pode ser excluído."
     assert await _count(db_session, Order, id=order_id) == 1
     assert await _count(db_session, OrderEmailDelivery, order_id=order_id) == 1
     assert await _outbox_deleted(db_session) == 0
@@ -112,7 +112,7 @@ async def test_finalized_eu_with_moloni_job_is_blocked(client, db_session, monke
 
     assert response.status_code == 409, response.text
     detail = response.json()["detail"]
-    assert "Moloni" in detail and "Cancelar" in detail
+    assert detail == "Pedido já tem documento no Moloni e não pode ser excluído."
     assert await _count(db_session, Order, id=order_id) == 1
     assert await _outbox_deleted(db_session) == 0
 
@@ -127,7 +127,7 @@ async def test_order_with_revision_is_blocked_until_revision_is_deleted(client, 
     blocked = await _delete(client, s.token, order_id)
 
     assert blocked.status_code == 409, blocked.text
-    assert "revisão" in blocked.json()["detail"]
+    assert blocked.json()["detail"] == "Este pedido tem uma revisão. Exclua a revisão primeiro."
     assert await _count(db_session, Order, id=order_id) == 1
     assert (await _delete(client, s.token, successor_id)).status_code == 204
     assert (await _delete(client, s.token, order_id)).status_code == 204
