@@ -206,8 +206,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'EU'))
     await screen.findAllByText('PED-0001')
-    await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Ver detalhes do orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Visualizar orçamento PED-0001')[0])
 
     const alert = await screen.findByText("Escolha os opcionais pendentes antes de finalizar: MESA-1 (Base, Tampo).")
     expect(alert).toBeInTheDocument()
