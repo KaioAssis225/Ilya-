@@ -377,7 +377,7 @@ function AddressFields({ form, setForm, market, portugalClient = false }: {
       ) : (
         <>
           <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">{tx('País da primeira liberação')}</span>
+            <span className="text-xs text-muted">{tx('País')}</span>
             <input
               className="input"
               value={form.country ?? ''}
