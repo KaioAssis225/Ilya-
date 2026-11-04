@@ -53,6 +53,10 @@ function installOrdersBackend(initial: OrderSummary[]) {
     }),
     http.get('*/optional-categories', () => HttpResponse.json([])),
     http.get('*/orders/history', () => HttpResponse.json([], { headers: { 'X-Has-More': 'false' } })),
+    http.get('*/orders/:id', ({ params }) => {
+      const order = orders.find((candidate) => candidate.id === params.id)
+      return order ? HttpResponse.json({ ...order, price_list_code: 'lojista', history: [] }) : new HttpResponse(null, { status: 404 })
+    }),
   )
   return { statusRequests }
 }
@@ -122,7 +126,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('PED-0001')
 
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
-    await user.click(screen.getByRole('button', { name: 'Finalizar Orçamento' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     expect(await screen.findByText('Orçamento PED-0001 finalizado e movido para a aba Pedido.')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryAllByText('PED-0001')).toHaveLength(0))
@@ -147,7 +151,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('PED-0001')
 
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
-    await user.click(screen.getByRole('button', { name: 'Finalizar Orçamento' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
     expect(await screen.findByText('Quote PED-0001 finalised and moved to the Order tab.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View in Orders' })).toBeInTheDocument()
   })
@@ -165,12 +169,12 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('PED-0001')
 
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
-    await user.click(screen.getByRole('button', { name: 'Finalizar Orçamento' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Selecione todos os opcionais antes de finalizar. Pendências: MESA-1: Base',
     )
-    expect(screen.getByRole('button', { name: 'Finalizar Orçamento' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
   })
 
   it('EU: detalhe do orçamento destaca opcionais pendentes e bloqueia Finalizar com o motivo', async () => {
@@ -205,5 +209,57 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     expect(alert).toBeInTheDocument()
     expect(screen.getByText(/Pendente: Base, Tampo/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Finalizar' })).toBeDisabled()
+  })
+
+  it('Finalizar abre a confirmação com o catálogo e a tabela; Cancelar não finaliza', async () => {
+    const user = userEvent.setup()
+    installOrdersBackend([makeSummary({ catalog_name: 'Catálogo Sala' })])
+    let finalizeCalls = 0
+    server.use(
+      http.get('*/orders/order-1', () => HttpResponse.json({ ...makeSummary({ catalog_name: 'Catálogo Sala' }), price_list_code: 'corporativo', items: [], history: [] })),
+      http.post('*/orders/:id/finalize', () => {
+        finalizeCalls += 1
+        return HttpResponse.json({})
+      }),
+    )
+
+    renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
+    await screen.findAllByText('PED-0001')
+
+    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    const confirmation = await screen.findByTestId('finalize-confirmation')
+    expect(confirmation).toHaveTextContent('Finalizar este orçamento com o catálogo Catálogo Sala')
+    await waitFor(() => expect(screen.getByTestId('finalize-confirmation')).toHaveTextContent('(tabela Corporativo)?'))
+    expect(screen.getByText(/vira pedido ao ser finalizado/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByTestId('finalize-confirmation')).not.toBeInTheDocument()
+    expect(finalizeCalls).toBe(0)
+  })
+
+  it('EU em inglês: a confirmação de finalizar vem em inglês', async () => {
+    const user = userEvent.setup()
+    const euUser = productTestUser('admin', 'EU')
+    localStorage.setItem(`ilya-locale:${euUser.id}:EU`, 'en-GB')
+    installOrdersBackend([makeSummary({ market_code: 'EU', currency: 'EUR', catalog_name: 'Living' })])
+
+    renderProductPage(<PedidosPage scope="quotes" />, euUser)
+    await screen.findAllByText('PED-0001')
+
+    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('Finalise this quote with the Living catalogue')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+  })
+
+  it('orçamento com itens de mais de um catálogo avisa isso na confirmação', async () => {
+    const user = userEvent.setup()
+    installOrdersBackend([makeSummary({ catalog_name: null })])
+
+    renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
+    await screen.findAllByText('PED-0001')
+
+    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('itens de mais de um catálogo')
   })
 })

@@ -3,6 +3,7 @@ import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2 } from 'lucide-react'
+import { priceListLabelFor } from '../lib/priceListLabels'
 import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useChangeOrderStage } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
@@ -131,6 +132,13 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const finalizeM = useFinalizeOrder()
+  const { locale } = useLocale()
+  const english = order.market_code === 'EU' && locale === 'en-GB'
+  const t = (pt: string, en: string) => english ? en : pt
+  // A tabela de preço só vem no detalhe; sem ele a confirmação mostra só o catálogo.
+  const { data: orderDetail } = useOrder(order.id)
+  const catalogName = order.catalog_name ?? orderDetail?.catalog_name ?? null
+  const priceList = orderDetail?.price_list_code ? priceListLabelFor(orderDetail.price_list_code, english) : null
 
   async function handleSubmit() {
     setError('')
@@ -143,7 +151,7 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
       const detail = error != null && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
         : undefined
-      setError(typeof detail === 'string' ? detail : 'Não foi possível finalizar o orçamento. Tente novamente.')
+      setError(typeof detail === 'string' ? detail : t('Não foi possível finalizar o orçamento. Tente novamente.', 'Could not finalise the quote. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -153,28 +161,37 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
     <div className="modal-overlay" onClick={onClose}>
       <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-ink">Finalizar Orçamento</h3>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="btn-icon -mr-2">
+          <h3 className="text-base font-semibold text-ink">{t('Finalizar orçamento', 'Finalise quote')}</h3>
+          <button type="button" onClick={onClose} aria-label={t('Fechar', 'Close')} className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
         </div>
+        <p className="text-sm text-ink mb-3" data-testid="finalize-confirmation">
+          {t('Finalizar este orçamento com ', 'Finalise this quote with ')}
+          {catalogName
+            ? <>{t('o catálogo ', 'the ')}<strong className="font-semibold">{catalogName}</strong>{english ? ' catalogue' : ''}</>
+            : t('itens de mais de um catálogo', 'items from more than one catalogue')}
+          {priceList ? <>{t(' (tabela ', ' (')}<strong className="font-semibold">{priceList}</strong>{t(')', ' price list)')}</> : null}
+          ?
+        </p>
         <p className="text-sm text-ink-2 mb-4">
-          Orçamento <span className="font-mono font-semibold text-gold">{order.code}</span> será marcado como finalizado e não poderá mais ser editado.
+          {t('Orçamento', 'Quote')} <span className="font-mono font-semibold text-gold">{order.code}</span>{' '}
+          {t('vira pedido ao ser finalizado e não poderá mais ser editado.', 'becomes an order once finalised and can no longer be edited.')}
         </p>
         {error ? <div role="alert" className="mb-4 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div> : null}
         <label className="block space-y-1 mb-5">
-          <span className="text-xs text-muted font-medium">Código Externo (opcional)</span>
+          <span className="text-xs text-muted font-medium">{t('Código Externo (opcional)', 'External code (optional)')}</span>
           <input
             className="input w-full"
-            placeholder="Ex: ERP-12345"
+            placeholder={t('Ex: ERP-12345', 'e.g. ERP-12345')}
             value={code}
             onChange={(e) => setCode(e.target.value)}
           />
         </label>
         <div className="flex gap-3 justify-end">
-          <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn-secondary" onClick={onClose}>{t('Cancelar', 'Cancel')}</button>
           <button className="btn-primary" disabled={loading} onClick={handleSubmit}>
-            {loading ? 'Finalizando...' : 'Finalizar Orçamento'}
+            {loading ? t('Finalizando...', 'Finalising...') : t('Confirmar', 'Confirm')}
           </button>
         </div>
       </DialogPanel>

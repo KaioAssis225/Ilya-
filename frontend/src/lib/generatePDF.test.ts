@@ -340,9 +340,38 @@ test('EU sem IVA: o PDF mostra "IVA: isento" com o código e o motivo e não lis
   ])
 
   assert.ok(renderedTexts.includes('IVA:'))
-  assert.ok(renderedTexts.includes('isento'))
+  assert.ok(renderedTexts.includes('ISENTO'))
+  assert.ok(!renderedTexts.includes('isento'))
   assert.ok(renderedTexts.some((text) => text.startsWith('M16 — Isento nos termos do artigo 14.º do RITI')))
   assert.ok(!renderedTexts.includes('Subtotal:'))
+})
+
+test('EU sem IVA em inglês: o PDF mostra "VAT: EXEMPT" com o motivo', async () => {
+  const order = makeOrder({
+    code: 'ORD-0004',
+    market_code: 'EU',
+    currency: 'EUR',
+    locale: 'en-GB',
+    total_value: 2000,
+    total_ipi: 0,
+    total_with_ipi: 2000,
+    vat_exempt: true,
+    vat_exemption_code: 'M05',
+    vat_exemption_label: 'Exempt under Article 14 of the CIVA (export)',
+    items: [
+      makeOrderItem({
+        description: 'Ilya Armchair', qty: 1, unit_price: 2000, ipi_rate: 0, ipi_value: 0, tax_label: 'IVA', currency: 'EUR',
+      }),
+    ],
+  })
+
+  await generateOrderPDF(order, makeClient({ market_code: 'EU', country: 'PT', price_profile: 'pvp' }), null, [
+    makeProduct({ market_code: 'EU', currency: 'EUR' }),
+  ])
+
+  assert.ok(renderedTexts.includes('VAT:'))
+  assert.ok(renderedTexts.includes('EXEMPT'))
+  assert.ok(renderedTexts.some((text) => text.startsWith('M05 — Exempt under Article 14')))
 })
 
 test('regressão EU: preserva item.description histórico do snapshot mesmo se product.description_en mudou', async () => {
