@@ -200,8 +200,8 @@ def test_activate_recusa_eu_sem_iva_aprovado():
         # Quatro listas OK, mas há 1 SKU disponível sem IVA aprovado → 409.
         db = AsyncMock()
         db.execute.side_effect = [
-            _CountResult(0),                         # clientes fora de PT
-            _CountResult(0),                         # representantes fora de PT
+            _CountResult(0),                         # clientes sem país
+            _CountResult(0),                         # representantes sem país
             _CountResult(0),                         # dimensões EU válidas
             _CountResult(1),                         # disponíveis
             _AllResult([(uuid.uuid4(), 4)]),         # com as 4 listas
@@ -259,11 +259,11 @@ def test_activate_passa_quando_tudo_aprovado():
     asyncio.run(run())
 
 
-def test_activate_recusa_cadastro_eu_fora_de_portugal():
+def test_activate_recusa_cadastro_eu_sem_pais():
     async def run():
         db = AsyncMock()
         db.execute.side_effect = [
-            _CountResult(1),  # cliente de outro país
+            _CountResult(1),  # cliente sem país
             _CountResult(0),
         ]
 
@@ -271,7 +271,7 @@ def test_activate_recusa_cadastro_eu_fora_de_portugal():
             await activate_europe(db=db, _=ADMIN)
 
         assert exc.value.status_code == 409
-        assert "PT" in exc.value.detail
+        assert "sem país" in exc.value.detail
         db.commit.assert_not_called()
 
     asyncio.run(run())

@@ -89,11 +89,12 @@ def test_feature_flag_blocks_europe_even_for_admin():
     asyncio.run(run())
 
 
-def test_primeira_liberacao_eu_aceita_somente_portugal():
-    assert require_launch_country("EU", " pt ") == "PT"
+def test_pais_eu_aceita_texto_livre_nao_vazio():
+    assert require_launch_country("EU", " Portugal e Espanha ") == "Portugal e Espanha"
+    assert require_launch_country("EU", "pt") == "pt"
     assert require_launch_country("BR", "PT") == "BR"
     with pytest.raises(HTTPException) as exc:
-        require_launch_country("EU", "ES")
+        require_launch_country("EU", "   ")
     assert exc.value.status_code == 422
 
 

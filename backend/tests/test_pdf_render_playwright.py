@@ -284,6 +284,7 @@ async def test_render_eu_pt_pt_order():
     assert "NIF: 519635698" in full_text
     assert "4595-542 Seroa, Paços de Ferreira, Portugal" in full_text
     assert "FATURAR A" in full_text
+    assert "ORÇAMENTO VÁLIDO POR 30 DIAS" in full_text
 
 
 async def test_render_eu_en_gb_order():
@@ -322,6 +323,7 @@ async def test_render_eu_en_gb_order():
     assert "Total items:" in full_text
     assert "GRAND TOTAL:" in full_text
     assert "VAT:" in full_text
+    assert "QUOTATION VALID FOR 30 DAYS" in full_text
     assert re.search(r"Page \d+/\d+", full_text)
 
 

@@ -17,7 +17,7 @@ def _script() -> ScriptDirectory:
         return ScriptDirectory.from_config(config)
 
 
-def test_vat_exempt_is_the_single_head_after_client_registration():
+def test_free_country_iroko_is_the_single_head_after_vat_exempt():
     script = _script()
     order_stage = script.get_revision("order_stage_r34")
     client_registration = script.get_revision("eu_client_registration_r35")
@@ -28,4 +28,7 @@ def test_vat_exempt_is_the_single_head_after_client_registration():
     vat_exempt = script.get_revision("order_vat_exempt_r36")
     assert vat_exempt is not None
     assert vat_exempt.down_revision == "eu_client_registration_r35"
-    assert script.get_heads() == ["order_vat_exempt_r36"]
+    free_country_iroko = script.get_revision("eu_free_country_iroko_r37")
+    assert free_country_iroko is not None
+    assert free_country_iroko.down_revision == "order_vat_exempt_r36"
+    assert script.get_heads() == ["eu_free_country_iroko_r37"]

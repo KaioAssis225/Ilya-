@@ -125,23 +125,22 @@ async def activate_europe(
     db: AsyncSession = Depends(get_db_session),
     _: PlatformPrincipal = Depends(require_platform_capability("activate_market")),
 ):
-    launch_country = settings.EU_LAUNCH_COUNTRY.strip().upper()
-    out_of_scope_people = (await db.execute(
+    people_without_country = (await db.execute(
         select(func.count()).select_from(Client).where(
             Client.market_code == "EU",
-            or_(Client.country.is_(None), func.upper(Client.country) != launch_country),
+            or_(Client.country.is_(None), func.trim(Client.country) == ""),
         )
     )).scalar_one() + (await db.execute(
         select(func.count()).select_from(Representative).where(
             Representative.market_code == "EU",
-            or_(Representative.country.is_(None), func.upper(Representative.country) != launch_country),
+            or_(Representative.country.is_(None), func.trim(Representative.country) == ""),
             Representative.relationship_ended_at.is_(None),
         )
     )).scalar_one()
-    if out_of_scope_people:
+    if people_without_country:
         raise HTTPException(
             409,
-            f"Europa não pode ser ativada: a primeira liberação aceita somente o país {launch_country}.",
+            "Europa não pode ser ativada: há clientes ou representantes sem país informado.",
         )
     invalid_dimensions = (await db.execute(text(r"""
         SELECT EXISTS (

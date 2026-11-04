@@ -2155,9 +2155,9 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
 
 // ── CLIENTES / REPRESENTANTES ─────────────────────────────────────────────────
 
-const emptyAddress = (market: 'BR' | 'EU', entityType: 'client' | 'rep' = 'client'): ClientCreate => ({
+const emptyAddress = (market: 'BR' | 'EU'): ClientCreate => ({
   name: '', contact_name: '', client_type: null, observation: '', phone: '', email: '', cpf_cnpj: '', tax_id: '',
-  country: market === 'BR' ? 'BR' : entityType === 'client' ? '' : 'Portugal',
+  country: market === 'BR' ? 'BR' : '',
   region: '', cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--', price_profile: 'lojista',
 })
 
@@ -2232,7 +2232,7 @@ function PeopleTab<T extends Client | Representative>({
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState<ClientCreate>(() => emptyAddress(activeMarket, entityType))
+  const [form, setForm] = useState<ClientCreate>(() => emptyAddress(activeMarket))
 
   const createFromClient = useCreateUserFromClient()
   const createFromRep = useCreateUserFromRep()
@@ -2240,7 +2240,7 @@ function PeopleTab<T extends Client | Representative>({
 
   function openCreate() {
     setForm({
-      ...emptyAddress(activeMarket, entityType),
+      ...emptyAddress(activeMarket),
       all_price_lists: entityType === 'rep',
       price_list_codes: [],
     })
@@ -2250,7 +2250,7 @@ function PeopleTab<T extends Client | Representative>({
     setForm({
       name: item.name, contact_name: item.contact_name ?? '', client_type: item.client_type ?? null,
       observation: item.observation ?? '', phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
-      tax_id: item.tax_id, country: activeMarket === 'EU' && item.country === 'PT' ? 'Portugal' : item.country,
+      tax_id: item.tax_id, country: item.country,
       region: item.region, cep: item.cep, numero: item.numero ?? '',
       address: item.address, city: item.city, state: item.state,
       price_profile: (item as Client).price_profile ?? 'lojista', max_discount: item.max_discount,

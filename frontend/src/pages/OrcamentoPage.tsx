@@ -190,7 +190,7 @@ function Autocomplete<T extends { id: string }>({
 
 const emptyPerson = (market: 'BR' | 'EU'): ClientCreate => ({
   name: '', phone: '', email: '', cpf_cnpj: '', tax_id: '',
-  country: market === 'BR' ? 'BR' : 'PT', region: '',
+  country: market === 'BR' ? 'BR' : '', region: '',
   cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--',
 })
 
@@ -342,7 +342,7 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             <span className="text-xs text-muted">{market === 'EU' ? (isEnglish ? 'Town/City *' : 'Localidade *') : 'Cidade *'}</span>
             <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required />
           </label>
-          {market === 'BR' ? <label className="flex flex-col gap-1"><span className="text-xs text-muted">UF *</span><input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required /></label> : <><label className="flex flex-col gap-1"><span className="text-xs text-muted">{isEnglish ? 'Launch country' : 'País da primeira liberação'}</span><input className="input" value="PT" readOnly aria-readonly="true" /></label><label className="sm:col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">{isEnglish ? 'Region' : 'Região'}</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} /></label></>}
+          {market === 'BR' ? <label className="flex flex-col gap-1"><span className="text-xs text-muted">UF *</span><input className="input" maxLength={2} value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} required /></label> : <><label className="flex flex-col gap-1"><span className="text-xs text-muted">{isEnglish ? 'Launch country' : 'País da primeira liberação'}</span><input className="input" value={form.country ?? ''} onChange={(e) => setForm({ ...form, country: e.target.value })} maxLength={120} required /></label><label className="sm:col-span-2 flex flex-col gap-1"><span className="text-xs text-muted">{isEnglish ? 'Region' : 'Região'}</span><input className="input" value={form.region ?? ''} onChange={(e) => setForm({ ...form, region: e.target.value })} /></label></>}
           {entityType === 'client' && (
             <div className="sm:col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted">{isEnglish ? 'Billing profile *' : 'Perfil de faturamento *'}</span>
