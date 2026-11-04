@@ -17,9 +17,12 @@ def _script() -> ScriptDirectory:
         return ScriptDirectory.from_config(config)
 
 
-def test_order_stage_migration_is_the_single_head_after_subgroups():
+def test_client_registration_is_the_single_head_after_order_stage():
     script = _script()
-    revision = script.get_revision("order_stage_r34")
-    assert revision is not None
-    assert revision.down_revision == "eu_subgroups_br_r33"
-    assert script.get_heads() == ["order_stage_r34"]
+    order_stage = script.get_revision("order_stage_r34")
+    client_registration = script.get_revision("eu_client_registration_r35")
+    assert order_stage is not None
+    assert order_stage.down_revision == "eu_subgroups_br_r33"
+    assert client_registration is not None
+    assert client_registration.down_revision == "order_stage_r34"
+    assert script.get_heads() == ["eu_client_registration_r35"]
