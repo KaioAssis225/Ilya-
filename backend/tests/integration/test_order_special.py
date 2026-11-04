@@ -11,9 +11,11 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
+from app.models.order import OrderItem
 from app.models.user import UserRole
 from tests.factories import make_user, make_user_market
 from tests.integration.test_optional_applications_flow import (
@@ -99,7 +101,7 @@ async def test_special_percent_sane_edges_accepted(
     client: AsyncClient, db_session: AsyncSession, percent: str
 ) -> None:
     s = await _scenario(db_session, "EU")
-    response = await _post(client, s, [_special(s, percent)])
+    response = await _post(client, s, [_special(s, percent, comment="x")])
     assert response.status_code == 201, response.text
 
 
@@ -107,47 +109,77 @@ async def test_special_with_discount_or_orphan_special_fields_rejected(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     s = await _scenario(db_session, "EU")
-    assert (await _post(client, s, [_special(s, "10", discount=5)])).status_code == 422
+    assert (await _post(client, s, [_special(s, "10", discount=5, comment="x")])).status_code == 422
     assert (await _post(client, s, [_normal(s, special_percent="10")])).status_code == 422
-    assert (await _post(client, s, [_normal(s, is_special=True)])).status_code == 422
+    assert (await _post(client, s, [_normal(s, is_special=True, comment="x")])).status_code == 422
 
 
 async def test_special_code_must_belong_to_parent_and_be_unique(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     s = await _scenario(db_session, "EU")
-    foreign = await _post(client, s, [_special(s, "5", special_code="OUTRO-E1")])
+    foreign = await _post(client, s, [_special(s, "5", special_code="OUTRO-E1", comment="x")])
     assert foreign.status_code == 422, foreign.text
     duplicate = await _post(client, s, [
-        _special(s, "5", special_code=f"{s.product_code}-E1"),
-        _special(s, "6", special_code=f"{s.product_code}-E1"),
+        _special(s, "5", special_code=f"{s.product_code}-E1", comment="x"),
+        _special(s, "6", special_code=f"{s.product_code}-E1", comment="y"),
     ])
     assert duplicate.status_code == 422, duplicate.text
-    equal_to_parent = await _post(client, s, [_special(s, "5", special_code=s.product_code)])
+    equal_to_parent = await _post(client, s, [_special(s, "5", special_code=s.product_code, comment="x")])
     assert equal_to_parent.status_code == 422, equal_to_parent.text
 
 
-async def test_save_without_comment_allowed_but_finalize_blocked_until_commented(
+async def test_special_without_comment_is_rejected_on_create_and_update(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     s = await _scenario(db_session, "EU")
-    created = await _post(client, s, [_special(s, "10")])
+    for blank in (None, "", "   "):
+        extra = {} if blank is None else {"comment": blank}
+        refused = await _post(client, s, [_normal(s), _special(s, "10", **extra)])
+        assert refused.status_code == 422, refused.text
+        assert f"{s.product_code}-E1" in refused.json()["detail"]
+        assert "comment" in refused.json()["detail"]
+
+    created = await _post(client, s, [_special(s, "10", comment="acabamento sob medida")])
     assert created.status_code == 201, created.text
     order_id = created.json()["id"]
     code = created.json()["items"][0]["special_code"]
+
+    refused_update = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [_special(s, "10", special_code=code, comment="  ")]},
+        headers=_auth(s.token),
+    )
+    assert refused_update.status_code == 422, refused_update.text
+    assert code in refused_update.json()["detail"]
+    kept = await client.get(f"/api/v1/orders/{order_id}", headers=_auth(s.token))
+    assert kept.json()["items"][0]["comment"] == "acabamento sob medida"
+
+    # Item normal continua podendo ficar sem comentário.
+    plain = await _post(client, s, [_normal(s)])
+    assert plain.status_code == 201, plain.text
+
+
+async def test_finalize_blocks_legacy_special_without_comment_until_commented(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    s = await _scenario(db_session, "EU")
+    created = await _post(client, s, [_special(s, "10", comment="tmp")])
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+    code = created.json()["items"][0]["special_code"]
+
+    # Orçamento antigo, gravado quando salvar sem comentário ainda era permitido.
+    await db_session.execute(
+        update(OrderItem).where(OrderItem.order_id == uuid.UUID(order_id)).values(comment=None)
+    )
+    await db_session.commit()
+    db_session.expunge_all()
 
     blocked = await client.post(f"/api/v1/orders/{order_id}/finalize", json={}, headers=_auth(s.token))
     assert blocked.status_code == 409, blocked.text
     assert code in blocked.json()["detail"] and "comment" in blocked.json()["detail"]
     assert (await client.get(f"/api/v1/orders/{order_id}", headers=_auth(s.token))).json()["is_finalized"] is False
-
-    blank = await client.put(
-        f"/api/v1/orders/{order_id}",
-        json={"items": [_special(s, "10", special_code=code, comment="   ")]},
-        headers=_auth(s.token),
-    )
-    assert blank.status_code == 200, blank.text
-    assert (await client.post(f"/api/v1/orders/{order_id}/finalize", json={}, headers=_auth(s.token))).status_code == 409
 
     fixed = await client.put(
         f"/api/v1/orders/{order_id}",

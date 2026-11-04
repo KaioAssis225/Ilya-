@@ -979,14 +979,25 @@ def _ensure_special_scope(current_user: User, market_code: str, items: list[Orde
         raise HTTPException(status_code=403, detail="Contas de cliente não podem criar ou editar itens especiais / Client accounts cannot create or edit special items.")
 
 
-def _ensure_special_comments(items: list[OrderItem]) -> None:
+def _ensure_special_comments(items: list[OrderItem], *, finalizing: bool = False) -> None:
+    """Especial sem comentário não é salvo (422) nem vira pedido (409).
+
+    O 409 da finalização continua valendo para orçamentos antigos, gravados
+    quando salvar sem comentário ainda era permitido.
+    """
     missing = [item.special_code or item.product_code for item in items if item.is_special and not (item.comment or "").strip()]
-    if missing:
+    if not missing:
+        return
+    codes = ", ".join(missing)
+    if finalizing:
         raise HTTPException(
             status_code=409,
-            detail="Itens especiais exigem comentário antes de finalizar: " + ", ".join(missing)
-            + " / Special items require a comment before finalization: " + ", ".join(missing),
+            detail=f"Itens especiais exigem comentário antes de finalizar: {codes} / Special items require a comment before finalization: {codes}",
         )
+    raise HTTPException(
+        status_code=422,
+        detail=f"Itens especiais exigem comentário: {codes} / Special items require a comment: {codes}",
+    )
 
 
 async def _get_order(
@@ -1384,6 +1395,8 @@ async def _create_order_core(
             detail="Nenhum item pôde ser copiado: "
             + "; ".join(f"{row['product_code']}: {row['reason']}" for row in skipped),
         )
+    if copy_source is None:
+        _ensure_special_comments(order_items)
     catalog = await _order_catalog(
         db,
         [product_map[order_item.product_code] for order_item in order_items],
@@ -2100,6 +2113,7 @@ async def update_order(
                 special_percent=item_in.special_percent,
             ))
 
+        _ensure_special_comments(new_items)
         catalog = await _order_catalog(
             db,
             [product_map[item_in.product_code] for item_in in payload.items],
@@ -2186,7 +2200,7 @@ async def finalize_order(
         raise HTTPException(status_code=409, detail="Pedido já está finalizado.")
     if order.is_cancelled:
         raise HTTPException(status_code=409, detail="Pedido cancelado não pode ser finalizado.")
-    _ensure_special_comments(order.items)
+    _ensure_special_comments(order.items, finalizing=True)
     pending = await _pending_optionals_by_item(db, order)
     pending_items = [
         f"{item.product_code}: {', '.join(pending[item.id])}"
