@@ -326,6 +326,8 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   const unitDiscountText = (value: number) => `- ${formatMoney(value, currency, locale)}`
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : order.market_code === 'EU' ? 'pt-PT' : 'pt-BR'
   const itemRows = order.items.map((item) => {
+    // O especial sai como um item comum: preço final, sem desconto. A % do
+    // especial é interna e o cliente não pode deduzi-la do documento.
     const discount = item.is_special ? 0 : Number(item.discount || 0)
     const ipiRate = Number(item.ipi_rate || 0)
     const pricing = calculateLinePricing(Number(item.unit_price), discount, Number(item.qty))
@@ -343,9 +345,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
         : null,
       qtyText: item.sold_by_area ? formatArea(item.qty, locale) : String(item.qty),
       baseText: formatMoney(pricing.basePrice, currency, locale),
-      discountText: item.is_special
-        ? `${locale === 'en-GB' ? 'Special' : 'Especial'} ${new Intl.NumberFormat(locale, { maximumFractionDigits: 2, signDisplay: 'always' }).format(Number(item.special_percent ?? 0))}%`
-        : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(discount)}%`,
+      discountText: `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(discount)}%`,
       netText: formatMoney(pricing.netUnitPrice, currency, locale),
       subtotalText: formatMoney(lineTotal, currency, locale),
     }
@@ -590,7 +590,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     drawMain(row.baseText, rightOf('base'), 7.5, 'normal')
     if (item.sold_by_area) drawSub('/m²', rightOf('base'))
 
-    drawMain(row.discountText, rightOf('discount'), 7.5, item.is_special || row.discount > 0 ? 'bold' : 'normal', item.is_special || row.discount > 0 ? accentColor : MUTED)
+    drawMain(row.discountText, rightOf('discount'), 7.5, row.discount > 0 ? 'bold' : 'normal', row.discount > 0 ? accentColor : MUTED)
     if (row.discount > 0) drawSub(unitDiscountText(row.pricing.unitDiscount), rightOf('discount'))
 
     drawMain(row.netText, rightOf('net'), 7.5, 'normal')

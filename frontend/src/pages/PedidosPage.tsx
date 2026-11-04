@@ -679,7 +679,7 @@ function OrderDetailModal({
                         </td>
                         <td className="px-3 py-2">
                           <span className="text-gold font-mono text-xs">{item.special_code ?? item.product_code}</span>
-                          <div className="text-ink-2 text-xs mt-0.5 max-w-[150px] truncate">{isEuOrder ? (products.find(p => p.product_code === item.product_code)?.description_en ?? item.description) : item.description}</div>
+                          <div className="text-ink-2 text-xs mt-0.5 max-w-[150px] truncate">{isEuOrder && !item.is_special ? (products.find(p => p.product_code === item.product_code)?.description_en ?? item.description) : item.description}</div>
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                           {item.comment && <div className="text-[10px] text-ink-2 mt-0.5 max-w-[220px] whitespace-pre-line break-words">
                             <span className="font-semibold">{optionalEnglish ? 'Comment' : 'Comentário'}:</span> {item.comment}

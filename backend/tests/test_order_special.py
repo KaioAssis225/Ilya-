@@ -54,4 +54,4 @@ def test_schema_exige_consistencia_e_desconto_zero():
         OrderItemCreate(product_code="PAI", qty=1, is_special=True, special_percent=1, discount=1)
     with pytest.raises(ValidationError):
         OrderItemCreate(product_code="PAI", qty=1, special_percent=1)
-    assert _special_description("Mesa") == "Mesa - ESPECIAL"
+    assert _special_description("Mesa") == "ESPECIAL - Mesa"

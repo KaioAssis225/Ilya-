@@ -66,8 +66,8 @@ async def test_special_price_up_and_down_ignores_discount_ceiling_and_keeps_pare
         Decimal("115.00"), Decimal("80.00"), Decimal("350.00"),
     ]
     assert all(Decimal(i["discount"]) == 0 for i in (up, down, big))
-    assert all(i["description"].endswith(" - ESPECIAL") for i in (up, down, big))
-    assert not normal["description"].endswith("ESPECIAL")
+    assert all(i["description"].startswith("ESPECIAL - ") for i in (up, down, big))
+    assert not normal["description"].startswith("ESPECIAL")
     assert Decimal(body["total_value"]) == Decimal("645.00")
     # IVA 23% calculado no servidor sobre o preço resultante.
     assert Decimal(up["ipi_value"]) == Decimal("26.45")
@@ -199,7 +199,7 @@ async def test_copy_keeps_special_as_is_and_recalculates_price(
     assert item["special_code"] == special["special_code"]
     assert Decimal(item["special_percent"]) == Decimal("-20")
     assert item["comment"] == "medida do cliente"
-    assert item["description"].endswith(" - ESPECIAL")
+    assert item["description"].startswith("ESPECIAL - ")
     assert Decimal(item["unit_price"]) == Decimal("80.00")
     assert Decimal(copied.json()["order"]["total_value"]) == Decimal("80.00")
 

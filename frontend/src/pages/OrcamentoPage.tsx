@@ -1715,7 +1715,7 @@ export default function OrcamentoPage() {
       : i))
   }
 
-  // Transforma a própria linha em especial (código PAI-En, descrição "- ESPECIAL")
+  // Transforma a própria linha em especial (código PAI-En, descrição "ESPECIAL - ...")
   // ou desfaz. Posição, quantidade, opcionais e comentário ficam como estão; o
   // preço continua sendo calculado pelo servidor.
   function toggleSpecial(lineId: string) {
@@ -1740,7 +1740,7 @@ export default function OrcamentoPage() {
           special_code: `${line.product_code}-E${sequence}`,
           special_percent: 0,
           discount: 0,
-          displayDescription: `${item.displayDescription ?? item._product.description} - ESPECIAL`,
+          displayDescription: `ESPECIAL - ${item.displayDescription ?? item._product.description}`,
         }
         : item)
     })

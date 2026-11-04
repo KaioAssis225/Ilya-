@@ -967,7 +967,7 @@ def _calculate_special_order_line(
 
 
 def _special_description(description: str) -> str:
-    return f"{description} - ESPECIAL"
+    return f"ESPECIAL - {description}"
 
 
 def _ensure_special_scope(current_user: User, market_code: str, items: list[OrderItemCreate]) -> None:
