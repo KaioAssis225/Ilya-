@@ -140,6 +140,9 @@ class Settings(BaseSettings):
 
     # Moloni: os segredos OAuth e a chave Fernet ficam exclusivamente no
     # ambiente. A conexão, empresa e mapeamento de IVA são persistidos no DB.
+    # Kill switch operacional. Enquanto verdadeiro, nenhuma rota de escrita,
+    # fila ou chamada HTTP pode enviar dados ao Moloni.
+    MOLONI_BLOCKED: bool = True
     MOLONI_ENABLED: bool = False
     MOLONI_CLIENT_ID: str = ""
     MOLONI_CLIENT_SECRET: str = ""

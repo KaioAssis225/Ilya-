@@ -22,6 +22,9 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
     os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-32bytes!!")
     os.environ.setdefault("PASSWORD_PEPPER", "test-pepper-for-pytest")
+    # A suíte cobre o comportamento normal da integração; testes específicos
+    # ativam o kill switch explicitamente.
+    os.environ.setdefault("MOLONI_BLOCKED", "false")
 
 # Arquivos do baseline que são contrato HTTP/schema mas não adotam ainda a
 # convenção de pytestmark. Novos arquivos NÃO precisam entrar aqui.
