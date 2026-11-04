@@ -273,6 +273,14 @@ function formatCpfCnpj(value: string): string {
     .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
 }
 
+// Rótulo do "Tipo de cliente" (Portugal). Só exibição: o código salvo continua o mesmo.
+const CLIENT_TYPE_LABELS: Record<NonNullable<ClientCreate['client_type']>, string> = {
+  pvp: 'PVP',
+  arquiteto: 'ARQUITETO/INTERIOR DESIGN',
+  lojista: 'LOJISTA/DIST/FFE',
+  corporativo: 'Corporativo',
+}
+
 function AddressFields({ form, setForm, market, portugalClient = false }: {
   form: ClientCreate
   setForm: (v: ClientCreate) => void
@@ -333,10 +341,9 @@ function AddressFields({ form, setForm, market, portugalClient = false }: {
               required
             >
               <option value="">Selecione</option>
-              <option value="pvp">PVP</option>
-              <option value="arquiteto">Arquiteto</option>
-              <option value="lojista">Lojista</option>
-              <option value="corporativo">Corporativo</option>
+              {Object.entries(CLIENT_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
             </select>
             <span className="text-[11px] text-muted">Informativo; não altera preços, descontos ou permissões.</span>
           </label>
@@ -2387,7 +2394,7 @@ function PeopleTab<T extends Client | Representative>({
                 </div>
                 <div className="mt-2 space-y-0.5 text-xs text-ink-2">
                   {isPortugalClient && item.contact_name && <p className="truncate">Contato: {item.contact_name}</p>}
-                  {isPortugalClient && item.client_type && <p className="capitalize text-muted-2">{item.client_type}</p>}
+                  {isPortugalClient && item.client_type && <p className="text-muted-2">{CLIENT_TYPE_LABELS[item.client_type] ?? item.client_type}</p>}
                   <p>{item.phone}</p>
                   <p className="truncate text-muted-2">{item.email || tx('Sem e-mail')}</p>
                   {canViewCreator && (
@@ -2489,7 +2496,7 @@ function PeopleTab<T extends Client | Representative>({
               {isPortugalClient && (
                 <>
                   <div><span className="text-xs text-muted block">Contato</span><span className="text-ink-2">{viewing.contact_name || '—'}</span></div>
-                  <div><span className="text-xs text-muted block">Tipo de cliente</span><span className="text-ink-2 capitalize">{viewing.client_type || '—'}</span></div>
+                  <div><span className="text-xs text-muted block">Tipo de cliente</span><span className="text-ink-2">{viewing.client_type ? (CLIENT_TYPE_LABELS[viewing.client_type] ?? viewing.client_type) : '—'}</span></div>
                   <div className="col-span-2"><span className="text-xs text-muted block">Observação</span><span className="text-ink-2 whitespace-pre-wrap">{viewing.observation || '—'}</span></div>
                 </>
               )}
