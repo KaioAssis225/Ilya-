@@ -228,6 +228,9 @@ class OrderItem(Base, TimestampMixin):
     observacao: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Comentário livre do usuário sobre este item (order_item_comment_r27).
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_special: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    special_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    special_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
 
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 
@@ -237,5 +240,20 @@ class OrderItem(Base, TimestampMixin):
             name="ck_order_items_area_dims_pair",
         ),
         CheckConstraint("area_pieces >= 1", name="ck_order_items_area_pieces_positive"),
+        CheckConstraint(
+            "(is_special AND special_code IS NOT NULL AND special_percent IS NOT NULL) OR "
+            "(NOT is_special AND special_code IS NULL AND special_percent IS NULL)",
+            name="ck_order_items_special_consistent",
+        ),
+        CheckConstraint(
+            "special_percent IS NULL OR (special_percent > -100 AND special_percent <= 1000)",
+            name="ck_order_items_special_percent_valid",
+        ),
+        Index(
+            "uq_order_items_order_special_code",
+            "order_id", "special_code",
+            unique=True,
+            postgresql_where=text("special_code IS NOT NULL"),
+        ),
         Index("ix_order_items_order_id", "order_id"),
     )

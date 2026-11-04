@@ -97,7 +97,7 @@ export function CopyOrderModal({ order, english, onClose }: {
                   <label className="flex items-start gap-2 rounded-md px-1 py-1.5 text-sm hover:bg-bg-2">
                     <input type="checkbox" className="mt-0.5" checked={selected.has(item.id)} onChange={() => toggle(item.id)} />
                     <span className="min-w-0">
-                      <span className="font-mono text-xs text-gold">{item.product_code}</span>
+                      <span className="font-mono text-xs text-gold">{item.special_code ?? item.product_code}</span>{item.is_special && <span className="ml-1 rounded bg-gold-soft px-1 py-0.5 text-[9px] font-bold text-gold">ESPECIAL</span>}
                       <span className="block truncate text-ink-2">{item.description}</span>
                     </span>
                     <span className="ml-auto whitespace-nowrap text-xs text-ink-3">{t('Qtd', 'Qty')} {item.qty}</span>

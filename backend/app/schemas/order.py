@@ -63,6 +63,9 @@ class OrderItemCreate(BaseModel):
     source_order_item_id: Optional[uuid.UUID] = None
     preserve_optional_choices: bool = False
     comment: Optional[str] = Field(None, max_length=1000)
+    is_special: bool = False
+    special_code: Optional[str] = Field(None, max_length=100)
+    special_percent: Optional[Decimal] = Field(None, gt=Decimal("-100"), le=Decimal("1000"), decimal_places=2)
 
     @field_validator("comment")
     @classmethod
@@ -95,6 +98,17 @@ class OrderItemCreate(BaseModel):
             raise ValueError("Informe largura e profundidade do tapete.")
         if not has_width and not has_depth and self.qty is None:
             raise ValueError("Informe a quantidade do item.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_special_consistency(self) -> "OrderItemCreate":
+        if self.is_special:
+            if self.special_percent is None:
+                raise ValueError("Informe a percentagem do especial / Provide the special percentage.")
+            if self.discount != 0:
+                raise ValueError("O desconto deve ser 0 para itens especiais / Discount must be 0 for special items.")
+        elif self.special_code is not None or self.special_percent is not None:
+            raise ValueError("Campos de especial só podem ser usados em itens especiais / Special fields require is_special.")
         return self
 
 
@@ -152,6 +166,9 @@ class OrderItemRead(BaseModel):
     currency: str = "BRL"
     observacao: Optional[str] = None
     comment: Optional[str] = None
+    is_special: bool = False
+    special_code: Optional[str] = None
+    special_percent: Optional[Decimal] = None
     # Opcionais ainda sem escolha (só preenchido em orçamento EU em aberto).
     pending_optionals: List[str] = Field(default_factory=list)
     created_at: datetime
@@ -228,6 +245,9 @@ class OrderStageUpdate(BaseModel):
 
 class OrderListItemRead(BaseModel):
     product_code: str
+    is_special: bool = False
+    special_code: Optional[str] = None
+    special_percent: Optional[Decimal] = None
     qty: float
     area_width_m: Optional[Decimal] = None
     area_depth_m: Optional[Decimal] = None

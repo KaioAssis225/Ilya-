@@ -37,7 +37,7 @@ import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { priceListLabel } from '../lib/priceListLabels'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
-import { calculateLinePricing, lineTax, roundMoney } from '../lib/linePricing'
+import { calculateLinePricing, calculateSpecialLinePricing, lineTax, roundMoney } from '../lib/linePricing'
 import { canSetVatExemption, VAT_EXEMPTION_REASONS } from '../lib/vatExemption'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -392,6 +392,10 @@ interface CartItem {
   area_depth_m?: number | null
   area_pieces?: number
   discount: number
+  is_special?: boolean
+  special_code?: string | null
+  special_percent?: number | null
+  displayDescription?: string
   opt_categories: Partial<Record<string, string>>
   optional_choices: OptionalChoiceInput[]
   source_order_item_id?: string
@@ -543,14 +547,15 @@ function ItemCommentToggle({ comment, label, english, onToggle }: {
   </button>
 }
 
-function ItemCommentBox({ comment, english, onChange }: {
+function ItemCommentBox({ comment, english, onChange, required = false }: {
   comment: string | undefined
   english: boolean
   onChange: (comment: string) => void
+  required?: boolean
 }) {
   if (comment === undefined) return null
   return <label className="mt-2 block">
-    <span className="type-label text-xs block mb-1">{english ? 'Item comment' : 'Comentário do item'}</span>
+    <span className="type-label text-xs block mb-1">{english ? 'Item comment' : 'Comentário do item'}{required && <span className="ml-1 text-danger" aria-label={english ? 'required' : 'obrigatório'}>*</span>}</span>
     <textarea
       value={comment}
       onChange={event => onChange(event.target.value)}
@@ -786,7 +791,7 @@ function RugMeasureFields({ item, english, locale, qtyLimitWarning, onAreaDimens
 }
 
 function MobileCartCard({
-  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, onSpecial, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -805,6 +810,7 @@ function MobileCartCard({
   onEditApplications: () => void
   onToggleComment: () => void
   onCommentChange: (comment: string) => void
+  onSpecial?: () => void
   priceProfile: string
   catLabel: (code: string) => string
   currency: string
@@ -814,7 +820,9 @@ function MobileCartCard({
   const measurementMarket = currency === 'EUR' ? 'EU' : 'BR'
   const allowCustom = allowsCustomOption(measurementMarket) && optionalsReady
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
-  const pricing = calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
+  const pricing = item.is_special
+    ? calculateSpecialLinePricing(effectivePrice(item._product, priceProfile), item.special_percent ?? 0, item.qty)
+    : calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
   const hasDiscount = item.discount > 0
   const soldByArea = isAreaProduct(item._product)
   const pieces = item.area_pieces ?? 1
@@ -835,8 +843,8 @@ function MobileCartCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <span className="type-code">{item.product_code}</span>
-              <p className="text-xs font-semibold text-ink leading-snug mt-0.5 line-clamp-2">{item._product.description}</p>
+              <span className="type-code">{item.special_code ?? item.product_code}</span>{item.is_special && <span className="ml-2 rounded bg-gold-soft px-1.5 py-0.5 text-[10px] font-bold text-gold">ESPECIAL</span>}
+              <p className="text-xs font-semibold text-ink leading-snug mt-0.5 line-clamp-2">{item.displayDescription ?? item._product.description}</p>
               {!item.preserve_optional_choices && <ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} />}
               {item._product.components.length > 0 && (
                 <ul className="mt-0.5 space-y-0.5">
@@ -872,7 +880,7 @@ function MobileCartCard({
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
           </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} incompleteAllowed={measurementMarket === 'EU'} />}
-          <ItemCommentBox comment={item.comment} english={isEnglish} onChange={onCommentChange} />
+          <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} onChange={onCommentChange} />
         </div>
       </div>
 
@@ -904,22 +912,25 @@ function MobileCartCard({
           </div>
         </div>
 
-        {/* Desconto percentual */}
+        {item.is_special && <span className="rounded bg-gold-soft px-1.5 py-1 text-[10px] font-bold text-gold">ESPECIAL</span>}
+        {!item.is_special && onSpecial && <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={onSpecial}>Especial</button>}
+        {/* Desconto / especial percentual */}
         <div className="flex items-center gap-1.5">
           <label htmlFor={`mobile-disc-${item.line_id}`} className="type-label">
-            {isEnglish ? 'Disc. %' : 'Desc. %'}
+            {item.is_special ? (isEnglish ? 'Special %' : 'Especial %') : (isEnglish ? 'Disc. %' : 'Desc. %')}
           </label>
           <NumberField
             id={`mobile-disc-${item.line_id}`}
-            min={0}
-            max={maxDiscount}
+            min={item.is_special ? -99.99 : 0}
+            max={item.is_special ? 1000 : maxDiscount}
             step="any"
-            value={item.discount}
+            value={item.is_special ? (item.special_percent ?? 0) : item.discount}
+            inputMode={item.is_special ? 'text' : undefined}
             placeholder="0"
-            disabled={maxDiscount <= 0}
-            aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
+            disabled={!item.is_special && maxDiscount <= 0}
+            aria-label={item.is_special ? (isEnglish ? `Special percentage on ${item._product.description}` : `Especial em ${item._product.description}`) : (isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`)}
             className="input w-16 text-center text-sm px-1.5 py-1.5 disabled:opacity-50"
-            onValueChange={(v) => onDiscountChange(item.line_id, Math.min(maxDiscount, Math.max(0, v)))}
+            onValueChange={(v) => onDiscountChange(item.line_id, item.is_special ? Math.min(1000, Math.max(-99.99, v)) : Math.min(maxDiscount, Math.max(0, v)))}
           />
         </div>
 
@@ -933,15 +944,15 @@ function MobileCartCard({
         <dd className="text-right font-semibold text-ink-2 tabular-nums">
           <SafePrice value={pricing.basePrice} currency={currency} locale={locale} />{perUnit && <span className="font-normal text-muted">{perUnit}</span>}
         </dd>
-        {hasDiscount && (
+        {(item.is_special || hasDiscount) && (
           <>
-            <dt className="text-muted">{isEnglish ? `Unit discount (${item.discount}%)` : `Desconto unitário (${item.discount}%)`}</dt>
+            <dt className="text-muted">{item.is_special ? (isEnglish ? `Special (${item.special_percent ?? 0}%)` : `Especial (${item.special_percent ?? 0}%)`) : (isEnglish ? `Unit discount (${item.discount}%)` : `Desconto unitário (${item.discount}%)`)}</dt>
             <dd className="text-right tabular-nums text-muted">
-              <span aria-hidden="true">− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />{perUnit}
+              {item.is_special ? '—' : <><span aria-hidden="true">− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />{perUnit}</>}
             </dd>
           </>
         )}
-        <dt className="text-muted">{isEnglish ? 'Unit price after discount' : 'Valor unitário com desconto'}</dt>
+        <dt className="text-muted">{item.is_special ? (isEnglish ? 'Special unit price' : 'Valor unitário especial') : (isEnglish ? 'Unit price after discount' : 'Valor unitário com desconto')}</dt>
         <dd className="text-right font-semibold text-ink tabular-nums">
           <SafePrice value={pricing.netUnitPrice} currency={currency} locale={locale} />{perUnit && <span className="font-normal text-muted">{perUnit}</span>}
         </dd>
@@ -1520,6 +1531,10 @@ export default function OrcamentoPage() {
               area_depth_m: item.area_depth_m == null ? null : Number(item.area_depth_m),
               area_pieces: Number(item.area_pieces ?? 1),
               discount: Number(item.discount),
+              is_special: !!item.is_special,
+              special_code: item.special_code,
+              special_percent: item.special_percent == null ? null : Number(item.special_percent),
+              displayDescription: item.description,
               opt_categories: item.opt_categories,
               optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice))).map(choice => isCustomChoice(choice)
                 ? { application_id: choice.application_id!, custom_text: choice.custom_text }
@@ -1674,7 +1689,34 @@ export default function OrcamentoPage() {
   // Desconto por item — mesmo caminho para tabela desktop e cartão mobile. O
   // chamador já limita ao teto do usuário; o servidor revalida no envio.
   function updateDiscount(lineId: string, discount: number) {
-    setCart((prev) => prev.map((i) => i.line_id === lineId ? { ...i, discount } : i))
+    setCart((prev) => prev.map((i) => i.line_id === lineId
+      ? i.is_special ? { ...i, special_percent: discount, discount: 0 } : { ...i, discount }
+      : i))
+  }
+
+  function addSpecial(lineId: string) {
+    if (market !== 'EU' || isClientUser) return
+    setCart(previous => {
+      const parent = previous.find(item => item.line_id === lineId)
+      if (!parent || parent.is_special) return previous
+      const used = new Set(previous
+        .filter(item => item.is_special && item.product_code === parent.product_code)
+        .map(item => item.special_code))
+      let sequence = 1
+      while (used.has(`${parent.product_code}-E${sequence}`)) sequence += 1
+      const specialCode = `${parent.product_code}-E${sequence}`
+      return [...previous.slice(0, previous.indexOf(parent) + 1), {
+        ...parent,
+        line_id: crypto.randomUUID(),
+        is_special: true,
+        special_code: specialCode,
+        special_percent: 0,
+        discount: 0,
+        displayDescription: `${parent.displayDescription ?? parent._product.description} - ESPECIAL`,
+        comment: undefined,
+        source_order_item_id: undefined,
+      }, ...previous.slice(previous.indexOf(parent) + 1)]
+    })
   }
 
   function updateComment(lineId: string, comment: string | undefined) {
@@ -1703,8 +1745,9 @@ export default function OrcamentoPage() {
   const { data: productTypes = [] } = useProductTypes()
 
   // Como o servidor: soma de subtotais de linha já arredondados.
-  const lineSubtotal = (i: CartItem) =>
-    calculateLinePricing(effectivePrice(i._product, priceProfile), i.discount, i.qty).subtotal
+  const lineSubtotal = (i: CartItem) => (i.is_special
+    ? calculateSpecialLinePricing(effectivePrice(i._product, priceProfile), i.special_percent ?? 0, i.qty).subtotal
+    : calculateLinePricing(effectivePrice(i._product, priceProfile), i.discount, i.qty).subtotal)
 
   const total = roundMoney(cart.reduce((sum, i) => sum + lineSubtotal(i), 0))
 
@@ -1730,7 +1773,10 @@ export default function OrcamentoPage() {
     const depth = item.area_depth_m
     const base = {
       product_code,
-      discount: discount || 0,
+      is_special: !!item.is_special,
+      special_code: item.is_special ? item.special_code ?? null : null,
+      special_percent: item.is_special ? item.special_percent ?? 0 : null,
+      discount: item.is_special ? 0 : discount || 0,
       opt_categories: opt_categories as Record<string, string>,
       optional_choices,
       source_order_item_id,
@@ -2120,6 +2166,7 @@ export default function OrcamentoPage() {
                       onEditApplications={() => editApplications(item.line_id)}
                       onToggleComment={() => toggleComment(item.line_id)}
                       onCommentChange={comment => updateComment(item.line_id, comment)}
+                      onSpecial={!isClientUser && market === 'EU' && !item.is_special ? () => addSpecial(item.line_id) : undefined}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
                       currency={currency}
@@ -2132,7 +2179,9 @@ export default function OrcamentoPage() {
                 <ul className="hidden lg:block divide-y divide-line @container">
                   {filteredCart.map((item) => {
                     const ipiRate = taxRate(item._product)
-                    const pricing = calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
+                    const pricing = item.is_special
+                      ? calculateSpecialLinePricing(effectivePrice(item._product, priceProfile), item.special_percent ?? 0, item.qty)
+                      : calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
                     // Brasil: IPI entra na linha. Portugal: IVA só no fecho
                     // (Subtotal → IVA → Total), como numa fatura.
                     const lineTotal = market === 'EU' ? pricing.subtotal : roundMoney(pricing.subtotal + lineTax(pricing.subtotal, ipiRate))
@@ -2154,8 +2203,8 @@ export default function OrcamentoPage() {
                               </div>
                           }
                           <div className="flex-1 min-w-0">
-                            <span className="type-code">{item.product_code}</span>
-                            <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item._product.description}</span>
+                            <span className="type-code">{item.special_code ?? item.product_code}</span>{item.is_special && <span className="ml-2 rounded bg-gold-soft px-1.5 py-0.5 text-[10px] font-bold text-gold">ESPECIAL</span>}
+                            <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item.displayDescription ?? item._product.description}</span>
                             {!item.preserve_optional_choices && <div><ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} /></div>}
                             {item._product.components.length > 0 && (
                               <ul className="mt-0.5 space-y-0.5">
@@ -2182,13 +2231,14 @@ export default function OrcamentoPage() {
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
                             {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market) && optionalsReady} incompleteAllowed={market === 'EU'} />}
-                            <ItemCommentBox comment={item.comment} english={isEnglish} onChange={comment => updateComment(item.line_id, comment)} />
+                            <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} onChange={comment => updateComment(item.line_id, comment)} />
                           </div>
                         </div>
 
                         {/* Ações: no canto do bloco do produto quando a linha empilha; ao lado dos valores no layout largo. */}
                         <div className="col-start-2 row-start-1 flex items-start @min-[960px]:col-start-3 @min-[960px]:pt-8">
-                          <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
+                          <ItemCommentToggle comment={item.comment} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} />
+                          {!isClientUser && market === 'EU' && !item.is_special && <button type="button" className="btn-secondary mx-1 h-11 px-2 text-xs" onClick={() => addSpecial(item.line_id)}>Especial</button>}
                           <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -2218,17 +2268,18 @@ export default function OrcamentoPage() {
                             </div>
                           </div>
                           <div className="w-[5.75rem]">
-                            <span className={`${LINE_LABEL} justify-center text-center`}>{isEnglish ? 'Discount (%)' : 'Desconto (%)'}</span>
+                            <span className={`${LINE_LABEL} justify-center text-center`}>{item.is_special ? (isEnglish ? 'Special (%)' : 'Especial (%)') : (isEnglish ? 'Discount (%)' : 'Desconto (%)')}</span>
                             <NumberField
-                              min={0} max={itemMaxDiscount(item)}
-                              aria-label={isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`}
+                              min={item.is_special ? -99.99 : 0} max={item.is_special ? 1000 : itemMaxDiscount(item)}
+                              aria-label={item.is_special ? (isEnglish ? `Special percentage on ${item._product.description}` : `Especial em ${item._product.description}`) : (isEnglish ? `Discount on ${item._product.description}` : `Desconto em ${item._product.description}`)}
                               className="input mx-auto block h-9 w-16 text-center text-xs border border-line rounded-lg px-1.5 py-1 bg-white text-ink tabular-nums"
-                              value={item.discount}
+                              value={item.is_special ? (item.special_percent ?? 0) : item.discount}
+                              inputMode={item.is_special ? 'text' : undefined}
                               placeholder="0"
-                              disabled={itemMaxDiscount(item) <= 0}
-                              onValueChange={(v) => updateDiscount(item.line_id, Math.min(itemMaxDiscount(item), Math.max(0, v)))}
+                              disabled={!item.is_special && itemMaxDiscount(item) <= 0}
+                              onValueChange={(v) => updateDiscount(item.line_id, item.is_special ? Math.min(1000, Math.max(-99.99, v)) : Math.min(itemMaxDiscount(item), Math.max(0, v)))}
                             />
-                            {item.discount > 0 && (
+                            {item.is_special ? <p className="mt-1 text-center text-[11px] leading-none tabular-nums text-ink-2 whitespace-nowrap">{item.special_percent ?? 0}%</p> : item.discount > 0 && (
                               <p className="mt-1 text-center text-[11px] leading-none tabular-nums text-ink-2 whitespace-nowrap">
                                 <span aria-hidden="true">− </span><SafePrice value={pricing.unitDiscount} currency={currency} locale={locale} />
                               </p>

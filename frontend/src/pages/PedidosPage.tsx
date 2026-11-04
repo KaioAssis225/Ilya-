@@ -41,7 +41,7 @@ function itemsSummary(order: OrderSummary) {
   const locale = order.market_code === 'EU' ? 'en-GB' : 'pt-BR'
   return order.items.map((item) => {
     const qty = Number(item.qty)
-    return `${item.product_code}(${Number.isInteger(qty) ? qty : formatArea(qty, locale)})`
+    return `${item.special_code ?? item.product_code}(${Number.isInteger(qty) ? qty : formatArea(qty, locale)})`
   }).join(', ')
 }
 
@@ -102,7 +102,7 @@ function AuditTimeline({ history }: { history: OrderHistory[] }) {
             </div>
             {h.details && <p className="text-xs text-ink-3 mt-0.5 break-words">{h.action === 'stage_changed' ? (describeStageChange(h.details, false) ?? h.details) : h.details}</p>}
             {h.items_snapshot?.map((item, itemIndex) => <div key={itemIndex} className="text-xs text-ink-3 mt-1">
-              <strong>{item.product_code}</strong>
+              <strong>{item.special_code ?? item.product_code}</strong>
               {Object.entries(item.legacy_optionals).map(([category, value]) => <span key={category} className="block">{category}: {value}</span>)}
               {item.applications.map((choice, choiceIndex) => <span key={choiceIndex} className="block">
                 {choice.component_name ? `${choice.component_name} — ` : ''}{choice.application_name}: {choiceValue(choice, false)}
@@ -293,6 +293,14 @@ function OrderDetailModal({
     ? viewText(
         `Escolha os opcionais pendentes antes de finalizar: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
         `Choose the pending options before finalising: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
+      )
+    : ''
+  // Especial sem comentário salva, mas não vira pedido (o servidor responde 409).
+  const specialsWithoutComment = order.is_finalized ? [] : order.items.filter(item => item.is_special && !item.comment?.trim())
+  const specialReason = specialsWithoutComment.length > 0
+    ? viewText(
+        `Adicione comentário aos itens especiais antes de finalizar: ${specialsWithoutComment.map(item => item.special_code ?? item.product_code).join(', ')}.`,
+        `Add a comment to the special items before finalising: ${specialsWithoutComment.map(item => item.special_code ?? item.product_code).join(', ')}.`,
       )
     : ''
   const { data: products = [] } = useProductsByCodes(
@@ -623,6 +631,7 @@ function OrderDetailModal({
               )}
             </div>
 
+            {specialReason && <div role="alert" className="mb-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">{specialReason}</div>}
             {pendingReason && <div role="alert" className="mb-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">{pendingReason}</div>}
             <div className="flex items-center justify-between gap-3 mb-2">
               <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">{viewText('Itens', 'Items')}</h4>
@@ -669,7 +678,7 @@ function OrderDetailModal({
                           }
                         </td>
                         <td className="px-3 py-2">
-                          <span className="text-gold font-mono text-xs">{item.product_code}</span>
+                          <span className="text-gold font-mono text-xs">{item.special_code ?? item.product_code}</span>
                           <div className="text-ink-2 text-xs mt-0.5 max-w-[150px] truncate">{isEuOrder ? (products.find(p => p.product_code === item.product_code)?.description_en ?? item.description) : item.description}</div>
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                           {item.comment && <div className="text-[10px] text-ink-2 mt-0.5 max-w-[220px] whitespace-pre-line break-words">

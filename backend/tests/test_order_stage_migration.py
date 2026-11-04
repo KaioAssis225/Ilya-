@@ -31,4 +31,4 @@ def test_free_country_iroko_is_the_single_head_after_vat_exempt():
     free_country_iroko = script.get_revision("eu_free_country_iroko_r37")
     assert free_country_iroko is not None
     assert free_country_iroko.down_revision == "order_vat_exempt_r36"
-    assert script.get_heads() == ["eu_free_country_iroko_r37"]
+    assert script.get_heads() == ["order_item_special_r38"]

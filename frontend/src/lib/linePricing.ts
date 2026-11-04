@@ -41,6 +41,18 @@ export function calculateLinePricing(basePrice: number, discountPercent: number,
   }
 }
 
+/** Prévia da linha especial: o percentual altera o preço nos dois sentidos. */
+export function calculateSpecialLinePricing(basePrice: number, specialPercent: number, qty: number): LinePricing {
+  const price = roundMoney(basePrice)
+  const netUnitPrice = roundMoney(price * (100 + (specialPercent || 0)) / 100)
+  return {
+    basePrice: price,
+    unitDiscount: 0,
+    netUnitPrice,
+    subtotal: roundMoney(qty * netUnitPrice),
+  }
+}
+
 /** IVA/IPI de uma linha sobre o subtotal líquido, arredondado como o servidor. */
 export function lineTax(subtotal: number, ratePercent: number): number {
   return roundMoney(subtotal * ratePercent / 100)
