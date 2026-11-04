@@ -62,6 +62,52 @@ describe('PedidosPage', () => {
     expect(screen.getAllByLabelText(`Excluir orçamento ${summary.code}`).length).toBeGreaterThan(0)
   })
 
+  it('keeps copy visible and groups the other detail actions in the ellipsis menu', async () => {
+    const user = userEvent.setup()
+    const summary = makeSummary({ items: [{ product_code: 'POL-001', qty: 1 }] })
+    const detail: Order = {
+      ...summary,
+      price_list_code: 'lojista',
+      locale: 'pt-BR',
+      total_ipi: 0,
+      external_code: null,
+      notes: null,
+      updated_at: summary.created_at,
+      history: [],
+      items: [{
+        id: 'item-1', order_id: summary.id, product_code: 'POL-001', description: 'Poltrona teste',
+        is_circular: false, altura: 0.8, largura: 0.7, profundidade: 0.75,
+        opt_categories: {}, optional_choices: [], qty: 1, unit_price: 100, discount: 0,
+        ipi_rate: 0, ipi_value: 0, tax_label: 'IPI', currency: 'BRL', observacao: null,
+        created_at: summary.created_at, updated_at: summary.created_at,
+      }],
+    }
+    setupHandlers(summary)
+    server.use(
+      http.get('*/orders/order-1', () => HttpResponse.json(detail)),
+      http.post('*/products/batch', () => HttpResponse.json([])),
+      http.get('*/optionals', () => HttpResponse.json([])),
+    )
+
+    renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    await screen.findAllByText(summary.code)
+    await user.click(screen.getByLabelText(`Ver detalhes do orçamento ${summary.code}`))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'Copiar orçamento' })).toBeVisible()
+    expect(within(dialog).queryByRole('menu')).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Mais ações' }))
+    const menu = within(dialog).getByRole('menu', { name: 'Ações do orçamento' })
+    expect(within(menu).getByRole('menuitem', { name: 'Finalizar orçamento' })).toBeVisible()
+    expect(within(menu).getByRole('menuitem', { name: 'Editar orçamento' })).toBeVisible()
+    expect(within(menu).getByRole('menuitem', { name: 'Cancelar orçamento' })).toBeVisible()
+
+    await user.keyboard('{Escape}')
+    expect(within(dialog).queryByRole('menu')).not.toBeInTheDocument()
+    expect(dialog).toBeVisible()
+  })
+
   it('admin with finalized order hides Editar/Finalizar/Cancelar but keeps Excluir', async () => {
     const summary = makeSummary({
       is_finalized: true,
