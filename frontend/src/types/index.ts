@@ -342,6 +342,12 @@ export interface OrderSummaryItem {
   area_pieces?: number
 }
 
+/** Resposta de POST /orders/{id}/copy: o orçamento novo e os itens não copiados. */
+export interface OrderCopyResult {
+  order: Order
+  skipped: { product_code: string; reason: string }[]
+}
+
 export type OrderStage = 'production' | 'delivered'
 
 export interface OrderSummary {

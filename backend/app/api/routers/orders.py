@@ -42,7 +42,7 @@ from app.models.product_type import ProductType
 from app.models.user import User, UserRole
 from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
-from app.schemas.order import is_legacy_custom, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderStageUpdate, OrderUpdate, OrderHistoryRead
+from app.schemas.order import is_legacy_custom, OptionalChoiceCreate, OrderCopyRead, OrderCopyRequest, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderStageUpdate, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.services.area_products import area_from_dimensions, is_area_product
 
@@ -994,6 +994,22 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
+    order, _ = await _create_order_core(payload, db, current_user, principal)
+    return order
+
+
+async def _create_order_core(
+    payload: OrderCreate,
+    db: AsyncSession,
+    current_user: User,
+    principal: MarketPrincipal,
+    *,
+    copy_source: Order | None = None,
+) -> tuple[Order, list[dict]]:
+    """Cria o orçamento. Em modo cópia (`copy_source`) o item que não pode ser
+    copiado (produto inativo, sem preço, fora do catálogo do cliente...) é
+    pulado e devolvido em `skipped`; o desconto respeita o teto atual."""
+    skipped: list[dict] = []
     if not _can_create_order(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1141,79 +1157,109 @@ async def create_order(
     total_ipi = _ZERO
     order_items: list[OrderItem] = []
     source_items = {item.id: item for item in source_order.items} if source_order else {}
+    catalog_scope = order_catalog_scope(current_user, client, rep)
     for item_in in payload.items:
-        product = product_map.get(item_in.product_code)
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
-        if product.id not in available_ids:
-            raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
-        if product.id not in price_map:
-            raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
-        if item_in.source_order_item_id and item_in.source_order_item_id not in source_items:
-            raise HTTPException(status_code=422, detail="Item de origem inválido para esta revisão.")
-        optional_choices = await _resolve_item_choices(
-            db, product, market_code, item_in,
-            source_items.get(item_in.source_order_item_id),
-            require_complete=market_code != "EU",
-        )
-        product_type = type_map.get(product.type)
-        if market_code == "EU":
-            vat_rate, vat_status = product_vat.get(product.id, (None, None))
-            ipi_rate = _resolve_eu_vat(
-                product.product_code, vat_rate, vat_status,
-                group_vat.get(product_type.group_id) if product_type else None,
+        if copy_source is not None:
+            copy_product = product_map.get(item_in.product_code)
+            skip_reason = None
+            if copy_product is None:
+                skip_reason = "Produto inativo ou fora do catálogo."
+            elif copy_product.id not in available_ids:
+                skip_reason = "Produto indisponível neste mercado."
+            elif copy_product.id not in price_map:
+                skip_reason = f"Produto sem preço na tabela {price_list.name}."
+            elif not allows(catalog_scope, copy_product.catalog_id):
+                skip_reason = "Produto fora do catálogo liberado para este cliente."
+            if skip_reason:
+                skipped.append({"product_code": item_in.product_code, "reason": skip_reason})
+                continue
+        try:
+            product = product_map.get(item_in.product_code)
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
+            if product.id not in available_ids:
+                raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
+            if product.id not in price_map:
+                raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
+            if item_in.source_order_item_id and item_in.source_order_item_id not in source_items:
+                raise HTTPException(status_code=422, detail="Item de origem inválido para esta revisão.")
+            optional_choices = await _resolve_item_choices(
+                db, product, market_code, item_in,
+                source_items.get(item_in.source_order_item_id),
+                require_complete=market_code != "EU",
             )
-        else:
-            ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-        qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
-            product, item_in, source_items.get(item_in.source_order_item_id)
-        )
-        unit_price, discount, subtotal, ipi_rate, ipi_value = (
-            _calculate_order_line(
-                unit_price=price_map[product.id],
-                qty=qty,
-                discount=item_in.discount or _ZERO,
-                max_discount=max_discount,
+            product_type = type_map.get(product.type)
+            if market_code == "EU":
+                vat_rate, vat_status = product_vat.get(product.id, (None, None))
+                ipi_rate = _resolve_eu_vat(
+                    product.product_code, vat_rate, vat_status,
+                    group_vat.get(product_type.group_id) if product_type else None,
+                )
+            else:
+                ipi_rate = _resolve_br_ipi(product.product_code, product_type)
+            qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
+                product, item_in, source_items.get(item_in.source_order_item_id)
+            )
+            unit_price, discount, subtotal, ipi_rate, ipi_value = (
+                _calculate_order_line(
+                    unit_price=price_map[product.id],
+                    qty=qty,
+                    discount=(
+                        min(item_in.discount or _ZERO, max_discount)
+                        if copy_source is not None
+                        else item_in.discount or _ZERO
+                    ),
+                    max_discount=max_discount,
+                    product_code=product.product_code,
+                    tax_rate=ipi_rate,
+                )
+            )
+            total += subtotal
+            total_ipi += ipi_value
+
+            localized_description = product.description
+            if market_code == "EU":
+                pt_pt, en = localized_descriptions.get(product.id, (None, None))
+                localized_description = (en if payload.locale == "en-GB" else pt_pt) or product.description
+            order_items.append(OrderItem(
+                id=uuid.uuid4(),
                 product_code=product.product_code,
-                tax_rate=ipi_rate,
-            )
+                description=localized_description,
+                is_circular=product.is_circular,
+                altura=product.altura,
+                largura=product.largura,
+                profundidade=product.profundidade,
+                opt_categories=item_in.opt_categories,
+                optional_choices=optional_choices,
+                qty=qty,
+                sold_by_area=sold_by_area,
+                area_width_m=width_m,
+                area_depth_m=depth_m,
+                area_pieces=area_pieces,
+                unit_price=unit_price,
+                discount=discount,
+                ipi_rate=ipi_rate,
+                ipi_value=ipi_value,
+                tax_label=context.tax_label,
+                currency=context.currency,
+                observacao=product.observacao,
+                comment=item_in.comment,
+            ))
+        except HTTPException as exc:
+            if copy_source is None:
+                raise
+            skipped.append({"product_code": item_in.product_code, "reason": str(exc.detail)})
+
+    if copy_source is not None and not order_items:
+        raise HTTPException(
+            status_code=422,
+            detail="Nenhum item pôde ser copiado: "
+            + "; ".join(f"{row['product_code']}: {row['reason']}" for row in skipped),
         )
-        total += subtotal
-        total_ipi += ipi_value
-
-        localized_description = product.description
-        if market_code == "EU":
-            pt_pt, en = localized_descriptions.get(product.id, (None, None))
-            localized_description = (en if payload.locale == "en-GB" else pt_pt) or product.description
-        order_items.append(OrderItem(
-            id=uuid.uuid4(),
-            product_code=product.product_code,
-            description=localized_description,
-            is_circular=product.is_circular,
-            altura=product.altura,
-            largura=product.largura,
-            profundidade=product.profundidade,
-            opt_categories=item_in.opt_categories,
-            optional_choices=optional_choices,
-            qty=qty,
-            sold_by_area=sold_by_area,
-            area_width_m=width_m,
-            area_depth_m=depth_m,
-            area_pieces=area_pieces,
-            unit_price=unit_price,
-            discount=discount,
-            ipi_rate=ipi_rate,
-            ipi_value=ipi_value,
-            tax_label=context.tax_label,
-            currency=context.currency,
-            observacao=product.observacao,
-            comment=item_in.comment,
-        ))
-
     catalog = await _order_catalog(
         db,
-        [product_map[item_in.product_code] for item_in in payload.items],
-        order_catalog_scope(current_user, client, rep),
+        [product_map[order_item.product_code] for order_item in order_items],
+        catalog_scope,
     )
     total = _money(total)
     total_ipi = _money(total_ipi)
@@ -1245,6 +1291,7 @@ async def create_order(
     db.add(OrderHistory(
         id=uuid.uuid4(), order_id=order.id, user_id=current_user.id,
         action="created", items_snapshot=_items_history_snapshot(order_items),
+        details=f"copiado de {copy_source.code}" if copy_source is not None else None,
     ))
     try:
         db.add(order)
@@ -1259,7 +1306,99 @@ async def create_order(
         raise HTTPException(status_code=500, detail="Falha ao criar o pedido. Tente novamente.")
     order = await _reload_order_for_response(db, order.id)
     logger.info("Pedido criado: code=%s orc=%s total=%.2f user_id=%s", code, orc_id, order.total_value, current_user.id)
-    return order
+    return order, skipped
+
+
+def _copy_item_payload(item: OrderItem) -> OrderItemCreate:
+    """Item de origem → payload de criação. Só entram escolhas, medidas e
+    comentário: preço, imposto e totais são recalculados pelo servidor."""
+    return OrderItemCreate(
+        product_code=item.product_code,
+        qty=None if item.sold_by_area else item.qty,
+        area_width_m=item.area_width_m if item.sold_by_area else None,
+        area_depth_m=item.area_depth_m if item.sold_by_area else None,
+        area_pieces=(item.area_pieces or 1) if item.sold_by_area else None,
+        discount=item.discount or _ZERO,
+        opt_categories=dict(item.opt_categories or {}),
+        optional_choices=[
+            OptionalChoiceCreate(
+                application_id=choice.application_id,
+                optional_id=choice.optional_id,
+                custom_text=choice.custom_text,
+            )
+            for choice in item.optional_choices
+            if choice.application_id is not None
+        ],
+        comment=item.comment,
+    )
+
+
+@router.post("/{order_id}/copy", response_model=OrderCopyRead, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
+async def copy_order(
+    request: Request,
+    response: Response,
+    order_id: uuid.UUID,
+    body: OrderCopyRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Cria um orçamento novo (rascunho) com os itens escolhidos de um pedido.
+
+    Diferente da revisão (`supersedes`): o pedido de origem não muda e o novo
+    orçamento recalcula preço, desconto e imposto com as regras de hoje.
+    """
+    if not _can_create_order(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operação não permitida para o seu nível de acesso.",
+        )
+    source = (await db.execute(
+        select(Order)
+        .where(
+            Order.id == order_id,
+            Order.market_code == principal.code,
+            *_order_visibility_filters(current_user),
+        )
+        .options(selectinload(Order.items).selectinload(OrderItem.optional_choices))
+    )).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+    wanted = set(body.item_ids)
+    selected = [item for item in source.items if item.id in wanted]
+    if len(selected) != len(wanted):
+        raise HTTPException(status_code=422, detail="Item não pertence ao pedido de origem.")
+
+    skipped: list[dict] = []
+    payload_items: list[OrderItemCreate] = []
+    for item in selected:
+        try:
+            payload_items.append(_copy_item_payload(item))
+        except ValueError:
+            skipped.append({
+                "product_code": item.product_code,
+                "reason": "Item não pôde ser convertido para um novo orçamento.",
+            })
+    if not payload_items:
+        raise HTTPException(
+            status_code=422,
+            detail="Nenhum item pôde ser copiado: "
+            + "; ".join(f"{row['product_code']}: {row['reason']}" for row in skipped),
+        )
+    is_eu = principal.code == "EU"
+    payload = OrderCreate(
+        client_id=source.client_id,
+        rep_id=source.rep_id,
+        # Brasil usa sempre a tabela atual do cliente; EU mantém a escolhida.
+        price_list_code=source.price_list_code if is_eu else None,
+        locale=source.locale if is_eu and source.locale in ("pt-PT", "en-GB") else None,
+        items=payload_items,
+    )
+    order, core_skipped = await _create_order_core(
+        payload, db, current_user, principal, copy_source=source,
+    )
+    return {"order": order, "skipped": skipped + core_skipped}
 
 
 @router.post("/{order_id}/revision", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
