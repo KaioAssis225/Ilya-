@@ -143,6 +143,8 @@ class OrderItemRead(BaseModel):
     currency: str = "BRL"
     observacao: Optional[str] = None
     comment: Optional[str] = None
+    # Opcionais ainda sem escolha (só preenchido em orçamento EU em aberto).
+    pending_optionals: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

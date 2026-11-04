@@ -136,3 +136,16 @@ test('Customizado aparece no pedido, no PDF e no seletor antigo, com o texto dos
   assert.equal(allowsCustomOption('EU'), true)
   assert.equal(allowsCustomOption('BR'), false)
 })
+
+test('Portugal salva o orçamento incompleto, mas ainda rejeita escolha inválida', () => {
+  const app = application('Pés')
+  const optionals = [option('taupe', 'PINTURA')]
+  assert.deepEqual(validateApplicationChoices(product([app]), [], optionals, false, {}, true), [])
+  assert.deepEqual(validateApplicationChoices(product([app]), [], optionals, true, {}, true), [])
+  assert.match(
+    validateApplicationChoices(product([app]), [{ application_id: app.id, optional_id: 'preto' }], optionals, false, {}, true)[0],
+    /indisponível/,
+  )
+  // Sem a flag (Brasil) a exigência continua.
+  assert.match(validateApplicationChoices(product([app]), [], optionals, true)[0], /Pés: escolha pendente/)
+})

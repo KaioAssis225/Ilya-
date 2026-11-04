@@ -7,7 +7,8 @@ em products.py), lido como regra e não como oráculo:
   mesma categoria guardam opções distintas, e duas linhas do mesmo SKU não
   compartilham escolhas;
 * todas as aplicações e categorias configuradas precisam estar preenchidas ao
-  salvar ou finalizar o orçamento;
+  salvar (Brasil) ou finalizar (Brasil e Portugal) o orçamento; em Portugal o
+  orçamento pode ser salvo incompleto;
 * repetir a mesma opção na mesma categoria só passa se TODAS as aplicações
   envolvidas permitem repetição;
 * aplicação repetida no payload ou de outro produto → 422;
@@ -297,11 +298,10 @@ async def test_reg_opt_two_lines_same_sku_do_not_share_choices(
 
 # ── Obrigatório × opcional ─────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("market", ["BR", "EU"])
 async def test_reg_opt_missing_optional_application_is_422_without_order(
-    client: AsyncClient, db_session: AsyncSession, market: str
+    client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    s = await _scenario(db_session, market)
+    s = await _scenario(db_session, "BR")
 
     response = await _post_order(client, s, [_item(s, _choice(s.app_feet, s.opt_black))])
     assert response.status_code == 422, response.text
@@ -401,11 +401,10 @@ async def test_finalize_accepts_line_with_every_optional_selected(
     assert response.json()["is_finalized"] is True
 
 
-@pytest.mark.parametrize("market", ["BR", "EU"])
 async def test_reg_opt_missing_required_application_is_422_without_order(
-    client: AsyncClient, db_session: AsyncSession, market: str
+    client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    s = await _scenario(db_session, market)
+    s = await _scenario(db_session, "BR")
 
     response = await _post_order(client, s, [_item(s, _choice(s.app_back, s.opt_taupe))])
     assert response.status_code == 422, response.text
@@ -757,3 +756,79 @@ async def test_iso21_product_application_with_option_from_other_market_is_reject
     allowed_ids = {option.id for app in applications for option in app.allowed_optionals}
     assert s_eu.opt_taupe not in allowed_ids
     assert {app.id for app in applications} == {s_br.app_feet, s_br.app_back}
+
+
+# ── Portugal: opcionais exigidos só ao finalizar ───────────────────────────────
+
+async def test_eu_quote_saves_without_optionals_but_finalize_is_422_until_complete(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """EU salva orçamento sem opcionais; finalizar só depois de completar."""
+    s = await _scenario(db_session, "EU")
+
+    created = await _post_order(client, s, [_item(s)])
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+    [item] = created.json()["items"]
+    assert sorted(item["pending_optionals"]) == ["Encosto", "Pés"]
+
+    detail = await client.get(f"/api/v1/orders/{order_id}", headers=_auth(s.token))
+    assert sorted(detail.json()["items"][0]["pending_optionals"]) == ["Encosto", "Pés"]
+
+    blocked = await client.post(
+        f"/api/v1/orders/{order_id}/finalize", json={}, headers=_auth(s.token),
+    )
+    assert blocked.status_code == 422, blocked.text
+    message = blocked.json()["detail"]
+    assert s.product_code in message and "Pés" in message and "Encosto" in message
+
+    # Escolha parcial: continua pendente só o que falta.
+    partial = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [_item(s, _choice(s.app_feet, s.opt_black))]},
+        headers=_auth(s.token),
+    )
+    assert partial.status_code == 200, partial.text
+    assert partial.json()["items"][0]["pending_optionals"] == ["Encosto"]
+    still_blocked = await client.post(
+        f"/api/v1/orders/{order_id}/finalize", json={}, headers=_auth(s.token),
+    )
+    assert still_blocked.status_code == 422, still_blocked.text
+    assert "Encosto" in still_blocked.json()["detail"]
+    assert "Pés" not in still_blocked.json()["detail"]
+
+    completed = await client.put(
+        f"/api/v1/orders/{order_id}",
+        json={"items": [_item(
+            s, _choice(s.app_feet, s.opt_black), _choice(s.app_back, s.opt_taupe),
+        )]},
+        headers=_auth(s.token),
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["items"][0]["pending_optionals"] == []
+
+    finalized = await client.post(
+        f"/api/v1/orders/{order_id}/finalize", json={}, headers=_auth(s.token),
+    )
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["is_finalized"] is True
+
+
+async def test_eu_invalid_choice_is_still_rejected_when_saving_incomplete(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Afrouxar a completude não afrouxa a validade do que foi escolhido."""
+    s = await _scenario(db_session, "EU")
+    response = await _post_order(client, s, [
+        _item(s, _choice(s.app_feet, s.opt_white_not_allowed)),
+    ])
+    assert response.status_code == 422, response.text
+
+
+async def test_br_quote_still_requires_every_optional_when_saving(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    s = await _scenario(db_session, "BR")
+    response = await _post_order(client, s, [_item(s)])
+    assert response.status_code == 422, response.text
+    await _assert_no_partial_order(db_session, s)
