@@ -30,6 +30,8 @@ from app.models.catalog import Catalog
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
+from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
+from app.models.moloni import MoloniExportJob
 from app.services.moloni_jobs import enqueue_finalized_eu_order
 from app.services.order_email_jobs import enqueue_order_emails
 from app.models.client import Client
@@ -2274,6 +2276,28 @@ async def get_order(
     return await _annotate_pending_optionals(db, order)
 
 
+async def _order_delete_blocker(db: AsyncSession, order: Order) -> str | None:
+    """Motivo pelo qual o pedido não pode ser excluído, ou None se pode.
+
+    As FKs de revisão, Moloni e e-mail são RESTRICT de propósito: guardam
+    evidência fiscal e de envio. Em vez de deixar o banco estourar um 409
+    genérico, dizemos qual registro bloqueia e apontamos Cancelar.
+    """
+    async def has(model, column) -> bool:
+        stmt = select(model.id).where(column == order.id).limit(1)
+        return (await db.execute(stmt)).first() is not None
+
+    if await has(Order, Order.supersedes_order_id):
+        return "Este pedido tem uma revisão. Exclua a revisão primeiro."
+    if await has(MoloniExportJob, MoloniExportJob.order_id):
+        return "Pedido já registrado para faturação no Moloni e não pode ser excluído. Use Cancelar."
+    if await has(OrderEmailDocument, OrderEmailDocument.order_id) or await has(
+        OrderEmailDelivery, OrderEmailDelivery.order_id
+    ):
+        return "Pedido já tem envio de e-mail registrado e não pode ser excluído. Use Cancelar."
+    return None
+
+
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_order(
     order_id: uuid.UUID,
@@ -2297,6 +2321,10 @@ async def delete_order(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+
+    blocker = await _order_delete_blocker(db, order)
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
 
     await enqueue_event(
         db,

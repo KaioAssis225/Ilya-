@@ -131,6 +131,14 @@ class TestExclusaoDePedido:
     enfileirado na mesma transação, antes do commit.
     """
 
+    @pytest.fixture(autouse=True)
+    def _sem_bloqueio(self, monkeypatch):
+        # A consulta de dependentes tem cobertura de integração (Postgres real).
+        async def livre(_db, _order):
+            return None
+
+        monkeypatch.setattr("app.api.routers.orders._order_delete_blocker", livre)
+
     @staticmethod
     def _db_com_pedido(order):
         resultado = AsyncMock()

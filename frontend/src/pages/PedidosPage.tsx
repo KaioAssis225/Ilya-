@@ -957,6 +957,24 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
 
   const [viewing, setViewing] = useState<OrderSummary | null>(null)
   const [deleting, setDeleting] = useState<OrderSummary | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  function askDelete(order: OrderSummary) {
+    setDeleteError(null)
+    setDeleting(order)
+  }
+  async function confirmDelete(order: OrderSummary) {
+    setDeleteError(null)
+    try {
+      await deleteM.mutateAsync(order.id)
+      setDeleting(null)
+    } catch (error) {
+      // Sem isto o modal ficava parado e o usuário não via por que não excluiu.
+      const detail = error != null && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+        : undefined
+      setDeleteError(typeof detail === 'string' ? detail : 'Não foi possível excluir o pedido. Tente novamente.')
+    }
+  }
   const [finalizing, setFinalizing] = useState<OrderSummary | null>(null)
   const [canceling, setCanceling] = useState<OrderSummary | null>(null)
 
@@ -1226,7 +1244,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                     onPDF={() => handlePDF(order)}
                     onFinalize={canManage && !order.is_finalized && !order.is_cancelled ? () => setFinalizing(order) : undefined}
                     onDeliver={canManage && resolveOrderStage(order) === 'production' ? () => changeStage(order, 'delivered') : undefined}
-                    onDelete={canDelete ? () => setDeleting(order) : undefined}
+                    onDelete={canDelete ? () => askDelete(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                     english={isEnglish}
                   />
@@ -1316,7 +1334,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                               </>
                             )}
                             {canDelete && (
-                              <button type="button" title="Excluir" aria-label={`Excluir orçamento ${order.code}`} className="btn-icon hover:text-danger" onClick={() => setDeleting(order)}><Trash2 className="w-4 h-4" /></button>
+                              <button type="button" title="Excluir" aria-label={`Excluir orçamento ${order.code}`} className="btn-icon hover:text-danger" onClick={() => askDelete(order)}><Trash2 className="w-4 h-4" /></button>
                             )}
                           </div>
                         </td>
@@ -1394,10 +1412,11 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
         <div className="modal-overlay" onClick={() => setDeleting(null)}>
           <DialogPanel onClose={() => setDeleting(null)} className="modal-panel w-full max-w-md p-6">
             <h3 className="text-lg font-semibold text-ink mb-2">Confirmar exclusão</h3>
-            <p className="text-ink-2 mb-6">Excluir orçamento <span className="text-gold font-mono">{deleting.code}</span>? Esta ação não pode ser desfeita.</p>
+            <p className="text-ink-2 mb-6">Excluir {deleting.is_finalized ? 'pedido' : 'orçamento'} <span className="text-gold font-mono">{deleting.code}</span>? Esta ação não pode ser desfeita.</p>
+            {deleteError && <p role="alert" className="text-sm font-medium text-danger mb-4">{deleteError}</p>}
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={() => setDeleting(null)}>Cancelar</button>
-              <button className="btn-danger" onClick={async () => { await deleteM.mutateAsync(deleting.id); setDeleting(null) }}>Excluir</button>
+              <button className="btn-danger" disabled={deleteM.isPending} onClick={() => confirmDelete(deleting)}>Excluir</button>
             </div>
           </DialogPanel>
         </div>
