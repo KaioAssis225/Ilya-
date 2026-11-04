@@ -141,8 +141,11 @@ class TestExclusaoDePedido:
 
     @staticmethod
     def _db_com_pedido(order):
-        resultado = AsyncMock()
-        resultado.scalar_one_or_none = lambda: order
+        # Resultado síncrono, como o `Result` real: `scalar_one_or_none()` traz
+        # o pedido e `scalars().all()` (jobs do Moloni, apagados junto) vem vazio.
+        resultado = MagicMock()
+        resultado.scalar_one_or_none.return_value = order
+        resultado.scalars.return_value.all.return_value = []
         db = AsyncMock()
         db.execute.return_value = resultado
         # `session.add` é síncrono no SQLAlchemy; deixá-lo como AsyncMock

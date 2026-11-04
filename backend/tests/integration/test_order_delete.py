@@ -1,9 +1,11 @@
 """Exclusão de pedido pela API (DELETE /orders/{id}) contra Postgres real.
 
-Contrato: orçamento e pedido sem evidência apagam; pedido com revisão, job do
-Moloni ou envio de e-mail é bloqueado com 409 e uma mensagem que diz o motivo.
+Contrato: orçamento e pedido sem evidência apagam; pedido com job do Moloni
+também apaga (o job some junto e o documento vai para o log); pedido com
+revisão ou envio de e-mail é bloqueado com 409 e uma mensagem que diz o motivo.
 Nada é apagado nem enfileirado quando bloqueia.
 """
+import logging
 import uuid
 
 import pytest
@@ -101,19 +103,76 @@ async def test_finalized_br_with_email_is_blocked_with_clear_message(client, db_
     assert await _outbox_deleted(db_session) == 0
 
 
-@pytest.mark.parametrize("email_mode", ["off", "test"])
-async def test_finalized_eu_with_moloni_job_is_blocked(client, db_session, monkeypatch, email_mode):
-    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", email_mode)
+@pytest.mark.parametrize("job_status", ["pending", "processing", "dead_letter"])
+async def test_finalized_eu_with_open_moloni_job_is_deleted_with_the_job(
+    client, db_session, monkeypatch, caplog, job_status
+):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "off")
+    s, order_id = await _new_order(client, db_session, "EU")
+    assert (await _finalize(client, s, order_id)).status_code == 200
+    job = (await db_session.execute(
+        select(MoloniExportJob).where(MoloniExportJob.order_id == order_id).execution_options(skip_market_scope=True)
+    )).scalar_one()
+    job_id = job.id
+    job.status = job_status
+    await db_session.commit()
+
+    with caplog.at_level(logging.WARNING, logger="ilya.orders"):
+        response = await _delete(client, s.token, order_id)
+
+    assert response.status_code == 204, response.text
+    assert await _count(db_session, Order, id=order_id) == 0
+    assert await _count(db_session, MoloniExportJob, order_id=order_id) == 0
+    assert await _outbox_deleted(db_session) == 1
+    logged = "\n".join(r.getMessage() for r in caplog.records if "registro Moloni" in r.getMessage())
+    # pending/dead_letter sem documento não geram aviso fiscal; processing sim.
+    assert (str(job_id) in logged) == (job_status == "processing")
+
+
+async def test_finalized_eu_with_delivered_moloni_document_is_deleted_and_logged(
+    client, db_session, monkeypatch, caplog
+):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "off")
+    s, order_id = await _new_order(client, db_session, "EU")
+    assert (await _finalize(client, s, order_id)).status_code == 200
+    job = (await db_session.execute(
+        select(MoloniExportJob).where(MoloniExportJob.order_id == order_id).execution_options(skip_market_scope=True)
+    )).scalar_one()
+    job_id = job.id
+    job.status = "delivered"
+    job.moloni_document_id = 987654
+    await db_session.commit()
+    code = (await db_session.execute(
+        select(Order.code).where(Order.id == order_id).execution_options(skip_market_scope=True)
+    )).scalar_one()
+
+    with caplog.at_level(logging.WARNING, logger="ilya.orders"):
+        response = await _delete(client, s.token, order_id)
+
+    assert response.status_code == 204, response.text
+    assert await _count(db_session, Order, id=order_id) == 0
+    assert await _count(db_session, MoloniExportJob, order_id=order_id) == 0
+    assert await _outbox_deleted(db_session) == 1
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert f"code={code}" in logged
+    assert f"job_id={job_id}" in logged
+    assert "status=delivered" in logged
+    assert "moloni_document_id=987654" in logged
+
+
+async def test_moloni_job_does_not_hide_email_block(client, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "test")
     s, order_id = await _new_order(client, db_session, "EU")
     assert (await _finalize(client, s, order_id)).status_code == 200
     assert await _count(db_session, MoloniExportJob, order_id=order_id) == 1
+    assert await _count(db_session, OrderEmailDelivery, order_id=order_id) == 1
 
     response = await _delete(client, s.token, order_id)
 
     assert response.status_code == 409, response.text
-    detail = response.json()["detail"]
-    assert detail == "Pedido já tem documento no Moloni e não pode ser excluído."
+    assert response.json()["detail"] == "Pedido já teve envio de e-mail registrado e não pode ser excluído."
     assert await _count(db_session, Order, id=order_id) == 1
+    assert await _count(db_session, MoloniExportJob, order_id=order_id) == 1
     assert await _outbox_deleted(db_session) == 0
 
 
