@@ -166,6 +166,61 @@ describe('CadastroPage de produtos em DOM', () => {
     })
   })
 
+  it('REG-PROD-05: medida em mm digitada como metros mostra aviso e bloqueia o envio', async () => {
+    const user = userEvent.setup()
+    const create = vi.fn((payload: Record<string, unknown>) => HttpResponse.json(
+      { ...productFixture('BR'), ...payload, id: 'created-limit' }, { status: 201 },
+    ))
+    installProductHandlers({ onCreate: create })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    await clickNewProduct(user)
+    await user.type(screen.getByLabelText('Código *'), 'CD0033')
+    await user.type(screen.getByLabelText(/Preço Lojista/), '100')
+    await user.type(screen.getByLabelText(/Preço Corporativo/), '90')
+    await user.type(screen.getByLabelText('Descrição *'), 'Cadeira')
+    await user.type(screen.getByLabelText('Largura L (m) *'), '470')
+    await user.type(screen.getByLabelText('Prof. P (m) *'), '0.49')
+    await user.type(screen.getByLabelText('Altura A (m) *'), '0.78')
+
+    const aviso = 'Medida acima de 20 m — as medidas são em metros (ex.: 470 mm = 0,47).'
+    expect(await screen.findByRole('alert')).toHaveTextContent(aviso)
+    fireEvent.submit(screen.getByLabelText('Código *').closest('form')!)
+    expect(await screen.findAllByText(aviso)).toHaveLength(2) // aviso do campo + erro do envio
+    expect(create).not.toHaveBeenCalled()
+
+    // Corrigido para metros, o aviso some e o produto é enviado.
+    await user.clear(screen.getByLabelText('Largura L (m) *'))
+    await user.type(screen.getByLabelText('Largura L (m) *'), '0.47')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.submit(screen.getByLabelText('Código *').closest('form')!)
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create.mock.calls[0][0]).toMatchObject({ largura: 0.47, profundidade: 0.49, altura: 0.78 })
+  })
+
+  it('REG-PROD-06: medida exatamente no limite de 20 m não gera aviso e é enviada', async () => {
+    const user = userEvent.setup()
+    const create = vi.fn((payload: Record<string, unknown>) => HttpResponse.json(
+      { ...productFixture('BR'), ...payload, id: 'created-at-limit' }, { status: 201 },
+    ))
+    installProductHandlers({ onCreate: create })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    await clickNewProduct(user)
+    await user.type(screen.getByLabelText('Código *'), 'BALCAO-20')
+    await user.type(screen.getByLabelText(/Preço Lojista/), '100')
+    await user.type(screen.getByLabelText(/Preço Corporativo/), '90')
+    await user.type(screen.getByLabelText('Descrição *'), 'Balcão longo')
+    await user.type(screen.getByLabelText('Largura L (m) *'), '20')
+    await user.type(screen.getByLabelText('Prof. P (m) *'), '0.6')
+    await user.type(screen.getByLabelText('Altura A (m) *'), '1')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.submit(screen.getByLabelText('Código *').closest('form')!)
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    expect(create.mock.calls[0][0]).toMatchObject({ largura: 20 })
+  })
+
   it('regular catalogue restores dimensions and hides the area block', async () => {
     const user = userEvent.setup()
     installProductHandlers({ catalogs: [

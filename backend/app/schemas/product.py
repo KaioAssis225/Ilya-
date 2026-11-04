@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 
+from app.core.product_dimensions import ensure_dimension_within_limit
 from app.schemas.optional import OptionalColorRead
 from app.schemas.catalog import CatalogRead
 
@@ -63,6 +64,13 @@ class ProductSetComponentCreate(BaseModel):
     qty: int = Field(1, ge=1, le=100_000)
     optional_ids: List[uuid.UUID] = Field(default_factory=list, max_length=100)
     optional_applications: Optional[List[OptionalApplicationWrite]] = Field(None, max_length=100)
+
+    # Só na escrita: a leitura (ProductSetComponentRead) não pode quebrar com
+    # medidas que já estão erradas no banco.
+    @field_validator("altura", "largura", "profundidade")
+    @classmethod
+    def validate_dimension_limit(cls, value: Decimal) -> Decimal:
+        return ensure_dimension_within_limit(value)
 
 
 class ProductSetComponentRead(BaseModel):
@@ -145,6 +153,13 @@ class ProductCreate(ProductBase):
     set_items: List[ProductSetItemCreate] = Field(default_factory=list, max_length=500)
     components: List[ProductSetComponentCreate] = Field(default_factory=list, max_length=500)
 
+    # Fica aqui (e não em ProductBase) porque ProductRead herda de ProductBase e
+    # precisa continuar lendo produtos já gravados com medida errada.
+    @field_validator("altura", "largura", "profundidade")
+    @classmethod
+    def validate_dimension_limit(cls, value: Decimal) -> Decimal:
+        return ensure_dimension_within_limit(value)
+
 
 class ProductUpdate(BaseModel):
     product_code: Optional[str] = Field(None, max_length=100)
@@ -191,6 +206,11 @@ class ProductUpdate(BaseModel):
     @classmethod
     def normalize_article_category(cls, value: Optional[str]) -> Optional[str]:
         return ProductBase.normalize_article_category(value)
+
+    @field_validator("altura", "largura", "profundidade")
+    @classmethod
+    def validate_dimension_limit(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        return ensure_dimension_within_limit(value)
 
     @field_validator("catalog_id")
     @classmethod
