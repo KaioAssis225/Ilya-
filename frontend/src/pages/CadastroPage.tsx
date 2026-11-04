@@ -324,10 +324,10 @@ function AddressFields({ form, setForm, market, portugalClient = false }: {
             />
           </label>
           <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-xs text-muted">Tipo de catálogo *</span>
+            <span className="text-xs text-muted">Tipo de cliente *</span>
             <select
               className="input"
-              aria-label="Tipo de catálogo *"
+              aria-label="Tipo de cliente *"
               value={form.client_type ?? ''}
               onChange={(e) => setForm({ ...form, client_type: e.target.value as ClientCreate['client_type'] })}
               required
@@ -2489,7 +2489,7 @@ function PeopleTab<T extends Client | Representative>({
               {isPortugalClient && (
                 <>
                   <div><span className="text-xs text-muted block">Contato</span><span className="text-ink-2">{viewing.contact_name || '—'}</span></div>
-                  <div><span className="text-xs text-muted block">Tipo de catálogo</span><span className="text-ink-2 capitalize">{viewing.client_type || '—'}</span></div>
+                  <div><span className="text-xs text-muted block">Tipo de cliente</span><span className="text-ink-2 capitalize">{viewing.client_type || '—'}</span></div>
                   <div className="col-span-2"><span className="text-xs text-muted block">Observação</span><span className="text-ink-2 whitespace-pre-wrap">{viewing.observation || '—'}</span></div>
                 </>
               )}
