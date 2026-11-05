@@ -202,15 +202,26 @@ describe('OrcamentoPage — especiais EU', () => {
     await waitFor(() => expect(calls.post).toBe(1))
   })
 
-  it('sem item especial não pede confirmação e envia direto', async () => {
+  it('orçamento novo SEM especial também confirma o catálogo; Voltar não cria e Confirmar cria', async () => {
     installHandlers()
     renderQuote()
     const calls = trackPosts()
     await screen.findAllByText('PAI')
 
     fireEvent.click(await submitButton())
+    const dialog = await screen.findByRole('dialog', { name: 'Confirmar o catálogo' })
+    expect(dialog).toHaveTextContent('Este orçamento será feito no catálogo IBTW, tabela Lojista. Está correto?')
+    expect(dialog).not.toHaveTextContent(/especial/i)
+    expect(calls.post).toBe(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(calls.post).toBe(0)
+
+    fireEvent.click(await submitButton())
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(calls.post).toBe(1))
-    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('edição: especial sem comentário também é bloqueado; com comentário salva sem diálogo', async () => {

@@ -416,6 +416,7 @@ describe('OrcamentoPage', () => {
     const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(posted).not.toBeNull())
     expect(posted).toMatchObject({
       client_id: quoteClient.id,
@@ -484,6 +485,7 @@ describe('OrcamentoPage', () => {
 
     fireEvent.change(screen.getAllByLabelText('Motivo da isenção de IVA')[0], { target: { value: 'M16' } })
     fireEvent.click(submit)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(posted).not.toBeNull())
     expect(posted).toMatchObject({ vat_exempt: true, vat_exemption_code: 'M16' })
   })
@@ -532,6 +534,8 @@ describe('OrcamentoPage', () => {
     const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
 
     await waitFor(() => expect(posted).toBe(true))
   })
@@ -659,6 +663,7 @@ describe('OrcamentoPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Remover Tapete PT do orçamento/ })[1])
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(posted).not.toBeNull())
     const [line] = posted!.items
     expect(line).toMatchObject({ product_code: 'TAP-EU', area_width_m: 2.05, area_depth_m: 2.05 })
@@ -703,6 +708,7 @@ describe('OrcamentoPage', () => {
     const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(posted).not.toBeNull())
     expect(posted).toMatchObject({
       client_id: client.id,

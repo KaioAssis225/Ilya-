@@ -1902,7 +1902,9 @@ export default function OrcamentoPage() {
       return
     }
     setCommentErrorLines([])
-    if (!editId && cart.some(item => item.is_special)) {
+    // Orçamento novo (BR e EU, com ou sem especial): confirma o catálogo antes de
+    // criar. Na edição o orçamento já existe com o catálogo escolhido, então não pergunta.
+    if (!editId) {
       setCatalogConfirmOpen(true)
       return
     }

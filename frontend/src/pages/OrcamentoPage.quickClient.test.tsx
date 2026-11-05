@@ -99,6 +99,7 @@ describe('OrcamentoPage — cadastro rápido de cliente (Portugal)', () => {
     const finalize = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(finalize).toBeEnabled())
     fireEvent.click(finalize)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() => expect(orders).toHaveLength(1))
     expect(orders[0].client_id).toBe(createdClient.id)
   })
