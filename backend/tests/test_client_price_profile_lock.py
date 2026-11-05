@@ -68,7 +68,7 @@ class TestRepresentante:
         assert out["price_profile"] == "corporativo"
         assert "email" not in out
         assert "cpf_cnpj" not in out
-        assert "tax_id" not in out
+        assert out.get("tax_id") == "PT999999990"  # VAT é dado da ficha comercial
         assert "max_discount" not in out
 
 
@@ -95,7 +95,7 @@ class TestOperadoresPrivilegiados:
         assert "max_discount" not in out
         assert "email" not in out
         assert "cpf_cnpj" not in out
-        assert "tax_id" not in out
+        assert out.get("tax_id") == "PT999999990"  # VAT é dado da ficha comercial
 
     def test_vendedor_interno_define_perfil_mas_nao_max_discount(self):
         # Operador interno mantém o fluxo de definir perfil no cadastro do cliente;
@@ -105,7 +105,7 @@ class TestOperadoresPrivilegiados:
         assert "max_discount" not in out
         assert "email" not in out
         assert "cpf_cnpj" not in out
-        assert "tax_id" not in out
+        assert out.get("tax_id") == "PT999999990"  # VAT é dado da ficha comercial
 
 
 class TestCadastroSegueAMesmaRegraDaEdicao:

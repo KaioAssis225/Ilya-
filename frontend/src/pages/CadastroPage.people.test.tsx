@@ -289,3 +289,90 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     })
   })
 })
+
+describe('Ficha de cliente de Portugal', () => {
+  const euClient: Client = {
+    ...clients[0],
+    id: 'client-eu-ficha',
+    name: 'Casa Atlântico',
+    market_code: 'EU',
+    country: 'Portugal',
+    state: '--',
+    numero: '12',
+    tax_id: 'PT501964843',
+    contact_name: 'Maria',
+    client_type: 'lojista',
+    observation: 'Ligar à tarde.',
+    contacted: false,
+  }
+
+  async function openEuEdit(patch?: (payload: Record<string, unknown>) => Response | undefined) {
+    const user = userEvent.setup()
+    installProductHandlers()
+    const payloads: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/clients', () => HttpResponse.json([euClient], { headers: { 'X-Total-Count': '1' } })),
+      http.patch(`*/clients/${euClient.id}`, async ({ request }) => {
+        const payload = await request.json() as Record<string, unknown>
+        payloads.push(payload)
+        return patch?.(payload) ?? HttpResponse.json({ ...euClient, ...payload })
+      }),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'EU'))
+    await user.click(screen.getAllByRole('button', { name: /Clientes/ })[0])
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText(euClient.name).closest('tr')
+    if (!row) throw new Error('Linha do cliente EU não encontrada')
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+    return { user, payloads }
+  }
+
+  it('não mostra o número da morada e põe "Cliente contactado" logo abaixo da observação', async () => {
+    await openEuEdit()
+
+    expect(screen.queryByLabelText('Número')).toBeNull()
+    const observation = screen.getByLabelText('Observação')
+    const contacted = screen.getByLabelText('Cliente contactado')
+    expect(contacted).not.toBeChecked()
+    expect(observation.compareDocumentPosition(contacted) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('editar grava VAT, contactado e demais campos no PATCH (sem número)', async () => {
+    const { user, payloads } = await openEuEdit()
+
+    const vat = screen.getByLabelText('VAT / Tax ID')
+    await user.clear(vat)
+    await user.type(vat, 'PT999888777')
+    await user.clear(screen.getByLabelText('Telefone *'))
+    await user.type(screen.getByLabelText('Telefone *'), '+351 933 000 111')
+    await user.click(screen.getByLabelText('Cliente contactado'))
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0]).toMatchObject({
+      tax_id: 'PT999888777',
+      phone: '+351 933 000 111',
+      contacted: true,
+      observation: 'Ligar à tarde.',
+      country: 'Portugal',
+    })
+    expect(payloads[0]).not.toHaveProperty('numero')
+  })
+
+  it('mostra o motivo quando o servidor recusa a edição (VAT repetido)', async () => {
+    const { user } = await openEuEdit(() =>
+      HttpResponse.json({ detail: 'Já existe um cliente com este VAT / Tax ID.' }, { status: 409 }),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    expect(await screen.findByText('Já existe um cliente com este VAT / Tax ID.')).toBeVisible()
+  })
+
+  it('a navegação do Cadastro chama-se Fichas em Portugal e Cadastros no Brasil', async () => {
+    installProductHandlers()
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'EU'))
+    expect((await screen.findAllByText('Fichas')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Cadastros')).toBeNull()
+  })
+})

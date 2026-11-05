@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { LocaleContext } from '../hooks/useLocale'
+import { fichaPt } from '../lib/cadastroText'
 
 export type AppLocale = 'pt-PT' | 'en-GB'
 
@@ -35,6 +36,8 @@ export interface LocaleValue {
   locale: AppLocale
   setLocale: (locale: AppLocale) => void
   t: (key: MessageKey) => string
+  /** Mercado ativo: Portugal chama o cadastro de "ficha" (ver fichaPt). Ausente = BR. */
+  market?: 'BR' | 'EU'
 }
 
 
@@ -59,7 +62,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(storageKey, next)
       setLocaleState(next)
     },
-    t: (key) => messages[locale][key],
+    t: (key) => {
+      const text = messages[locale][key]
+      return key === 'registrations' && locale === 'pt-PT' && user?.active_market === 'EU' ? fichaPt(text) : text
+    },
+    market: user?.active_market === 'EU' ? 'EU' : 'BR',
   }), [locale, storageKey, user?.active_market])
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>

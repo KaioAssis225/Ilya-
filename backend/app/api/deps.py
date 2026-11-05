@@ -286,13 +286,19 @@ def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict
     O representante pode escolher a tabela de preço do cliente da própria
     carteira, como permite o formulário, mas continua sem poder alterar o teto
     de desconto, a identidade cadastral ou a atribuição da carteira. E-mail de
-    referência e identificadores fiscais são corrigidos por atendimento
-    (`admin`/`cadastros`); o titular precisa passar por reverificação fora deste
-    PATCH comum.
+    referência e CPF/CNPJ são corrigidos por atendimento (`admin`/`cadastros`);
+    o titular precisa passar por reverificação fora deste PATCH comum. O
+    VAT/Tax ID (Portugal) é editável por quem edita a ficha, exceto pela conta
+    do próprio cliente-final.
     """
     if current_user.role not in CLIENT_IDENTITY_MANAGEMENT_ROLES:
-        for field in ("email", "cpf_cnpj", "tax_id"):
+        for field in ("email", "cpf_cnpj"):
             update_data.pop(field, None)
+        # O VAT/Tax ID é dado da ficha comercial (o próprio representante o
+        # informa no cadastro): fica de fora só para a conta do cliente-final,
+        # que não reescreve a própria identificação fiscal.
+        if is_client_account(current_user):
+            update_data.pop("tax_id", None)
     # SEC-PRICE-02: conta de cliente-final (inclui legado
     # `vendedor`+linked_id) nunca define o próprio perfil de faturamento.
     if is_client_account(current_user):

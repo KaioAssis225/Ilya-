@@ -367,11 +367,13 @@ function AddressFields({ form, setForm, market, portugalClient = false }: {
         <input className="input pr-8" value={form.cep} onChange={(e) => setForm({ ...form, cep: market === 'BR' ? formatCep(e.target.value) : formatPortugalPostalCode(e.target.value) })} onBlur={handleCepBlur} maxLength={market === 'BR' ? 9 : 8} required />
         {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
       </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{tx('Número')}</span>
-        {/* Portugal: porta com letra/andar ("12A", "2.º Esq.") — só dígitos cortava a morada. */}
-        <input className="input" value={form.numero ?? ''} maxLength={50} onChange={(e) => setForm({ ...form, numero: market === 'BR' ? formatOnlyNumbers(e.target.value) : e.target.value })} />
-      </label>
+      {/* Portugal não tem número de morada na ficha: a porta vai no próprio endereço. */}
+      {market === 'BR' && (
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">{tx('Número')}</span>
+          <input className="input" value={form.numero ?? ''} maxLength={50} onChange={(e) => setForm({ ...form, numero: formatOnlyNumbers(e.target.value) })} />
+        </label>
+      )}
       <label className="col-span-2 flex flex-col gap-1">
         <span className="text-xs text-muted">{tx('Endereço *')}</span>
         <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />
@@ -2277,7 +2279,7 @@ function PeopleTab<T extends Client | Representative>({
   function openEdit(item: T) {
     setForm({
       name: item.name, contact_name: item.contact_name ?? '', client_type: item.client_type ?? null,
-      observation: item.observation ?? '', phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
+      observation: item.observation ?? '', contacted: !!(item as Client).contacted, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
       tax_id: item.tax_id, country: item.country,
       region: item.region, cep: item.cep, numero: item.numero ?? '',
       address: item.address, city: item.city, state: item.state,
@@ -2314,7 +2316,10 @@ function PeopleTab<T extends Client | Representative>({
       delete cleaned.contact_name
       delete cleaned.client_type
       delete cleaned.observation
+      delete cleaned.contacted
     }
+    // A ficha de Portugal não tem número de morada.
+    if (activeMarket === 'EU') delete cleaned.numero
     if (activeMarket === 'EU' && entityType === 'rep') {
       cleaned.all_price_lists = true
       cleaned.price_list_codes = []
@@ -2524,13 +2529,14 @@ function PeopleTab<T extends Client | Representative>({
                   <div><span className="text-xs text-muted block">Contato</span><span className="text-ink-2">{viewing.contact_name || '—'}</span></div>
                   <div><span className="text-xs text-muted block">Tipo de cliente</span><span className="text-ink-2">{viewing.client_type ? (CLIENT_TYPE_LABELS[viewing.client_type] ?? viewing.client_type) : '—'}</span></div>
                   <div className="col-span-2"><span className="text-xs text-muted block">Observação</span><span className="text-ink-2 whitespace-pre-wrap">{viewing.observation || '—'}</span></div>
+                  <div className="col-span-2"><span className="text-xs text-muted block">{tx('Cliente contactado')}</span><span className="text-ink-2">{(viewing as Client).contacted ? tx('Sim') : tx('Não')}</span></div>
                 </>
               )}
               <div className="col-span-2"><span className="text-xs text-muted block">{tx('E-mail')}</span><span className="text-ink-2">{viewing.email || tx('Não informado')}</span></div>
               <div><span className="text-xs text-muted block">{tx('Cidade')}</span><span className="text-ink-2">{viewing.city}</span></div>
               <div><span className="text-xs text-muted block">{tx('Estado')}</span><span className="text-ink-2">{viewing.state}</span></div>
               <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
-              <div className="col-span-2"><span className="text-xs text-muted block">{tx('Endereço')}</span><span className="text-ink-2">{viewing.address}{viewing.numero ? `, ${viewing.numero}` : ''} — {tx('CEP')} {viewing.cep}</span></div>
+              <div className="col-span-2"><span className="text-xs text-muted block">{tx('Endereço')}</span><span className="text-ink-2">{viewing.address}{activeMarket === 'BR' && viewing.numero ? `, ${viewing.numero}` : ''} — {tx('CEP')} {viewing.cep}</span></div>
               {entityType === 'rep' && activeMarket === 'BR' && (
                 <div className="col-span-2">
                   <span className="text-xs text-muted block">{tx('Tabelas de preço')}</span>
@@ -2680,15 +2686,25 @@ function PeopleTab<T extends Client | Representative>({
               </div>
             )}
             {activeMarket === 'EU' && entityType === 'client' && (
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">Observação</span>
-                <textarea
-                  className="input min-h-24 resize-y"
-                  value={form.observation ?? ''}
-                  onChange={(e) => setForm({ ...form, observation: e.target.value })}
-                  maxLength={2000}
-                />
-              </label>
+              <>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">Observação</span>
+                  <textarea
+                    className="input min-h-24 resize-y"
+                    value={form.observation ?? ''}
+                    onChange={(e) => setForm({ ...form, observation: e.target.value })}
+                    maxLength={2000}
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={!!form.contacted}
+                    onChange={(e) => setForm({ ...form, contacted: e.target.checked })}
+                  />
+                  <span>{tx('Cliente contactado')}</span>
+                </label>
+              </>
             )}
             {canEditDiscount && showDiscount && (
               <div className="flex flex-col gap-1.5">

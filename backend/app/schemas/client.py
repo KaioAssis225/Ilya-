@@ -8,6 +8,15 @@ from app.core.addresses import UF_SENTINEL, is_valid_uf
 from app.core.documents import normalize_cpf_cnpj
 
 
+def _trim_tax_id(value: object) -> Optional[str]:
+    """VAT/Tax ID chega com espaços nas pontas ou vazio: vazio vira "não informado"."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    return value  # type: ignore[return-value]  # o Pydantic recusa o tipo errado
+
+
 class ClientBase(BaseModel):
     name: str = Field(..., max_length=255)
     phone: str = Field(..., max_length=20)
@@ -28,8 +37,15 @@ class ClientBase(BaseModel):
     # preços, catálogo, desconto ou qualquer outra regra comercial.
     client_type: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     observation: Optional[str] = Field(None, max_length=2000)
+    # Ficha EU: sim/não, "o cliente já foi contactado?".
+    contacted: bool = False
     price_profile: Literal["lojista", "corporativo", "pvp", "arquiteto"] = "lojista"
     max_discount: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
+
+    @field_validator("tax_id", mode="before")
+    @classmethod
+    def trim_tax_id(cls, value: object) -> Optional[str]:
+        return _trim_tax_id(value)
 
     @field_validator("cpf_cnpj", mode="before")
     @classmethod
@@ -87,6 +103,7 @@ class ClientUpdate(BaseModel):
     contact_name: Optional[str] = Field(None, max_length=255)
     client_type: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     observation: Optional[str] = Field(None, max_length=2000)
+    contacted: Optional[bool] = None
     price_profile: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
     # Permite reatribuir a carteira e consertar cliente órfão (ver ClientCreate).
@@ -99,6 +116,11 @@ class ClientUpdate(BaseModel):
     # `price_list_codes` implica seleção específica.
     all_price_lists: Optional[bool] = None
     price_list_codes: Optional[list[Literal["lojista", "corporativo", "pvp", "arquiteto"]]] = Field(None, max_length=10)
+
+    @field_validator("tax_id", mode="before")
+    @classmethod
+    def trim_tax_id(cls, value: object) -> Optional[str]:
+        return _trim_tax_id(value)
 
     @field_validator("cpf_cnpj", mode="before")
     @classmethod

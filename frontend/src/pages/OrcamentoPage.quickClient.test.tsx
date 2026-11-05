@@ -78,6 +78,8 @@ describe('OrcamentoPage — cadastro rápido de cliente (Portugal)', () => {
     const addButtons = await screen.findAllByRole('button', { name: 'Cadastrar novo' })
     fireEvent.click(addButtons[1])
     const dialog = await screen.findByRole('dialog', { name: 'Novo Cliente' })
+    // Portugal não pede número de morada.
+    expect(within(dialog).queryByLabelText('Número')).toBeNull()
     fireEvent.change(within(dialog).getByLabelText('Nome *'), { target: { value: createdClient.name } })
     fireEvent.change(within(dialog).getByLabelText('Telefone *'), { target: { value: createdClient.phone } })
     fireEvent.change(within(dialog).getByLabelText('Código postal *'), { target: { value: '1000001' } })

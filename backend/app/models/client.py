@@ -33,6 +33,10 @@ class Client(Base, TimestampMixin):
     contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     client_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     observation: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # Ficha de Portugal: "o cliente já foi contactado?" (sim/não).
+    contacted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     rep_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("representatives.id", ondelete="SET NULL"), nullable=True)
     max_discount: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("0.00"))
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -76,3 +76,19 @@ def format_cpf_cnpj(digits: str | None) -> str | None:
     if len(digits) == _CNPJ_LENGTH:
         return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
     return digits
+
+
+def normalize_tax_id_key(value: object) -> str | None:
+    """Chave de comparação do VAT/Tax ID: sem espaços, pontos, hífens ou barras,
+    em maiúsculas. "pt 501.964-843" e "PT501964843" são o mesmo documento.
+
+    Serve só para comparar; o que o usuário digitou continua gravado como veio.
+    Devolve None quando não há nada para comparar.
+    """
+    if not isinstance(value, str):
+        return None
+    key = "".join(
+        character for character in value
+        if not character.isspace() and character not in ".-/"
+    ).upper()
+    return key or None
