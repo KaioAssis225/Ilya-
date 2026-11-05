@@ -99,7 +99,7 @@ describe('PedidosPage', () => {
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     await user.click(screen.getByLabelText(`Copiar orçamento ${summary.code}`))
     const copyDialog = await screen.findByRole('dialog', { name: 'Copiar orçamento' })
-    expect(within(copyDialog).getByRole('button', { name: 'Criar orçamento' })).toBeVisible()
+    expect(within(copyDialog).getByRole('button', { name: 'Continuar' })).toBeVisible()
     await user.click(within(copyDialog).getByRole('button', { name: 'Fechar' }))
 
     await user.click(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`)[0])
