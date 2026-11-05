@@ -112,7 +112,7 @@ describe('PedidosPage: datas de finalização e entrega', () => {
     ])
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     expect(requests.some((query) => query.date_basis === 'created_at')).toBe(true)
     expect(screen.getByRole('columnheader', { name: 'Data' })).toBeInTheDocument()

@@ -76,24 +76,26 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
   })
 
   it('Orçamento pede não finalizados ao servidor e Pedido pede só finalizados', async () => {
-    const quote = makeSummary({ id: 'q1', code: 'PED-0001' })
-    const cancelled = makeSummary({ id: 'q2', code: 'PED-0002', is_cancelled: true })
-    const placed = makeSummary({ id: 'p1', code: 'PED-0003', is_finalized: true })
+    const quote = makeSummary({ id: 'q1', code: 'PED-0001', orc_id: 'ORC-0001' })
+    const cancelled = makeSummary({ id: 'q2', code: 'PED-0002', orc_id: 'ORC-0002', is_cancelled: true })
+    const placed = makeSummary({ id: 'p1', code: 'PED-0003', orc_id: 'ORC-0003', is_finalized: true })
     const { statusRequests } = installOrdersBackend([quote, cancelled, placed])
 
     const { unmount } = renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
     expect(await screen.findByRole('heading', { name: /Orçamentos/ })).toBeInTheDocument()
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
+    expect(screen.queryByRole('columnheader', { name: 'Código' })).not.toBeInTheDocument()
     // O cancelado nunca foi finalizado: continua visível em Orçamento, com status.
-    expect(screen.getAllByText('PED-0002').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('ORC-0002').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Cancelado').length).toBeGreaterThan(0)
-    expect(screen.queryAllByText('PED-0003')).toHaveLength(0)
+    expect(screen.queryAllByText('ORC-0003')).toHaveLength(0)
     expect(statusRequests).toContain('not_finalized')
     unmount()
 
     renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     expect(await screen.findByRole('heading', { name: /Pedidos/ })).toBeInTheDocument()
     await screen.findAllByText('PED-0003')
+    expect(screen.getByRole('columnheader', { name: 'Código' })).toBeInTheDocument()
     expect(screen.queryAllByText('PED-0001')).toHaveLength(0)
     expect(screen.queryAllByText('PED-0002')).toHaveLength(0)
     expect(statusRequests).toContain('finalized')
@@ -104,7 +106,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     installOrdersBackend([makeSummary()])
 
     const { unmount } = renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
     await user.click(screen.getByRole('button', { name: /Filtros/ }))
     const select = screen.getByLabelText('Status')
     expect(Array.from((select as HTMLSelectElement).options).map((option) => option.text)).toEqual([
@@ -123,14 +125,14 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     installOrdersBackend([makeSummary()])
 
     renderProductPage(<Tabs />, productTestUser('admin', 'BR'), ['/pedidos'])
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     expect(await screen.findByText('Orçamento PED-0001 finalizado e movido para a aba Pedido.')).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryAllByText('PED-0001')).toHaveLength(0))
+    await waitFor(() => expect(screen.queryAllByText('ORC-0001')).toHaveLength(0))
 
     await user.click(screen.getByRole('button', { name: 'Ver em Pedido' }))
     expect(await screen.findByRole('heading', { name: /Pedidos/ })).toBeInTheDocument()
@@ -149,7 +151,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     expect((await screen.findAllByText('No finalized orders yet.')).length).toBeGreaterThan(0)
     await user.click(screen.getAllByRole('button', { name: 'View quotes' })[0])
     expect(await screen.findByRole('heading', { name: /Quotes/ })).toBeInTheDocument()
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('More actions for quote PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalise quote PED-0001')[0])
@@ -168,7 +170,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     )
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
@@ -205,7 +207,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     )
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'EU'))
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
     await user.click(screen.getAllByLabelText('Visualizar orçamento PED-0001')[0])
 
     const alert = await screen.findByText("Escolha os opcionais pendentes antes de finalizar: MESA-1 (Base, Tampo).")
@@ -228,7 +230,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     )
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
@@ -249,7 +251,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     installOrdersBackend([makeSummary({ market_code: 'EU', currency: 'EUR', catalog_name: 'Living' })])
 
     renderProductPage(<PedidosPage scope="quotes" />, euUser)
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('More actions for quote PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalise quote PED-0001')[0])
@@ -263,7 +265,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     installOrdersBackend([makeSummary({ catalog_name: null })])
 
     renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
-    await screen.findAllByText('PED-0001')
+    await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
     await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
