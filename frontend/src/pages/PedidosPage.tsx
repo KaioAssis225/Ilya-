@@ -1070,20 +1070,20 @@ function OrderListActions({
 // ── Mobile order card ───────────────────────────────────────────────────────
 
 function MobileOrderCard({
-  order, clientName, repName, onCopy, onView, onPDF, onFinalize, onDelete, onDeliver, onEdit, onCancel, pdfLoading, english,
+  order, clientName, repName, onCopy, onView, onPDF, onFinalize, onDelete, onDeliver, onEdit, onCancel, pdfLoading, english, showCode,
 }: {
   order: OrderSummary; clientName: string; repName: string
   onCopy?: () => void; onView: () => void; onPDF: () => void; onFinalize?: () => void; onDelete?: () => void; onDeliver?: () => void
   onEdit?: () => void; onCancel?: () => void
-  pdfLoading: boolean; english: boolean
+  pdfLoading: boolean; english: boolean; showCode: boolean
 }) {
   return (
     <div className="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
       <div className="p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <span className="font-mono font-semibold text-gold text-sm">{order.code}</span>
-            <span className="font-mono text-[10px] text-muted-3 ml-2">{order.orc_id}</span>
+            {showCode && <span className="font-mono font-semibold text-gold text-sm">{order.code}</span>}
+            <span className={`font-mono text-[10px] text-muted-3 ${showCode ? 'ml-2' : ''}`}>{order.orc_id}</span>
             <p className="text-sm font-medium text-ink truncate mt-1">{clientName}</p>
             <p className="text-xs text-ink-3 truncate">{repName}</p>
           </div>
@@ -1578,6 +1578,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                     onDelete={canDelete ? () => askDelete(order) : undefined}
                     pdfLoading={pdfOrderId === order.id}
                     english={isEnglish}
+                    showCode={isOrdersScope}
                   />
                 ))}
                 {filtered.length === 0 && (
@@ -1605,7 +1606,9 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                 <table className="w-full text-sm">
                   <thead className="bg-surface-2">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Code' : 'Código'}</th>
+                      {isOrdersScope && (
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Code' : 'Código'}</th>
+                      )}
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Quote' : 'Orçamento'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Client' : 'Cliente'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Representative' : 'Representante'}</th>
@@ -1622,7 +1625,9 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                   <tbody>
                     {filtered.map((order) => (
                       <tr key={order.id} className="table-row">
-                        <td className="px-4 py-3 font-mono text-gold whitespace-nowrap">{order.code}</td>
+                        {isOrdersScope && (
+                          <td className="px-4 py-3 font-mono text-gold whitespace-nowrap">{order.code}</td>
+                        )}
                         <td className="px-4 py-3 font-mono text-ink-3 text-xs whitespace-nowrap">{order.orc_id}</td>
                         <td className="px-4 py-3 text-ink">{order.client_name}</td>
                         <td className="px-4 py-3 text-ink-3">{order.rep_name ?? '—'}</td>
@@ -1666,7 +1671,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                       </tr>
                     ))}
                     {filtered.length === 0 && (
-                      <tr><td colSpan={isOrdersScope ? 10 : 9} className="px-4 py-12 text-center">
+                      <tr><td colSpan={isOrdersScope ? 10 : 8} className="px-4 py-12 text-center">
                         {filter || hasFilters ? (
                           <span className="text-ink-3">{isOrdersScope ? 'Nenhum pedido encontrado com este filtro.' : 'Nenhum orçamento encontrado com este filtro.'}</span>
                         ) : isOrdersScope ? (

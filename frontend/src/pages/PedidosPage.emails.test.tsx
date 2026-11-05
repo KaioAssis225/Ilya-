@@ -121,7 +121,7 @@ function setupHandlers(summary: OrderSummary, history: OrderEmailHistory | 'empt
 
 async function openOrder(summary: OrderSummary) {
   const user = userEvent.setup()
-  await screen.findAllByText(summary.code)
+  await screen.findAllByText(summary.orc_id)
   const sourcePt = summary.is_finalized ? 'pedido' : 'orçamento'
   const sourceEn = summary.is_finalized ? 'order' : 'quote'
   const portugueseView = screen.queryAllByLabelText(`Visualizar ${sourcePt} ${summary.code}`)[0]
@@ -314,7 +314,7 @@ describe('PedidosPage — aba E-mails', () => {
     ]))
     renderProductPage(<PedidosPage />, euUser)
     const user = userEvent.setup()
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
     await user.click(screen.getAllByLabelText('View order PED-0001')[0])
     await user.click(await screen.findByRole('button', { name: 'Emails' }))
     const items = screen.getAllByRole('listitem')
@@ -408,7 +408,7 @@ describe('PedidosPage — aba E-mails', () => {
     setupHandlers(euSummary, { ...makeHistory([makeDelivery()]), test_send_available: true })
     renderProductPage(<PedidosPage />, euUser)
     const euInteraction = userEvent.setup()
-    await screen.findAllByText(euSummary.code)
+    await screen.findAllByText(euSummary.orc_id)
     await euInteraction.click(screen.getAllByLabelText('View order PED-0001')[0])
     await euInteraction.click(await screen.findByRole('button', { name: 'Emails' }))
     expect(screen.getByRole('button', { name: 'Send test email' })).toBeInTheDocument()

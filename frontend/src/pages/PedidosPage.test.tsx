@@ -54,7 +54,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
 
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
 
     expect(screen.getByRole('heading', { name: /Orçamentos/ })).toBeInTheDocument()
     expect(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
@@ -95,7 +95,7 @@ describe('PedidosPage', () => {
     )
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     await user.click(screen.getByLabelText(`Copiar orçamento ${summary.code}`))
     const copyDialog = await screen.findByRole('dialog', { name: 'Copiar orçamento' })
@@ -129,7 +129,7 @@ describe('PedidosPage', () => {
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
 
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
 
     expect(screen.getAllByLabelText(`Visualizar pedido ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.queryAllByLabelText(`Copiar pedido ${summary.code}`)).toHaveLength(0)
@@ -148,7 +148,7 @@ describe('PedidosPage', () => {
 
     const { unmount } = renderProductPage(<PedidosPage />, productTestUser('produtos', 'BR'))
 
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
 
     expect(screen.queryAllByLabelText(`Copiar orçamento ${summary.code}`)).toHaveLength(0)
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
@@ -164,7 +164,7 @@ describe('PedidosPage', () => {
       linked_id: 'client-1',
     })
 
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
 
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
@@ -272,7 +272,7 @@ describe('PedidosPage', () => {
     )
 
     renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
-    await screen.findAllByText(summary.code)
+    await screen.findAllByText(summary.orc_id)
     await user.click(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`)[0])
 
     const itemToggle = await screen.findByRole('button', { name: '3 opcionais' })
