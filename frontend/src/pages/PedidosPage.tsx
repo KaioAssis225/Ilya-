@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { DialogPanel } from '../components/Dialog'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2, MoreHorizontal, Copy as CopyIcon } from 'lucide-react'
+import { Search, Eye, Trash2, FileText, X, ImageIcon, PenLine, CheckCircle, Clock, History, Filter, Ban, ChevronDown, Factory, PackageCheck, Undo2, MoreHorizontal, Copy as CopyIcon, Paperclip } from 'lucide-react'
 import { priceListLabelFor } from '../lib/priceListLabels'
-import { useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useChangeOrderStage } from '../hooks/useOrders'
+import { openOrderItemAttachment, useOrders, useOrder, useDeleteOrder, useFinalizeOrder, useCancelOrder, useGlobalOrderHistory, useChangeOrderStage } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
@@ -683,6 +683,18 @@ function OrderDetailModal({
                           {item.observacao && <div className="text-[10px] text-gold italic mt-0.5 max-w-[150px] truncate">{item.observacao}</div>}
                           {item.comment && <div className="text-[10px] text-ink-2 mt-0.5 max-w-[220px] whitespace-pre-line break-words">
                             <span className="font-semibold">{optionalEnglish ? 'Comment' : 'Comentário'}:</span> {item.comment}
+                          </div>}
+                          {(item.attachments?.length ?? 0) > 0 && <div className="mt-1 flex max-w-[240px] flex-wrap gap-1">
+                            {item.attachments?.map(attachment => <button
+                              key={attachment.id}
+                              type="button"
+                              onClick={() => { void openOrderItemAttachment(attachment).catch(() => window.alert(viewText('Não foi possível abrir o anexo.', 'Could not open the attachment.'))) }}
+                              className="inline-flex max-w-full items-center gap-1 rounded border border-line bg-surface-quiet px-1.5 py-1 text-[10px] text-ink-2 hover:border-gold hover:text-gold"
+                              title={attachment.original_filename}
+                            >
+                              {attachment.content_type === 'application/pdf' ? <FileText className="h-3 w-3 flex-shrink-0" /> : <Paperclip className="h-3 w-3 flex-shrink-0" />}
+                              <span className="truncate">{attachment.original_filename}</span>
+                            </button>)}
                           </div>}
                         </td>
                         <td className="px-3 py-2 text-ink-3 text-xs min-w-[120px]">

@@ -27,9 +27,11 @@ from app.api.price_access import ensure_price_visible, visible_price_scope
 from app.core.lifecycle import touch_client_activity
 from app.core.limiter import limiter
 from app.core.config import settings
+from app.core.comment_attachments import delete_comment_attachment
 from app.models.catalog import Catalog
 from app.core.search import literal_contains_pattern
 from app.models.order import Order, OrderItem
+from app.models.order_item_attachment import OrderItemAttachment
 from app.models.order_history import OrderHistory
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
 from app.models.moloni import MoloniExportJob
@@ -203,6 +205,65 @@ def _order_visibility_filters(current_user: User) -> list:
     return []
 
 
+async def _resolve_item_attachments(
+    db: AsyncSession,
+    items: list[OrderItemCreate],
+    current_user: User,
+    market_code: str,
+    *,
+    editable_item_ids: set[uuid.UUID] | None = None,
+) -> dict[int, list[OrderItemAttachment]]:
+    """Valida uploads pendentes e, em edição, anexos da própria linha.
+
+    Um ID só pode aparecer em uma linha. Anexo de outro mercado, usuário ou
+    pedido responde como inválido sem revelar a existência do objeto.
+    """
+    requested: list[uuid.UUID] = []
+    for item in items:
+        if len(item.attachment_ids) > settings.COMMENT_ATTACHMENTS_MAX_PER_ITEM:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Cada item aceita no máximo {settings.COMMENT_ATTACHMENTS_MAX_PER_ITEM} anexos.",
+            )
+        requested.extend(item.attachment_ids)
+    if len(requested) != len(set(requested)):
+        raise HTTPException(status_code=422, detail="Um anexo não pode pertencer a dois itens.")
+    if not requested:
+        return {}
+
+    rows = (await db.execute(
+        select(OrderItemAttachment)
+        .where(OrderItemAttachment.id.in_(requested))
+        .with_for_update()
+    )).scalars().all()
+    by_id = {row.id: row for row in rows}
+    if len(by_id) != len(requested):
+        raise HTTPException(status_code=422, detail="Um ou mais anexos são inválidos.")
+
+    resolved: dict[int, list[OrderItemAttachment]] = {}
+    editable = editable_item_ids or set()
+    for index, item in enumerate(items):
+        item_rows: list[OrderItemAttachment] = []
+        for attachment_id in item.attachment_ids:
+            row = by_id[attachment_id]
+            pending_owned = (
+                row.order_item_id is None
+                and row.uploaded_by_user_id == current_user.id
+            )
+            existing_on_this_line = (
+                item.source_order_item_id is not None
+                and item.source_order_item_id in editable
+                and row.order_item_id == item.source_order_item_id
+            )
+            if row.market_code != market_code or not (
+                pending_owned or existing_on_this_line
+            ):
+                raise HTTPException(status_code=422, detail="Um ou mais anexos são inválidos.")
+            item_rows.append(row)
+        resolved[index] = item_rows
+    return resolved
+
+
 # Nome gravado na escolha customizada. custom_text marca a escolha: vazio na
 # opção atual, com texto nos pedidos feitos quando havia a caixa de descrição.
 CUSTOM_OPTIONAL_NAME = "Customizado"
@@ -237,6 +298,10 @@ def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
          "special_percent": None if getattr(item, "special_percent", None) is None else str(item.special_percent),
          "legacy_optionals": item.opt_categories,
          "applications": _choice_snapshot(item), "comment": item.comment,
+         "attachments": [
+             {"filename": attachment.original_filename, "content_type": attachment.content_type}
+             for attachment in getattr(item, "attachments", [])
+         ],
          **{field: str(_decimal(getattr(item, field)))
             for field in ("qty", "unit_price", "discount", "ipi_rate", "ipi_value")},
          "tax_label": item.tax_label, "currency": item.currency,
@@ -1102,7 +1167,10 @@ async def _reload_order_for_response(db, order_id) -> Order:
     result = await db.execute(
         select(Order)
         .where(Order.id == order_id)
-        .options(selectinload(Order.items).selectinload(OrderItem.optional_choices))
+        .options(
+            selectinload(Order.items).selectinload(OrderItem.optional_choices),
+            selectinload(Order.items).selectinload(OrderItem.attachments),
+        )
         .execution_options(populate_existing=True)
     )
     return await _annotate_pending_optionals(db, result.scalar_one())
@@ -1325,10 +1393,13 @@ async def _create_order_core(
     total_ipi = _ZERO
     order_items: list[OrderItem] = []
     source_items = {item.id: item for item in source_order.items} if source_order else {}
+    attachment_rows = await _resolve_item_attachments(
+        db, payload.items, current_user, market_code
+    )
     used_special_codes: set[str] = set()
     catalog_scope = order_catalog_scope(current_user, client, rep)
     strict_items: list[OrderItem] = []
-    for item_in in payload.items:
+    for item_index, item_in in enumerate(payload.items):
         lenient = is_copy_item(item_in)
         if item_in.is_special and is_client_account(current_user) and lenient:
             skipped.append({"product_code": item_in.product_code, "reason": "Conta de cliente não pode criar itens especiais / Client accounts cannot create special items."})
@@ -1426,6 +1497,7 @@ async def _create_order_core(
                 currency=context.currency,
                 observacao=product.observacao,
                 comment=item_in.comment,
+                attachments=attachment_rows.get(item_index, []),
                 is_special=item_in.is_special,
                 special_code=special_code,
                 special_percent=item_in.special_percent,
@@ -1905,6 +1977,7 @@ async def update_order(
     order.document_version += 1
 
     changes: list[str] = []
+    removed_attachment_keys: list[str] = []
 
     vat_exempt, vat_exemption_code = _resolve_vat_exemption(
         current_user, order.market_code, payload.vat_exempt, payload.vat_exemption_code,
@@ -1974,6 +2047,24 @@ async def update_order(
     if payload.items is not None:
         _ensure_special_scope(current_user, principal.code, payload.items)
         old_item_map = {item.id: item for item in order.items}
+        attachment_rows = await _resolve_item_attachments(
+            db,
+            payload.items,
+            current_user,
+            principal.code,
+            editable_item_ids=set(old_item_map),
+        )
+        retained_attachment_ids = {
+            attachment.id
+            for rows in attachment_rows.values()
+            for attachment in rows
+        }
+        removed_attachment_keys = [
+            attachment.object_key
+            for old_item in order.items
+            for attachment in old_item.attachments
+            if attachment.id not in retained_attachment_ids
+        ]
         old_codes = {i.product_code for i in order.items}
         new_codes = {i.product_code for i in payload.items}
         removed = old_codes - new_codes
@@ -2069,7 +2160,8 @@ async def update_order(
         new_items: list[OrderItem] = []
         used_source_ids: set[uuid.UUID] = set()
         used_special_codes: set[str] = set()
-        for item_in in payload.items:
+        new_item_attachments: dict[uuid.UUID, list[OrderItemAttachment]] = {}
+        for item_index, item_in in enumerate(payload.items):
             product = product_map.get(item_in.product_code)
             if not product:
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não encontrado.")
@@ -2133,8 +2225,9 @@ async def update_order(
                 localized_description = (en if order.locale == "en-GB" else pt_pt) or product.description
             if item_in.is_special:
                 localized_description = _special_description(localized_description)
+            new_item_id = uuid.uuid4()
             new_items.append(OrderItem(
-                id=uuid.uuid4(),
+                id=new_item_id,
                 order_id=order.id,
                 product_code=product.product_code,
                 description=localized_description,
@@ -2161,6 +2254,7 @@ async def update_order(
                 special_code=special_code,
                 special_percent=item_in.special_percent,
             ))
+            new_item_attachments[new_item_id] = attachment_rows.get(item_index, [])
 
         _ensure_special_comments(new_items)
         catalog = await _order_catalog(
@@ -2177,7 +2271,19 @@ async def update_order(
             changes.append(f"tabela de preço: {order.price_list_code} → {price_list.code}")
             order.price_list_code = price_list.code
 
-        # Tudo validado: agora sim remove os antigos e insere os novos.
+        # Tudo validado: desanexa primeiro os arquivos preservados. Assim o
+        # CASCADE dos itens antigos remove só os anexos omitidos pelo usuário.
+        for attachment in (
+            attachment
+            for rows in attachment_rows.values()
+            for attachment in rows
+            if attachment.order_item_id is not None
+        ):
+            attachment.order_item = None
+            attachment.order_item_id = None
+        await db.flush()
+
+        # Agora sim remove os antigos e insere os novos.
         for item in order.items:
             await db.delete(item)
         await db.flush()
@@ -2193,6 +2299,7 @@ async def update_order(
         if abs(old_total - total) > _CENT:
             changes.append(f"total: {order.currency} {old_total:.2f} → {order.currency} {total:.2f}")
         for item in new_items:
+            item.attachments = new_item_attachments[item.id]
             db.add(item)
 
     detail = "; ".join(changes) if changes else "sem alterações"
@@ -2212,6 +2319,8 @@ async def update_order(
         logger.error("Falha ao editar pedido: id=%s user=%s", order_id, current_user.id, exc_info=True)
         raise HTTPException(status_code=500, detail="Falha ao salvar as alterações do pedido. Tente novamente.")
     order = await _reload_order_for_response(db, order.id)
+    for object_key in removed_attachment_keys:
+        await delete_comment_attachment(object_key)
     logger.info("Pedido editado: id=%s user=%s changes=%s", order_id, current_user.id, detail)
     return order
 
@@ -2487,6 +2596,12 @@ async def delete_order(
     if blocker:
         raise HTTPException(status_code=409, detail=blocker)
 
+    attachment_keys = [
+        attachment.object_key
+        for item in getattr(order, "items", [])
+        for attachment in getattr(item, "attachments", [])
+    ]
+
     await enqueue_event(
         db,
         "order.deleted",
@@ -2525,6 +2640,8 @@ async def delete_order(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Pedido com revisão ou evidência não pode ser excluído.")
+    for object_key in attachment_keys:
+        await delete_comment_attachment(object_key)
     logger.warning(
         "Pedido excluído: id=%s code=%s por user_id=%s",
         order_id,

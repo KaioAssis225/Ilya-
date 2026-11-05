@@ -51,6 +51,17 @@ class OptionalChoiceRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrderItemAttachmentRead(BaseModel):
+    id: uuid.UUID
+    order_item_id: Optional[uuid.UUID] = None
+    original_filename: str
+    content_type: str
+    size_bytes: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrderItemCreate(BaseModel):
     product_code: str = Field(..., min_length=1, max_length=100)
     qty: Optional[Decimal] = Field(None, gt=0, le=1_000_000, decimal_places=2)
@@ -63,6 +74,7 @@ class OrderItemCreate(BaseModel):
     source_order_item_id: Optional[uuid.UUID] = None
     preserve_optional_choices: bool = False
     comment: Optional[str] = Field(None, max_length=1000)
+    attachment_ids: List[uuid.UUID] = Field(default_factory=list, max_length=5)
     is_special: bool = False
     special_code: Optional[str] = Field(None, max_length=100)
     special_percent: Optional[Decimal] = Field(None, gt=Decimal("-100"), le=Decimal("1000"), decimal_places=2)
@@ -71,6 +83,13 @@ class OrderItemCreate(BaseModel):
     @classmethod
     def normalize_comment(cls, value: Optional[str]) -> Optional[str]:
         return (value or "").strip() or None
+
+    @field_validator("attachment_ids")
+    @classmethod
+    def validate_attachment_ids(cls, values: List[uuid.UUID]) -> List[uuid.UUID]:
+        if len(values) != len(set(values)):
+            raise ValueError("Um mesmo anexo não pode ser repetido no item.")
+        return values
 
     @field_validator("opt_categories")
     @classmethod
@@ -171,6 +190,7 @@ class OrderItemRead(BaseModel):
     currency: str = "BRL"
     observacao: Optional[str] = None
     comment: Optional[str] = None
+    attachments: List[OrderItemAttachmentRead] = Field(default_factory=list)
     is_special: bool = False
     special_code: Optional[str] = None
     special_percent: Optional[Decimal] = None

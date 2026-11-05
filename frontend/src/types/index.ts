@@ -292,6 +292,16 @@ export interface OrderItemCreate {
   source_order_item_id?: string
   preserve_optional_choices?: boolean
   comment?: string | null
+  attachment_ids?: string[]
+}
+
+export interface OrderItemAttachment {
+  id: string
+  order_item_id: string | null
+  original_filename: string
+  content_type: string
+  size_bytes: number
+  created_at: string
 }
 
 export interface OrderCreate {
@@ -345,6 +355,7 @@ export interface OrderItem {
   observacao: string | null
   /** Comentário livre do usuário sobre o item. */
   comment?: string | null
+  attachments?: OrderItemAttachment[]
   /** Opcionais ainda sem escolha (orçamento EU em aberto); vazio quando completo. */
   pending_optionals?: string[]
   created_at: string

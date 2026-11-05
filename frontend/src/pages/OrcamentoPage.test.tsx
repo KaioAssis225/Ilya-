@@ -190,6 +190,45 @@ describe('OrcamentoPage', () => {
     sessionStorage.clear()
   })
 
+  it('anexa um PDF ao comentário da linha e persiste o ID no carrinho', async () => {
+    const user = productTestUser('admin', 'BR')
+    const product = buildProduct('BR')
+    installOrcamentoHandlers([product])
+    server.use(
+      http.post('*/order-item-attachments', () => HttpResponse.json({
+        id: 'attachment-1',
+        order_item_id: null,
+        original_filename: 'ficha-tecnica.pdf',
+        content_type: 'application/pdf',
+        size_bytes: 1024,
+        created_at: '2026-11-05T12:00:00Z',
+      }, { status: 201 })),
+    )
+
+    const { container } = renderProductPage(<OrcamentoPage />, user)
+    await pickProduct('SKU-BR')
+    clickAdd()
+
+    const commentButtons = await screen.findAllByRole('button', {
+      name: new RegExp(`Comentário de ${product.description}`, 'i'),
+    })
+    fireEvent.click(commentButtons[0])
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept*="application/pdf"]')
+    expect(fileInput).not.toBeNull()
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: { files: [new File(['%PDF-1.7\n%%EOF'], 'ficha-tecnica.pdf', { type: 'application/pdf' })] },
+    })
+
+    expect((await screen.findAllByText('ficha-tecnica.pdf')).length).toBeGreaterThan(0)
+    await waitFor(() => {
+      const raw = localStorage.getItem(cartStorageKey(user.id, 'BR'))
+      const parsed = JSON.parse(raw as string) as Array<{
+        attachments: Array<{ id: string }>
+      }>
+      expect(parsed[0].attachments).toEqual([expect.objectContaining({ id: 'attachment-1' })])
+    })
+  })
+
   it('não funde linhas quando o mesmo SKU é adicionado duas vezes com escolhas diferentes', async () => {
     const user = productTestUser('admin', 'BR')
     const product = buildProduct('BR')
