@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { UserRole } from '../contexts/AuthContext'
-import { EU_PVP_ADMIN_MAX_DISCOUNT, lineMaxDiscount, orderMaxDiscount } from './discountRules'
+import {
+  EU_PVP_ADMIN_MAX_DISCOUNT,
+  EU_PVP_REP_MAX_DISCOUNT,
+  lineMaxDiscount,
+  orderMaxDiscount,
+} from './discountRules'
 
 describe('orderMaxDiscount', () => {
   it.each<[string, UserRole]>([
@@ -27,6 +32,24 @@ describe('orderMaxDiscount', () => {
 
   it('pvp representante usa o próprio limite configurado', () => {
     expect(orderMaxDiscount('EU', 'pvp', 'representante', 10)).toBe(10)
+  })
+
+  it.each<UserRole>(['representante', 'vendedor'])(
+    'pvp %s com cadastro acima de 10 fica limitado a 10',
+    (role) => {
+      expect(orderMaxDiscount('EU', 'pvp', role, 50)).toBe(EU_PVP_REP_MAX_DISCOUNT)
+    },
+  )
+
+  it.each<UserRole>(['representante', 'vendedor'])(
+    'pvp %s com cadastro 5 mantém 5',
+    (role) => {
+      expect(orderMaxDiscount('EU', 'pvp', role, 5)).toBe(5)
+    },
+  )
+
+  it('BR não tem o teto fixo de 10', () => {
+    expect(orderMaxDiscount('BR', 'lojista', 'representante', 50)).toBe(50)
   })
 
   it('pvp cliente não tem desconto', () => {
