@@ -515,7 +515,7 @@ def aplicar(
                 except ValueError:
                     nova = ""
                 if nova and nova != linha.foto_antiga:
-                    registrar(linha, OK, http, nova, "sim" if apagaria else "nao (nao era do bucket EU)", "")
+                    registrar(linha, OK, http, nova, "sim, se nenhum outro item a usa" if apagaria else "nao (nao era do bucket EU)", "")
                     imprimir(f"[{posicao}/{len(fila)}] {linha.codigo}: ok")
                 else:
                     registrar(linha, ERRO, http, nova, "", "API respondeu 200 mas a foto nao mudou; confira no site.")
@@ -890,7 +890,8 @@ def main(
         imprimir(f"Relatorio: {relatorio}")
         imprimir(f"Backup (so referencia, {n_backup} produtos): {backup}")
         imprimir("ATENCAO: o backup lista as fotos antigas, mas NAO guarda os arquivos. "
-                 "As fotos antigas do bucket EU sao apagadas na troca e nao voltam.")
+                 "As fotos antigas do bucket EU sao apagadas na troca e nao voltam, "
+                 "EXCETO as que outro produto, opcional ou pedido ainda usa: essas ficam.")
 
         if not args.apply:
             imprimir("\nNada foi alterado. Para trocar de verdade rode de novo com --apply.")

@@ -31,6 +31,7 @@ from app.schemas.optional import OptionalColorRead
 from app.api.routers.optionals import fill_optional_media
 from app.core.config import settings
 from app.core.search import literal_contains_pattern
+from app.core.media_orphans import delete_upload_if_unreferenced
 from app.core.uploads import build_photo_url, build_thumbnail_url, delete_upload, persist_upload, sanitize_image_upload
 
 
@@ -1243,7 +1244,7 @@ async def upload_photo(
         raise
     # A foto antiga pode ser a do produto BR de origem, ainda não copiada para
     # o bucket europeu. `market` impede apagar arquivo de outro mercado.
-    await delete_upload(old_photo_path, market=product.market_code)
+    await delete_upload_if_unreferenced(db, old_photo_path, market=product.market_code)
     await db.refresh(product)
     if principal.code == "BR":
         return _to_read(product)
@@ -1266,7 +1267,7 @@ async def delete_photo(
 
     Produtos europeus ainda podem apontar para uma imagem herdada do Brasil.
     Nesse caso a referência EU é limpa, mas o arquivo pertencente ao bucket BR
-    é preservado por ``delete_upload(..., market=...)``.
+    é preservado por ``delete_upload_if_unreferenced(..., market=...)``.
     """
     result = await db.execute(select(Product).where(
         Product.id == product_id,
@@ -1289,7 +1290,7 @@ async def delete_photo(
     except Exception:
         await db.rollback()
         raise
-    await delete_upload(old_photo_path, market=product.market_code)
+    await delete_upload_if_unreferenced(db, old_photo_path, market=product.market_code)
     await db.refresh(product)
     if principal.code == "BR":
         return _to_read(product)
