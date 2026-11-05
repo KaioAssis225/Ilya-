@@ -74,27 +74,27 @@ class TestResolveMaxDiscount:
             _user(UserRole.admin), _client("100.00"), None, "EU", "pvp"
         ) == Decimal("70.00")
 
-    def test_eu_pvp_operador_interno_usa_limite_do_representante(self):
+    def test_eu_pvp_operador_interno_tem_teto_fixo_de_dez(self):
         assert _resolve_max_discount(
             _user(UserRole.vendedor), _client("100.00"), _rep("10.00"), "EU", "pvp"
         ) == Decimal("10.00")
 
-    def test_eu_pvp_representante_usa_proprio_limite(self):
+    def test_eu_pvp_representante_tem_teto_fixo_de_dez(self):
         assert _resolve_max_discount(
             _user(UserRole.representante), _client("100.00"), _rep("10.00"), "EU", "pvp"
         ) == Decimal("10.00")
 
     @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.representante])
-    def test_eu_pvp_cadastro_acima_de_dez_fica_limitado_a_dez(self, role):
+    def test_eu_pvp_cadastro_legado_acima_de_dez_nao_altera_o_teto(self, role):
         assert _resolve_max_discount(
             _user(role), _client("100.00"), _rep("50.00"), "EU", "pvp"
         ) == Decimal("10.00")
 
     @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.representante])
-    def test_eu_pvp_cadastro_abaixo_de_dez_e_respeitado(self, role):
+    def test_eu_pvp_cadastro_legado_abaixo_de_dez_nao_altera_o_teto(self, role):
         assert _resolve_max_discount(
             _user(role), _client("100.00"), _rep("5.00"), "EU", "pvp"
-        ) == Decimal("5.00")
+        ) == Decimal("10.00")
 
     def test_br_representante_nao_tem_teto_fixo_de_dez(self):
         assert _resolve_max_discount(

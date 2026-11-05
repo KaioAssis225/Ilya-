@@ -271,6 +271,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
     await user.click(newRepresentativeButton)
 
     expect(screen.queryByText('Tabelas de preço visíveis')).toBeNull()
+    expect(screen.queryByText('Desconto Máximo (%)')).toBeNull()
     await user.type(screen.getByLabelText('Nome *'), 'Representante Portugal')
     await user.type(screen.getByLabelText('Telefone *'), '+351 912 345 678')
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
@@ -284,6 +285,7 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
         all_price_lists: true,
         price_list_codes: [],
       })
+      expect(createPayload).not.toHaveProperty('max_discount')
     })
   })
 })
