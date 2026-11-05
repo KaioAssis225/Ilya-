@@ -7,7 +7,12 @@ const KEY = 'orders'
 export async function uploadOrderItemAttachment(file: File): Promise<OrderItemAttachment> {
   const form = new FormData()
   form.append('file', file)
-  return (await api.post<OrderItemAttachment>('/order-item-attachments', form)).data
+  // O cliente HTTP usa application/json por padrão e, com esse cabeçalho, o
+  // axios converte o FormData em JSON (o arquivo some). Como nos demais uploads,
+  // o cabeçalho multipart faz o navegador enviar o corpo com o boundary correto.
+  return (await api.post<OrderItemAttachment>('/order-item-attachments', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })).data
 }
 
 export async function deletePendingOrderItemAttachment(id: string): Promise<void> {
