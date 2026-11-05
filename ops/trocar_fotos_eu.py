@@ -18,9 +18,18 @@ Seguranca:
     emitido para o mercado EU. O token nunca e impresso nem gravado.
   * Nenhuma credencial de bucket passa por aqui: o upload vai pela API.
 
-Uso:
+Uso (troca de fotos):
   py ops/trocar_fotos_eu.py "C:\\Users\\...\\IBTW"             # dry-run
   py ops/trocar_fotos_eu.py "C:\\Users\\...\\IBTW" --apply     # troca de verdade
+
+Fotos orfas do bucket EU (objetos que nenhuma linha do banco usa), DEPOIS da troca.
+Exige conta de plataforma (platform_admin). Nada e apagado de imediato: as orfas
+vao para a quarentena `eu-trash/<data>/` do mesmo bucket e podem ser restauradas.
+  py ops/trocar_fotos_eu.py --orfas                                  # so lista
+  py ops/trocar_fotos_eu.py --orfas --apagar                         # move p/ quarentena
+  py ops/trocar_fotos_eu.py --orfas --quarentena                     # ver lotes
+  py ops/trocar_fotos_eu.py --orfas --restaurar AAAA-MM-DD           # desfaz
+  py ops/trocar_fotos_eu.py --orfas --esvaziar-quarentena AAAA-MM-DD # apaga de vez (7+ dias)
 """
 
 from __future__ import annotations
@@ -43,6 +52,9 @@ from urllib.parse import unquote, urlsplit
 import httpx
 
 BASE_URL_PADRAO = "https://ilya-rust.vercel.app/api/v1"
+# Mesma API publicada em ops/sincronizar-fotos-eu.ps1. Os passos de orfas fazem
+# chamadas longas (varredura do banco + bucket), melhor sem o proxy da Vercel.
+BASE_URL_PLATAFORMA = "https://ilya-production-7857.up.railway.app/api/v1"
 ORIGEM_PADRAO = "https://ilya-rust.vercel.app"
 EXTENSOES_IMAGEM = {".jpeg", ".jpg", ".png", ".webp"}
 PREFIXO_MEDIA = "/api/v1/media/"
@@ -91,6 +103,7 @@ class Sessao:
     base_url: str
     token: str = ""
     pode_renovar: bool = False
+    plataforma: bool = False  # True nos passos de fotos orfas (login de plataforma)
 
     def url(self, caminho: str) -> str:
         return self.base_url.rstrip("/") + caminho
@@ -170,6 +183,11 @@ def _detalhe(resposta: httpx.Response) -> str:
     return str(detalhe)[:300] if detalhe else f"HTTP {resposta.status_code}"
 
 
+def _token_de_plataforma(token: str) -> bool:
+    claims = _claims_do_token(token)
+    return claims.get("scope") == "platform" and "market" not in claims
+
+
 def autenticar(
     sessao: Sessao,
     *,
@@ -177,11 +195,19 @@ def autenticar(
     pedir_usuario: Callable[[], str],
     pedir_senha: Callable[[], str],
 ) -> None:
-    """Deixa `sessao.token` apontando para o mercado EU. Nunca imprime segredos."""
+    """Deixa `sessao.token` pronto: mercado EU (fotos) ou plataforma (orfas).
+    Nunca imprime segredos."""
     if token_env:
         sessao.token = token_env.strip()
         sessao.pode_renovar = False
-        if _claims_do_token(sessao.token).get("market") != "EU":
+        if sessao.plataforma:
+            if not _token_de_plataforma(sessao.token):
+                raise ErroFatal(
+                    "O token em ILYA_TOKEN nao e de plataforma. Para as fotos orfas "
+                    "use a sessao de plataforma, ou rode sem ILYA_TOKEN para digitar "
+                    "usuario e senha."
+                )
+        elif _claims_do_token(sessao.token).get("market") != "EU":
             raise ErroFatal(
                 "O token em ILYA_TOKEN nao e do mercado EU. Gere o token com o "
                 "sistema em Portugal, ou rode sem ILYA_TOKEN para digitar "
@@ -194,14 +220,21 @@ def autenticar(
     if not identificador or not senha:
         raise ErroFatal("Usuario e senha sao obrigatorios.")
     resposta = sessao.client.post(
-        sessao.url("/auth/login"), json={"identifier": identificador, "password": senha}
+        sessao.url("/platform/auth/login" if sessao.plataforma else "/auth/login"),
+        json={"identifier": identificador, "password": senha},
     )
     del senha
+    if resposta.status_code == 403 and sessao.plataforma:
+        raise ErroFatal("Essa conta nao tem permissao de plataforma (platform_admin).")
     if resposta.status_code != 200:
         raise ErroFatal(f"Login recusado: {_detalhe(resposta)}")
     sessao.token = resposta.json()["access_token"]
     sessao.pode_renovar = True
 
+    if sessao.plataforma:
+        if not _token_de_plataforma(sessao.token):
+            raise ErroFatal("A sessao nao ficou no escopo de plataforma. Nada foi alterado.")
+        return
     if _claims_do_token(sessao.token).get("market") != "EU":
         troca = sessao.client.post(
             sessao.url("/auth/switch-market"),
@@ -221,11 +254,18 @@ def renovar_token(sessao: Sessao) -> bool:
     """Renova o access token pelo cookie de refresh. Falso se nao for possivel."""
     if not sessao.pode_renovar:
         return False
-    resposta = sessao.client.post(sessao.url("/auth/refresh"))
+    resposta = sessao.client.post(
+        sessao.url("/platform/auth/refresh" if sessao.plataforma else "/auth/refresh")
+    )
     if resposta.status_code != 200:
         return False
     novo = resposta.json().get("access_token")
-    if not novo or _claims_do_token(novo).get("market") != "EU":
+    if not novo:
+        return False
+    if sessao.plataforma:
+        if not _token_de_plataforma(novo):
+            return False
+    elif _claims_do_token(novo).get("market") != "EU":
         return False
     sessao.token = novo
     return True
@@ -492,19 +532,270 @@ def aplicar(
 
 
 # --------------------------------------------------------------------------- #
+# Fotos orfas do bucket EU (rotas de plataforma; nada sai direto do bucket)
+# --------------------------------------------------------------------------- #
+
+CONFIRMACAO_ORFAS = "APAGAR"
+CONFIRMACAO_DEFINITIVA = "APAGAR DE VEZ"
+LOTE_ORFAS = 200
+COLUNAS_LOG_ORFAS = ["hora", "acao", "chave", "status", "mensagem"]
+
+
+def _chamar(sessao: Sessao, metodo: str, caminho: str, *, json_corpo: dict | None = None,
+            espera: float = 300.0) -> httpx.Response:
+    """Chamada de plataforma; renova o token uma vez se vencer."""
+    for tentativa in range(2):
+        resposta = sessao.client.request(
+            metodo, sessao.url(caminho), json=json_corpo,
+            headers=sessao.cabecalho(), timeout=espera,
+        )
+        if resposta.status_code == 401 and tentativa == 0 and renovar_token(sessao):
+            continue
+        return resposta
+    return resposta
+
+
+def _megabytes(n_bytes: int) -> str:
+    return f"{n_bytes / (1024 * 1024):.1f} MB"
+
+
+def inventariar_orfas(sessao: Sessao, saida: Path, carimbo: str,
+                      imprimir: Callable[[str], None]) -> dict:
+    """So leitura. Mostra o resumo e grava a lista completa de chaves."""
+    resposta = _chamar(sessao, "GET", "/markets/EU/media/orphans")
+    if resposta.status_code == 403:
+        raise ErroFatal("Essa conta nao tem permissao de plataforma (platform_admin).")
+    if resposta.status_code != 200:
+        raise ErroFatal(f"Falha no inventario de orfas: {_detalhe(resposta)}")
+    inv = resposta.json()
+    orfas, bucket, varredura = inv["orphans"], inv["bucket"], inv["scan"]
+    lista = saida / f"orfas-lista-{carimbo}.csv"
+    with _abrir_csv(lista) as arq:
+        escritor = csv.writer(arq, delimiter=";")
+        escritor.writerow(["chave"])
+        for chave in orfas["keys"]:
+            escritor.writerow([chave])
+    imprimir("")
+    imprimir("Inventario de fotos orfas do bucket EU (nada foi alterado)")
+    imprimir(f"  Varredura do banco: {'completa' if varredura['complete'] else 'INCOMPLETA'} "
+             f"({varredura['columns_scanned']} colunas, {varredura['referenced_photo_ids']} fotos em uso)")
+    imprimir(f"  Objetos no bucket (fotos): {bucket['total']['objects']}")
+    imprimir(f"  Em uso (ficam): {bucket['referenced']['objects']}")
+    imprimir(f"  Recentes, menos de {inv['grace_hours']} h (ficam): {bucket['kept_recent_24h']['objects']}")
+    imprimir(f"  Nome fora do padrao (ficam): {bucket['kept_unrecognized_name']['objects']}")
+    imprimir(f"  ORFAS: {orfas['objects']} objetos, {_megabytes(orfas['bytes'])}")
+    for prefixo, dados in orfas["by_prefix"].items():
+        if dados["objects"]:
+            imprimir(f"      {prefixo}: {dados['objects']} ({_megabytes(dados['bytes'])})")
+    for chave in orfas["sample"][:5]:
+        imprimir(f"      ex.: {chave}")
+    imprimir(f"  Lista completa das chaves: {lista}")
+    if not inv["can_quarantine"]:
+        imprimir(f"  BLOQUEADO por seguranca: {inv['blocked_reason']}")
+    return inv
+
+
+def _registrar_orfas(escritor, arq, acao: str, chave: str, status: str, mensagem: str = "",
+                     agora: Callable[[], datetime] = datetime.now) -> None:
+    escritor.writerow([agora().isoformat(timespec="seconds"), acao, chave, status, mensagem])
+    arq.flush()
+
+
+def mover_orfas_para_quarentena(
+    sessao: Sessao, inventario: dict, log: Path, imprimir: Callable[[str], None],
+    agora: Callable[[], datetime] = datetime.now,
+) -> dict:
+    """Move para eu-trash/ exatamente o conjunto inventariado, em lotes encadeados.
+    Para no primeiro 409 (conjunto mudou) ou quando um lote nao avanca."""
+    total = inventario["orphans"]["objects"]
+    confirm = inventario["confirm"]
+    movidas = falhas = 0
+    with _abrir_csv(log) as arq:
+        escritor = csv.writer(arq, delimiter=";")
+        escritor.writerow(COLUNAS_LOG_ORFAS)
+        while movidas + falhas < total:
+            resposta = _chamar(
+                sessao, "POST", "/markets/EU/media/orphans/purge",
+                json_corpo={"confirm": confirm, "limit": LOTE_ORFAS},
+            )
+            if resposta.status_code != 200:
+                msg = _detalhe(resposta)
+                _registrar_orfas(escritor, arq, "quarentena", "", f"PAROU_{resposta.status_code}", msg, agora)
+                imprimir(f"PAROU ({resposta.status_code}): {msg}")
+                break
+            dados = resposta.json()
+            for chave in dados["moved"]:
+                _registrar_orfas(escritor, arq, "quarentena", chave, "OK",
+                                 f"eu-trash/{dados['quarantine_date']}/{chave}", agora)
+            for item in dados["failed"]:
+                _registrar_orfas(escritor, arq, "quarentena", item["key"], "ERRO", item["error"], agora)
+            movidas += len(dados["moved"])
+            falhas += len(dados["failed"])
+            imprimir(f"  lote: {len(dados['moved'])} movidas, {len(dados['failed'])} falhas, "
+                     f"restam {dados['remaining']}")
+            confirm = dados["next_confirm"]
+            if dados["remaining"] == 0 or not dados["moved"]:
+                break
+    return {"movidas": movidas, "falhas": falhas, "total": total}
+
+
+def listar_quarentena(sessao: Sessao, imprimir: Callable[[str], None]) -> dict:
+    resposta = _chamar(sessao, "GET", "/markets/EU/media/orphans/quarantine")
+    if resposta.status_code != 200:
+        raise ErroFatal(f"Falha ao consultar a quarentena: {_detalhe(resposta)}")
+    dados = resposta.json()
+    imprimir("")
+    if not dados["batches"]:
+        imprimir("Quarentena vazia.")
+    for lote in dados["batches"]:
+        situacao = ("pode apagar de vez" if lote["can_delete"]
+                    else f"so apaga de vez com {dados['min_age_days']}+ dias")
+        imprimir(f"  {lote['date']}: {lote['objects']} objetos, {_megabytes(lote['bytes'])}, "
+                 f"{lote['age_days']} dia(s) - {situacao}")
+    return dados
+
+
+def restaurar_quarentena(sessao: Sessao, data: str, log: Path,
+                         imprimir: Callable[[str], None],
+                         agora: Callable[[], datetime] = datetime.now) -> int:
+    total = 0
+    with _abrir_csv(log) as arq:
+        escritor = csv.writer(arq, delimiter=";")
+        escritor.writerow(COLUNAS_LOG_ORFAS)
+        while True:
+            resposta = _chamar(sessao, "POST", "/markets/EU/media/orphans/quarantine/restore",
+                               json_corpo={"date": data, "limit": LOTE_ORFAS})
+            if resposta.status_code != 200:
+                raise ErroFatal(f"Falha ao restaurar: {_detalhe(resposta)}")
+            dados = resposta.json()
+            for chave in dados["restored"]:
+                _registrar_orfas(escritor, arq, "restaurar", chave, "OK", "", agora)
+            for item in dados["failed"]:
+                _registrar_orfas(escritor, arq, "restaurar", item["key"], "ERRO", item["error"], agora)
+            total += len(dados["restored"])
+            imprimir(f"  lote: {len(dados['restored'])} restauradas, restam {dados['remaining']}")
+            if dados["remaining"] == 0 or not dados["restored"]:
+                return total
+
+
+def apagar_quarentena(sessao: Sessao, lote: dict, log: Path, imprimir: Callable[[str], None],
+                      agora: Callable[[], datetime] = datetime.now) -> int:
+    confirm, total = lote["confirm"], 0
+    with _abrir_csv(log) as arq:
+        escritor = csv.writer(arq, delimiter=";")
+        escritor.writerow(COLUNAS_LOG_ORFAS)
+        while True:
+            resposta = _chamar(sessao, "POST", "/markets/EU/media/orphans/quarantine/delete",
+                               json_corpo={"date": lote["date"], "confirm": confirm, "limit": LOTE_ORFAS})
+            if resposta.status_code != 200:
+                raise ErroFatal(f"Falha ao apagar a quarentena: {_detalhe(resposta)}")
+            dados = resposta.json()
+            for chave in dados["deleted"]:
+                _registrar_orfas(escritor, arq, "apagar_de_vez", chave, "OK", "", agora)
+            for item in dados["failed"]:
+                _registrar_orfas(escritor, arq, "apagar_de_vez", item["key"], "ERRO", item["error"], agora)
+            total += len(dados["deleted"])
+            imprimir(f"  lote: {len(dados['deleted'])} apagadas, restam {dados['remaining']}")
+            confirm = dados["next_confirm"]
+            if dados["remaining"] == 0 or not dados["deleted"]:
+                return total
+
+
+def executar_orfas(
+    args: argparse.Namespace, sessao: Sessao, carimbo: str,
+    entrada: Callable[[str], str], imprimir: Callable[[str], None],
+) -> int:
+    """Passos de fotos orfas. Cada acao que altera algo pede confirmacao digitada."""
+    if args.restaurar:
+        lista = listar_quarentena(sessao, imprimir)
+        if args.restaurar not in {b["date"] for b in lista["batches"]}:
+            raise ErroFatal(f"Nao ha lote de quarentena em {args.restaurar}.")
+        log = args.saida / f"log-orfas-restaurar-{carimbo}.csv"
+        n = restaurar_quarentena(sessao, args.restaurar, log, imprimir)
+        imprimir(f"\n{n} fotos voltaram ao lugar de origem. Log: {log}")
+        return 0
+
+    if args.esvaziar_quarentena:
+        lista = listar_quarentena(sessao, imprimir)
+        lote = next((b for b in lista["batches"] if b["date"] == args.esvaziar_quarentena), None)
+        if lote is None:
+            raise ErroFatal(f"Nao ha lote de quarentena em {args.esvaziar_quarentena}.")
+        if not lote["can_delete"]:
+            raise ErroFatal(f"Esse lote tem {lote['age_days']} dia(s); so pode ser apagado de vez "
+                            f"com {lista['min_age_days']}+ dias.")
+        if not args.sim:
+            resposta = entrada(
+                f"\nIRREVERSIVEL: apagar de vez {lote['objects']} fotos ({_megabytes(lote['bytes'])}) "
+                f"da quarentena de {lote['date']}. Digite {CONFIRMACAO_DEFINITIVA} para continuar: ")
+            if resposta.strip() != CONFIRMACAO_DEFINITIVA:
+                imprimir("Cancelado. Nada foi alterado.")
+                return 1
+        log = args.saida / f"log-orfas-apagar-definitivo-{carimbo}.csv"
+        n = apagar_quarentena(sessao, lote, log, imprimir)
+        imprimir(f"\n{n} fotos apagadas de vez. Log: {log}")
+        return 0
+
+    if args.quarentena:
+        listar_quarentena(sessao, imprimir)
+        return 0
+
+    inventario = inventariar_orfas(sessao, args.saida, carimbo, imprimir)
+    if not args.apagar:
+        imprimir("\nNada foi alterado. Confira o numero e, se estiver certo, rode de novo "
+                 "com --orfas --apagar.")
+        return 0
+    if not inventario["can_quarantine"]:
+        return 1
+    if inventario["orphans"]["objects"] == 0:
+        imprimir("\nNao ha fotos orfas.")
+        return 0
+    if not args.sim:
+        resposta = entrada(
+            f"\nVai MOVER {inventario['orphans']['objects']} fotos orfas "
+            f"({_megabytes(inventario['orphans']['bytes'])}) para a quarentena eu-trash/ do "
+            f"bucket EU. Nada some de vez agora; da para restaurar. "
+            f"Digite {CONFIRMACAO_ORFAS} para continuar: ")
+        if resposta.strip() != CONFIRMACAO_ORFAS:
+            imprimir("Cancelado. Nada foi alterado.")
+            return 1
+    log = args.saida / f"log-orfas-quarentena-{carimbo}.csv"
+    resultado = mover_orfas_para_quarentena(sessao, inventario, log, imprimir)
+    imprimir("")
+    imprimir(f"Resultado: {resultado['movidas']} movidas para a quarentena, "
+             f"{resultado['falhas']} falhas, de {resultado['total']} previstas.")
+    imprimir(f"Log: {log}")
+    imprimir("Para desfazer: --orfas --restaurar AAAA-MM-DD. Para apagar de vez (so apos 7 dias): "
+             "--orfas --esvaziar-quarentena AAAA-MM-DD.")
+    return 0 if resultado["falhas"] == 0 and resultado["movidas"] == resultado["total"] else 2
+
+
+# --------------------------------------------------------------------------- #
 # Linha de comando
 # --------------------------------------------------------------------------- #
 
 def _argumentos(argv: list[str] | None) -> argparse.Namespace:
     raiz = Path(__file__).resolve().parent.parent
     p = argparse.ArgumentParser(
-        description="Troca fotos do mercado EU por arquivos <CODIGO>.jpeg de uma pasta."
+        description="Troca fotos do mercado EU por arquivos <CODIGO>.jpeg de uma pasta "
+                    "e limpa fotos orfas do bucket EU."
     )
-    p.add_argument("pasta", type=Path, help="Pasta com os arquivos <CODIGO>.jpeg")
+    p.add_argument("pasta", type=Path, nargs="?",
+                   help="Pasta com os arquivos <CODIGO>.jpeg (nao usada com --orfas)")
+    p.add_argument("--orfas", action="store_true",
+                   help="Fotos orfas do bucket EU: so lista (inventario), nao altera nada.")
+    p.add_argument("--apagar", action="store_true",
+                   help="Com --orfas: move as orfas para a quarentena (pede para digitar APAGAR).")
+    p.add_argument("--quarentena", action="store_true",
+                   help="Com --orfas: lista os lotes que estao na quarentena.")
+    p.add_argument("--restaurar", metavar="AAAA-MM-DD", default="",
+                   help="Com --orfas: devolve um lote da quarentena ao lugar de origem.")
+    p.add_argument("--esvaziar-quarentena", metavar="AAAA-MM-DD", default="",
+                   help="Com --orfas: apaga DE VEZ um lote com 7+ dias (irreversivel).")
     p.add_argument("--apply", action="store_true",
                    help="Troca as fotos de verdade. Sem isso e so simulacao (dry-run).")
-    p.add_argument("--base-url", default=os.environ.get("ILYA_API_URL", BASE_URL_PADRAO),
-                   help=f"Base da API (padrao: {BASE_URL_PADRAO}).")
+    p.add_argument("--base-url", default=os.environ.get("ILYA_API_URL", ""),
+                   help=f"Base da API (padrao: {BASE_URL_PADRAO}; com --orfas: "
+                        f"{BASE_URL_PLATAFORMA}, que nao passa pelo proxy da Vercel).")
     p.add_argument("--origin", default=ORIGEM_PADRAO,
                    help="Origem enviada nas rotas de cookie (precisa estar na lista do CORS).")
     p.add_argument("--saida", type=Path, default=raiz / "logs" / "fotos-eu",
@@ -532,13 +823,42 @@ def main(
     carimbo = datetime.now().strftime("%Y%m%d-%H%M%S")
     modo = "APLICAR (altera o site)" if args.apply else "DRY-RUN (nao altera nada)"
 
+    sub_orfas = (args.apagar, args.quarentena, args.restaurar, args.esvaziar_quarentena)
+    if args.orfas:
+        if args.pasta or args.apply or args.somente:
+            imprimir("ERRO: --orfas nao usa pasta, --apply nem --somente. "
+                     "As fotos orfas e a troca de fotos sao passos separados.")
+            return 1
+        if sum(1 for opcao in sub_orfas if opcao) > 1:
+            imprimir("ERRO: use so uma acao por vez com --orfas.")
+            return 1
+    else:
+        if any(sub_orfas):
+            imprimir("ERRO: --apagar, --quarentena, --restaurar e --esvaziar-quarentena "
+                     "so valem junto com --orfas.")
+            return 1
+        if args.pasta is None:
+            imprimir("ERRO: informe a pasta das fotos (ou use --orfas).")
+            return 1
+
     proprio_client = client is None
     if client is None:
         client = httpx.Client(timeout=30.0, follow_redirects=False)
     client.headers.update({"Origin": args.origin})
-    sessao = Sessao(client=client, base_url=args.base_url)
+    base_url = args.base_url or (BASE_URL_PLATAFORMA if args.orfas else BASE_URL_PADRAO)
+    sessao = Sessao(client=client, base_url=base_url, plataforma=args.orfas)
 
     try:
+        if args.orfas:
+            imprimir("Modo: FOTOS ORFAS DO BUCKET EU")
+            autenticar(
+                sessao,
+                token_env=ambiente.get("ILYA_TOKEN"),
+                pedir_usuario=lambda: entrada("Usuario ou e-mail (conta de plataforma): "),
+                pedir_senha=lambda: senha("Senha (nao aparece ao digitar): "),
+            )
+            return executar_orfas(args, sessao, carimbo, entrada, imprimir)
+
         arquivos, ignorados = listar_arquivos(args.pasta)
         if args.somente:
             pedidos = {normalizar_codigo(c) for c in args.somente.split(",") if c.strip()}

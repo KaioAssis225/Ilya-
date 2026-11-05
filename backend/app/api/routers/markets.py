@@ -17,6 +17,7 @@ from app.api.deps import (
     get_platform_principal,
     require_platform_capability,
 )
+from app.core import media_orphans
 from app.core.config import settings
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.core.uploads import copy_upload_to_market, read_upload_limited
@@ -340,6 +341,72 @@ async def sync_europe_media(
             .execution_options(skip_market_scope=True)
         )).scalar_one()
     return {"copied": copied, "failed": failed, "remaining": remaining}
+
+
+class OrphanPurgeRequest(BaseModel):
+    confirm: str = Field(min_length=3, max_length=64)
+    limit: int = Field(default=media_orphans.DEFAULT_BATCH, ge=1, le=media_orphans.MAX_BATCH)
+
+
+class QuarantineRestoreRequest(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    limit: int = Field(default=media_orphans.DEFAULT_BATCH, ge=1, le=media_orphans.MAX_BATCH)
+
+
+class QuarantineDeleteRequest(QuarantineRestoreRequest):
+    confirm: str = Field(min_length=3, max_length=64)
+
+
+@router.get("/EU/media/orphans")
+async def inventory_europe_orphan_photos(
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Inventário (somente leitura) das fotos do bucket EU que nenhuma linha do
+    banco referencia. Não altera nada. `confirm` identifica o conjunto listado."""
+    return media_orphans.inventory_payload(await media_orphans.build_inventory(db))
+
+
+@router.post("/EU/media/orphans/purge")
+async def quarantine_europe_orphan_photos(
+    body: OrphanPurgeRequest,
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Move as órfãs listadas para a quarentena `eu-trash/<data>/` do mesmo bucket
+    (nada é apagado). Exige o `confirm` do inventário atual; 409 se o conjunto
+    mudou. Em lotes: repita com o `next_confirm` até `remaining` chegar a 0."""
+    return await media_orphans.quarantine_orphans(
+        db, confirm=body.confirm, limit=body.limit
+    )
+
+
+@router.get("/EU/media/orphans/quarantine")
+async def list_europe_orphan_quarantine(
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Lotes em quarentena (data, quantidade, tamanho e se já podem ser apagados)."""
+    return await media_orphans.quarantine_status()
+
+
+@router.post("/EU/media/orphans/quarantine/restore")
+async def restore_europe_orphan_quarantine(
+    body: QuarantineRestoreRequest,
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Devolve um lote da quarentena ao lugar de origem (desfaz o purge)."""
+    return await media_orphans.restore_quarantine(body.date, limit=body.limit)
+
+
+@router.post("/EU/media/orphans/quarantine/delete")
+async def delete_europe_orphan_quarantine(
+    body: QuarantineDeleteRequest,
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Apaga DE VEZ um lote da quarentena com 7+ dias. Irreversível."""
+    return await media_orphans.delete_quarantine(
+        body.date, confirm=body.confirm, limit=body.limit
+    )
 
 
 @router.put("/EU/products/{product_id}/vat")
