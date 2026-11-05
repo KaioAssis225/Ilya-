@@ -40,4 +40,7 @@ def test_free_country_iroko_is_the_single_head_after_vat_exempt():
     contacts = script.get_revision("client_contacts_r40")
     assert contacts is not None
     assert contacts.down_revision == "client_contacted_r39"
-    assert script.get_heads() == ["client_contacts_r40"]
+    attachments = script.get_revision("order_item_attachments_r41")
+    assert attachments is not None
+    assert attachments.down_revision == "client_contacts_r40"
+    assert script.get_heads() == ["order_item_attachments_r41"]

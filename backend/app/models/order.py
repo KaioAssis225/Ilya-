@@ -208,6 +208,16 @@ class OrderItem(Base, TimestampMixin):
     optional_choices: Mapped[list["OrderItemOptionalChoice"]] = relationship(
         "OrderItemOptionalChoice", cascade="all, delete-orphan", lazy="selectin",
     )
+    attachments: Mapped[list["OrderItemAttachment"]] = relationship(
+        "OrderItemAttachment",
+        back_populates="order_item",
+        # Sem delete-orphan: durante a edição, anexos preservados são
+        # desassociados da linha antiga e reassociados à linha recriada.
+        # A exclusão da linha continua removendo seus anexos por cascade.
+        cascade="all",
+        lazy="selectin",
+        order_by="OrderItemAttachment.created_at",
+    )
 
     is_circular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=1)

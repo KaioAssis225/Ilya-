@@ -103,6 +103,17 @@ class Settings(BaseSettings):
     # Vazio herda o estilo do bucket principal: na Railway os dois são iguais.
     OBJECT_STORAGE_EU_ADDRESSING_STYLE: str = ""
 
+    # Bucket privado de anexos dos comentários de itens. É único para BR/EU;
+    # a chave carrega o mercado e o acesso sempre passa pela API autenticada.
+    COMMENT_ATTACHMENTS_ENDPOINT: str = ""
+    COMMENT_ATTACHMENTS_ACCESS_KEY_ID: str = ""
+    COMMENT_ATTACHMENTS_SECRET_ACCESS_KEY: str = ""
+    COMMENT_ATTACHMENTS_BUCKET: str = ""
+    COMMENT_ATTACHMENTS_REGION: str = "auto"
+    COMMENT_ATTACHMENTS_ADDRESSING_STYLE: str = "virtual"
+    COMMENT_ATTACHMENTS_MAX_MB: int = 10
+    COMMENT_ATTACHMENTS_MAX_PER_ITEM: int = 5
+
     RATE_LIMIT_STORAGE_URI: str = "memory://"
     RATE_LIMIT_DEFAULT: str = "200/minute"
     # Login é anônimo, então esta cota externa é por IP. Numa feira/showroom a
@@ -237,6 +248,21 @@ class Settings(BaseSettings):
 
     def eu_object_storage_partially_configured(self) -> bool:
         values = self._eu_object_storage_values()
+        return any(values) and not all(values)
+
+    def _comment_attachment_storage_values(self) -> tuple[str, str, str, str]:
+        return (
+            self.COMMENT_ATTACHMENTS_ENDPOINT,
+            self.COMMENT_ATTACHMENTS_ACCESS_KEY_ID,
+            self.COMMENT_ATTACHMENTS_SECRET_ACCESS_KEY,
+            self.COMMENT_ATTACHMENTS_BUCKET,
+        )
+
+    def comment_attachment_storage_configured(self) -> bool:
+        return all(self._comment_attachment_storage_values())
+
+    def comment_attachment_storage_partially_configured(self) -> bool:
+        values = self._comment_attachment_storage_values()
         return any(values) and not all(values)
 
     def persistent_media_storage_required(self) -> bool:

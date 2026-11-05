@@ -47,6 +47,47 @@ describe('PedidosPage', () => {
     server.resetHandlers()
   })
 
+  it('mostra os anexos privados junto ao comentário do item', async () => {
+    const user = userEvent.setup()
+    const summary = makeSummary({ items: [{ product_code: 'POL-001', qty: 1 }] })
+    const detail: Order = {
+      ...summary,
+      price_list_code: 'lojista',
+      locale: 'pt-BR',
+      total_ipi: 0,
+      external_code: null,
+      notes: null,
+      updated_at: summary.created_at,
+      history: [],
+      items: [{
+        id: 'item-1', order_id: summary.id, product_code: 'POL-001', description: 'Poltrona teste',
+        is_circular: false, altura: 0.8, largura: 0.7, profundidade: 0.75,
+        opt_categories: {}, optional_choices: [], qty: 1, unit_price: 100, discount: 0,
+        ipi_rate: 0, ipi_value: 0, tax_label: 'IPI', currency: 'BRL', observacao: null,
+        comment: 'Conferir acabamento',
+        attachments: [{
+          id: 'attachment-1', order_item_id: 'item-1', original_filename: 'referencia.pdf',
+          content_type: 'application/pdf', size_bytes: 2048, created_at: summary.created_at,
+        }],
+        created_at: summary.created_at, updated_at: summary.created_at,
+      }],
+    }
+    setupHandlers(summary)
+    server.use(
+      http.get('*/orders/order-1', () => HttpResponse.json(detail)),
+      http.post('*/products/batch', () => HttpResponse.json([])),
+      http.get('*/optionals', () => HttpResponse.json([])),
+    )
+
+    renderProductPage(<PedidosPage />, productTestUser('admin', 'BR'))
+    await screen.findAllByText(summary.orc_id)
+    await user.click(screen.getAllByLabelText(`Visualizar orçamento ${summary.code}`)[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Conferir acabamento')).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: 'referencia.pdf' })).toBeVisible()
+  })
+
   it('admin with open order sees Editar, Finalizar, Cancelar, Excluir actions', async () => {
     const user = userEvent.setup()
     const summary = makeSummary()

@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useId, useMemo, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import api from '../lib/api'
-import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, MessageSquare, Sparkles } from 'lucide-react'
+import { Search, Plus, X, Trash2, ShoppingCart, CheckCircle, ImageIcon, Clipboard, Minus, ChevronUp, Lock, PenLine, CircleAlert, MessageSquare, Sparkles, Paperclip, FileText, LoaderCircle } from 'lucide-react'
 import { useProductsByCodes, useProductsPage } from '../hooks/useProducts'
 import { useProductTypes } from '../hooks/useProductTypes'
 import { useClient, useClientsPage, useCreateClient } from '../hooks/useClients'
 import { useRepresentative, useRepresentativesPage, useCreateRepresentative } from '../hooks/useRepresentatives'
-import { useCreateOrder, useUpdateOrder, useOrder } from '../hooks/useOrders'
+import { deletePendingOrderItemAttachment, uploadOrderItemAttachment, useCreateOrder, useUpdateOrder, useOrder } from '../hooks/useOrders'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
 import { SafePrice } from '../components/SafePrice'
@@ -29,7 +29,7 @@ import {
 import { allowedForApplication, allowsCustomFor, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, isLegacyCustom, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
-import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
+import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput, OrderItemAttachment } from '../types'
 import { formatDimensions, metresToMillimetres } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPieces, previewArea } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
@@ -411,6 +411,7 @@ interface CartItem {
   saved_choices?: OptionalChoice[]
   /** Comentário do item; undefined com a caixa fechada. */
   comment?: string
+  attachments: OrderItemAttachment[]
   _product: Product
 }
 
@@ -429,7 +430,12 @@ function readPersistedCart(userId?: string, market: 'BR' | 'EU' = 'BR'): Persist
       && typeof item.product_code === 'string'
       && Number.isFinite(Number(item.qty))
       && typeof item.opt_categories === 'object'
-    ).map(item => ({ ...item, line_id: item.line_id || crypto.randomUUID(), optional_choices: Array.isArray(item.optional_choices) ? item.optional_choices : [] }))
+    ).map(item => ({
+      ...item,
+      line_id: item.line_id || crypto.randomUUID(),
+      optional_choices: Array.isArray(item.optional_choices) ? item.optional_choices : [],
+      attachments: Array.isArray(item.attachments) ? item.attachments : [],
+    }))
   } catch {
     return []
   }
@@ -622,21 +628,22 @@ function SpecialToggle({ active, label, english, onToggle }: {
 
 // Comentário livre do item no pedido. O botão fica ao lado de excluir; a caixa
 // fecha pelo botão só enquanto está vazia, para não esconder o que foi escrito.
-function ItemCommentToggle({ comment, label, english, onToggle, invalid = false }: {
+function ItemCommentToggle({ comment, attachmentCount = 0, label, english, onToggle, invalid = false }: {
   comment: string | undefined
+  attachmentCount?: number
   label: string
   english: boolean
   onToggle: () => void
   /** Especial sem comentário: realça o ícone até o texto ser preenchido. */
   invalid?: boolean
 }) {
-  const filled = Boolean(comment?.trim())
+  const filled = Boolean(comment?.trim()) || attachmentCount > 0
   return <button
     type="button"
     onClick={onToggle}
     aria-expanded={comment !== undefined}
     aria-label={english ? `Comment on ${label}` : `Comentário de ${label}`}
-    title={english ? 'Item comment' : 'Comentário do item'}
+    title={english ? 'Item comment and attachments' : 'Comentário e anexos do item'}
     data-invalid={invalid || undefined}
     className={`w-11 h-11 flex items-center justify-center flex-shrink-0 transition-colors ${invalid ? 'text-danger' : comment !== undefined ? 'text-gold' : 'text-muted hover:text-gold'}`}
     style={{ touchAction: 'manipulation' }}
@@ -645,15 +652,22 @@ function ItemCommentToggle({ comment, label, english, onToggle, invalid = false 
   </button>
 }
 
-function ItemCommentBox({ comment, english, onChange, required = false, invalid = false }: {
+function ItemCommentBox({ comment, attachments, english, onChange, onAddAttachments, onRemoveAttachment, uploading = false, uploadError, required = false, invalid = false }: {
   comment: string | undefined
+  attachments: OrderItemAttachment[]
   english: boolean
   onChange: (comment: string) => void
+  onAddAttachments: (files: File[]) => void
+  onRemoveAttachment: (attachment: OrderItemAttachment) => void
+  uploading?: boolean
+  uploadError?: string
   required?: boolean
   invalid?: boolean
 }) {
+  const inputRef = useRef<HTMLInputElement>(null)
   if (comment === undefined) return null
-  return <label className="mt-2 block">
+  return <div className="mt-2 block rounded-lg border border-line bg-surface-quiet p-2.5">
+    <label>
     <span className="type-label text-xs block mb-1">{english ? 'Item comment' : 'Comentário do item'}{required && <span className="ml-1 text-danger" aria-label={english ? 'required' : 'obrigatório'}>*</span>}</span>
     <textarea
       value={comment}
@@ -666,7 +680,33 @@ function ItemCommentBox({ comment, english, onChange, required = false, invalid 
       placeholder={english ? 'Write a comment about this item' : 'Escreva um comentário sobre este item'}
       className={`w-full min-w-0 resize-y rounded-md border bg-white px-2 py-1.5 text-xs leading-snug text-ink placeholder:text-muted focus:outline-none focus:ring-2 ${invalid ? 'border-danger focus:ring-danger/35' : 'border-line focus:ring-gold/35'}`}
     />
-  </label>
+    </label>
+    {attachments.length > 0 && <ul className="mt-2 space-y-1" aria-label={english ? 'Item attachments' : 'Anexos do item'}>
+      {attachments.map(attachment => <li key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-md border border-line bg-white px-2 py-1.5 text-xs">
+        {attachment.content_type === 'application/pdf'
+          ? <FileText className="h-4 w-4 flex-shrink-0 text-danger" aria-hidden="true" />
+          : <ImageIcon className="h-4 w-4 flex-shrink-0 text-gold" aria-hidden="true" />}
+        <span className="min-w-0 flex-1 truncate" title={attachment.original_filename}>{attachment.original_filename}</span>
+        <span className="flex-shrink-0 text-[10px] text-muted">{Math.max(1, Math.round(attachment.size_bytes / 1024))} KB</span>
+        <button type="button" onClick={() => onRemoveAttachment(attachment)} className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-muted hover:bg-danger-soft hover:text-danger" aria-label={english ? `Remove ${attachment.original_filename}` : `Remover ${attachment.original_filename}`}>
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </li>)}
+    </ul>}
+    <input ref={inputRef} type="file" className="sr-only" multiple accept="image/jpeg,image/png,image/webp,application/pdf" onChange={event => {
+      const files = Array.from(event.target.files ?? [])
+      if (files.length) onAddAttachments(files)
+      event.target.value = ''
+    }} />
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button type="button" disabled={uploading || attachments.length >= 5} onClick={() => inputRef.current?.click()} className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-line bg-white px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:border-gold hover:text-gold disabled:cursor-not-allowed disabled:opacity-50">
+        {uploading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+        {uploading ? (english ? 'Uploading...' : 'Enviando...') : (english ? 'Attach photo or PDF' : 'Anexar foto ou PDF')}
+      </button>
+      <span className="text-[10px] text-muted">{attachments.length}/5 · {english ? 'up to 10 MB each' : 'até 10 MB cada'}</span>
+    </div>
+    {uploadError && <p role="alert" className="mt-1.5 text-xs text-danger">{uploadError}</p>}
+  </div>
 }
 
 function ApplicationSelectors({ product, choices, allOptionals, onChange, onPreview, english, allowCustom, incompleteAllowed = false }: {
@@ -892,7 +932,7 @@ function RugMeasureFields({ item, english, locale, qtyLimitWarning, onAreaDimens
 }
 
 function MobileCartCard({
-  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, commentInvalid, onSpecial, onSpecialDimension, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, onAddAttachments, onRemoveAttachment, attachmentsUploading, attachmentError, commentInvalid, onSpecial, onSpecialDimension, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -911,6 +951,10 @@ function MobileCartCard({
   onEditApplications: () => void
   onToggleComment: () => void
   onCommentChange: (comment: string) => void
+  onAddAttachments: (files: File[]) => void
+  onRemoveAttachment: (attachment: OrderItemAttachment) => void
+  attachmentsUploading?: boolean
+  attachmentError?: string
   commentInvalid?: boolean
   onSpecial?: () => void
   onSpecialDimension?: (lineId: string, axis: SpecialAxis, metres: number | null) => void
@@ -968,7 +1012,7 @@ function MobileCartCard({
               {soldByArea && <div className="mt-2"><RugMeasureFields item={item} english={isEnglish} locale={measurementLocale} qtyLimitWarning={qtyLimitWarning} onAreaDimensionsChange={onAreaDimensionsChange} /></div>}
             </div>
             <div className="flex flex-shrink-0">
-              <ItemCommentToggle comment={item.comment} label={item._product.description} english={isEnglish} onToggle={onToggleComment} invalid={commentInvalid} />
+              <ItemCommentToggle comment={item.comment} attachmentCount={item.attachments.length} label={item._product.description} english={isEnglish} onToggle={onToggleComment} invalid={commentInvalid} />
               <button
                 onClick={() => onRemove(item.line_id)}
                 className="text-muted active:text-danger transition-colors w-11 h-11 flex items-center justify-center flex-shrink-0"
@@ -984,7 +1028,7 @@ function MobileCartCard({
             {(item.saved_choices ?? []).map(choice => <p key={choice.id} className="break-words">{formatChoice(choice, isEnglish)}</p>)}
             <button type="button" className="text-gold underline mt-1" onClick={onEditApplications}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
           </div> : <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={onApplicationChange} onPreview={onPreview} english={isEnglish} allowCustom={allowCustom} incompleteAllowed={measurementMarket === 'EU'} />}
-          <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} invalid={commentInvalid} onChange={onCommentChange} />
+          <ItemCommentBox comment={item.comment} attachments={item.attachments} english={isEnglish} required={item.is_special} invalid={commentInvalid} onChange={onCommentChange} onAddAttachments={onAddAttachments} onRemoveAttachment={onRemoveAttachment} uploading={attachmentsUploading} uploadError={attachmentError} />
         </div>
       </div>
 
@@ -1328,6 +1372,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
   const [vatExempt, setVatExempt] = useState(false)
   const [vatExemptionCode, setVatExemptionCode] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
+  const [attachmentUploadingLines, setAttachmentUploadingLines] = useState<Set<string>>(new Set())
+  const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({})
   const [persistedCart] = useState<PersistedCartItem[]>(
     () => readPersistedCart(user?.id, user?.active_market),
   )
@@ -1406,6 +1452,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
         discount: 0,
         opt_categories: initialLegacyOptionCategories(configureProduct),
         optional_choices: [],
+        attachments: [],
         _product: configureProduct,
       }])
       setSelectedProduct(null)
@@ -1685,6 +1732,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
               preserve_optional_choices: !copyId,
               saved_choices: item.optional_choices ?? [],
               comment: item.comment ?? undefined,
+              attachments: copyId ? [] : (item.attachments ?? []),
               _product: product,
             }
           })
@@ -1768,6 +1816,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
         discount: 0,
         opt_categories: auto_categories,
         optional_choices: selectedChoices,
+        attachments: [],
         _product: selectedProduct,
       }]
     })
@@ -1893,13 +1942,60 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
     setCart(previous => previous.map(item => item.line_id === lineId ? { ...item, comment } : item))
   }
 
+  async function addItemAttachments(lineId: string, files: File[]) {
+    const line = cart.find(item => item.line_id === lineId)
+    if (!line) return
+    const remaining = 5 - line.attachments.length
+    if (remaining <= 0 || files.length > remaining) {
+      setAttachmentErrors(current => ({ ...current, [lineId]: isEnglish ? 'Each item accepts up to 5 attachments.' : 'Cada item aceita no máximo 5 anexos.' }))
+      return
+    }
+    setAttachmentUploadingLines(current => new Set(current).add(lineId))
+    setAttachmentErrors(current => ({ ...current, [lineId]: '' }))
+    try {
+      for (const file of files) {
+        const attachment = await uploadOrderItemAttachment(file)
+        setCart(previous => previous.map(item => item.line_id === lineId
+          ? { ...item, attachments: [...item.attachments, attachment], comment: item.comment ?? '' }
+          : item))
+      }
+    } catch (error) {
+      setAttachmentErrors(current => ({ ...current, [lineId]: parseApiError(error) }))
+    } finally {
+      setAttachmentUploadingLines(current => {
+        const next = new Set(current)
+        next.delete(lineId)
+        return next
+      })
+    }
+  }
+
+  async function removeItemAttachment(lineId: string, attachment: OrderItemAttachment) {
+    if (!attachment.order_item_id) {
+      try {
+        await deletePendingOrderItemAttachment(attachment.id)
+      } catch (error) {
+        setAttachmentErrors(current => ({ ...current, [lineId]: parseApiError(error) }))
+        return
+      }
+    }
+    setCart(previous => previous.map(item => item.line_id === lineId
+      ? { ...item, attachments: item.attachments.filter(candidate => candidate.id !== attachment.id) }
+      : item))
+  }
+
   function toggleComment(lineId: string) {
-    const current = cart.find(item => item.line_id === lineId)?.comment
+    const line = cart.find(item => item.line_id === lineId)
+    const current = line?.comment
     if (current === undefined) updateComment(lineId, '')
-    else if (!current.trim()) updateComment(lineId, undefined)
+    else if (!current.trim() && !line?.attachments.length) updateComment(lineId, undefined)
   }
 
   function removeItem(lineId: string) {
+    const pendingAttachments = cart.find(item => item.line_id === lineId)?.attachments.filter(attachment => !attachment.order_item_id) ?? []
+    for (const attachment of pendingAttachments) {
+      void deletePendingOrderItemAttachment(attachment.id)
+    }
     setCart((prev) => prev.filter((i) => i.line_id !== lineId))
     setQtyLimitWarnings((current) => {
       const next = new Set(current)
@@ -1937,7 +2033,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
   const budgetCode = isEnglish ? 'Assigned on save' : 'Gerado ao salvar'
 
   const itemsPayload = cart.map((item) => {
-    const { product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, comment, _product } = item
+    const { product_code, qty, discount, opt_categories, optional_choices, source_order_item_id, preserve_optional_choices, comment, attachments, _product } = item
     const areaProduct = isAreaProduct(_product)
     const width = item.area_width_m
     const depth = item.area_depth_m
@@ -1957,6 +2053,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
       source_order_item_id,
       preserve_optional_choices,
       comment: comment?.trim() || null,
+      attachment_ids: attachments.map(attachment => attachment.id),
     }
     // Tapete com medidas não manda qty: o servidor calcula L × P × peças.
     if (areaProduct && width != null && depth != null) {
@@ -2408,6 +2505,10 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                       onEditApplications={() => editApplications(item.line_id)}
                       onToggleComment={() => toggleComment(item.line_id)}
                       onCommentChange={comment => updateComment(item.line_id, comment)}
+                      onAddAttachments={files => void addItemAttachments(item.line_id, files)}
+                      onRemoveAttachment={attachment => void removeItemAttachment(item.line_id, attachment)}
+                      attachmentsUploading={attachmentUploadingLines.has(item.line_id)}
+                      attachmentError={attachmentErrors[item.line_id]}
                       commentInvalid={isCommentInvalid(item)}
                       onSpecial={!isClientUser && market === 'EU' ? () => toggleSpecial(item.line_id) : undefined}
                       onSpecialDimension={updateSpecialDimension}
@@ -2477,13 +2578,13 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                               <button type="button" className="text-gold underline mt-1" onClick={() => editApplications(item.line_id)}>{isEnglish ? 'Change optional applications' : 'Alterar aplicações do opcional'}</button>
                             </div>}
                             {!item.preserve_optional_choices && <ApplicationSelectors product={item._product} choices={item.optional_choices} allOptionals={allOptionals} onChange={(appId, choice) => updateApplicationChoice(item.line_id, appId, choice)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} english={isEnglish} allowCustom={allowsCustomOption(market) && optionalsReady} incompleteAllowed={market === 'EU'} />}
-                            <ItemCommentBox comment={item.comment} english={isEnglish} required={item.is_special} invalid={isCommentInvalid(item)} onChange={comment => updateComment(item.line_id, comment)} />
+                            <ItemCommentBox comment={item.comment} attachments={item.attachments} english={isEnglish} required={item.is_special} invalid={isCommentInvalid(item)} onChange={comment => updateComment(item.line_id, comment)} onAddAttachments={files => void addItemAttachments(item.line_id, files)} onRemoveAttachment={attachment => void removeItemAttachment(item.line_id, attachment)} uploading={attachmentUploadingLines.has(item.line_id)} uploadError={attachmentErrors[item.line_id]} />
                           </div>
                         </div>
 
                         {/* Ações: no canto do bloco do produto quando a linha empilha; ao lado dos valores no layout largo. */}
                         <div className="col-start-2 row-start-1 flex items-start @min-[960px]:col-start-3 @min-[960px]:pt-8">
-                          <ItemCommentToggle comment={item.comment} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} invalid={isCommentInvalid(item)} />
+                          <ItemCommentToggle comment={item.comment} attachmentCount={item.attachments.length} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleComment(item.line_id)} invalid={isCommentInvalid(item)} />
                           {!isClientUser && market === 'EU' && <SpecialToggle active={!!item.is_special} label={item.displayDescription ?? item._product.description} english={isEnglish} onToggle={() => toggleSpecial(item.line_id)} />}
                           <button onClick={() => removeItem(item.line_id)} className="text-muted hover:text-danger transition-colors w-11 h-11 flex items-center justify-center" aria-label={isEnglish ? `Remove ${item._product.description} from quote` : `Remover ${item._product.description} do orçamento`}>
                             <Trash2 className="w-4 h-4" />

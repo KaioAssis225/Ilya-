@@ -1,8 +1,33 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Order, OrderCopyResult, OrderCreate, OrderUpdate, OrderHistory, OrderSummary, OrderStage } from '../types'
+import type { Order, OrderCopyResult, OrderCreate, OrderUpdate, OrderHistory, OrderSummary, OrderStage, OrderItemAttachment } from '../types'
 
 const KEY = 'orders'
+
+export async function uploadOrderItemAttachment(file: File): Promise<OrderItemAttachment> {
+  const form = new FormData()
+  form.append('file', file)
+  return (await api.post<OrderItemAttachment>('/order-item-attachments', form)).data
+}
+
+export async function deletePendingOrderItemAttachment(id: string): Promise<void> {
+  await api.delete(`/order-item-attachments/${id}`)
+}
+
+export async function openOrderItemAttachment(attachment: OrderItemAttachment): Promise<void> {
+  const response = await api.get<Blob>(`/order-item-attachments/${attachment.id}`, {
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(response.data)
+  const opened = window.open(url, '_blank', 'noopener,noreferrer')
+  if (!opened) {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = attachment.original_filename
+    anchor.click()
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
 
 export interface OrderListFilters {
   cursor?: string

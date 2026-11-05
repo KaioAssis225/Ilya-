@@ -13,6 +13,7 @@ from app.models.client import Client
 from app.models.client_contact import ClientContact
 from app.models.representative import Representative
 from app.models.order import Order, OrderItem
+from app.models.order_item_attachment import OrderItemAttachment
 from app.models.order_history import OrderHistory
 from app.models.user import User, UserRole
 from app.models.refresh_token import RefreshToken
@@ -48,7 +49,7 @@ __all__ = [
     "ClientContact",
     "Representative",
     "Order",
-    "OrderItem",
+    "OrderItem", "OrderItemAttachment",
     "OrderHistory",
     "User",
     "UserRole",
