@@ -2518,7 +2518,14 @@ export default function OrcamentoPage() {
           market={user?.active_market ?? 'BR'}
           title={isEnglish ? 'New Client' : 'Novo Cliente'}
           entityType="client"
-          onSave={async (data) => { await createClientM.mutateAsync(data) }}
+          onSave={async (data) => {
+            // O cliente recém-cadastrado já fica escolhido no orçamento. Antes a
+            // resposta do servidor era descartada: o cadastro existia, mas o campo
+            // seguia em "Selecione o cliente..." e o botão Finalizar, bloqueado.
+            const created = await createClientM.mutateAsync(data)
+            handleClientChange(created)
+            setClientQuery('')
+          }}
           onClose={() => setQuickModal(null)}
         />
       )}
