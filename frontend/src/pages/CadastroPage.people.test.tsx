@@ -451,6 +451,61 @@ describe('Contatos adicionais do cliente', () => {
     expect(await screen.findByText(/Maria Silva — \+351 911 111 111 — maria@exemplo\.example/)).toBeVisible()
   })
 
+  it('junta o contato principal e os adicionais numa seção só, sem mudar o payload do principal', async () => {
+    const { user, payloads, row } = await openEdit({ ...euClient, contact_name: 'Ana Principal', email: 'ana@exemplo.example' }, 'EU')
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    // A primeira linha é o contato principal, com os mesmos rótulos de sempre, e não tem botão de remover.
+    const principal = screen.getByRole('group', { name: 'Contato principal' })
+    expect(within(principal).getByLabelText('Contato')).toHaveValue('Ana Principal')
+    expect(within(principal).getByLabelText('Telefone *')).toHaveValue(euClient.phone)
+    expect(within(principal).getByLabelText('E-mail')).toHaveValue('ana@exemplo.example')
+    expect(within(principal).queryByRole('button')).toBeNull()
+
+    // Principal -> adicionais -> botão, nessa ordem, dentro da seção Contatos.
+    const adicional = screen.getByRole('group', { name: 'Contato adicional 1' })
+    const botao = screen.getByRole('button', { name: /Adicionar contato/ })
+    expect(principal.compareDocumentPosition(adicional) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(adicional.compareDocumentPosition(botao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByLabelText('Contato', { selector: 'input' })).toBe(within(principal).getByLabelText('Contato'))
+
+    await user.clear(within(principal).getByLabelText('Contato'))
+    await user.type(within(principal).getByLabelText('Contato'), 'Beatriz')
+    await user.clear(within(principal).getByLabelText('Telefone *'))
+    await user.type(within(principal).getByLabelText('Telefone *'), '+351 900 111 222')
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0]).toMatchObject({
+      contact_name: 'Beatriz',
+      phone: '+351 900 111 222',
+      email: 'ana@exemplo.example',
+      contacts: [{ name: 'Maria Silva', phone: '+351 911 111 111', email: 'maria@exemplo.example' }],
+    })
+  })
+
+  it('no Brasil a primeira linha tem só telefone e e-mail (não há nome de contato)', async () => {
+    const { user, row } = await openEdit(clients[0], 'BR')
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    const principal = screen.getByRole('group', { name: 'Contato principal' })
+    expect(within(principal).getByLabelText('Telefone *')).toBeVisible()
+    expect(within(principal).getByLabelText('E-mail')).toBeVisible()
+    expect(within(principal).queryByLabelText('Contato')).toBeNull()
+  })
+
+  it('o modal de visualização mostra uma lista só: principal primeiro, depois os adicionais', async () => {
+    const { user, row } = await openEdit(
+      { ...euClient, contact_name: 'Ana Principal', email: 'ana@exemplo.example' }, 'EU',
+    )
+    await user.click(within(row).getByRole('button', { name: 'Visualizar' }))
+
+    const items = await screen.findAllByRole('listitem')
+    expect(items[0]).toHaveTextContent(/Principal:\s*Ana Principal — .* — ana@exemplo\.example/)
+    expect(items[1]).toHaveTextContent('Maria Silva — +351 911 111 111 — maria@exemplo.example')
+    expect(items).toHaveLength(2)
+  })
+
   it('vale também no Brasil', async () => {
     const { user, row } = await openEdit(clients[0], 'BR')
     await user.click(within(row).getByRole('button', { name: 'Editar' }))

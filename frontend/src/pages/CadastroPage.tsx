@@ -318,6 +318,30 @@ function AddressFields({ form, setForm, market, portugalClient = false, showCont
     setCepLoading(false)
   }
 
+  const contactNameField = portugalClient ? (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-muted">Contato</span>
+      <input
+        className="input"
+        value={form.contact_name ?? ''}
+        onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
+        maxLength={255}
+      />
+    </label>
+  ) : null
+  const phoneField = (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-muted">{tx('Telefone *')}</span>
+      <input className="input" value={form.phone} maxLength={market === 'BR' ? PHONE_INPUT_MAX_LENGTH : 20} onChange={(e) => setForm({ ...form, phone: market === 'BR' ? formatBrazilianPhone(e.target.value) : e.target.value })} required />
+    </label>
+  )
+  const emailField = (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-muted">{tx('E-mail')}</span>
+      <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+    </label>
+  )
+
   return (
     <div className="grid grid-cols-2 gap-3">
       <label className="col-span-2 flex flex-col gap-1">
@@ -326,15 +350,6 @@ function AddressFields({ form, setForm, market, portugalClient = false, showCont
       </label>
       {portugalClient && (
         <>
-          <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-xs text-muted">Contato</span>
-            <input
-              className="input"
-              value={form.contact_name ?? ''}
-              onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
-              maxLength={255}
-            />
-          </label>
           <label className="col-span-2 flex flex-col gap-1">
             <span className="text-xs text-muted">Tipo de cliente *</span>
             <select
@@ -353,19 +368,18 @@ function AddressFields({ form, setForm, market, portugalClient = false, showCont
           </label>
         </>
       )}
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{tx('Telefone *')}</span>
-        <input className="input" value={form.phone} maxLength={market === 'BR' ? PHONE_INPUT_MAX_LENGTH : 20} onChange={(e) => setForm({ ...form, phone: market === 'BR' ? formatBrazilianPhone(e.target.value) : e.target.value })} required />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{tx('E-mail')}</span>
-        <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-      </label>
-      {showContacts && (
+      {showContacts ? (
+        // Cliente: uma seção só. A primeira linha é o contato principal (as mesmas
+        // colunas de antes: contact_name no EU, phone e email) e as seguintes são
+        // os contatos adicionais.
         <ClientContactsEditor
+          primary={<>{contactNameField}{phoneField}{emailField}</>}
+          hasPrimaryName={portugalClient}
           contacts={form.contacts ?? []}
           onChange={(contacts) => setForm({ ...form, contacts })}
         />
+      ) : (
+        <>{phoneField}{emailField}</>
       )}
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">{market === 'EU' ? 'VAT / Tax ID' : 'CPF/CNPJ'}</span>
@@ -2550,20 +2564,29 @@ function PeopleTab<T extends Client | Representative>({
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <div><span className="text-xs text-muted block">{isPortugalClient ? 'Cliente' : tx('Nome')}</span><span className="text-ink font-medium">{viewing.name}</span></div>
-              <div><span className="text-xs text-muted block">{tx('Telefone')}</span><span className="text-ink-2">{viewing.phone}</span></div>
+              {entityType !== 'client' && (
+                <div><span className="text-xs text-muted block">{tx('Telefone')}</span><span className="text-ink-2">{viewing.phone}</span></div>
+              )}
               {isPortugalClient && (
                 <>
-                  <div><span className="text-xs text-muted block">Contato</span><span className="text-ink-2">{viewing.contact_name || '—'}</span></div>
                   <div><span className="text-xs text-muted block">Tipo de cliente</span><span className="text-ink-2">{viewing.client_type ? (CLIENT_TYPE_LABELS[viewing.client_type] ?? viewing.client_type) : '—'}</span></div>
                   <div className="col-span-2"><span className="text-xs text-muted block">Observação</span><span className="text-ink-2 whitespace-pre-wrap">{viewing.observation || '—'}</span></div>
                   <div className="col-span-2"><span className="text-xs text-muted block">{tx('Cliente contactado')}</span><span className="text-ink-2">{(viewing as Client).contacted ? tx('Sim') : tx('Não')}</span></div>
                 </>
               )}
-              <div className="col-span-2"><span className="text-xs text-muted block">{tx('E-mail')}</span><span className="text-ink-2">{viewing.email || tx('Não informado')}</span></div>
-              {entityType === 'client' && ((viewing as Client).contacts ?? []).length > 0 && (
+              {entityType !== 'client' && (
+                <div className="col-span-2"><span className="text-xs text-muted block">{tx('E-mail')}</span><span className="text-ink-2">{viewing.email || tx('Não informado')}</span></div>
+              )}
+              {entityType === 'client' && (
+                // Uma lista só: o contato principal (nome no EU, telefone, e-mail) e os adicionais.
                 <div className="col-span-2">
-                  <span className="text-xs text-muted block">{tx('Contatos adicionais')}</span>
+                  <span className="text-xs text-muted block">{tx('Contatos')}</span>
                   <ul className="text-ink-2 space-y-0.5">
+                    <li>
+                      <span className="text-xs text-muted">{tx('Principal')}: </span>
+                      {[viewing.contact_name, viewing.phone, viewing.email || tx('Não informado')]
+                        .filter(Boolean).join(' — ')}
+                    </li>
                     {((viewing as Client).contacts ?? []).map((contact, index) => (
                       <li key={contact.id ?? index}>
                         {contact.name}
