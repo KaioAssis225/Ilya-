@@ -1198,7 +1198,32 @@ function BottomDrawer({ open, onClose, children }: { open: boolean; onClose: () 
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+type FlashToast = { message: string; variant: 'success' | 'error' }
+
+/**
+ * Cópia (`?copy=<pedido>&items=<ids>`): a mesma tela de Orçamento, como orçamento NOVO
+ * já preenchido. Entrar ou sair do modo cópia remonta a tela, para que a cópia nunca
+ * misture estado com o rascunho do carrinho (que continua guardado como estava).
+ */
 export default function OrcamentoPage() {
+  const [searchParams] = useSearchParams()
+  const [flash, setFlash] = useState<FlashToast | null>(null)
+  const copyId = !searchParams.get('edit') ? searchParams.get('copy') : null
+  return (
+    <OrcamentoPageContent
+      key={copyId ? `copy:${copyId}` : 'main'}
+      flash={flash}
+      onFlashShown={() => setFlash(null)}
+      onCopyCreated={setFlash}
+    />
+  )
+}
+
+function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
+  flash: FlashToast | null
+  onFlashShown: () => void
+  onCopyCreated: (toast: FlashToast) => void
+}) {
   const { user } = useAuth()
   const { locale: europeanLocale } = useLocale()
   const isEnglish = europeanLocale === 'en-GB'
@@ -1212,6 +1237,11 @@ export default function OrcamentoPage() {
   const repStorageKey = `orcamento_rep_id:${userId}:${market}`
   const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit')
+  // Cópia: orçamento novo preenchido a partir de outro. Não é edição (sem "Salvar alterações").
+  const copyId = !editId ? searchParams.get('copy') : null
+  const copyItemIds = copyId ? (searchParams.get('items') ?? '').split(',').filter(Boolean) : null
+  // Edição e cópia carregam o pedido de origem e não usam o rascunho do carrinho.
+  const isolated = !!editId || !!copyId
 
   // Locking flags
   const isRep = user?.role === 'representante'
@@ -1231,7 +1261,7 @@ export default function OrcamentoPage() {
     () => readPersistedCart(user?.id, user?.active_market),
   )
   const [selectedEuPriceList, setSelectedEuPriceList] = useState<PriceListCode | null>(
-    () => editId ? null : readCartPriceList(user?.id, user?.active_market),
+    () => isolated ? null : readCartPriceList(user?.id, user?.active_market),
   )
   // sessionStorage (não localStorage): sobrevive a trocar de aba dentro do app
   // e a um F5, mas some quando a aba fecha — não volta pré-preenchido amanhã.
@@ -1251,7 +1281,7 @@ export default function OrcamentoPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [selectedChoices, setSelectedChoices] = useState<CartItem['optional_choices']>([])
   const [cartFilter, setCartFilter] = useState('')
-  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null)
+  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(flash)
   const [quickModal, setQuickModal] = useState<'client' | 'rep' | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null)
@@ -1270,8 +1300,10 @@ export default function OrcamentoPage() {
   const debouncedClientQuery = useDebouncedValue(clientQuery.trim(), 300)
   const debouncedRepQuery = useDebouncedValue(repQuery.trim(), 300)
 
-  const editOrderQuery = useOrder(editId ?? '')
-  const editOrder = editOrderQuery.data
+  const editOrderQuery = useOrder(editId ?? copyId ?? '')
+  const editOrder = editId ? editOrderQuery.data : undefined
+  const copySource = copyId ? editOrderQuery.data : undefined
+  const loadedOrder = editOrder ?? copySource
   const editOriginalDiscounts = useMemo(() => {
     if (market !== 'EU' || !editOrder) return new Map<string, { product_code: string; discount: number }>()
     return new Map(
@@ -1342,8 +1374,8 @@ export default function OrcamentoPage() {
   const reps = repSearch.data?.items ?? []
 
   const neededProductCodes = Array.from(new Set([
-    ...(!editId ? persistedCart.map((item) => item.product_code) : []),
-    ...(editOrder?.items.map((item) => item.product_code) ?? []),
+    ...(!isolated ? persistedCart.map((item) => item.product_code) : []),
+    ...(loadedOrder?.items.map((item) => item.product_code) ?? []),
     ...cart.map((item) => item.product_code),
   ]))
   const resolvedProductQuery = useProductsByCodes(
@@ -1375,8 +1407,8 @@ export default function OrcamentoPage() {
 
   const targetClientId = (
     (isClientUser ? user?.linked_id : null)
-    || editOrder?.client_id
-    || (!editId && !clientLocked ? savedClientId : '')
+    || loadedOrder?.client_id
+    || (!isolated && !clientLocked ? savedClientId : '')
     || ''
   )
   const resolvedClientQuery = useClient(
@@ -1386,10 +1418,10 @@ export default function OrcamentoPage() {
   const resolvedClient = resolvedClientQuery.data
   const targetRepId = (
     (isRep ? user?.rep_id : null)
-    || editOrder?.rep_id
+    || loadedOrder?.rep_id
     || fixedOrderRepId
     || (
-      !editId && !repLocked
+      !isolated && !repLocked
         ? (
           savedRepId !== null
             ? savedRepId
@@ -1414,7 +1446,7 @@ export default function OrcamentoPage() {
   // continua como fallback legado, sem travar a escolha comercial atual.
   const clientDefaultPriceProfile = selectedClient?.price_profile ?? 'lojista'
   const priceProfile: PriceListCode = market === 'EU'
-    ? (selectedEuPriceList ?? (editOrder?.price_list_code as PriceListCode | undefined) ?? 'lojista')
+    ? (selectedEuPriceList ?? (loadedOrder?.price_list_code as PriceListCode | undefined) ?? 'lojista')
     : (clientDefaultPriceProfile === 'pvp' || clientDefaultPriceProfile === 'arquiteto'
         ? 'lojista'
         : clientDefaultPriceProfile)
@@ -1436,7 +1468,7 @@ export default function OrcamentoPage() {
 
   function selectEuPriceList(next: PriceListCode) {
     setSelectedEuPriceList(next)
-    if (!editId) writeCartPriceList(userId, market, next)
+    if (!isolated) writeCartPriceList(userId, market, next)
   }
 
   function clearDraftPriceList() {
@@ -1481,7 +1513,7 @@ export default function OrcamentoPage() {
   }
 
   // O carrinho salvo resolve somente os SKUs necessários, sem baixar o catálogo.
-  if (!cartHydrated && !editId) {
+  if (!cartHydrated && !isolated) {
     if (persistedCart.length === 0) {
       setCartHydrated(true)
     } else if (resolvedProductQuery.isSuccess) {
@@ -1504,14 +1536,14 @@ export default function OrcamentoPage() {
   }
 
   useEffect(() => {
-    if (editId || !cartHydrated) return
+    if (isolated || !cartHydrated) return
     const serializable = cart.map(({ _product, ...rest }) => ({
       ...rest,
       sold_by_area: isAreaProduct(_product),
     }))
     localStorage.setItem(cartKey, JSON.stringify(serializable))
     notifyCartChanged()
-  }, [cart, cartHydrated, cartKey, editId])
+  }, [cart, cartHydrated, cartKey, isolated])
 
   // Sincroniza _product com dados frescos da API (garante observacao e preço atualizados)
   const [prevResolvedProducts, setPrevResolvedProducts] = useState<typeof resolvedProducts | null>(null)
@@ -1542,21 +1574,23 @@ export default function OrcamentoPage() {
   // de editOrder e re-disparavam este efeito, sobrescrevendo edições em andamento
   // do carrinho — o estado garante que cada pedido só popule o formulário uma vez.
   const [loadedEditOrderId, setLoadedEditOrderId] = useState<string | null>(null)
-  if (!editId && loadedEditOrderId !== null) setLoadedEditOrderId(null)
-  if (editOrder && resolvedProductQuery.isSuccess && resolvedClient) {
-    if (!editOrder.rep_id || resolvedRep) {
-      if (loadedEditOrderId !== editOrder.id) {
-        setLoadedEditOrderId(editOrder.id)
+  if (!isolated && loadedEditOrderId !== null) setLoadedEditOrderId(null)
+  if (loadedOrder && resolvedProductQuery.isSuccess && resolvedClient) {
+    if (!loadedOrder.rep_id || resolvedRep) {
+      if (loadedEditOrderId !== loadedOrder.id) {
+        setLoadedEditOrderId(loadedOrder.id)
         const productMap = new Map(
           resolvedProducts.map((product) => [product.product_code, product]),
         )
-        const cartItems: CartItem[] = editOrder.items
+        // Cópia: só os itens escolhidos no modal; linhas novas (id próprio), ligadas ao item de origem.
+        const sourceItems = copyItemIds ? loadedOrder.items.filter(item => copyItemIds.includes(item.id)) : loadedOrder.items
+        const cartItems: CartItem[] = sourceItems
           .map(item => {
             const product = productMap.get(item.product_code)
             if (!product) return null
             return {
               product_code: item.product_code,
-              line_id: item.id,
+              line_id: copyId ? crypto.randomUUID() : item.id,
               qty: item.qty,
               sold_by_area: item.sold_by_area ?? isAreaProduct(product),
               area_width_m: item.area_width_m == null ? null : Number(item.area_width_m),
@@ -1572,7 +1606,7 @@ export default function OrcamentoPage() {
                 ? { application_id: choice.application_id!, custom_text: choice.custom_text }
                 : { application_id: choice.application_id!, optional_id: choice.optional_id! }),
               source_order_item_id: item.id,
-              preserve_optional_choices: true,
+              preserve_optional_choices: !copyId,
               saved_choices: item.optional_choices ?? [],
               comment: item.comment ?? undefined,
               _product: product,
@@ -1581,11 +1615,20 @@ export default function OrcamentoPage() {
           .filter(Boolean) as CartItem[]
         setCart(cartItems)
         setSelectedClient(resolvedClient)
-        setSelectedRep(editOrder.rep_id ? resolvedRep ?? null : null)
-        setNotes(editOrder.notes ?? '')
-        setVatExempt(editOrder.vat_exempt ?? false)
-        setVatExemptionCode(editOrder.vat_exemption_code ?? '')
+        setSelectedRep(loadedOrder.rep_id ? resolvedRep ?? null : null)
+        // A cópia leva cliente, representante, tabela e itens; observações e isenção de IVA não.
+        setNotes(copyId ? '' : loadedOrder.notes ?? '')
+        setVatExempt(copyId ? false : loadedOrder.vat_exempt ?? false)
+        setVatExemptionCode(copyId ? '' : loadedOrder.vat_exemption_code ?? '')
         setCartHydrated(true)
+        const notCopied = copyId ? sourceItems.filter(item => !productMap.has(item.product_code)) : []
+        if (notCopied.length > 0) {
+          const codes = [...new Set(notCopied.map(item => item.special_code ?? item.product_code))].join(', ')
+          setToast({
+            message: isEnglish ? `These items could not be copied (product unavailable): ${codes}` : `Estes itens não foram copiados (produto indisponível): ${codes}`,
+            variant: 'error',
+          })
+        }
       }
     }
   }
@@ -1932,9 +1975,10 @@ export default function OrcamentoPage() {
         setToast({ message: isEnglish ? 'Order updated successfully!' : 'Pedido atualizado com sucesso!', variant: 'success' })
         setSearchParams({})
       } else {
-        await Promise.all([
+        const [created] = await Promise.all([
           createOrderM.mutateAsync({
             client_id: selectedClient.id,
+            copy_source_order_id: copyId ?? undefined,
             rep_id: repIdForSubmit,
             price_list_code: market === 'EU' ? priceProfile : undefined,
             notes: notes || null,
@@ -1944,7 +1988,20 @@ export default function OrcamentoPage() {
           }),
           new Promise<void>((r) => setTimeout(r, 3000)),
         ])
-        setToast({ message: isEnglish ? 'Quote confirmed successfully!' : 'Orçamento confirmado com sucesso!', variant: 'success' })
+        const skippedCodes = (created.copy_skipped ?? []).map(row => row.product_code).join(', ')
+        const doneMessage = isEnglish ? 'Quote confirmed successfully!' : 'Orçamento confirmado com sucesso!'
+        if (copyId) {
+          // Volta ao orçamento em branco (a tela remonta); o rascunho do carrinho segue intacto.
+          onCopyCreated({
+            message: skippedCodes
+              ? `${doneMessage} ${isEnglish ? 'Not copied' : 'Não copiados'}: ${skippedCodes}`
+              : doneMessage,
+            variant: 'success',
+          })
+          setSearchParams({})
+          return
+        }
+        setToast({ message: doneMessage, variant: 'success' })
       }
       setCart([])
       localStorage.removeItem(cartKey)
@@ -1967,9 +2024,9 @@ export default function OrcamentoPage() {
       <span className="type-label text-gold block">{isEnglish ? 'Add Product' : 'Adicionar Produto'}</span>
       {!cartHydrated && (
         <div className="rounded-lg border border-line-warm bg-white px-3 py-2 text-xs text-muted">
-          {editId && editOrderQuery.isError ? (
+          {isolated && editOrderQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
-              <span>{isEnglish ? 'Could not load the order for editing.' : 'Não foi possível carregar o pedido para edição.'}</span>
+              <span>{copyId ? (isEnglish ? 'Could not load the order to copy.' : 'Não foi possível carregar o pedido para copiar.') : (isEnglish ? 'Could not load the order for editing.' : 'Não foi possível carregar o pedido para edição.')}</span>
               <button
                 type="button"
                 onClick={() => void editOrderQuery.refetch()}
@@ -1978,7 +2035,7 @@ export default function OrcamentoPage() {
                 {isEnglish ? 'Try again' : 'Tentar novamente'}
               </button>
             </div>
-          ) : editId && resolvedClientQuery.isError ? (
+          ) : isolated && resolvedClientQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
               <span>{isEnglish ? "Could not load this order's client." : 'Não foi possível carregar o cliente deste pedido.'}</span>
               <button
@@ -1989,7 +2046,7 @@ export default function OrcamentoPage() {
                 {isEnglish ? 'Try again' : 'Tentar novamente'}
               </button>
             </div>
-          ) : editId && resolvedRepQuery.isError ? (
+          ) : isolated && resolvedRepQuery.isError ? (
             <div className="flex items-center justify-between gap-3">
               <span>{isEnglish ? "Could not load this order's representative." : 'Não foi possível carregar o representante deste pedido.'}</span>
               <button
@@ -2102,6 +2159,20 @@ export default function OrcamentoPage() {
   return (
     <div className="min-h-screen bg-bg text-ink">
       <h1 className="sr-only">{isEnglish ? 'New Quote' : 'Novo Orçamento'}</h1>
+      {copyId && copySource && (
+        <div className="bg-gold text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
+          <PenLine className="w-4 h-4 flex-shrink-0" />
+          <span className="text-xs font-semibold tracking-wide">
+            {isEnglish ? 'New quote copied from: ' : 'Novo orçamento copiado de: '}<span className="font-mono">{copySource.code}</span>
+          </span>
+          <button
+            onClick={() => setSearchParams({})}
+            className="ml-auto min-h-11 lg:min-h-0 px-2 text-white/70 hover:text-white text-xs underline"
+          >
+            {isEnglish ? 'Cancel copy' : 'Cancelar cópia'}
+          </button>
+        </div>
+      )}
       {editId && editOrder && (
         <div className="bg-gold text-white px-4 lg:px-8 py-2.5 flex items-center gap-2.5">
           <PenLine className="w-4 h-4 flex-shrink-0" />
@@ -2418,7 +2489,7 @@ export default function OrcamentoPage() {
         <aside className="hidden lg:block space-y-5">
           <div className="bg-white border border-line rounded-xl p-5 shadow-sm space-y-4">
             <fieldset
-              disabled={!!editId && !cartHydrated}
+              disabled={isolated && !cartHydrated}
               className="m-0 min-w-0 border-0 p-0 disabled:opacity-60"
             >
               <OrderForm
@@ -2484,7 +2555,7 @@ export default function OrcamentoPage() {
       {/* ── Mobile bottom drawer ───────────────────────────────────────────── */}
       <BottomDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <fieldset
-          disabled={!!editId && !cartHydrated}
+          disabled={isolated && !cartHydrated}
           className="m-0 min-w-0 border-0 p-0 disabled:opacity-60"
         >
           <OrderForm
@@ -2530,7 +2601,7 @@ export default function OrcamentoPage() {
         />
       )}
 
-      {toast && <Toast message={toast.message} variant={toast.variant} onDone={() => setToast(null)} />}
+      {toast && <Toast message={toast.message} variant={toast.variant} onDone={() => { setToast(null); onFlashShown() }} />}
       {activePhotoModal && <PhotoLightbox url={activePhotoModal} onClose={() => setActivePhotoModal(null)} />}
 
       {/* ── Overlay de Geração Premium ─────────────────────────────── */}

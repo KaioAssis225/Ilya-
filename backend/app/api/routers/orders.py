@@ -1116,7 +1116,10 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    order, _ = await _create_order_core(payload, db, current_user, principal)
+    order, skipped = await _create_order_core(payload, db, current_user, principal)
+    if skipped:
+        # Cópia: avisa os itens que a regra de cópia pulou (não é coluna do pedido).
+        order.copy_skipped = skipped
     return order
 
 
@@ -1157,14 +1160,51 @@ async def _create_order_core(
         if successor is not None:
             raise HTTPException(status_code=409, detail="Este pedido já possui uma revisão. Revise a versão mais recente.")
 
+    # Cópia: `copy_item_ids` None = todos os itens seguem a regra de cópia (endpoint
+    # /copy, que monta os itens a partir da origem); um conjunto = só os itens que
+    # ainda apontam para um item da origem (orçamento novo preenchido pela tela).
+    copy_item_ids: set[uuid.UUID] | None = None
+    if copy_source is None and payload.copy_source_order_id is not None:
+        if payload.supersedes_order_id is not None:
+            raise HTTPException(status_code=422, detail="Cópia e revisão não podem ser combinadas.")
+        copy_source = (await db.execute(
+            select(Order)
+            .where(
+                Order.id == payload.copy_source_order_id,
+                Order.market_code == principal.code,
+                *_order_visibility_filters(current_user),
+            )
+            .options(selectinload(Order.items))
+        )).scalar_one_or_none()
+        if copy_source is None:
+            raise HTTPException(status_code=404, detail="Pedido de origem não encontrado.")
+        copy_item_ids = {item.id for item in copy_source.items}
+    copy_items = {item.id: item for item in copy_source.items} if copy_item_ids is not None else {}
+
+    def is_copy_item(item_in: OrderItemCreate) -> bool:
+        if copy_source is None:
+            return False
+        if copy_item_ids is None:
+            return True
+        origin = copy_items.get(item_in.source_order_item_id)
+        return (
+            origin is not None
+            and origin.product_code == item_in.product_code
+            and bool(origin.is_special) == bool(item_in.is_special)
+            and (not item_in.is_special or origin.special_code == item_in.special_code)
+        )
+
     _apply_order_rep_assignment(current_user, payload)
 
     if is_client_account(current_user) and payload.client_id != current_user.linked_id:
         # Cliente logado (V-Bloco66-RBAC): só pode criar pedido para si mesmo.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operação não permitida para este cliente.")
 
-    if copy_source is None:
-        _ensure_special_scope(current_user, principal.code, payload.items)
+    # Item especial novo (ou alterado) exige a permissão de sempre; só o item
+    # herdado da origem na cópia dispensa essa checagem.
+    _ensure_special_scope(
+        current_user, principal.code, [item for item in payload.items if not is_copy_item(item)]
+    )
 
     client = (await db.execute(select(Client).where(
         Client.id == payload.client_id,
@@ -1288,11 +1328,13 @@ async def _create_order_core(
     source_items = {item.id: item for item in source_order.items} if source_order else {}
     used_special_codes: set[str] = set()
     catalog_scope = order_catalog_scope(current_user, client, rep)
+    strict_items: list[OrderItem] = []
     for item_in in payload.items:
-        if item_in.is_special and is_client_account(current_user) and copy_source is not None:
+        lenient = is_copy_item(item_in)
+        if item_in.is_special and is_client_account(current_user) and lenient:
             skipped.append({"product_code": item_in.product_code, "reason": "Conta de cliente não pode criar itens especiais / Client accounts cannot create special items."})
             continue
-        if copy_source is not None:
+        if lenient:
             copy_product = product_map.get(item_in.product_code)
             skip_reason = None
             if copy_product is None:
@@ -1314,7 +1356,11 @@ async def _create_order_core(
                 raise HTTPException(status_code=404, detail=f"Produto '{item_in.product_code}' não está disponível neste mercado.")
             if product.id not in price_map:
                 raise HTTPException(status_code=422, detail=f"Produto '{item_in.product_code}' não possui preço na lista {price_list.name}.")
-            if item_in.source_order_item_id and item_in.source_order_item_id not in source_items:
+            if (
+                item_in.source_order_item_id
+                and item_in.source_order_item_id not in source_items
+                and item_in.source_order_item_id not in copy_items
+            ):
                 raise HTTPException(status_code=422, detail="Item de origem inválido para esta revisão.")
             optional_choices = await _resolve_item_choices(
                 db, product, market_code, item_in,
@@ -1346,7 +1392,7 @@ async def _create_order_core(
             else:
                 unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_order_line(
                     unit_price=price_map[product.id], qty=qty,
-                    discount=(min(item_in.discount or _ZERO, max_discount) if copy_source is not None else item_in.discount or _ZERO),
+                    discount=(min(item_in.discount or _ZERO, max_discount) if lenient else item_in.discount or _ZERO),
                     max_discount=max_discount, product_code=product.product_code, tax_rate=ipi_rate,
                 )
             total += subtotal
@@ -1385,8 +1431,10 @@ async def _create_order_core(
                 special_code=special_code,
                 special_percent=item_in.special_percent,
             ))
+            if not lenient:
+                strict_items.append(order_items[-1])
         except HTTPException as exc:
-            if copy_source is None:
+            if not lenient:
                 raise
             skipped.append({"product_code": item_in.product_code, "reason": str(exc.detail)})
 
@@ -1396,8 +1444,9 @@ async def _create_order_core(
             detail="Nenhum item pôde ser copiado: "
             + "; ".join(f"{row['product_code']}: {row['reason']}" for row in skipped),
         )
-    if copy_source is None:
-        _ensure_special_comments(order_items)
+    # Na cópia, o especial herdado da origem mantém o comentário que tinha; o que é
+    # novo na tela segue a regra de sempre (especial sem comentário não é salvo).
+    _ensure_special_comments(strict_items)
     catalog = await _order_catalog(
         db,
         [product_map[order_item.product_code] for order_item in order_items],

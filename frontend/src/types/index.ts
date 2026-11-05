@@ -301,6 +301,8 @@ export interface OrderCreate {
   notes?: string | null
   items: OrderItemCreate[]
   locale?: 'pt-PT' | 'en-GB'
+  /** Orçamento novo preenchido a partir de outro (Copiar): os itens ligados à origem seguem as regras de cópia. */
+  copy_source_order_id?: string
   /** EU: orçamento sem IVA; o servidor zera o imposto e exige o motivo. */
   vat_exempt?: boolean
   vat_exemption_code?: string | null
@@ -402,6 +404,8 @@ export interface OrderSummary {
 }
 
 export interface Order {
+  /** Só na resposta da criação a partir de uma cópia: itens que a regra de cópia pulou. */
+  copy_skipped?: Array<{ product_code: string; reason: string }>
   id: string
   code: string
   orc_id: string

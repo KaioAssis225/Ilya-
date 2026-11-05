@@ -126,6 +126,11 @@ class OrderCreate(BaseModel):
     items: List[OrderItemCreate] = Field(..., min_length=1, max_length=500)
     locale: Optional[Literal["pt-PT", "en-GB"]] = None
     supersedes_order_id: Optional[uuid.UUID] = None
+    # Orçamento novo preenchido a partir de outro (Copiar). Os itens que ainda
+    # apontam para um item do pedido de origem (`source_order_item_id`) seguem as
+    # regras de cópia: o que não pode ser copiado é pulado e avisado em vez de
+    # derrubar o orçamento. Os demais itens seguem a criação normal.
+    copy_source_order_id: Optional[uuid.UUID] = None
 
 
 class OrderUpdate(BaseModel):
@@ -197,7 +202,14 @@ class OrderHistoryRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrderCopySkipped(BaseModel):
+    product_code: str
+    reason: str
+
+
 class OrderRead(BaseModel):
+    # Só preenchido na resposta da criação a partir de uma cópia.
+    copy_skipped: List[OrderCopySkipped] = Field(default_factory=list)
     id: uuid.UUID
     code: str
     orc_id: str
@@ -288,11 +300,6 @@ class OrderListRead(BaseModel):
 class OrderCopyRequest(BaseModel):
     """Itens do pedido de origem a copiar para um novo orçamento."""
     item_ids: List[uuid.UUID] = Field(..., min_length=1, max_length=500)
-
-
-class OrderCopySkipped(BaseModel):
-    product_code: str
-    reason: str
 
 
 class OrderCopyRead(BaseModel):

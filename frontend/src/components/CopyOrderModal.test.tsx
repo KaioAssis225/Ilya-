@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { Route, Routes, useLocation } from 'react-router'
@@ -13,7 +13,7 @@ const item = (id: string, code: string, qty: number) => ({
 }) as unknown as Order['items'][number]
 
 const source = {
-  id: 'order-1', code: 'PED-0001', catalog_name: 'IBTW', price_list_code: 'corporativo', items: [item('i1', 'MESA-1', 1), item('i2', 'CAD-2', 4)],
+  id: 'order-1', code: 'PED-0001', items: [item('i1', 'MESA-1', 1), item('i2', 'CAD-2', 4)],
 } as unknown as Order
 
 const sourceWithSpecial = {
@@ -49,89 +49,35 @@ describe('CopyOrderModal', () => {
     expect(screen.getByText('ESPECIAL - Mesa Portugal')).toBeInTheDocument()
   })
 
-  it('envia só os itens marcados e abre o orçamento novo', async () => {
+  it('só escolhe os itens e abre a tela de orçamento NOVO (?copy=), sem criar nada nem usar ?edit=', async () => {
     const user = userEvent.setup()
-    let body: unknown = null
-    server.use(http.post('*/orders/order-1/copy', async ({ request }) => {
-      body = await request.json()
-      return HttpResponse.json({ order: { id: 'novo-1', code: 'PED-0002' }, skipped: [] }, { status: 201 })
-    }))
+    let posts = 0
+    server.use(
+      http.post('*/orders/order-1/copy', () => { posts += 1; return HttpResponse.json({}, { status: 201 }) }),
+      http.post('*/orders', () => { posts += 1; return HttpResponse.json({}, { status: 201 }) }),
+    )
     renderModal()
 
     // Começa com tudo marcado; "Selecionar todos" limpa e remarca.
     const all = screen.getByLabelText('Selecionar todos')
     expect(all).toBeChecked()
     await user.click(all)
-    expect(screen.getByRole('button', { name: 'Criar orçamento' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Continuar' })).toBeDisabled()
     await user.click(screen.getByLabelText(/CAD-2/))
-    await user.click(screen.getByRole('button', { name: 'Criar orçamento' }))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await user.click(screen.getByRole('button', { name: 'Continuar' }))
 
-    expect(await screen.findByText('destino:/orcamentos?edit=novo-1')).toBeInTheDocument()
-    expect(body).toEqual({ item_ids: ['i2'] })
-  })
-
-  it('avisa os itens não copiados antes de abrir o orçamento', async () => {
-    const user = userEvent.setup()
-    server.use(http.post('*/orders/order-1/copy', () => HttpResponse.json({
-      order: { id: 'novo-2', code: 'PED-0003' },
-      skipped: [{ product_code: 'MESA-1', reason: 'Produto inativo ou fora do catálogo.' }],
-    }, { status: 201 })))
-    renderModal()
-
-    await user.click(screen.getByRole('button', { name: 'Criar orçamento' }))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('MESA-1: Produto inativo ou fora do catálogo.')
-    await user.click(screen.getByRole('button', { name: 'Abrir orçamento' }))
-    await waitFor(() => expect(screen.getByText('destino:/orcamentos?edit=novo-2')).toBeInTheDocument())
-  })
-
-  it('mostra o erro do servidor e mantém o modal aberto', async () => {
-    const user = userEvent.setup()
-    server.use(http.post('*/orders/order-1/copy', () => HttpResponse.json(
-      { detail: 'Nenhum item pôde ser copiado: MESA-1: Produto indisponível neste mercado.' }, { status: 422 },
-    )))
-    renderModal(true)
-
-    await user.click(screen.getByRole('button', { name: 'Create quote' }))
-    await user.click(await screen.findByRole('button', { name: 'Confirm' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Nenhum item pôde ser copiado')
-    expect(screen.getByRole('button', { name: 'Create quote' })).toBeInTheDocument()
-  })
-
-  it('confirma o catálogo e a tabela antes de criar; Voltar não cria e Confirmar cria', async () => {
-    const user = userEvent.setup()
-    let posts = 0
-    server.use(http.post('*/orders/order-1/copy', () => {
-      posts += 1
-      return HttpResponse.json({ order: { id: 'novo-3', code: 'PED-0004' }, skipped: [] }, { status: 201 })
-    }))
-    renderModal()
-
-    await user.click(screen.getByRole('button', { name: 'Criar orçamento' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Confirmar o catálogo' })
-    expect(dialog).toHaveTextContent('Este orçamento será feito no catálogo IBTW, tabela Corporativo. Está correto?')
+    expect(await screen.findByText('destino:/orcamentos?copy=order-1&items=i2')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(posts).toBe(0)
-
-    await user.click(screen.getByRole('button', { name: 'Voltar' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirmar o catálogo' })).toBeNull())
-    // O modal de cópia segue aberto e nada foi criado.
-    expect(screen.getByRole('button', { name: 'Criar orçamento' })).toBeInTheDocument()
-    expect(posts).toBe(0)
-
-    await user.click(screen.getByRole('button', { name: 'Criar orçamento' }))
-    await user.click(await screen.findByRole('button', { name: 'Confirmar' }))
-    expect(await screen.findByText('destino:/orcamentos?edit=novo-3')).toBeInTheDocument()
-    expect(posts).toBe(1)
   })
 
-  it('em inglês o pop-up usa o texto em inglês', async () => {
+  it('leva todos os itens marcados, na ordem do pedido', async () => {
     const user = userEvent.setup()
     renderModal(true)
 
-    await user.click(screen.getByRole('button', { name: 'Create quote' }))
-    expect(await screen.findByRole('dialog', { name: 'Confirm the catalogue' }))
-      .toHaveTextContent('This quote will be made in the IBTW catalogue, price list Corporate. Is that correct?')
-    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(await screen.findByText('destino:/orcamentos?copy=order-1&items=i1,i2')).toBeInTheDocument()
   })
 })
