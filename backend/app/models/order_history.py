@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
-from sqlalchemy import String, Text, ForeignKey, Index, JSON
+from sqlalchemy import DateTime, String, Text, ForeignKey, Index, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
@@ -9,10 +10,22 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class OrderHistory(Base, TimestampMixin):
     __tablename__ = "order_history"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # O instante vem da aplicação, não de `now()` do banco: `now()` é o início da
+    # TRANSAÇÃO, então eventos gravados na mesma transação (os testes de integração
+    # rodam tudo numa só) ficavam com `created_at` idêntico e a ordem do histórico
+    # (criado → editado → finalizado) virava acaso do plano de consulta. O
+    # `server_default` continua para inserções que não passam pelo ORM.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now_utc, server_default=func.now(), nullable=False
+    )
     order_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("orders.id", ondelete="CASCADE"), nullable=False
     )

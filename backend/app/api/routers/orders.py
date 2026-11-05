@@ -2423,7 +2423,7 @@ async def get_order_history(
     if not order:
         raise HTTPException(status_code=404, detail="Pedido não encontrado.")
     hist = await db.execute(
-        select(OrderHistory).where(OrderHistory.order_id == order_id).order_by(OrderHistory.created_at.asc())
+        select(OrderHistory).where(OrderHistory.order_id == order_id).order_by(OrderHistory.created_at.asc(), OrderHistory.id.asc())
     )
     return hist.scalars().all()
 
