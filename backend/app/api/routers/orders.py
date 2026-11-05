@@ -63,7 +63,6 @@ _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
 _EU_DISCOUNT_PRICE_LIST = "pvp"
 _EU_PVP_ADMIN_MAX_DISCOUNT = Decimal("70.00")
-_EU_PVP_REP_MAX_DISCOUNT = Decimal("10.00")
 
 
 def _decimal(value: object) -> Decimal:
@@ -683,7 +682,7 @@ def _resolve_max_discount(
         if current_user.role == UserRole.admin:
             return _EU_PVP_ADMIN_MAX_DISCOUNT
         if current_user.role == UserRole.representante or is_internal_operator(current_user):
-            return _EU_PVP_REP_MAX_DISCOUNT if rep else _ZERO
+            return _decimal(rep.max_discount) if rep else _ZERO
         return _ZERO
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO

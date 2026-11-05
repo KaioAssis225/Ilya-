@@ -272,6 +272,11 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
 
     expect(screen.queryByText('Tabelas de preço visíveis')).toBeNull()
     expect(screen.queryByText('Desconto Máximo (%)')).toBeNull()
+    const pvpDiscount = screen.getByLabelText('Desconto máximo PVP (%)')
+    expect(pvpDiscount).toBeEnabled()
+    expect(pvpDiscount).toHaveValue(30)
+    await user.clear(pvpDiscount)
+    await user.type(pvpDiscount, '5')
     await user.type(screen.getByLabelText('Nome *'), 'Representante Portugal')
     await user.type(screen.getByLabelText('Telefone *'), '+351 912 345 678')
     await user.type(screen.getByLabelText('Código postal *'), '1000-001')
@@ -285,8 +290,83 @@ describe('CadastroPage — tabelas de preço visíveis', () => {
         all_price_lists: true,
         price_list_codes: [],
       })
-      expect(createPayload).not.toHaveProperty('max_discount')
+      expect(createPayload).toMatchObject({ max_discount: 5 })
     })
+  })
+})
+
+describe('Desconto máximo PVP do representante (EU)', () => {
+  const euRep = {
+    id: 'rep-eu-pvp',
+    name: 'Representante Lisboa',
+    phone: '+351 912 345 678',
+    email: 'rep.lisboa@example.test',
+    cpf_cnpj: null,
+    cep: '1000-001',
+    numero: null,
+    address: 'Rua Teste',
+    city: 'Lisboa',
+    state: '--',
+    country: 'Portugal',
+    region: null,
+    tax_id: null,
+    market_code: 'EU',
+    max_discount: 50,
+    all_price_lists: true,
+    price_list_codes: [],
+    created_at: '2026-10-23T12:00:00Z',
+    updated_at: '2026-10-23T12:00:00Z',
+    last_activity_at: '2026-10-23T12:00:00Z',
+    created_by_name: 'Admin',
+  }
+
+  async function openRepEdit(role: 'admin' | 'vendedor') {
+    const user = userEvent.setup()
+    installProductHandlers()
+    const payloads: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/representatives', () => HttpResponse.json([euRep], { headers: { 'X-Total-Count': '1' } })),
+      http.patch(`*/representatives/${euRep.id}`, async ({ request }) => {
+        const payload = await request.json() as Record<string, unknown>
+        payloads.push(payload)
+        return HttpResponse.json({ ...euRep, ...payload })
+      }),
+    )
+    renderProductPage(<CadastroPage />, productTestUser(role, 'EU'))
+    await user.click(screen.getAllByRole('button', { name: /Representantes/ })[0])
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('columnheader', { name: /Desc\. Máx\. PVP/ })).toBeVisible()
+    const row = within(table).getByText(euRep.name).closest('tr')
+    if (!row) throw new Error('Linha do representante EU não encontrada')
+    expect(within(row).getByText('50%')).toBeVisible()
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+    return { user, payloads }
+  }
+
+  it('admin edita o desconto máximo PVP e ele vai no PATCH', async () => {
+    const { user, payloads } = await openRepEdit('admin')
+
+    const field = screen.getByLabelText('Desconto máximo PVP (%)')
+    expect(field).toBeEnabled()
+    expect(field).toHaveValue(50)
+    await user.clear(field)
+    await user.type(field, '12')
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0]).toMatchObject({ max_discount: 12 })
+  })
+
+  it('quem não é admin vê o campo desabilitado e não envia o valor', async () => {
+    const { user, payloads } = await openRepEdit('vendedor')
+
+    const field = screen.getByLabelText('Desconto máximo PVP (%)')
+    expect(field).toBeDisabled()
+    expect(field).toHaveValue(50)
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0]).not.toHaveProperty('max_discount')
   })
 })
 

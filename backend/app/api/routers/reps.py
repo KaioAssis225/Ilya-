@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
@@ -381,7 +382,19 @@ async def update_representative(
         for field in ("email", "cpf_cnpj", "tax_id"):
             update_data.pop(field, None)
     if current_user.role != UserRole.admin:
-        update_data.pop("max_discount", None)
+        # Só o administrador define o desconto máximo do representante (teto do
+        # PVP no EU). Reenviar o valor já gravado é inofensivo (o formulário
+        # manda a ficha inteira); qualquer valor diferente é recusado, não
+        # descartado em silêncio.
+        requested_max_discount = update_data.pop("max_discount", None)
+        if (
+            requested_max_discount is not None
+            and Decimal(str(requested_max_discount)) != Decimal(str(rep.max_discount))
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Somente o administrador pode alterar o desconto máximo do representante.",
+            )
     # MELH-02: o próprio representante nunca amplia o que vende.
     requested_all_catalogs = update_data.pop("all_catalogs", None)
     requested_catalog_ids = update_data.pop("catalog_ids", None)
