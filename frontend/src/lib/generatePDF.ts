@@ -153,6 +153,8 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   // do mercado em que o usuário está agora.
   const orderDocument = resolveOrderDocument(documentLocale ? { ...order, locale: documentLocale } : order)
   const { currency, locale, taxLabel, brand, brandSuffix, labels: L, seller } = orderDocument
+  const isQuote = !order.is_finalized
+  const documentCode = isQuote ? order.orc_id : order.code
   // IVA (Portugal) vai no fecho do documento; IPI (Brasil) segue embutido na linha.
   const taxOnTotal = order.market_code === 'EU'
   const accentColor = taxOnTotal ? IBTW_GREEN : ILYA_GOLD
@@ -196,18 +198,18 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   doc.setFontSize(6.5)
   doc.setTextColor(...MUTED)
   doc.setFont('helvetica', 'bold')
-  doc.text(L.documentTitle, 20, logoRuleY + 7)
+  if (!isQuote) doc.text(L.documentTitle, 20, logoRuleY + 7)
 
-  // ── Número do pedido (canto direito) ───────────────────────────────────────
+  // ── Número do documento (canto direito) ────────────────────────────────────
   doc.setFontSize(9)
   doc.setTextColor(...DARK)
   doc.setFont('helvetica', 'bold')
-  doc.text(L.order, w - 20, 28, { align: 'right' })
+  doc.text(isQuote ? L.quote : L.order, w - 20, 28, { align: 'right' })
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(14)
   doc.setTextColor(...accentColor)
-  doc.text(order.code, w - 20, 35, { align: 'right' })
+  doc.text(documentCode, w - 20, 35, { align: 'right' })
 
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
@@ -217,7 +219,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     42,
     { align: 'right' },
   )
-  doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
+  if (!isQuote) doc.text(L.quote + ': ' + order.orc_id, w - 20, 47, { align: 'right' })
 
   y = brandSuffix ? 60 : 55
 
@@ -416,7 +418,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     doc.text(brand, 20, 23)
     doc.setFontSize(7)
     doc.setTextColor(...MUTED)
-    doc.text(`${order.code} · ${L.continued}`, w - 20, 23, { align: 'right' })
+    doc.text(`${documentCode} · ${L.continued}`, w - 20, 23, { align: 'right' })
     return 30
   }
 
@@ -616,7 +618,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
 
   // ── Rodapé de totais ───────────────────────────────────────────────────────
   const totalItems = order.items.reduce((sum, item) => sum + (item.sold_by_area ? 0 : item.qty), 0)
-  // Reserva o bloco de totais + assinaturas. A área do tapete permanece apenas
+  // Reserva o bloco de totais e, somente no pedido, as assinaturas. A área do tapete permanece apenas
   // na linha do produto e não gera um total separado no resumo. Em Portugal
   // entram mais duas linhas (Subtotal e IVA) antes do total.
   const showTaxBreakdown = taxOnTotal && Number(order.total_ipi) > 0
@@ -627,7 +629,8 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     : ''
   const exemptionLines: string[] = exemptionText ? doc.splitTextToSize(exemptionText, 110) : []
   const exemptionHeight = showVatExemption ? 8 + exemptionLines.length * 4 : 0
-  if (y + 59 + (showTaxBreakdown ? 16 : 0) + exemptionHeight > 278) {
+  const signatureBlockHeight = isQuote ? 0 : 31
+  if (y + 28 + signatureBlockHeight + (showTaxBreakdown ? 16 : 0) + exemptionHeight > 278) {
     doc.addPage()
     y = drawContinuationHeader()
   }
@@ -693,9 +696,9 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     ? 11 + (obsLines.length > 0 ? obsLines.length * 4 + 3 : 0) + commercialTerms.length * 4 + 3
     : 0
 
-  // Em Portugal, mantém observações, condições e assinaturas no mesmo bloco
+  // Em Portugal, mantém observações, condições e, no pedido, assinaturas no mesmo bloco
   // sempre que ele couber numa página nova.
-  if (order.market_code === 'EU' && y + notesBlockHeight + 31 > 278) {
+  if (order.market_code === 'EU' && y + notesBlockHeight + signatureBlockHeight > 278) {
     doc.addPage()
     y = 20
   }
@@ -727,39 +730,35 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     }
   }
 
-  // ── Bloco de assinaturas dupla (representante + cliente) ──────────────────
-  // O PDF mantém apenas as linhas em branco para assinatura manual.
+  if (!isQuote) {
+    // ── Bloco de assinaturas dupla (representante + cliente) ────────────────
+    // O pedido mantém as linhas em branco para assinatura manual. O orçamento
+    // não é ainda um compromisso confirmado e não exibe este bloco.
+    if (y + 31 > 278) { doc.addPage(); y = 20 }
+    y += 4
+    doc.setDrawColor(...LINE)
+    doc.setLineWidth(0.3)
+    doc.line(20, y, w - 20, y)
+    y += 6
 
-  // O bloco ocupa 29 mm até ao fim das legendas e o rodapé começa em 282 mm.
-  // Usa a área útil inteira para não isolar assinaturas numa página em branco.
-  if (y + 31 > 278) { doc.addPage(); y = 20 }
-  y += 4
-  doc.setDrawColor(...LINE)
-  doc.setLineWidth(0.3)
-  doc.line(20, y, w - 20, y)
-  y += 6
+    const colW = (w - 50) / 2
 
-  const colW = (w - 50) / 2
+    doc.setDrawColor(...DARK)
+    doc.setLineWidth(0.3)
+    doc.line(20, y + 14, 20 + colW, y + 14)
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'normal')
+    doc.text(L.repSignature, 20 + colW / 2, y + 19, { align: 'center' })
 
-  // Coluna esquerda: assinatura do representante
-  doc.setDrawColor(...DARK)
-  doc.setLineWidth(0.3)
-  doc.line(20, y + 14, 20 + colW, y + 14)
-  doc.setFontSize(7)
-  doc.setTextColor(...MUTED)
-  doc.setFont('helvetica', 'normal')
-  doc.text(L.repSignature, 20 + colW / 2, y + 19, { align: 'center' })
-
-  // Coluna direita: assinatura do cliente
-  const sx = 20 + colW + 10
-  doc.setDrawColor(...DARK)
-  doc.setLineWidth(0.3)
-  doc.line(sx, y + 14, sx + colW, y + 14)
-  doc.setFontSize(7)
-  doc.setTextColor(...MUTED)
-  doc.text(L.clientSignature, sx + colW / 2, y + 19, { align: 'center' })
-
-  y += 24
+    const sx = 20 + colW + 10
+    doc.setDrawColor(...DARK)
+    doc.setLineWidth(0.3)
+    doc.line(sx, y + 14, sx + colW, y + 14)
+    doc.setFontSize(7)
+    doc.setTextColor(...MUTED)
+    doc.text(L.clientSignature, sx + colW / 2, y + 19, { align: 'center' })
+  }
 
   // ── Rodapé em todas as páginas ─────────────────────────────────────────────
   const totalPages = doc.getNumberOfPages()
@@ -777,7 +776,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     doc.text(legalFooter, 20, 287)
     doc.text(`${L.page} ${page}/${totalPages}`, w - 20, 287, { align: 'right' })
     doc.setFontSize(6)
-    doc.text(L.commercialNotice, 20, 291)
+    doc.text(isQuote ? L.quoteCommercialNotice : L.commercialNotice, 20, 291)
   }
 
   return doc
@@ -803,6 +802,7 @@ export async function generateOrderPDF(
   })
 
   // ── Salva ──────────────────────────────────────────────────────────────────
-  const filename = `${order.code}_${client.name.replace(/\s+/g, '_')}.pdf`
+  const documentCode = order.is_finalized ? order.code : order.orc_id
+  const filename = `${documentCode}_${client.name.replace(/\s+/g, '_')}.pdf`
   return savePdf(doc, filename, destination)
 }

@@ -314,8 +314,40 @@ test('seleção pt-PT gera PDF europeu em português e medidas em milímetros', 
   assert.ok(renderedTexts.includes('10%'))
   assert.ok(!renderedTexts.includes('IVA'))
   assert.ok(renderedTexts.includes('EMPRESA'))
+  assert.ok(renderedTexts.includes('Representante / IBTW'))
+  assert.ok(renderedTexts.includes('Cliente'))
   assert.ok(renderedTexts.includes('Dimensões: L 750 mm × P 820 mm × A 800 mm'))
   assert.ok(!renderedTexts.some((text) => text.includes('″')))
+})
+
+test('PDF de orçamento mostra apenas ORC e não exibe confirmação de pedido nem assinaturas', async () => {
+  const client = makeClient({
+    name: 'Cliente Portugal', country: 'PT', city: 'Porto', state: 'Porto',
+    region: 'Norte', cep: '4000-001', market_code: 'EU', price_profile: 'pvp',
+  })
+  const order = makeOrder({
+    code: 'PED-0099',
+    orc_id: 'ORC-0042',
+    market_code: 'EU',
+    price_list_code: 'EU_PVP',
+    currency: 'EUR',
+    locale: 'pt-PT',
+    is_finalized: false,
+    finalized_at: null,
+    items: [makeOrderItem({ tax_label: 'IVA', currency: 'EUR' })],
+  })
+
+  await generateOrderPDF(order, client, null, [makeProduct({ market_code: 'EU', currency: 'EUR' })], (code) => code, 'pt-PT')
+
+  assert.ok(renderedTexts.includes('Orçamento'))
+  assert.ok(renderedTexts.includes('ORC-0042'))
+  assert.ok(!renderedTexts.some((text) => text.includes('PED-0099')))
+  assert.ok(!renderedTexts.includes('CONFIRMAÇÃO DE PEDIDO'))
+  assert.ok(!renderedTexts.includes('Representante / IBTW'))
+  assert.ok(!renderedTexts.includes('Cliente'))
+  assert.ok(renderedTexts.includes('Orçamento comercial. Este documento não é uma fatura.'))
+  assert.ok(!renderedTexts.includes('Confirmação de pedido comercial. Este documento não é uma fatura.'))
+  assert.deepEqual(savedFiles, ['ORC-0042_Cliente_Portugal.pdf'])
 })
 
 test('EU sem IVA: o PDF mostra "IVA: isento" com o código e o motivo e não lista Subtotal/IVA', async () => {
