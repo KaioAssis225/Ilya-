@@ -85,6 +85,23 @@ class TestResolveMaxDiscount:
         ) == Decimal("10.00")
 
     @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.representante])
+    def test_eu_pvp_cadastro_acima_de_dez_fica_limitado_a_dez(self, role):
+        assert _resolve_max_discount(
+            _user(role), _client("100.00"), _rep("50.00"), "EU", "pvp"
+        ) == Decimal("10.00")
+
+    @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.representante])
+    def test_eu_pvp_cadastro_abaixo_de_dez_e_respeitado(self, role):
+        assert _resolve_max_discount(
+            _user(role), _client("100.00"), _rep("5.00"), "EU", "pvp"
+        ) == Decimal("5.00")
+
+    def test_br_representante_nao_tem_teto_fixo_de_dez(self):
+        assert _resolve_max_discount(
+            _user(UserRole.representante), _client("0.00"), _rep("50.00"), "BR", "pvp"
+        ) == Decimal("50.00")
+
+    @pytest.mark.parametrize("role", [UserRole.vendedor, UserRole.representante])
     def test_eu_pvp_sem_representante_tem_teto_zero(self, role):
         assert _resolve_max_discount(
             _user(role), _client("100.00"), None, "EU", "pvp"
@@ -136,7 +153,8 @@ class TestValidateDiscount:
     @pytest.mark.parametrize(
         ("role", "price_list_code", "discount", "should_raise"),
         [
-            (UserRole.representante, "pvp", "31.00", True),
+            (UserRole.representante, "pvp", "10.01", True),
+            (UserRole.representante, "pvp", "10.00", False),
             (UserRole.admin, "pvp", "71.00", True),
             (UserRole.admin, "pvp", "70.00", False),
             (UserRole.cliente, "pvp", "1.00", True),
