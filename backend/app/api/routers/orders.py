@@ -305,7 +305,9 @@ def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
          **{field: str(_decimal(getattr(item, field)))
             for field in ("qty", "unit_price", "discount", "ipi_rate", "ipi_value")},
          "tax_label": item.tax_label, "currency": item.currency,
-         **_rug_snapshot(item)} for item in items
+         **_rug_snapshot(item),
+         **({field: str(_decimal(getattr(item, field))) for field in ("altura", "largura", "profundidade")}
+            if getattr(item, "is_special", False) else {})} for item in items
     ]
 
 
@@ -1031,6 +1033,31 @@ def _calculate_special_order_line(
     return unit_price, _ZERO, subtotal, decimal_tax_rate, tax_value
 
 
+def _line_dimensions(product: Product, item_in: OrderItemCreate) -> tuple[Decimal, Decimal, Decimal]:
+    """Altura, largura e profundidade (m) gravadas na linha.
+
+    Linha normal: as do produto. Linha especial: as medidas informadas
+    substituem as do produto só nesta linha (o cadastro não muda); eixo não
+    informado mantém a medida do produto. O preço não depende da medida.
+    """
+    height, width, depth = item_in.special_height_m, item_in.special_width_m, item_in.special_depth_m
+    if not item_in.is_special or (height is None and width is None and depth is None):
+        return product.altura, product.largura, product.profundidade
+    if is_area_product(product):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"O item '{product.product_code}' é vendido por área: use largura × profundidade do tapete "
+                "/ Area-priced item: use the rug width × depth."
+            ),
+        )
+    return (
+        product.altura if height is None else height,
+        product.largura if width is None else width,
+        product.profundidade if depth is None else depth,
+    )
+
+
 def _special_description(description: str) -> str:
     return f"ESPECIAL - {description}"
 
@@ -1474,14 +1501,15 @@ async def _create_order_core(
                 localized_description = (en if payload.locale == "en-GB" else pt_pt) or product.description
             if item_in.is_special:
                 localized_description = _special_description(localized_description)
+            line_height, line_width, line_depth = _line_dimensions(product, item_in)
             order_items.append(OrderItem(
                 id=uuid.uuid4(),
                 product_code=product.product_code,
                 description=localized_description,
                 is_circular=product.is_circular,
-                altura=product.altura,
-                largura=product.largura,
-                profundidade=product.profundidade,
+                altura=line_height,
+                largura=line_width,
+                profundidade=line_depth,
                 opt_categories=item_in.opt_categories,
                 optional_choices=optional_choices,
                 qty=qty,
@@ -1576,6 +1604,20 @@ async def _create_order_core(
     return order, skipped
 
 
+def _special_dimensions_payload(item: OrderItem) -> dict:
+    """Medidas da linha especial para cópia/revisão (não-especial e tapete: nenhuma).
+    Eixo 0 (ex.: profundidade de item circular) não é medida informável."""
+    if not item.is_special or item.sold_by_area:
+        return {}
+    return {
+        key: value
+        for key, value in (
+            ("special_height_m", item.altura), ("special_width_m", item.largura), ("special_depth_m", item.profundidade),
+        )
+        if value is not None and _decimal(value) > _ZERO
+    }
+
+
 def _copy_item_payload(item: OrderItem) -> OrderItemCreate:
     """Item de origem → payload de criação. Só entram escolhas, medidas e
     comentário: preço, imposto e totais são recalculados pelo servidor."""
@@ -1589,6 +1631,7 @@ def _copy_item_payload(item: OrderItem) -> OrderItemCreate:
         is_special=item.is_special,
         special_code=item.special_code,
         special_percent=item.special_percent,
+        **_special_dimensions_payload(item),
         opt_categories=dict(item.opt_categories or {}),
         optional_choices=[
             OptionalChoiceCreate(
@@ -1703,6 +1746,7 @@ async def create_order_revision(
             source_order_item_id=item.id, comment=item.comment,
             is_special=item.is_special, special_code=item.special_code,
             special_percent=item.special_percent,
+            **_special_dimensions_payload(item),
         ) for item in source.items],
     )
     # O fluxo normal recalcula preços e impostos atuais e cria novo número;
@@ -2225,6 +2269,7 @@ async def update_order(
                 localized_description = (en if order.locale == "en-GB" else pt_pt) or product.description
             if item_in.is_special:
                 localized_description = _special_description(localized_description)
+            line_height, line_width, line_depth = _line_dimensions(product, item_in)
             new_item_id = uuid.uuid4()
             new_items.append(OrderItem(
                 id=new_item_id,
@@ -2232,9 +2277,9 @@ async def update_order(
                 product_code=product.product_code,
                 description=localized_description,
                 is_circular=product.is_circular,
-                altura=product.altura,
-                largura=product.largura,
-                profundidade=product.profundidade,
+                altura=line_height,
+                largura=line_width,
+                profundidade=line_depth,
                 opt_categories=item_in.opt_categories,
                 optional_choices=optional_choices,
                 qty=qty,

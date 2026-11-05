@@ -281,6 +281,10 @@ export interface OrderItemCreate {
   is_special?: boolean
   special_code?: string | null
   special_percent?: number | null
+  // Medidas do especial em metros (só valem para a linha; omitido = medida do produto).
+  special_width_m?: number | null
+  special_depth_m?: number | null
+  special_height_m?: number | null
   // Tapete com medidas não envia qty: o servidor calcula L × P.
   qty?: number
   area_width_m?: number

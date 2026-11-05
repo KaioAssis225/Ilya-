@@ -5,6 +5,7 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from app.core.product_dimensions import ensure_dimension_within_limit
 from app.core.vat_exemption import VatExemptionCode, vat_exemption_label
 
 OrderStage = Literal["production", "delivered"]
@@ -78,6 +79,16 @@ class OrderItemCreate(BaseModel):
     is_special: bool = False
     special_code: Optional[str] = Field(None, max_length=100)
     special_percent: Optional[Decimal] = Field(None, gt=Decimal("-100"), le=Decimal("1000"), decimal_places=2)
+    # Medidas da linha especial, em METROS (como o cadastro). Valem só para esta
+    # linha: o produto pai e o cadastro nunca mudam. Ausente = medida do produto.
+    special_width_m: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    special_depth_m: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    special_height_m: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+
+    @field_validator("special_width_m", "special_depth_m", "special_height_m")
+    @classmethod
+    def validate_special_dimension_limit(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        return ensure_dimension_within_limit(value)
 
     @field_validator("comment")
     @classmethod
@@ -126,7 +137,13 @@ class OrderItemCreate(BaseModel):
                 raise ValueError("Informe a percentagem do especial / Provide the special percentage.")
             if self.discount != 0:
                 raise ValueError("O desconto deve ser 0 para itens especiais / Discount must be 0 for special items.")
-        elif self.special_code is not None or self.special_percent is not None:
+        elif (
+            self.special_code is not None
+            or self.special_percent is not None
+            or self.special_width_m is not None
+            or self.special_depth_m is not None
+            or self.special_height_m is not None
+        ):
             raise ValueError("Campos de especial só podem ser usados em itens especiais / Special fields require is_special.")
         return self
 
