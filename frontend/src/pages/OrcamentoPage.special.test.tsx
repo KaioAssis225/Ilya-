@@ -140,7 +140,7 @@ describe('OrcamentoPage — especiais EU', () => {
     expect(screen.getAllByText(/€\s*80,00|80,00\s*€/).length).toBeGreaterThan(0)
   })
 
-  async function submitButton(name: 'Finalizar Orçamento' | 'Salvar Alterações' = 'Finalizar Orçamento') {
+  async function submitButton(name: 'Confirmar Orçamento' | 'Salvar Alterações' = 'Confirmar Orçamento') {
     const button = await screen.findByRole('button', { name })
     await waitFor(() => expect(button).toBeEnabled())
     return button
@@ -258,7 +258,7 @@ describe('OrcamentoPage — especiais EU', () => {
       body = await request.json() as { items: Array<Record<string, unknown>> }
       return HttpResponse.json({}, { status: 201 })
     }))
-    const finalize = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const finalize = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(finalize).toBeEnabled())
     fireEvent.click(finalize)
     fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))

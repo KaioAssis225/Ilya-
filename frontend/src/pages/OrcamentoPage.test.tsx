@@ -413,7 +413,7 @@ describe('OrcamentoPage', () => {
     expect(selector).toHaveValue('corporativo')
     const item = await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
     expectItemSubtotal(item, new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(90))
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
     await waitFor(() => expect(posted).not.toBeNull())
@@ -474,7 +474,7 @@ describe('OrcamentoPage', () => {
 
     const checkbox = (await screen.findAllByLabelText('Sem IVA (isento)'))[0]
     fireEvent.click(checkbox)
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
 
     // Sem o motivo não envia.
@@ -529,7 +529,7 @@ describe('OrcamentoPage', () => {
 
     renderProductPage(<OrcamentoPage />, user)
 
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
 
@@ -564,7 +564,7 @@ describe('OrcamentoPage', () => {
 
     renderProductPage(<OrcamentoPage />, user)
 
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
 
@@ -653,7 +653,7 @@ describe('OrcamentoPage', () => {
 
     renderProductPage(<OrcamentoPage />, user)
 
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     // A segunda linha ainda não tem L × P: o servidor recusaria, então o botão trava.
     await waitFor(() => expect(submit).toBeDisabled())
     fireEvent.click(screen.getAllByRole('button', { name: /Remover Tapete PT do orçamento/ })[1])
@@ -700,7 +700,7 @@ describe('OrcamentoPage', () => {
 
     expect((await screen.findAllByText('James IBTW — Lisboa/Lisboa')).length).toBeGreaterThan(0)
     expect(screen.queryAllByPlaceholderText('Buscar representante...')).toHaveLength(0)
-    const submit = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const submit = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
     await waitFor(() => expect(posted).not.toBeNull())

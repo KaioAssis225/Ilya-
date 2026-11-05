@@ -629,7 +629,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
         <span className={`inline-flex items-center gap-1.5 font-semibold ${progress.missing > 0 ? 'text-warning' : 'text-success'}`}>
           {progress.missing > 0 ? <CircleAlert className="h-3 w-3" aria-hidden="true" /> : <CheckCircle className="h-3 w-3" aria-hidden="true" />}
           {progress.missing > 0
-            ? (english ? `${progress.missing} required ${progress.missing === 1 ? 'choice' : 'choices'} remaining${incompleteAllowed ? ' — needed to finalise' : ''}` : `${progress.missing} ${progress.missing === 1 ? 'escolha obrigatória pendente' : 'escolhas obrigatórias pendentes'}${incompleteAllowed ? ' — necessárias para finalizar' : ''}`)
+            ? (english ? `${progress.missing} required ${progress.missing === 1 ? 'choice' : 'choices'} remaining${incompleteAllowed ? ' — needed to confirm' : ''}` : `${progress.missing} ${progress.missing === 1 ? 'escolha obrigatória pendente' : 'escolhas obrigatórias pendentes'}${incompleteAllowed ? ' — necessárias para confirmar' : ''}`)
             : (english ? 'Required options complete' : 'Opcionais obrigatórios completos')}
         </span>
         <span className="tabular-nums text-ink-3">{progress.filled}/{progress.total}</span>
@@ -1142,7 +1142,7 @@ function OrderForm({
         style={{ touchAction: 'manipulation' }}
         className="w-full py-3.5 rounded-lg text-xs font-bold tracking-widest text-white transition-all bg-gold hover:bg-gold-600 active:bg-gold-700 disabled:bg-faint disabled:cursor-not-allowed uppercase shadow-sm active:scale-[0.98] active:opacity-85"
       >
-        {editMode ? (isEnglish ? 'Save Changes' : 'Salvar Alterações') : (isEnglish ? 'Finalize Quote' : 'Finalizar Orçamento')}
+        {editMode ? (isEnglish ? 'Save Changes' : 'Salvar Alterações') : (isEnglish ? 'Confirm Quote' : 'Confirmar Orçamento')}
       </button>
     </div>
   )
@@ -1942,7 +1942,7 @@ export default function OrcamentoPage() {
           }),
           new Promise<void>((r) => setTimeout(r, 3000)),
         ])
-        setToast({ message: isEnglish ? 'Quote finalised successfully!' : 'Orçamento finalizado com sucesso!', variant: 'success' })
+        setToast({ message: isEnglish ? 'Quote confirmed successfully!' : 'Orçamento confirmado com sucesso!', variant: 'success' })
       }
       setCart([])
       localStorage.removeItem(cartKey)
