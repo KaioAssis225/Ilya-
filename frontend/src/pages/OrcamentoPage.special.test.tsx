@@ -23,6 +23,9 @@ function specialProduct(): Product {
     description_pt_pt: 'Mesa Portugal',
     market_prices: { lojista: 100, corporativo: 90, arquiteto: 80, pvp: 120 },
     optional_applications: [],
+    altura: 0.75,
+    largura: 1.2,
+    profundidade: 0.5,
     catalog: { id: 'catalog-ibtw', name: 'IBTW' },
   } as Product
 }
@@ -276,6 +279,104 @@ describe('OrcamentoPage — especiais EU', () => {
     await waitFor(() => expect(body).not.toBeNull())
     const special = body!.items.find(item => item.is_special)
     expect(special).toMatchObject({ product_code: 'PAI', is_special: true, special_code: 'PAI-E1', special_percent: 15, discount: 0 })
+  })
+
+  describe('medidas do especial', () => {
+    const dimensionInputs = (axis: 'L' | 'P' | 'A') => screen.queryAllByRole('spinbutton', { name: `Medida ${axis} do especial (mm) de PAI-E1` }) as HTMLInputElement[]
+
+    async function sendOrder() {
+      let body: { items: Array<Record<string, unknown>> } | null = null
+      server.use(http.post('*/orders', async ({ request }) => {
+        body = await request.json() as { items: Array<Record<string, unknown>> }
+        return HttpResponse.json({}, { status: 201 })
+      }))
+      return { sent: () => body }
+    }
+
+    async function commentAndSubmit() {
+      fireEvent.click(screen.getAllByRole('button', { name: /^Comentário de ESPECIAL - Mesa Portugal/ })[0])
+      fireEvent.change(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0], { target: { value: 'Nota' } })
+      fireEvent.click(await submitButton())
+    }
+
+    it('só o especial mostra medidas editáveis, em mm, com as do produto como ponto de partida', async () => {
+      installHandlers()
+      renderQuote()
+      await screen.findAllByText('PAI')
+      expect(screen.queryByText('Medidas do especial (mm)')).toBeNull()
+      expect(screen.getAllByText(/L 1200 mm × P 500 mm × A 750 mm/).length).toBeGreaterThan(0)
+
+      await addSpecial()
+      expect(screen.getAllByText('Medidas do especial (mm)').length).toBeGreaterThan(0)
+      expect(dimensionInputs('L')[0].value).toBe('1200')
+      expect(dimensionInputs('P')[0].value).toBe('500')
+      expect(dimensionInputs('A')[0].value).toBe('750')
+
+      // Desfazer o especial devolve a linha ao produto: sem campos editáveis.
+      fireEvent.click(screen.getAllByRole('button', { name: /^Remover especial/ })[0])
+      await waitFor(() => expect(screen.queryByText('Medidas do especial (mm)')).toBeNull())
+      expect(screen.getAllByText(/L 1200 mm × P 500 mm × A 750 mm/).length).toBeGreaterThan(0)
+    })
+
+    it('envia em metros só a medida editada (as demais seguem o produto) e o preço do especial não muda', async () => {
+      installHandlers()
+      renderQuote()
+      await addSpecial()
+      fireEvent.change(dimensionInputs('L')[0], { target: { value: '1450' } })
+      fireEvent.change(screen.getAllByRole('spinbutton', { name: 'Especial em Mesa Portugal' })[0], { target: { value: '10' } })
+      expect(dimensionInputs('L')[0].value).toBe('1450')
+      expect(screen.getAllByText(/€\s*110,00|110,00\s*€/).length).toBeGreaterThan(0)
+
+      const order = await sendOrder()
+      await commentAndSubmit()
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
+      await waitFor(() => expect(order.sent()).not.toBeNull())
+      const special = order.sent()!.items.find(item => item.is_special)
+      expect(special).toMatchObject({ special_width_m: 1.45, special_depth_m: null, special_height_m: null, special_percent: 10 })
+    })
+
+    it('recusa medida que não é múltipla de 10 mm ou acima de 20 000 mm, sem chamar a API', async () => {
+      installHandlers()
+      renderQuote()
+      await addSpecial()
+      const order = await sendOrder()
+      fireEvent.change(dimensionInputs('P')[0], { target: { value: '475' } })
+      expect(dimensionInputs('P')[0]).toHaveAttribute('aria-invalid', 'true')
+      fireEvent.click(screen.getAllByRole('button', { name: /^Comentário de ESPECIAL - Mesa Portugal/ })[0])
+      fireEvent.change(screen.getAllByPlaceholderText('Escreva um comentário sobre este item')[0], { target: { value: 'Nota' } })
+      fireEvent.click(await submitButton())
+      expect(await screen.findByRole('alert')).toHaveTextContent('PAI-E1: Use múltiplos de 10 mm')
+
+      fireEvent.change(dimensionInputs('P')[0], { target: { value: '20010' } })
+      fireEvent.click(await submitButton())
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Medida acima de 20 000 mm'))
+      expect(order.sent()).toBeNull()
+    })
+
+    it('ao editar um orçamento salvo, mostra as medidas gravadas na linha especial', async () => {
+      installHandlers()
+      const editUser = productTestUser('admin', 'EU')
+      sessionStorage.setItem(`orcamento_client_id:${editUser.id}:EU`, client.id)
+      server.use(http.get('*/orders/edit-special', () => HttpResponse.json({
+        id: 'edit-special', code: 'ORC-1', orc_id: 'ORC-1', client_id: client.id, rep_id: null,
+        market_code: 'EU', price_list_code: 'lojista', currency: 'EUR', locale: 'pt-PT',
+        total_value: 100, total_ipi: 0, total_with_ipi: 100, is_finalized: false,
+        is_cancelled: false, finalized_at: null, cancelled_at: null, external_code: null,
+        notes: null, history: [], created_at: '2026-01-01', updated_at: '2026-01-01',
+        items: [{ id: 'special-item', order_id: 'edit-special', product_code: 'PAI',
+          description: 'ESPECIAL - Mesa Portugal', is_special: true, special_code: 'PAI-E1',
+          special_percent: 0, qty: 1, unit_price: 100, discount: 0, is_circular: false,
+          altura: 0.8, largura: 1.45, profundidade: 0.6, opt_categories: {}, optional_choices: [],
+          ipi_rate: 0, ipi_value: 0, tax_label: 'IVA', currency: 'EUR', observacao: null,
+          comment: 'Nota', created_at: '2026-01-01', updated_at: '2026-01-01' }],
+      } as Order)))
+      renderProductPage(<OrcamentoPage />, editUser, ['/orcamentos?edit=edit-special'])
+
+      await screen.findAllByText('PAI-E1')
+      await waitFor(() => expect(dimensionInputs('L')[0]?.value).toBe('1450'))
+      expect(dimensionInputs('P')[0].value).toBe('600')
+      expect(dimensionInputs('A')[0].value).toBe('800')
+    })
   })
 
   it.each([

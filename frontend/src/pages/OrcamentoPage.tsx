@@ -30,7 +30,7 @@ import { allowedForApplication, allowsCustomFor, allowsCustomOption, application
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput } from '../types'
-import { formatDimensions } from '../lib/measurements'
+import { formatDimensions, metresToMillimetres } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPieces, previewArea } from '../lib/areaProduct'
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
@@ -399,6 +399,10 @@ interface CartItem {
   is_special?: boolean
   special_code?: string | null
   special_percent?: number | null
+  // Medidas da linha especial em metros; ausente = medida do produto. Valem só para a linha.
+  special_width_m?: number | null
+  special_depth_m?: number | null
+  special_height_m?: number | null
   displayDescription?: string
   opt_categories: Partial<Record<string, string>>
   optional_choices: OptionalChoiceInput[]
@@ -527,6 +531,71 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
       })}
     </div>
   )
+}
+
+type SpecialAxis = 'width' | 'depth' | 'height'
+const SPECIAL_AXIS_FIELD = { width: 'special_width_m', depth: 'special_depth_m', height: 'special_height_m' } as const
+const MAX_SPECIAL_DIMENSION_M = 20
+
+/** Produto com medidas próprias exibíveis (não é tapete, conjunto nem agrupador). */
+function hasEditableDimensions(p: Product) {
+  return !(isAreaProduct(p) || p.is_set || isConjuntoType(p.type) || p.components.length > 0)
+}
+
+/** Medida vigente de um eixo (m): a editada na linha ou a do produto. */
+function specialAxisMetres(item: CartItem, axis: SpecialAxis) {
+  const edited = item[SPECIAL_AXIS_FIELD[axis]]
+  if (edited != null) return edited
+  return axis === 'width' ? item._product.largura : axis === 'depth' ? item._product.profundidade : item._product.altura
+}
+
+/** Mensagem de erro de uma medida do especial (m), ou null se válida (precisão do banco: 1 cm). */
+function specialDimensionError(metres: number, english: boolean) {
+  if (!(metres > 0)) return english ? 'Measurement must be greater than zero.' : 'A medida deve ser maior que zero.'
+  if (metres > MAX_SPECIAL_DIMENSION_M) return english ? 'Measurement above 20 000 mm.' : 'Medida acima de 20 000 mm.'
+  if (Math.abs(metres * 100 - Math.round(metres * 100)) > 1e-6) {
+    return english ? 'Use multiples of 10 mm (1 cm precision).' : 'Use múltiplos de 10 mm (precisão de 1 cm).'
+  }
+  return null
+}
+
+// Medidas editáveis da linha especial. No EU a tela fala milímetros; o valor
+// canónico segue em metros. Só vale para esta linha — produto e cadastro não mudam.
+function SpecialDimensionFields({ item, english, onChange }: {
+  item: CartItem
+  english: boolean
+  onChange: (lineId: string, axis: SpecialAxis, metres: number | null) => void
+}) {
+  const axes: Array<{ axis: SpecialAxis; label: string }> = item._product.is_circular
+    ? [{ axis: 'width', label: 'Ø' }, { axis: 'height', label: english ? 'H' : 'A' }]
+    : [
+      { axis: 'width', label: english ? 'W' : 'L' },
+      { axis: 'depth', label: english ? 'D' : 'P' },
+      { axis: 'height', label: english ? 'H' : 'A' },
+    ]
+  return <fieldset className="mt-1 min-w-0 border-0 p-0">
+    <legend className="type-label text-[10px] mb-1">{english ? 'Special measurements (mm)' : 'Medidas do especial (mm)'}</legend>
+    <div className="flex flex-wrap items-center gap-2">
+      {axes.map(({ axis, label }) => {
+        const metres = specialAxisMetres(item, axis)
+        const error = specialDimensionError(metres, english)
+        return <label key={axis} className="flex items-center gap-1 text-[11px] text-ink-3">
+          <span aria-hidden="true">{label}</span>
+          <NumberField
+            value={Math.round(metresToMillimetres(metres) * 1000) / 1000}
+            min={0}
+            max={MAX_SPECIAL_DIMENSION_M * 1000}
+            step={10}
+            aria-label={english ? `Special measurement ${label} (mm) of ${item.special_code ?? item.product_code}` : `Medida ${label} do especial (mm) de ${item.special_code ?? item.product_code}`}
+            aria-invalid={error ? true : undefined}
+            title={error ?? undefined}
+            className={`input h-8 w-20 rounded-lg border bg-white px-1.5 py-1 text-center text-xs tabular-nums ${error ? 'border-danger' : 'border-line'}`}
+            onValueChange={mm => onChange(item.line_id, axis, mm > 0 ? mm / 1000 : null)}
+          />
+        </label>
+      })}
+    </div>
+  </fieldset>
 }
 
 // Transforma a linha em especial (e desfaz). Só ícone, no estilo do comentário e
@@ -823,7 +892,7 @@ function RugMeasureFields({ item, english, locale, qtyLimitWarning, onAreaDimens
 }
 
 function MobileCartCard({
-  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, commentInvalid, onSpecial, priceProfile, catLabel, currency, locale
+  item, onQtyChange, onAreaDimensionsChange, onAreaPiecesChange, qtyLimitWarning, onDiscountChange, maxDiscount, onRemove, onPhotoClick, onPreview, allOptionals, optionalsReady, onOptChange, onApplicationChange, onEditApplications, onToggleComment, onCommentChange, commentInvalid, onSpecial, onSpecialDimension, priceProfile, catLabel, currency, locale
 }: {
   item: CartItem
   onQtyChange: (code: string, qty: number) => void
@@ -844,6 +913,7 @@ function MobileCartCard({
   onCommentChange: (comment: string) => void
   commentInvalid?: boolean
   onSpecial?: () => void
+  onSpecialDimension?: (lineId: string, axis: SpecialAxis, metres: number | null) => void
   priceProfile: string
   catLabel: (code: string) => string
   currency: string
@@ -894,6 +964,7 @@ function MobileCartCard({
               {item._product.observacao && (
                 <p className="text-[11px] leading-snug text-gold italic mt-1 line-clamp-2">{item._product.observacao}</p>
               )}
+              {item.is_special && onSpecialDimension && hasEditableDimensions(item._product) && <SpecialDimensionFields item={item} english={isEnglish} onChange={onSpecialDimension} />}
               {soldByArea && <div className="mt-2"><RugMeasureFields item={item} english={isEnglish} locale={measurementLocale} qtyLimitWarning={qtyLimitWarning} onAreaDimensionsChange={onAreaDimensionsChange} /></div>}
             </div>
             <div className="flex flex-shrink-0">
@@ -1600,6 +1671,11 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
               is_special: !!item.is_special,
               special_code: item.special_code,
               special_percent: item.special_percent == null ? null : Number(item.special_percent),
+              ...(item.is_special && hasEditableDimensions(product) ? {
+                special_width_m: Number(item.largura) > 0 ? Number(item.largura) : null,
+                special_depth_m: Number(item.profundidade) > 0 ? Number(item.profundidade) : null,
+                special_height_m: Number(item.altura) > 0 ? Number(item.altura) : null,
+              } : {}),
               displayDescription: item.description,
               opt_categories: item.opt_categories,
               optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice))).map(choice => isCustomChoice(choice)
@@ -1779,7 +1855,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
       if (!line) return previous
       if (line.is_special) {
         return previous.map(item => item.line_id === lineId
-          ? { ...item, is_special: false, special_code: null, special_percent: null, discount: 0, displayDescription: undefined }
+          ? { ...item, is_special: false, special_code: null, special_percent: null, special_width_m: null, special_depth_m: null, special_height_m: null, discount: 0, displayDescription: undefined }
           : item)
       }
       const used = new Set(previous
@@ -1798,6 +1874,13 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
         }
         : item)
     })
+  }
+
+  // Medida editada na linha especial (m); null volta à medida do produto naquele eixo.
+  function updateSpecialDimension(lineId: string, axis: SpecialAxis, metres: number | null) {
+    setCart(previous => previous.map(item => item.line_id === lineId && item.is_special
+      ? { ...item, [SPECIAL_AXIS_FIELD[axis]]: metres }
+      : item))
   }
 
   // Especiais que o último envio recusou por falta de comentário.
@@ -1863,6 +1946,11 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
       is_special: !!item.is_special,
       special_code: item.is_special ? item.special_code ?? null : null,
       special_percent: item.is_special ? item.special_percent ?? 0 : null,
+      ...(item.is_special && hasEditableDimensions(_product) ? {
+        special_width_m: item.special_width_m != null ? Math.round(item.special_width_m * 100) / 100 : null,
+        special_depth_m: item.special_depth_m != null ? Math.round(item.special_depth_m * 100) / 100 : null,
+        special_height_m: item.special_height_m != null ? Math.round(item.special_height_m * 100) / 100 : null,
+      } : {}),
       discount: item.is_special ? 0 : discount || 0,
       opt_categories: opt_categories as Record<string, string>,
       optional_choices,
@@ -1928,6 +2016,18 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
         variant: 'error',
       })
       return
+    }
+    // Medidas editadas do especial: > 0, até 20 m e em múltiplos de 1 cm.
+    for (const item of cart) {
+      if (!item.is_special || !hasEditableDimensions(item._product)) continue
+      for (const axis of ['width', 'depth', 'height'] as const) {
+        const edited = item[SPECIAL_AXIS_FIELD[axis]]
+        const error = edited == null ? null : specialDimensionError(edited, isEnglish)
+        if (error) {
+          setToast({ message: `${item.special_code}: ${error}`, variant: 'error' })
+          return
+        }
+      }
     }
     // 1º o comentário do especial, 2º a confirmação do catálogo.
     const specialsWithoutComment = cart.filter(item => item.is_special && !item.comment?.trim())
@@ -2310,6 +2410,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                       onCommentChange={comment => updateComment(item.line_id, comment)}
                       commentInvalid={isCommentInvalid(item)}
                       onSpecial={!isClientUser && market === 'EU' ? () => toggleSpecial(item.line_id) : undefined}
+                      onSpecialDimension={updateSpecialDimension}
                       priceProfile={priceProfile}
                       catLabel={catLabel}
                       currency={currency}
@@ -2364,9 +2465,11 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                             {item._product.observacao && (
                               <div className="text-[11px] leading-snug text-gold italic mt-1">{item._product.observacao}</div>
                             )}
-                            {dimLabel(item._product, market, locale) && (
-                              <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
-                            )}
+                            {item.is_special && hasEditableDimensions(item._product)
+                              ? <SpecialDimensionFields item={item} english={isEnglish} onChange={updateSpecialDimension} />
+                              : dimLabel(item._product, market, locale) && (
+                                <div className="type-meta font-mono mt-1">{dimLabel(item._product, market, locale)}</div>
+                              )}
                             {soldByArea && <div className="mt-2"><RugMeasureFields item={item} english={isEnglish} locale={locale} qtyLimitWarning={qtyLimitWarnings.has(item.line_id)} onAreaDimensionsChange={updateAreaDimensions} /></div>}
                             <OptionalSelectors item={item} allOptionals={allOptionals} onChange={(cat, val) => updateOptCategory(item.line_id, cat, val)} onPreview={photoUrl => setActivePhotoModal(photoUrl)} catLabel={catLabel} allowCustom={allowsCustomOption(market) && optionalsReady} />
                             {item.preserve_optional_choices && <div className="mt-2 text-xs text-ink-2">

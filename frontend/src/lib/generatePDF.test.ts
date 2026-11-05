@@ -754,6 +754,41 @@ test('item especial no PDF mostra código, descrição e só o preço final, sem
   assert.ok(renderedTexts.includes('0%'))
 })
 
+test('item especial no PDF mostra as medidas gravadas na linha, não as do produto', async () => {
+  const order = euOrder([
+    makeOrderItem({
+      product_code: 'PAI',
+      description: 'ESPECIAL - Mesa Portugal',
+      qty: 1,
+      unit_price: 110,
+      discount: 0,
+      is_special: true,
+      special_code: 'PAI-E1',
+      special_percent: 10,
+      // Snapshot da linha (m): o especial foi feito com 1450 × 600 × 800 mm.
+      largura: 1.45,
+      profundidade: 0.6,
+      altura: 0.8,
+      ipi_rate: 0,
+      ipi_value: 0,
+      tax_label: 'IVA',
+      currency: 'EUR',
+    }),
+  ], 'pt-PT')
+
+  await buildOrderPdf({
+    order,
+    client: euClient(),
+    rep: null,
+    // Cadastro do produto com outras medidas: não pode aparecer na linha.
+    products: [makeProduct({ product_code: 'PAI', market_code: 'EU', currency: 'EUR', largura: 1.2, profundidade: 0.5, altura: 0.75 })],
+    documentLocale: 'pt-PT',
+  })
+
+  assert.ok(renderedTexts.includes('Dimensões: L 1450 mm × P 600 mm × A 800 mm'))
+  assert.ok(!renderedTexts.some((text) => text.includes('1200 mm')))
+})
+
 test('tapete: valor por m², peças sob a quantidade e área em m²', async () => {
   const order = makeOrder({
     items: [makeOrderItem({
