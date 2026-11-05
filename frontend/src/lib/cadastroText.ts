@@ -196,6 +196,9 @@ const EN: Record<string, string> = {
   'Cadastro anterior': 'Earlier record',
   'Detalhes — {name}': 'Details — {name}',
   'Não informado': 'Not provided',
+  'Cliente contactado': 'Client contacted',
+  'Sim': 'Yes',
+  'Não': 'No',
   'Cadastro anterior ao rastreamento': 'Created before tracking',
   'Acesso ao Sistema': 'System access',
   'Usuário criado com sucesso!': 'User created successfully!',
@@ -354,8 +357,39 @@ const EN: Record<string, string> = {
 
 export type CadastroTextVars = Record<string, string | number>
 
-export function translateCadastro(locale: string, pt: string, vars?: CadastroTextVars): string {
-  const template = locale === 'en-GB' ? (EN[pt] ?? pt) : pt
+// Artigos e contrações que concordam com "cadastro" (masculino) e passam a
+// concordar com "ficha" (feminino): "o cadastro" → "a ficha", "do" → "da"...
+const FICHA_ARTICLES: Record<string, string> = {
+  o: 'a', os: 'as', do: 'da', dos: 'das', no: 'na', nos: 'nas', ao: 'à', aos: 'às',
+  um: 'uma', uns: 'umas', este: 'esta', esse: 'essa', pelo: 'pela',
+}
+
+function keepCase(source: string, replacement: string): string {
+  return source[0] === source[0].toUpperCase() ? replacement[0].toUpperCase() + replacement.slice(1) : replacement
+}
+
+/**
+ * Em Portugal o registo de um cliente chama-se "ficha", não "cadastro".
+ * Só o substantivo muda ("cadastrar", "cadastrados" ficam como estão) e o
+ * artigo que o acompanha passa para o feminino. Brasil nunca passa por aqui.
+ */
+export function fichaPt(text: string): string {
+  return text
+    .replace(/\b(o|os|do|dos|no|nos|ao|aos|um|uns|este|esse|pelo) cadastro(s?)(?![\p{L}])/giu,
+      (_m, article: string, plural: string) =>
+        `${keepCase(article, FICHA_ARTICLES[article.toLowerCase()])} ficha${plural}`)
+    .replace(/\bCadastro(s?)(?![\p{L}])/gu, (_m, plural: string) => `Ficha${plural}`)
+    .replace(/\bcadastro(s?)(?![\p{L}])/gu, (_m, plural: string) => `ficha${plural}`)
+}
+
+export function translateCadastro(
+  locale: string,
+  pt: string,
+  vars?: CadastroTextVars,
+  market: 'BR' | 'EU' = 'BR',
+): string {
+  const portuguese = locale !== 'en-GB' && market === 'EU' ? fichaPt(pt) : pt
+  const template = locale === 'en-GB' ? (EN[pt] ?? pt) : portuguese
   if (!vars) return template
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in vars ? String(vars[key]) : match,

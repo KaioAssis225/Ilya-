@@ -331,10 +331,13 @@ function QuickRegisterModal({ title, entityType, market, onSave, onClose }: {
             {cepLoading && <span className="absolute right-2 bottom-2 text-xs text-gold animate-pulse">...</span>}
             {cepError && <span className="text-xs leading-snug font-medium text-danger">{isEnglish ? 'Postcode not found or service unavailable.' : market === 'EU' ? 'Código postal não encontrado ou serviço indisponível.' : 'CEP não encontrado ou serviço indisponível.'}</span>}
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-muted">{isEnglish ? 'Number' : 'Número'}</span>
-            <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
-          </label>
+          {/* Portugal não tem número de morada na ficha do cliente. */}
+          {market === 'BR' && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">{isEnglish ? 'Number' : 'Número'}</span>
+              <input className="input" value={form.numero ?? ''} onChange={(e) => setForm({ ...form, numero: e.target.value })} />
+            </label>
+          )}
           <label className="sm:col-span-2 flex flex-col gap-1">
             <span className="text-xs text-muted">{isEnglish ? 'Address *' : 'Endereço *'}</span>
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} required />

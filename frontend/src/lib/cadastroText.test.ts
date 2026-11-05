@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { CADASTRO_EN_KEYS, translateCadastro } from './cadastroText.ts'
+import { CADASTRO_EN_KEYS, fichaPt, translateCadastro } from './cadastroText.ts'
 
 test('fora de en-GB todo texto volta identico -- o Brasil nao muda', () => {
   // O LocaleContext responde 'pt-PT' tambem no Brasil. Se qualquer chave fosse
@@ -45,4 +45,18 @@ test('a traducao usa as mesmas variaveis do original', () => {
   for (const key of CADASTRO_EN_KEYS) {
     assert.deepEqual(vars(translateCadastro('en-GB', key)), vars(key), key)
   }
+})
+
+test('Portugal (pt) troca "cadastro" por "ficha" com o artigo no feminino; Brasil e inglês não mudam', () => {
+  assert.equal(translateCadastro('pt-PT', 'Cadastros', undefined, 'EU'), 'Fichas')
+  assert.equal(translateCadastro('pt-PT', 'Cadastros', undefined, 'BR'), 'Cadastros')
+  assert.equal(translateCadastro('en-GB', 'Cadastros', undefined, 'EU'), 'Records')
+  assert.equal(fichaPt('Cadastro anterior ao rastreamento'), 'Ficha anterior ao rastreamento')
+  assert.equal(fichaPt('cadastro anterior'), 'ficha anterior')
+  assert.equal(fichaPt('ele deve coincidir com o cadastro.'), 'ele deve coincidir com a ficha.')
+  assert.equal(fichaPt('Dados do cadastro'), 'Dados da ficha')
+  assert.equal(fichaPt('Cadastros de apoio'), 'Fichas de apoio')
+  // Só o substantivo: o verbo e o particípio ficam como estão.
+  assert.equal(fichaPt('Cadastrar grupo'), 'Cadastrar grupo')
+  assert.equal(fichaPt('{count} {label} cadastrados'), '{count} {label} cadastrados')
 })

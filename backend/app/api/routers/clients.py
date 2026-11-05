@@ -33,6 +33,7 @@ from app.api.deps import (
     is_client_account,
     sanitize_client_update_fields,
 )
+from app.core.documents import normalize_tax_id_key
 from app.core.legal_hold import ensure_no_active_legal_hold
 from app.core.search import literal_contains_pattern
 from app.core.privacy_audit import record_privacy_event
@@ -60,6 +61,69 @@ def _conflict_detail(error: IntegrityError) -> str:
     if "cpf_cnpj" in str(error.orig):
         return "Já existe um cliente com este CPF/CNPJ."
     return "Já existe um cliente com este e-mail."
+
+
+async def _ensure_tax_id_unique(
+    db: AsyncSession,
+    market: str,
+    tax_id: str | None,
+    *,
+    exclude_id: uuid.UUID | None = None,
+) -> None:
+    """VAT/Tax ID não se repete entre clientes do mercado (409).
+
+    A checagem fica na aplicação, sem índice único no banco: pode haver
+    duplicados já gravados e uma restrição nova quebraria o deploy. Compara a
+    chave normalizada (maiúsculas, sem espaços, pontos, hífens ou barras) nos
+    dois lados, então grafias diferentes do mesmo número também colidem.
+    """
+    key = normalize_tax_id_key(tax_id)
+    if key is None:
+        return
+    stored_key = func.upper(func.regexp_replace(Client.tax_id, r"[\s./-]", "", "g"))
+    query = select(Client.id).where(Client.market_code == market, stored_key == key)
+    if exclude_id is not None:
+        query = query.where(Client.id != exclude_id)
+    if (await db.execute(query.limit(1))).scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe um cliente com este VAT / Tax ID.",
+        )
+
+
+def _deny_silent_identity_changes(
+    requested: dict, allowed: dict, client: Client
+) -> None:
+    """Campo de identidade que o papel não pode mudar não some em silêncio.
+
+    O formulário reenvia a ficha inteira; um valor igual ao gravado é inofensivo,
+    mas um valor diferente que seria descartado com 200 fazia parecer que a
+    edição foi salva. Agora volta 403 dizendo o que ficou de fora.
+    """
+    def _same(field: str, value: object) -> bool:
+        current = getattr(client, field)
+        if field == "email":
+            return (str(value).strip().lower() if value else None) == (
+                current.strip().lower() if current else None
+            )
+        if field == "tax_id":
+            return normalize_tax_id_key(value) == normalize_tax_id_key(current)
+        return (value or None) == (current or None)
+
+    blocked = [
+        field for field in ("email", "cpf_cnpj", "tax_id")
+        if field in requested and field not in allowed and not _same(field, requested[field])
+    ]
+    if blocked:
+        names = {"email": "e-mail", "cpf_cnpj": "CPF/CNPJ", "tax_id": "VAT / Tax ID"}
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Seu perfil não pode alterar: "
+                + ", ".join(names[f] for f in blocked)
+                + ". Peça a um administrador ou ao cadastro."
+            ),
+        )
 
 # Quem apaga cliente. O representante entra para consertar o próprio cadastro
 # errado sem depender de admin. O alcance real é pequeno: cliente com pedido
@@ -290,6 +354,8 @@ def _with_metadata(
         client.country = "BR"
     if client.market_code is None:
         client.market_code = "BR"
+    if client.contacted is None:
+        client.contacted = False
     if client.all_catalogs is None:
         client.all_catalogs = True
     if client.all_price_lists is None:
@@ -443,11 +509,16 @@ async def create_client(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Já existe um cliente com este CPF/CNPJ.",
             )
+    await _ensure_tax_id_unique(db, market, payload.tax_id)
     data = sanitize_client_create_fields(data, current_user)
     if market != "EU":
         data.pop("contact_name", None)
         data.pop("client_type", None)
         data.pop("observation", None)
+        data.pop("contacted", None)
+    else:
+        # A ficha de Portugal não tem número de morada (a coluna segue no banco).
+        data["numero"] = None
     if market == "BR" and data.get("state") == "--":
         raise HTTPException(status_code=422, detail="UF é obrigatória no mercado Brasil.")
     if market == "EU" and "country" not in payload.model_fields_set:
@@ -541,13 +612,25 @@ async def update_client(
     rep_price_limit: PriceScope = None
     if current_user.role == UserRole.representante:
         rep_price_limit = await visible_price_scope(db, current_user, market)
-    update_data = sanitize_client_update_fields(
-        payload.model_dump(exclude_unset=True), current_user
-    )
+    requested = payload.model_dump(exclude_unset=True)
+    update_data = sanitize_client_update_fields(dict(requested), current_user)
+    _deny_silent_identity_changes(requested, update_data, client)
+    if update_data.get("contacted") is None:
+        update_data.pop("contacted", None)  # coluna NOT NULL: null não limpa
     if market != "EU":
         update_data.pop("contact_name", None)
         update_data.pop("client_type", None)
         update_data.pop("observation", None)
+        update_data.pop("contacted", None)
+    else:
+        # Sem número de morada na ficha EU: o valor antigo permanece intacto.
+        update_data.pop("numero", None)
+    # Só confere quando o VAT muda de fato: uma ficha que já tem duplicado
+    # gravado (antes desta regra) continua editável nos demais campos.
+    if update_data.get("tax_id") and normalize_tax_id_key(
+        update_data["tax_id"]
+    ) != normalize_tax_id_key(client.tax_id):
+        await _ensure_tax_id_unique(db, market, update_data["tax_id"], exclude_id=client.id)
     if "country" in update_data or market == "EU":
         update_data["country"] = require_launch_country(
             market, update_data.get("country", client.country)
