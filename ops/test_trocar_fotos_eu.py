@@ -245,7 +245,7 @@ class TesteApply(TesteBase):
         log = {l["codigo"]: l for l in self.csvs("log-apply")}
         self.assertEqual(log["AC0105"]["status"], t.OK)
         self.assertTrue(log["AC0105"]["foto_nova_chave"].startswith("eu-products/novo-"))
-        self.assertEqual(log["AC0105"]["foto_antiga_apagada_pelo_servidor"], "sim")
+        self.assertTrue(log["AC0105"]["foto_antiga_apagada_pelo_servidor"].startswith("sim"))
         self.assertEqual(log["SF0597"]["status"], t.OK)  # foto herdada do BR
         self.assertTrue(log["SF0597"]["foto_antiga_apagada_pelo_servidor"].startswith("nao"))
         self.assertEqual(log["BC0023"]["status"], t.OK)  # sem foto antes

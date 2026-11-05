@@ -13,6 +13,7 @@ from app.models.optional_application import optional_application_allowed
 from app.models.user import User, UserRole
 from app.schemas.optional import OptionalColorCreate, OptionalColorUpdate, OptionalColorRead
 from app.core.config import settings
+from app.core.media_orphans import delete_upload_if_unreferenced
 from app.core.uploads import (
     OPTIONAL_RECOMMENDED_MIN_SIDE,
     build_optional_variants,
@@ -251,7 +252,7 @@ async def delete_optional(
     await db.commit()
     # Opcional EU ainda não sincronizado aponta para a foto do opcional BR de
     # origem; `market` impede que a exclusão alcance o arquivo brasileiro.
-    await delete_upload(old_photo_path, market=opt.market_code)
+    await delete_upload_if_unreferenced(db, old_photo_path, market=opt.market_code)
 
 
 @router.post("/{optional_id}/upload-photo", response_model=OptionalColorRead)
@@ -287,7 +288,7 @@ async def upload_photo(
         await db.rollback()
         await delete_upload(save_path)
         raise
-    await delete_upload(old_photo_path, market=opt.market_code)
+    await delete_upload_if_unreferenced(db, old_photo_path, market=opt.market_code)
     await db.refresh(opt)
     read = _to_read(opt)
     max_side = image_max_side(content)

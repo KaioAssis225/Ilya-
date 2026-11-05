@@ -250,6 +250,110 @@ async def scan_photo_references(db: AsyncSession) -> PhotoReferences:
     return references
 
 
+# --------------------------------------------------------------------------- #
+# Apagar a foto antiga só se ninguém mais a usa
+# --------------------------------------------------------------------------- #
+
+_ANY_UUID_RE = re.compile(_UUID)
+# Uma referência a foto tem pelo menos o UUID (36); coluna varchar menor não cabe.
+_MIN_REFERENCE_COLUMN_LENGTH = 36
+_REFERENCE_CHECK_TIMEOUT_MS = 10_000
+_PRIORITY_TABLES = ("products", "optional_colors")
+_REFERENCE_COLUMNS_SQL = text(
+    """
+    SELECT n.nspname AS schema_name, c.relname AS table_name, a.attname AS column_name
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_type t ON t.oid = a.atttypid
+    WHERE a.attnum > 0 AND NOT a.attisdropped
+      AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND n.nspname NOT LIKE 'pg\\_toast%' AND n.nspname NOT LIKE 'pg\\_temp%'
+      AND t.typname::text <> ALL(CAST(:skipped AS text[]))
+      AND NOT (t.typname IN ('varchar', 'bpchar') AND a.atttypmod > 0
+               AND a.atttypmod - 4 < :min_length)
+    ORDER BY n.nspname, c.relname, a.attnum
+    """
+)
+
+
+def upload_identity(path: str | None) -> str | None:
+    """Trecho que identifica o arquivo nas colunas do banco: o UUID do nome
+    (`object://eu-products/<uuid>.webp`, `/app/uploads/<uuid>.jpg`) ou, sem UUID,
+    o nome do arquivo. None quando não há como identificar com segurança."""
+    if not path:
+        return None
+    base = re.split(r"[\\/]", path.rstrip("/\\"))[-1]
+    match = _ANY_UUID_RE.search(base)
+    if match:
+        return match.group(0).lower()
+    return base if len(base) >= 8 else None
+
+
+def _like_pattern(identity: str) -> str:
+    escaped = identity.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+async def is_upload_referenced(db: AsyncSession, path: str | None) -> bool:
+    """True se QUALQUER coluna textual/JSON do banco cita o arquivo.
+
+    Barato o bastante para uma troca de foto: busca o UUID de um único arquivo,
+    pula colunas curtas demais para guardar uma chave e para na primeira citação.
+    Falha de qualquer natureza (timeout, permissão, identidade ausente) conta
+    como "referenciado": na dúvida, o arquivo fica."""
+    identity = upload_identity(path)
+    if identity is None:
+        return True
+    pattern = _like_pattern(identity)
+    try:
+        await db.execute(
+            text("SELECT set_config('statement_timeout', :timeout, true)"),
+            {"timeout": str(_REFERENCE_CHECK_TIMEOUT_MS)},
+        )
+        columns = (await db.execute(_REFERENCE_COLUMNS_SQL, {
+            "skipped": list(_SKIPPED_TYPES), "min_length": _MIN_REFERENCE_COLUMN_LENGTH,
+        })).all()
+        columns.sort(key=lambda row: (row[1] not in _PRIORITY_TABLES,))
+        for schema_name, table_name, column_name in columns:
+            statement = text(
+                f"SELECT 1 FROM {_quote(schema_name)}.{_quote(table_name)} AS t "
+                f"WHERE t.{_quote(column_name)}::text ILIKE :pattern ESCAPE '\\' LIMIT 1"
+            )
+            async with db.begin_nested():
+                found = (await db.execute(statement, {"pattern": pattern})).first()
+            if found is not None:
+                logger.info("Foto %s ainda é usada em %s.%s; mantida.",
+                            identity, table_name, column_name)
+                return True
+        return False
+    except Exception as exc:  # noqa: BLE001 - na dúvida, o arquivo fica
+        logger.warning("Checagem de uso da foto %s falhou (%s); arquivo mantido.",
+                       identity, type(exc).__name__)
+        return True
+
+
+async def delete_upload_if_unreferenced(
+    db: AsyncSession, path: str | None, *, market: str | None = None
+) -> bool:
+    """Apaga o arquivo antigo (e miniatura/variantes) só se nenhuma outra linha
+    do banco o usa. Chame DEPOIS do commit que trocou/removeu a referência.
+    Devolve True se apagou. Arquivo mantido fica para a limpeza de órfãs."""
+    if not path:
+        return False
+    if market is not None and not uploads.upload_belongs_to_market(path, market):
+        return False
+    referenced = await is_upload_referenced(db, path)
+    try:
+        await db.commit()  # encerra a transação da checagem (timeout local)
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+    if referenced:
+        return False
+    await uploads.delete_upload(path)
+    return True
+
+
 async def build_inventory(db: AsyncSession, *, now: datetime | None = None) -> Inventory:
     client, bucket = eu_storage()
     objects = await run_in_threadpool(list_photo_objects, client, bucket)

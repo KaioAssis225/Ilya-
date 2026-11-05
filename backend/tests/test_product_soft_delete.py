@@ -179,7 +179,8 @@ def test_delete_photo_clears_reference_and_deletes_only_from_active_market():
 
         with (
             patch(
-                "app.api.routers.products.delete_upload", new_callable=AsyncMock
+                "app.api.routers.products.delete_upload_if_unreferenced",
+                new_callable=AsyncMock,
             ) as mock_delete_upload,
             patch("app.api.routers.products._to_read", return_value=returned),
         ):
@@ -195,7 +196,7 @@ def test_delete_photo_clears_reference_and_deletes_only_from_active_market():
         db.commit.assert_awaited_once()
         db.refresh.assert_awaited_once_with(product)
         mock_delete_upload.assert_awaited_once_with(
-            "object://products/cadeira.jpg", market="BR"
+            db, "object://products/cadeira.jpg", market="BR"
         )
 
     asyncio.run(run_test())
