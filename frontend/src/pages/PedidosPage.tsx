@@ -1607,7 +1607,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
                   <thead className="bg-surface-2">
                     <tr>
                       {isOrdersScope && (
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Code' : 'Código'}</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Order' : 'Pedido'}</th>
                       )}
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Quote' : 'Orçamento'}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-ink-3 uppercase">{isEnglish ? 'Client' : 'Cliente'}</th>
