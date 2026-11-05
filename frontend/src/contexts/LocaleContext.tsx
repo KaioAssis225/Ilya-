@@ -36,8 +36,8 @@ export interface LocaleValue {
   locale: AppLocale
   setLocale: (locale: AppLocale) => void
   t: (key: MessageKey) => string
-  /** Mercado ativo: Portugal chama o cadastro de "ficha" (ver fichaPt). */
-  market: 'BR' | 'EU'
+  /** Mercado ativo: Portugal chama o cadastro de "ficha" (ver fichaPt). Ausente = BR. */
+  market?: 'BR' | 'EU'
 }
 
 
