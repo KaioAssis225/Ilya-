@@ -84,7 +84,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     const { unmount } = renderProductPage(<PedidosPage scope="quotes" />, productTestUser('admin', 'BR'))
     expect(await screen.findByRole('heading', { name: /Orçamentos/ })).toBeInTheDocument()
     await screen.findAllByText('ORC-0001')
-    expect(screen.queryByRole('columnheader', { name: 'Código' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Pedido' })).not.toBeInTheDocument()
     // O cancelado nunca foi finalizado: continua visível em Orçamento, com status.
     expect(screen.getAllByText('ORC-0002').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Cancelado').length).toBeGreaterThan(0)
@@ -95,7 +95,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     renderProductPage(<PedidosPage scope="orders" />, productTestUser('admin', 'BR'))
     expect(await screen.findByRole('heading', { name: /Pedidos/ })).toBeInTheDocument()
     await screen.findAllByText('PED-0003')
-    expect(screen.getByRole('columnheader', { name: 'Código' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Pedido' })).toBeInTheDocument()
     expect(screen.queryAllByText('PED-0001')).toHaveLength(0)
     expect(screen.queryAllByText('PED-0002')).toHaveLength(0)
     expect(statusRequests).toContain('finalized')
