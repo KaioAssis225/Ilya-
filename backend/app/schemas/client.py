@@ -17,6 +17,39 @@ def _trim_tax_id(value: object) -> Optional[str]:
     return value  # type: ignore[return-value]  # o Pydantic recusa o tipo errado
 
 
+class ClientContactIn(BaseModel):
+    """Contato adicional enviado pela ficha: nome obrigatório, resto opcional."""
+
+    name: str = Field(..., max_length=255)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[EmailStr] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def require_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise ValueError("Informe o nome do contato.")
+        return value
+
+    @field_validator("phone", "email", mode="before")
+    @classmethod
+    def blank_is_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+
+class ClientContactRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ClientBase(BaseModel):
     name: str = Field(..., max_length=255)
     phone: str = Field(..., max_length=20)
@@ -83,6 +116,8 @@ class ClientCreate(ClientBase):
     # `price_list_codes` implica seleção específica.
     all_price_lists: Optional[bool] = None
     price_list_codes: Optional[list[Literal["lojista", "corporativo", "pvp", "arquiteto"]]] = Field(None, max_length=10)
+    # Contatos adicionais, além do contato principal da ficha.
+    contacts: list[ClientContactIn] = Field(default_factory=list, max_length=20)
 
 
 class ClientUpdate(BaseModel):
@@ -104,6 +139,8 @@ class ClientUpdate(BaseModel):
     client_type: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     observation: Optional[str] = Field(None, max_length=2000)
     contacted: Optional[bool] = None
+    # Ausente (ou null) não mexe nos contatos; a lista enviada substitui a atual.
+    contacts: Optional[list[ClientContactIn]] = Field(None, max_length=20)
     price_profile: Optional[Literal["lojista", "corporativo", "pvp", "arquiteto"]] = None
     max_discount: Optional[Decimal] = Field(None, ge=0, le=100)
     # Permite reatribuir a carteira e consertar cliente órfão (ver ClientCreate).
@@ -162,3 +199,13 @@ class ClientRead(ClientBase):
     price_list_codes: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class ClientDetailRead(ClientRead):
+    """Resposta da API de clientes: a ficha mais os contatos adicionais.
+
+    `ClientRead` segue sem contatos de propósito: ele alimenta snapshots de
+    e-mail de pedido, que não devem carregar dados pessoais de terceiros.
+    """
+
+    contacts: list[ClientContactRead] = Field(default_factory=list)

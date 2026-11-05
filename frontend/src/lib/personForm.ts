@@ -48,6 +48,11 @@ export function parseApiError(err: unknown): string {
   if (Array.isArray(detail) && detail.length > 0) {
     const msgs = detail.map((d: { loc?: (string | number)[]; msg?: string }) => {
       const field = d.loc?.[d.loc.length - 1]
+      if (d.loc?.includes('contacts')) {
+        return field === 'email'
+          ? 'Contatos adicionais: e-mail inválido.'
+          : 'Contatos adicionais: informe o nome de cada contato.'
+      }
       const label = typeof field === 'string' ? (FIELD_LABEL[field] ?? field) : ''
       if (field === 'email') return 'E-mail inválido. Informe um e-mail válido (ex: nome@dominio.com).'
       if (field === 'state') return 'Selecione o estado (UF).'

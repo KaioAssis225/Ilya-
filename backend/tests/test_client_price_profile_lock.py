@@ -141,3 +141,52 @@ class TestCadastroSegueAMesmaRegraDaEdicao:
         out = sanitize_client_create_fields(_full_payload(), PRODUTOS)
         assert out["price_profile"] == "corporativo"
         assert out["max_discount"] == Decimal("0.00")
+
+
+class TestRepresentanteDonoDoCliente:
+    """O representante altera e-mail e CPF/CNPJ só do cliente que ele criou E
+    que segue na carteira dele; termos comerciais nunca."""
+
+    def _cliente(self, rep_id, criado_por):
+        return SimpleNamespace(rep_id=rep_id, created_by_user_id=criado_por)
+
+    def _rep(self):
+        return SimpleNamespace(
+            id=uuid.uuid4(), role=UserRole.representante, rep_id=uuid.uuid4(), linked_id=None
+        )
+
+    def test_dono_altera_identidade_mas_nao_termos_comerciais(self):
+        rep = self._rep()
+        out = sanitize_client_update_fields(
+            _full_payload(), rep, self._cliente(rep.rep_id, rep.id)
+        )
+        assert out["email"] == "novo@exemplo.com"
+        assert out["cpf_cnpj"] == "52998224725"
+        assert out["tax_id"] == "PT999999990"
+        assert "max_discount" not in out
+        assert "rep_id" not in sanitize_client_update_fields(
+            {"rep_id": uuid.uuid4()}, rep, self._cliente(rep.rep_id, rep.id)
+        )
+
+    def test_carteira_criada_por_outro_continua_restrita(self):
+        rep = self._rep()
+        out = sanitize_client_update_fields(
+            _full_payload(), rep, self._cliente(rep.rep_id, uuid.uuid4())
+        )
+        assert "email" not in out and "cpf_cnpj" not in out
+
+    def test_criado_por_ele_mas_reatribuido_a_outro_representante_restrito(self):
+        rep = self._rep()
+        out = sanitize_client_update_fields(
+            _full_payload(), rep, self._cliente(uuid.uuid4(), rep.id)
+        )
+        assert "email" not in out and "cpf_cnpj" not in out
+
+    def test_conta_de_cliente_final_nunca_reescreve_a_propria_identidade(self):
+        conta = SimpleNamespace(
+            id=uuid.uuid4(), role=UserRole.cliente, rep_id=None, linked_id=_CLIENT_ID
+        )
+        out = sanitize_client_update_fields(
+            _full_payload(), conta, self._cliente(None, conta.id)
+        )
+        assert "email" not in out and "cpf_cnpj" not in out and "tax_id" not in out

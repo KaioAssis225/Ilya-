@@ -26,6 +26,7 @@ import { useCreateUserFromClient, useCreateUserFromRep, useIssueClientInvitation
 import type { ClientVerificationMethod, UserCreateResponse } from '../hooks/useUsers'
 import { useAuth } from '../hooks/useAuth'
 import { useCadastroText } from '../hooks/useCadastroText'
+import { ClientContactsEditor } from '../components/ClientContactsEditor'
 import { NumberField } from '../components/NumberField'
 import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
@@ -282,11 +283,13 @@ const CLIENT_TYPE_LABELS: Record<NonNullable<ClientCreate['client_type']>, strin
   corporativo: 'Corporativo',
 }
 
-function AddressFields({ form, setForm, market, portugalClient = false }: {
+function AddressFields({ form, setForm, market, portugalClient = false, showContacts = false }: {
   form: ClientCreate
   setForm: (v: ClientCreate) => void
   market: 'BR' | 'EU'
   portugalClient?: boolean
+  /** Cliente (BR e EU): lista de contatos adicionais abaixo do e-mail. */
+  showContacts?: boolean
 }) {
   const tx = useCadastroText()
   const [cepLoading, setCepLoading] = useState(false)
@@ -358,6 +361,12 @@ function AddressFields({ form, setForm, market, portugalClient = false }: {
         <span className="text-xs text-muted">{tx('E-mail')}</span>
         <input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
       </label>
+      {showContacts && (
+        <ClientContactsEditor
+          contacts={form.contacts ?? []}
+          onChange={(contacts) => setForm({ ...form, contacts })}
+        />
+      )}
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">{market === 'EU' ? 'VAT / Tax ID' : 'CPF/CNPJ'}</span>
         <input className="input" value={market === 'EU' ? (form.tax_id ?? '') : (form.cpf_cnpj ?? '')} onChange={(e) => market === 'EU' ? setForm({ ...form, tax_id: e.target.value }) : setForm({ ...form, cpf_cnpj: formatCpfCnpj(e.target.value) })} maxLength={market === 'EU' ? 40 : 18} />
@@ -2187,6 +2196,7 @@ const emptyAddress = (market: 'BR' | 'EU'): ClientCreate => ({
   name: '', contact_name: '', client_type: null, observation: '', phone: '', email: '', cpf_cnpj: '', tax_id: '',
   country: market === 'BR' ? 'BR' : '',
   region: '', cep: '', numero: '', address: '', city: '', state: market === 'BR' ? '' : '--', price_profile: 'lojista',
+  contacts: [],
 })
 
 function PeopleTab<T extends Client | Representative>({
@@ -2279,7 +2289,11 @@ function PeopleTab<T extends Client | Representative>({
   function openEdit(item: T) {
     setForm({
       name: item.name, contact_name: item.contact_name ?? '', client_type: item.client_type ?? null,
-      observation: item.observation ?? '', contacted: !!(item as Client).contacted, phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
+      observation: item.observation ?? '', contacted: !!(item as Client).contacted,
+      contacts: ((item as Client).contacts ?? []).map((contact) => ({
+        name: contact.name, phone: contact.phone ?? '', email: contact.email ?? '',
+      })),
+      phone: item.phone, email: item.email ?? '', cpf_cnpj: formatCpfCnpj(item.cpf_cnpj ?? ''),
       tax_id: item.tax_id, country: item.country,
       region: item.region, cep: item.cep, numero: item.numero ?? '',
       address: item.address, city: item.city, state: item.state,
@@ -2320,6 +2334,19 @@ function PeopleTab<T extends Client | Representative>({
     }
     // A ficha de Portugal não tem número de morada.
     if (activeMarket === 'EU') delete cleaned.numero
+    // Contatos adicionais (só clientes): linhas totalmente em branco são ignoradas;
+    // o resto segue e o servidor cobra o nome e o formato do e-mail.
+    if (entityType === 'client') {
+      cleaned.contacts = (form.contacts ?? [])
+        .map((contact) => ({
+          name: contact.name.trim(),
+          phone: contact.phone?.trim() || null,
+          email: contact.email?.trim() || null,
+        }))
+        .filter((contact) => contact.name || contact.phone || contact.email)
+    } else {
+      delete cleaned.contacts
+    }
     if (activeMarket === 'EU' && entityType === 'rep') {
       cleaned.all_price_lists = true
       cleaned.price_list_codes = []
@@ -2533,6 +2560,20 @@ function PeopleTab<T extends Client | Representative>({
                 </>
               )}
               <div className="col-span-2"><span className="text-xs text-muted block">{tx('E-mail')}</span><span className="text-ink-2">{viewing.email || tx('Não informado')}</span></div>
+              {entityType === 'client' && ((viewing as Client).contacts ?? []).length > 0 && (
+                <div className="col-span-2">
+                  <span className="text-xs text-muted block">{tx('Contatos adicionais')}</span>
+                  <ul className="text-ink-2 space-y-0.5">
+                    {((viewing as Client).contacts ?? []).map((contact, index) => (
+                      <li key={contact.id ?? index}>
+                        {contact.name}
+                        {contact.phone ? ` — ${contact.phone}` : ''}
+                        {contact.email ? ` — ${contact.email}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div><span className="text-xs text-muted block">{tx('Cidade')}</span><span className="text-ink-2">{viewing.city}</span></div>
               <div><span className="text-xs text-muted block">{tx('Estado')}</span><span className="text-ink-2">{viewing.state}</span></div>
               <div><span className="text-xs text-muted block">CPF/CNPJ</span><span className="text-ink-2">{viewing.cpf_cnpj ? formatCpfCnpj(viewing.cpf_cnpj) : '—'}</span></div>
@@ -2635,6 +2676,7 @@ function PeopleTab<T extends Client | Representative>({
               setForm={setForm}
               market={activeMarket}
               portugalClient={activeMarket === 'EU' && entityType === 'client'}
+              showContacts={entityType === 'client'}
             />
             {entityType === 'client' && activeMarket === 'BR' && (
               <div className="flex flex-col gap-1.5">

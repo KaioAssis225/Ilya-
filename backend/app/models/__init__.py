@@ -10,6 +10,7 @@ from app.models.product_fiscal_assignment_event import ProductFiscalAssignmentEv
 from app.models.optional_category import OptionalCategory
 from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
 from app.models.client import Client
+from app.models.client_contact import ClientContact
 from app.models.representative import Representative
 from app.models.order import Order, OrderItem
 from app.models.order_history import OrderHistory
@@ -44,6 +45,7 @@ __all__ = [
     "OptionalCategory",
     "ProductOptionalApplication", "OrderItemOptionalChoice",
     "Client",
+    "ClientContact",
     "Representative",
     "Order",
     "OrderItem",

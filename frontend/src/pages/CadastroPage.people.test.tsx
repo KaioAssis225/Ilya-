@@ -376,3 +376,98 @@ describe('Ficha de cliente de Portugal', () => {
     expect(screen.queryByText('Cadastros')).toBeNull()
   })
 })
+
+describe('Contatos adicionais do cliente', () => {
+  async function openEdit(
+    base: Client,
+    market: 'BR' | 'EU',
+    onPatch?: (payload: Record<string, unknown>) => Response | undefined,
+  ) {
+    const user = userEvent.setup()
+    installProductHandlers()
+    const payloads: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/clients', () => HttpResponse.json([base], { headers: { 'X-Total-Count': '1' } })),
+      http.patch(`*/clients/${base.id}`, async ({ request }) => {
+        const payload = await request.json() as Record<string, unknown>
+        payloads.push(payload)
+        return onPatch?.(payload) ?? HttpResponse.json({ ...base, ...payload })
+      }),
+    )
+    renderProductPage(<CadastroPage />, productTestUser('admin', market))
+    await user.click(screen.getAllByRole('button', { name: /Clientes/ })[0])
+    const table = await screen.findByRole('table')
+    const row = within(table).getByText(base.name).closest('tr')
+    if (!row) throw new Error('Linha do cliente não encontrada')
+    return { user, payloads, row }
+  }
+
+  const euClient: Client = {
+    ...clients[0], id: 'client-eu-contatos', name: 'Casa Atlântico', market_code: 'EU',
+    country: 'Portugal', state: '--', tax_id: 'PT501964843', client_type: 'lojista',
+    contacts: [{ id: 'c1', name: 'Maria Silva', phone: '+351 911 111 111', email: 'maria@exemplo.example' }],
+  }
+
+  it('botão "Adicionar contato" cria linhas com nome, telefone e e-mail e o PATCH leva a lista', async () => {
+    const { user, payloads, row } = await openEdit(euClient, 'EU')
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    // O contato já gravado aparece preenchido.
+    const first = screen.getByRole('group', { name: 'Contato adicional 1' })
+    expect(within(first).getByLabelText('Nome do contato *')).toHaveValue('Maria Silva')
+
+    await user.click(screen.getByRole('button', { name: /Adicionar contato/ }))
+    const second = screen.getByRole('group', { name: 'Contato adicional 2' })
+    await user.type(within(second).getByLabelText('Nome do contato *'), 'João Costa')
+    await user.type(within(second).getByLabelText('Telefone do contato'), '+351 922 222 222')
+    await user.type(within(second).getByLabelText('E-mail do contato'), 'joao@exemplo.example')
+    // Linha em branco é ignorada no envio.
+    await user.click(screen.getByRole('button', { name: /Adicionar contato/ }))
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0].contacts).toEqual([
+      { name: 'Maria Silva', phone: '+351 911 111 111', email: 'maria@exemplo.example' },
+      { name: 'João Costa', phone: '+351 922 222 222', email: 'joao@exemplo.example' },
+    ])
+  })
+
+  it('remover um contato tira a linha e envia a lista sem ele', async () => {
+    const { user, payloads, row } = await openEdit(euClient, 'EU')
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    await user.click(screen.getByRole('button', { name: 'Remover contato 1' }))
+    expect(screen.queryByRole('group', { name: 'Contato adicional 1' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(payloads).toHaveLength(1))
+    expect(payloads[0].contacts).toEqual([])
+  })
+
+  it('o modal de visualização lista os contatos adicionais', async () => {
+    const { user, row } = await openEdit(euClient, 'EU')
+    await user.click(within(row).getByRole('button', { name: 'Visualizar' }))
+
+    expect(await screen.findByText(/Maria Silva — \+351 911 111 111 — maria@exemplo\.example/)).toBeVisible()
+  })
+
+  it('vale também no Brasil', async () => {
+    const { user, row } = await openEdit(clients[0], 'BR')
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+
+    expect(screen.getByRole('button', { name: /Adicionar contato/ })).toBeVisible()
+  })
+
+  it('traduz o 422 de contato sem nome para uma mensagem clara', async () => {
+    const { user, row } = await openEdit(euClient, 'EU', () =>
+      HttpResponse.json(
+        { detail: [{ loc: ['body', 'contacts', 0, 'name'], msg: 'Value error, Informe o nome do contato.' }] },
+        { status: 422 },
+      ),
+    )
+    await user.click(within(row).getByRole('button', { name: 'Editar' }))
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    expect(await screen.findByText('Contatos adicionais: informe o nome de cada contato.')).toBeVisible()
+  })
+})
