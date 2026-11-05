@@ -2227,9 +2227,14 @@ function PeopleTab<T extends Client | Representative>({
   const activeMarket = authUser?.active_market ?? 'BR'
   const isPortugalClient = activeMarket === 'EU' && entityType === 'client'
   const showDiscount = activeMarket === 'BR'
-  const showCommercialColumn = isPortugalClient || showDiscount
+  // No EU o desconto máximo do representante é o teto do PVP: aparece na ficha e
+  // na lista, mas só o admin altera (o servidor recusa os demais com 403).
+  const showRepPvpDiscount = activeMarket === 'EU' && entityType === 'rep'
+  const showCommercialColumn = isPortugalClient || showDiscount || showRepPvpDiscount
   const isRep = authUser?.role === 'representante'
-  const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
+  const canEditDiscount = entityType === 'rep'
+    ? isAdmin
+    : authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
   const defaultMaxDiscount = entityType === 'client' ? 0 : 30
   const canViewCreator = !isRep && authUser?.role !== 'cliente'
   const priceLists: Client['price_profile'][] = activeMarket === 'EU'
@@ -2368,7 +2373,9 @@ function PeopleTab<T extends Client | Representative>({
       delete cleaned.all_price_lists
       delete cleaned.price_list_codes
     }
-    if (activeMarket === 'EU') delete cleaned.max_discount
+    // Cliente do EU não tem desconto no cadastro; o do representante é do admin.
+    if (activeMarket === 'EU' && entityType !== 'rep') delete cleaned.max_discount
+    if (entityType === 'rep' && !canEditDiscount) delete cleaned.max_discount
     if (activeMarket === 'BR' && cleaned.state.length !== 2) {
       setFormError('Selecione o estado (UF).')
       return
@@ -2505,7 +2512,9 @@ function PeopleTab<T extends Client | Representative>({
                     ? <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Observação</th>
                     : showDiscount
                       ? <Th sorts={[{ label: tx('Desc. Máx.'), col: 'max_discount' }]} align="right" {...thProps} />
-                      : null}
+                      : showRepPvpDiscount
+                        ? <Th sorts={[{ label: tx('Desc. Máx. PVP'), col: 'max_discount' }]} align="right" {...thProps} />
+                        : null}
                   {canViewCreator && (
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
                       {tx('Criado por')}
@@ -2532,7 +2541,9 @@ function PeopleTab<T extends Client | Representative>({
                       ? <td className="px-4 py-3 text-muted-2 break-words line-clamp-2">{item.observation || '—'}</td>
                       : showDiscount
                         ? <td className="px-4 py-3 text-right text-muted-2 whitespace-nowrap">{item.max_discount}%</td>
-                        : null}
+                        : showRepPvpDiscount
+                          ? <td className="px-4 py-3 text-right text-muted-2 whitespace-nowrap">{item.max_discount}%</td>
+                          : null}
                     {canViewCreator && (
                       <td className="px-4 py-3 text-muted-2 break-words">
                         {item.created_by_name || tx('Cadastro anterior')}
@@ -2771,10 +2782,14 @@ function PeopleTab<T extends Client | Representative>({
                 </label>
               </>
             )}
-            {canEditDiscount && showDiscount && (
+            {((canEditDiscount && showDiscount) || showRepPvpDiscount) && (
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{tx('Desconto Máximo (%)')}</span>
+                <span className="text-xs text-muted">
+                  {tx(showRepPvpDiscount ? 'Desconto máximo PVP (%)' : 'Desconto Máximo (%)')}
+                </span>
                 <NumberField
+                  aria-label={tx(showRepPvpDiscount ? 'Desconto máximo PVP (%)' : 'Desconto Máximo (%)')}
+                  disabled={!canEditDiscount}
                   min={0} max={100} step={0.5} className="input"
                   value={form.max_discount ?? defaultMaxDiscount}
                   onValueChange={(v) => setForm({ ...form, max_discount: v })}

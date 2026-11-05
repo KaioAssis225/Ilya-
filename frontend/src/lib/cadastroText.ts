@@ -192,6 +192,8 @@ const EN: Record<string, string> = {
   'Nenhum registro encontrado com este filtro.': 'No records match this filter.',
   'Nenhum registro encontrado.': 'No records found.',
   'Desc. Máx.': 'Max. disc.',
+  'Desc. Máx. PVP': 'Max. PVP disc.',
+  'Desconto máximo PVP (%)': 'Max PVP discount (%)',
   'Criado por': 'Created by',
   'Cadastro anterior': 'Earlier record',
   'Detalhes — {name}': 'Details — {name}',
