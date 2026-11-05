@@ -57,6 +57,14 @@ class Client(Base, TimestampMixin):
     catalog_links = relationship(
         "ClientCatalog", cascade="all, delete-orphan", lazy="selectin"
     )
+    # Contatos adicionais da ficha, na ordem em que o usuário os montou.
+    contacts = relationship(
+        "ClientContact",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+        order_by="ClientContact.position",
+    )
     # Tabelas de preço que o cliente pode ver; o perfil de faturamento continua
     # sempre visível. `false` + lista vazia = só o perfil de faturamento.
     all_price_lists: Mapped[bool] = mapped_column(
@@ -131,4 +139,8 @@ def anonymize_client_fields(client: Client) -> None:
     client.tax_id = None
     client.contact_name = None
     client.observation = None
+    # Nome, telefone e e-mail dos contatos adicionais também são dados pessoais.
+    contacts = getattr(client, "contacts", None)
+    if contacts is not None:
+        contacts.clear()
     # A UF é agregada e precisa continuar válida para a constraint brasileira.

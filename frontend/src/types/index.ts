@@ -216,6 +216,7 @@ export interface Client {
   observation?: string | null
   /** Ficha EU: o cliente já foi contactado? */
   contacted?: boolean
+  contacts?: ClientContactData[]
   market_code: 'BR' | 'EU'
   price_profile: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   all_price_lists?: boolean
@@ -228,6 +229,14 @@ export interface Client {
   has_user?: boolean
   user_validated?: boolean
   created_by_name?: string | null
+}
+
+/** Contato adicional da ficha do cliente (além do contato principal). */
+export interface ClientContactData {
+  id?: string
+  name: string
+  phone?: string | null
+  email?: string | null
 }
 
 export interface ClientCreate {
@@ -247,6 +256,7 @@ export interface ClientCreate {
   client_type?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto' | null
   observation?: string | null
   contacted?: boolean
+  contacts?: ClientContactData[]
   price_profile?: 'lojista' | 'corporativo' | 'pvp' | 'arquiteto'
   all_price_lists?: boolean
   price_list_codes?: string[]

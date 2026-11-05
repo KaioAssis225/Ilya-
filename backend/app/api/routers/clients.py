@@ -38,9 +38,10 @@ from app.core.legal_hold import ensure_no_active_legal_hold
 from app.core.search import literal_contains_pattern
 from app.core.privacy_audit import record_privacy_event
 from app.models.client import Client, anonymize_client_fields
+from app.models.client_contact import ClientContact
 from app.models.representative import Representative
 from app.models.user import User, UserRole
-from app.schemas.client import ClientCreate, ClientUpdate, ClientRead
+from app.schemas.client import ClientCreate, ClientUpdate, ClientDetailRead
 from app.models.market import PriceList, UserMarket
 from app.core.markets import (
     MarketPrincipal,
@@ -61,6 +62,19 @@ def _conflict_detail(error: IntegrityError) -> str:
     if "cpf_cnpj" in str(error.orig):
         return "Já existe um cliente com este CPF/CNPJ."
     return "Já existe um cliente com este e-mail."
+
+
+def _build_contacts(contacts_in: list[dict]) -> list[ClientContact]:
+    """Contatos adicionais na ordem enviada; a posição guarda essa ordem."""
+    return [
+        ClientContact(
+            name=item["name"],
+            phone=item.get("phone"),
+            email=str(item["email"]) if item.get("email") else None,
+            position=index,
+        )
+        for index, item in enumerate(contacts_in)
+    ]
 
 
 async def _ensure_tax_id_unique(
@@ -344,7 +358,7 @@ def _with_metadata(
     client: Client,
     status_map: dict[uuid.UUID, tuple[bool, bool]],
     creator_names: dict[uuid.UUID, str],
-) -> ClientRead:
+) -> ClientDetailRead:
     has_user, user_validated = status_map.get(client.id, (False, False))
     # Objetos ainda não persistidos (usados também em testes/serviços internos)
     # não recebem o server_default antes do flush.
@@ -362,7 +376,7 @@ def _with_metadata(
         client.all_price_lists = False
     if client.price_list_codes is None:
         client.price_list_codes = []
-    r = ClientRead.model_validate(client)
+    r = ClientDetailRead.model_validate(client)
     return r.model_copy(
         update={
             "has_user": has_user,
@@ -372,7 +386,7 @@ def _with_metadata(
     )
 
 
-@router.get("", response_model=List[ClientRead])
+@router.get("", response_model=List[ClientDetailRead])
 async def list_clients(
     response: Response,
     skip: int = Query(default=0, ge=0, le=1_000_000),
@@ -461,7 +475,7 @@ async def list_clients(
     return [_with_metadata(c, linked, creator_names) for c in clients]
 
 
-@router.post("", response_model=ClientRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ClientDetailRead, status_code=status.HTTP_201_CREATED)
 async def create_client(
     payload: ClientCreate,
     db: AsyncSession = Depends(get_db_session),
@@ -473,6 +487,7 @@ async def create_client(
     requested_catalog_ids = data.pop("catalog_ids")
     requested_all_price_lists = data.pop("all_price_lists")
     requested_price_list_codes = data.pop("price_list_codes")
+    contacts_in = data.pop("contacts", [])
     market = principal.code
     rep_price_limit: PriceScope = None
     if current_user.role == UserRole.representante:
@@ -534,6 +549,7 @@ async def create_client(
     if current_user.role == UserRole.representante:
         ensure_price_visible(rep_price_limit, data["price_profile"])
     client = Client(**data, market_code=market, price_list_id=price_list.id, created_by_user_id=current_user.id)
+    client.contacts = _build_contacts(contacts_in)
     client.rep_id = await _resolved_rep_id(data, current_user, db)
     selection = await _catalog_selection(
         db, market, current_user, requested_all_catalogs, requested_catalog_ids,
@@ -566,7 +582,7 @@ async def create_client(
     )
 
 
-@router.get("/{client_id}", response_model=ClientRead)
+@router.get("/{client_id}", response_model=ClientDetailRead)
 async def get_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
@@ -592,7 +608,7 @@ async def get_client(
     return _with_metadata(client, linked, creator_names)
 
 
-@router.patch("/{client_id}", response_model=ClientRead)
+@router.patch("/{client_id}", response_model=ClientDetailRead)
 async def update_client(
     client_id: uuid.UUID,
     payload: ClientUpdate,
@@ -613,7 +629,8 @@ async def update_client(
     if current_user.role == UserRole.representante:
         rep_price_limit = await visible_price_scope(db, current_user, market)
     requested = payload.model_dump(exclude_unset=True)
-    update_data = sanitize_client_update_fields(dict(requested), current_user)
+    update_data = sanitize_client_update_fields(dict(requested), current_user, client)
+    contacts_in = update_data.pop("contacts", None)
     _deny_silent_identity_changes(requested, update_data, client)
     if update_data.get("contacted") is None:
         update_data.pop("contacted", None)  # coluna NOT NULL: null não limpa
@@ -702,6 +719,9 @@ async def update_client(
             )
     for field, value in update_data.items():
         setattr(client, field, value)
+    if contacts_in is not None:
+        # A lista enviada substitui a atual (os removidos são apagados).
+        client.contacts = _build_contacts(contacts_in)
     client.last_activity_at = datetime.now(timezone.utc)
     try:
         await db.commit()

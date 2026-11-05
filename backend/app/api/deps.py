@@ -279,7 +279,29 @@ CATALOG_MANAGEMENT_ROLES = frozenset(
 )
 
 
-def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict:
+def can_edit_client_identity(current_user: User, client: object | None) -> bool:
+    """Quem altera e-mail e CPF/CNPJ de um cliente.
+
+    `admin`/`cadastros` sempre. O representante só nos clientes que ELE criou e
+    que continuam na carteira dele: as duas condições juntas (a mais restrita),
+    porque `rep_id` pode ser reatribuído por um admin e `created_by_user_id`
+    sozinho não prova que o cliente ainda é dele. Cliente de outro representante
+    já é barrado antes, por `_rep_guard`.
+    """
+    if current_user.role in CLIENT_IDENTITY_MANAGEMENT_ROLES:
+        return True
+    return bool(
+        client is not None
+        and current_user.role == UserRole.representante
+        and current_user.rep_id is not None
+        and getattr(client, "rep_id", None) == current_user.rep_id
+        and getattr(client, "created_by_user_id", None) == current_user.id
+    )
+
+
+def sanitize_client_update_fields(
+    update_data: dict, current_user: User, client: object | None = None
+) -> dict:
     """Remove de um PATCH de cliente os campos que o papel não pode alterar.
 
     O cliente-final nunca altera os próprios termos comerciais (SEC-PRICE-02).
@@ -291,7 +313,7 @@ def sanitize_client_update_fields(update_data: dict, current_user: User) -> dict
     VAT/Tax ID (Portugal) é editável por quem edita a ficha, exceto pela conta
     do próprio cliente-final.
     """
-    if current_user.role not in CLIENT_IDENTITY_MANAGEMENT_ROLES:
+    if not can_edit_client_identity(current_user, client):
         for field in ("email", "cpf_cnpj"):
             update_data.pop(field, None)
         # O VAT/Tax ID é dado da ficha comercial (o próprio representante o
