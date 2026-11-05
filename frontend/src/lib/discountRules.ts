@@ -14,7 +14,7 @@ export function orderMaxDiscount(
   if (priceProfile !== 'pvp' || isClientAccount) return 0
   if (role === 'admin') return EU_PVP_ADMIN_MAX_DISCOUNT
   if (role === 'representante' || role === 'vendedor') {
-    return Math.min(EU_PVP_REP_MAX_DISCOUNT, Math.max(0, configuredUserLimit))
+    return EU_PVP_REP_MAX_DISCOUNT
   }
   return 0
 }

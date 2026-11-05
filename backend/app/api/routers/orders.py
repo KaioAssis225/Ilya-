@@ -683,7 +683,7 @@ def _resolve_max_discount(
         if current_user.role == UserRole.admin:
             return _EU_PVP_ADMIN_MAX_DISCOUNT
         if current_user.role == UserRole.representante or is_internal_operator(current_user):
-            return min(_decimal(rep.max_discount), _EU_PVP_REP_MAX_DISCOUNT) if rep else _ZERO
+            return _EU_PVP_REP_MAX_DISCOUNT if rep else _ZERO
         return _ZERO
     if current_user.role == UserRole.representante:
         return _decimal(rep.max_discount) if rep else _ZERO

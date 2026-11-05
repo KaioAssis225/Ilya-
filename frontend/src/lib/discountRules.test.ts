@@ -26,25 +26,17 @@ describe('orderMaxDiscount', () => {
     expect(orderMaxDiscount('EU', 'pvp', 'admin', 100)).toBe(EU_PVP_ADMIN_MAX_DISCOUNT)
   })
 
-  it('pvp vendedor usa o limite configurado no representante', () => {
-    expect(orderMaxDiscount('EU', 'pvp', 'vendedor', 10)).toBe(10)
-  })
-
-  it('pvp representante usa o próprio limite configurado', () => {
-    expect(orderMaxDiscount('EU', 'pvp', 'representante', 10)).toBe(10)
-  })
-
   it.each<UserRole>(['representante', 'vendedor'])(
-    'pvp %s com cadastro acima de 10 fica limitado a 10',
+    'pvp %s tem teto fixo de 10 mesmo com cadastro legado acima do limite',
     (role) => {
       expect(orderMaxDiscount('EU', 'pvp', role, 50)).toBe(EU_PVP_REP_MAX_DISCOUNT)
     },
   )
 
   it.each<UserRole>(['representante', 'vendedor'])(
-    'pvp %s com cadastro 5 mantém 5',
+    'pvp %s tem teto fixo de 10 mesmo com cadastro legado abaixo do limite',
     (role) => {
-      expect(orderMaxDiscount('EU', 'pvp', role, 5)).toBe(5)
+      expect(orderMaxDiscount('EU', 'pvp', role, 5)).toBe(EU_PVP_REP_MAX_DISCOUNT)
     },
   )
 

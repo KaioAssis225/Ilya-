@@ -2200,6 +2200,8 @@ function PeopleTab<T extends Client | Representative>({
   const isAdmin = authUser?.role === 'admin'
   const activeMarket = authUser?.active_market ?? 'BR'
   const isPortugalClient = activeMarket === 'EU' && entityType === 'client'
+  const showDiscount = activeMarket === 'BR'
+  const showCommercialColumn = isPortugalClient || showDiscount
   const isRep = authUser?.role === 'representante'
   const canEditDiscount = authUser?.role === 'admin' || authUser?.role === 'cadastros' || authUser?.role === 'produtos'
   const defaultMaxDiscount = entityType === 'client' ? 0 : 30
@@ -2320,6 +2322,7 @@ function PeopleTab<T extends Client | Representative>({
       delete cleaned.all_price_lists
       delete cleaned.price_list_codes
     }
+    if (activeMarket === 'EU') delete cleaned.max_discount
     if (activeMarket === 'BR' && cleaned.state.length !== 2) {
       setFormError('Selecione o estado (UF).')
       return
@@ -2437,7 +2440,7 @@ function PeopleTab<T extends Client | Representative>({
                 <col className="w-[170px]" />
                 <col className="w-[160px]" />
                 <col className="w-[140px]" />
-                <col className="w-[80px]" />
+                {showCommercialColumn && <col className="w-[80px]" />}
                 {canViewCreator && <col className="w-[130px]" />}
                 <col className="w-[132px]" />
               </colgroup>
@@ -2454,7 +2457,9 @@ function PeopleTab<T extends Client | Representative>({
                   ]} {...thProps} />
                   {isPortugalClient
                     ? <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Observação</th>
-                    : <Th sorts={[{ label: tx('Desc. Máx.'), col: 'max_discount' }]} align="right" {...thProps} />}
+                    : showDiscount
+                      ? <Th sorts={[{ label: tx('Desc. Máx.'), col: 'max_discount' }]} align="right" {...thProps} />
+                      : null}
                   {canViewCreator && (
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
                       {tx('Criado por')}
@@ -2479,7 +2484,9 @@ function PeopleTab<T extends Client | Representative>({
                     </td>
                     {isPortugalClient
                       ? <td className="px-4 py-3 text-muted-2 break-words line-clamp-2">{item.observation || '—'}</td>
-                      : <td className="px-4 py-3 text-right text-muted-2 whitespace-nowrap">{item.max_discount}%</td>}
+                      : showDiscount
+                        ? <td className="px-4 py-3 text-right text-muted-2 whitespace-nowrap">{item.max_discount}%</td>
+                        : null}
                     {canViewCreator && (
                       <td className="px-4 py-3 text-muted-2 break-words">
                         {item.created_by_name || tx('Cadastro anterior')}
@@ -2495,7 +2502,7 @@ function PeopleTab<T extends Client | Representative>({
                   </tr>
                 ))}
                 {pageItems.length === 0 && (
-                  <tr><td colSpan={canViewCreator ? 6 : 5} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.')}</td></tr>
+                  <tr><td colSpan={4 + (showCommercialColumn ? 1 : 0) + (canViewCreator ? 1 : 0)} className="px-4 py-10 text-center text-muted">{tx(search ? 'Nenhum registro encontrado com este filtro.' : 'Nenhum registro encontrado.')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -2683,7 +2690,7 @@ function PeopleTab<T extends Client | Representative>({
                 />
               </label>
             )}
-            {canEditDiscount && !(activeMarket === 'EU' && entityType === 'client') && (
+            {canEditDiscount && showDiscount && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{tx('Desconto Máximo (%)')}</span>
                 <NumberField
