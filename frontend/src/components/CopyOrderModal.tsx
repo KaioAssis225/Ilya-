@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { X } from 'lucide-react'
 import { DialogPanel } from './Dialog'
+import { CatalogConfirmDialog } from './CatalogConfirmDialog'
+import { priceListLabelFor } from '../lib/priceListLabels'
 import { useCopyOrder } from '../hooks/useOrders'
 import type { Order, OrderCopyResult } from '../types'
 
@@ -17,6 +19,7 @@ export function CopyOrderModal({ order, english, onClose }: {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(order.items.map(item => item.id)))
   const [error, setError] = useState('')
   const [result, setResult] = useState<OrderCopyResult | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const t = (pt: string, en: string) => english ? en : pt
   const sourceLabel = order.is_finalized
     ? t('pedido', 'order')
@@ -53,6 +56,7 @@ export function CopyOrderModal({ order, english, onClose }: {
   }
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <DialogPanel onClose={onClose} className="modal-panel w-full max-w-lg p-6 mx-4">
         <div className="flex items-center justify-between mb-4">
@@ -108,7 +112,7 @@ export function CopyOrderModal({ order, english, onClose }: {
             {error ? <div role="alert" className="mb-4 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div> : null}
             <div className="flex gap-3 justify-end">
               <button type="button" className="btn-secondary" onClick={onClose}>{t('Cancelar', 'Cancel')}</button>
-              <button type="button" className="btn-primary" disabled={selected.size === 0 || copyM.isPending} onClick={handleCopy}>
+              <button type="button" className="btn-primary" disabled={selected.size === 0 || copyM.isPending} onClick={() => setConfirmOpen(true)}>
                 {copyM.isPending ? t('Copiando...', 'Copying...') : t('Criar orçamento', 'Create quote')}
               </button>
             </div>
@@ -116,5 +120,16 @@ export function CopyOrderModal({ order, english, onClose }: {
         )}
       </DialogPanel>
     </div>
+    {confirmOpen && (
+      // A cópia cria um orçamento novo: confirma o catálogo antes de criar, como na tela de Orçamento.
+      <CatalogConfirmDialog
+        catalogLabel={order.catalog_name || t('vários catálogos', 'several catalogues')}
+        priceListLabel={order.price_list_code ? priceListLabelFor(order.price_list_code, english) : '—'}
+        english={english}
+        onBack={() => setConfirmOpen(false)}
+        onConfirm={() => { setConfirmOpen(false); void handleCopy() }}
+      />
+    )}
+    </>
   )
 }

@@ -35,7 +35,7 @@ import { areaLimit, formatArea, isAreaProduct, normalizeAreaQty, normalizeRugPie
 import { hasOptionalPhoto, optionalMedia } from '../lib/optionalMedia'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
 import { priceListLabel } from '../lib/priceListLabels'
-import { Dialog } from '../components/Dialog'
+import { CatalogConfirmDialog } from '../components/CatalogConfirmDialog'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
 import { calculateLinePricing, calculateSpecialLinePricing, lineTax, roundMoney } from '../lib/linePricing'
@@ -2472,27 +2472,13 @@ export default function OrcamentoPage() {
         // Linha comercial do orçamento (Ilya, IBTW…): vem dos produtos do carrinho.
         const catalogNames = [...new Set(cart.map(item => item._product.catalog?.name).filter((name): name is string => !!name))]
         const catalogLabel = catalogNames.length > 0 ? catalogNames.join(', ') : (isEnglish ? 'no catalogue' : 'sem catálogo')
-        const closeConfirm = () => setCatalogConfirmOpen(false)
-        return <Dialog title={isEnglish ? 'Confirm the catalogue' : 'Confirmar o catálogo'} onClose={closeConfirm} className="max-w-md">
-          <p className="text-sm text-ink" data-testid="catalog-confirmation">
-            {isEnglish ? 'This quote will be made in the ' : 'Este orçamento será feito no catálogo '}
-            <strong className="font-semibold">{catalogLabel}</strong>
-            {isEnglish ? ' catalogue, ' : ', '}
-            {isEnglish ? 'price list ' : 'tabela '}
-            <strong className="font-semibold">{priceProfileLabel}</strong>
-            {isEnglish ? '. Is that correct?' : '. Está correto?'}
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={closeConfirm}>{isEnglish ? 'Back' : 'Voltar'}</button>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => { closeConfirm(); void submitOrder() }}
-            >
-              {isEnglish ? 'Confirm' : 'Confirmar'}
-            </button>
-          </div>
-        </Dialog>
+        return <CatalogConfirmDialog
+          catalogLabel={catalogLabel}
+          priceListLabel={priceProfileLabel}
+          english={isEnglish}
+          onBack={() => setCatalogConfirmOpen(false)}
+          onConfirm={() => { setCatalogConfirmOpen(false); void submitOrder() }}
+        />
       })()}
 
       {/* ── Mobile bottom drawer ───────────────────────────────────────────── */}
