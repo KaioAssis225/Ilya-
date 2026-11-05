@@ -62,7 +62,7 @@ describe('PedidosPage', () => {
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.getByLabelText(`Copiar orçamento ${summary.code}`)).toBeVisible()
     expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Confirmar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Excluir orçamento ${summary.code}`).length).toBeGreaterThan(0)
   })
@@ -110,7 +110,7 @@ describe('PedidosPage', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Mais ações' }))
     const menu = within(dialog).getByRole('menu', { name: 'Ações do orçamento' })
-    expect(within(menu).getByRole('menuitem', { name: 'Finalizar orçamento' })).toBeVisible()
+    expect(within(menu).getByRole('menuitem', { name: 'Confirmar orçamento' })).toBeVisible()
     expect(within(menu).getByRole('menuitem', { name: 'Editar orçamento' })).toBeVisible()
     expect(within(menu).getByRole('menuitem', { name: 'Cancelar orçamento' })).toBeVisible()
 
@@ -136,7 +136,7 @@ describe('PedidosPage', () => {
     await user.click(screen.getAllByLabelText(`Mais ações do pedido ${summary.code}`)[0])
     expect(screen.getByLabelText(`Copiar pedido ${summary.code}`)).toBeVisible()
     expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Confirmar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.getAllByLabelText(`Excluir pedido ${summary.code}`).length).toBeGreaterThan(0)
   })
@@ -153,7 +153,7 @@ describe('PedidosPage', () => {
     expect(screen.queryAllByLabelText(`Copiar orçamento ${summary.code}`)).toHaveLength(0)
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.getAllByLabelText(`Editar orçamento ${summary.code}`).length).toBeGreaterThan(0)
-    expect(screen.getAllByLabelText(`Finalizar orçamento ${summary.code}`).length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText(`Confirmar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText(`Cancelar orçamento ${summary.code}`).length).toBeGreaterThan(0)
     expect(screen.queryAllByLabelText(`Excluir orçamento ${summary.code}`)).toHaveLength(0)
 
@@ -168,7 +168,7 @@ describe('PedidosPage', () => {
 
     await user.click(screen.getAllByLabelText(`Mais ações do orçamento ${summary.code}`)[0])
     expect(screen.queryAllByLabelText(`Editar orçamento ${summary.code}`)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(`Finalizar orçamento ${summary.code}`)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(`Confirmar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Cancelar orçamento ${summary.code}`)).toHaveLength(0)
     expect(screen.queryAllByLabelText(`Excluir orçamento ${summary.code}`)).toHaveLength(0)
   })

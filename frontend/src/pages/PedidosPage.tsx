@@ -152,7 +152,7 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
       const detail = error != null && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
         : undefined
-      setError(typeof detail === 'string' ? detail : t('Não foi possível finalizar o orçamento. Tente novamente.', 'Could not finalise the quote. Please try again.'))
+      setError(typeof detail === 'string' ? detail : t('Não foi possível confirmar o orçamento. Tente novamente.', 'Could not confirm the quote. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -162,13 +162,13 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
     <div className="modal-overlay" onClick={onClose}>
       <DialogPanel onClose={onClose} className="modal-panel w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-ink">{t('Finalizar orçamento', 'Finalise quote')}</h3>
+          <h3 className="text-base font-semibold text-ink">{t('Confirmar orçamento', 'Confirm quote')}</h3>
           <button type="button" onClick={onClose} aria-label={t('Fechar', 'Close')} className="btn-icon -mr-2">
             <X className="w-4 h-4" />
           </button>
         </div>
         <p className="text-sm text-ink mb-3" data-testid="finalize-confirmation">
-          {t('Finalizar este orçamento com ', 'Finalise this quote with ')}
+          {t('Confirmar este orçamento com ', 'Confirm this quote with ')}
           {catalogName
             ? <>{t('o catálogo ', 'the ')}<strong className="font-semibold">{catalogName}</strong>{english ? ' catalogue' : ''}</>
             : t('itens de mais de um catálogo', 'items from more than one catalogue')}
@@ -177,7 +177,7 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
         </p>
         <p className="text-sm text-ink-2 mb-4">
           {t('Orçamento', 'Quote')} <span className="font-mono font-semibold text-gold">{order.code}</span>{' '}
-          {t('vira pedido ao ser finalizado e não poderá mais ser editado.', 'becomes an order once finalised and can no longer be edited.')}
+          {t('vira pedido ao ser confirmado e não poderá mais ser editado.', 'becomes an order once confirmed and can no longer be edited.')}
         </p>
         {error ? <div role="alert" className="mb-4 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div> : null}
         <label className="block space-y-1 mb-5">
@@ -192,7 +192,7 @@ function FinalizeModal({ order, onClose, onFinalized }: { order: OrderSummary; o
         <div className="flex gap-3 justify-end">
           <button className="btn-secondary" onClick={onClose}>{t('Cancelar', 'Cancel')}</button>
           <button className="btn-primary" disabled={loading} onClick={handleSubmit}>
-            {loading ? t('Finalizando...', 'Finalising...') : t('Confirmar', 'Confirm')}
+            {loading ? t('Confirmando...', 'Confirming...') : t('Confirmar', 'Confirm')}
           </button>
         </div>
       </DialogPanel>
@@ -291,16 +291,16 @@ function OrderDetailModal({
   const pendingItems = order.is_finalized ? [] : order.items.filter(item => (item.pending_optionals?.length ?? 0) > 0)
   const pendingReason = pendingItems.length > 0
     ? viewText(
-        `Escolha os opcionais pendentes antes de finalizar: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
-        `Choose the pending options before finalising: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
+        `Escolha os opcionais pendentes antes de confirmar: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
+        `Choose the pending options before confirming: ${pendingItems.map(item => `${item.product_code} (${item.pending_optionals?.join(', ')})`).join('; ')}.`,
       )
     : ''
   // Especial sem comentário salva, mas não vira pedido (o servidor responde 409).
   const specialsWithoutComment = order.is_finalized ? [] : order.items.filter(item => item.is_special && !item.comment?.trim())
   const specialReason = specialsWithoutComment.length > 0
     ? viewText(
-        `Adicione comentário aos itens especiais antes de finalizar: ${specialsWithoutComment.map(item => item.special_code ?? item.product_code).join(', ')}.`,
-        `Add a comment to the special items before finalising: ${specialsWithoutComment.map(item => item.special_code ?? item.product_code).join(', ')}.`,
+        `Adicione comentário aos itens especiais antes de confirmar: ${specialsWithoutComment.map(item => item.special_code ?? item.product_code).join(', ')}.`,
+        `Add a comment to the special items before confirming: ${specialsWithoutComment.map(item => item.special_code ?? item.product_code).join(', ')}.`,
       )
     : ''
   const { data: products = [] } = useProductsByCodes(
@@ -501,7 +501,7 @@ function OrderDetailModal({
                           className="flex min-h-10 w-full items-center gap-2.5 px-3.5 py-2 text-left text-xs font-semibold text-success hover:bg-success-soft focus-visible:bg-success-soft focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <CheckCircle className="h-4 w-4" aria-hidden="true" />
-                          {viewText('Finalizar orçamento', 'Finalise quote')}
+                          {viewText('Confirmar orçamento', 'Confirm quote')}
                         </button>
                         <button
                           type="button"
@@ -929,7 +929,7 @@ function OrderListActions({
     },
     ...(onFinalize ? [{
       key: 'finalize',
-      label: english ? 'Finalise quote' : 'Finalizar orçamento',
+      label: english ? 'Confirm quote' : 'Confirmar orçamento',
       icon: <CheckCircle className="h-4 w-4" aria-hidden="true" />,
       onSelect: onFinalize,
       tone: 'success' as const,
@@ -1378,7 +1378,7 @@ export default function PedidosPage({ scope = 'quotes' }: { scope?: PedidosScope
           <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-2 text-sm text-ink" role="status">
             <span className="flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-gold shrink-0" aria-hidden="true" />
-              {isEnglish ? `Quote ${finalizedNotice.code} finalised and moved to the Order tab.` : `Orçamento ${finalizedNotice.code} finalizado e movido para a aba Pedido.`}
+              {isEnglish ? `Quote ${finalizedNotice.code} confirmed and moved to the Order tab.` : `Orçamento ${finalizedNotice.code} confirmado e movido para a aba Pedido.`}
             </span>
             <span className="flex items-center gap-2">
               <button className="text-xs font-semibold text-gold hover:text-gold-600" onClick={() => navigate('/pedidos-finalizados')}>

@@ -96,7 +96,7 @@ describe('OrcamentoPage — cadastro rápido de cliente (Portugal)', () => {
     expect(screen.queryByText('Selecione um cliente para continuar.')).toBeNull()
     expect(sessionStorage.getItem(`orcamento_client_id:${user.id}:EU`)).toBe(createdClient.id)
 
-    const finalize = await screen.findByRole('button', { name: 'Finalizar Orçamento' })
+    const finalize = await screen.findByRole('button', { name: 'Confirmar Orçamento' })
     await waitFor(() => expect(finalize).toBeEnabled())
     fireEvent.click(finalize)
     await waitFor(() => expect(orders).toHaveLength(1))

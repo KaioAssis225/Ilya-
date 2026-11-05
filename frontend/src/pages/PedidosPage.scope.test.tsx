@@ -128,10 +128,10 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Confirmar orçamento PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
-    expect(await screen.findByText('Orçamento PED-0001 finalizado e movido para a aba Pedido.')).toBeInTheDocument()
+    expect(await screen.findByText('Orçamento PED-0001 confirmado e movido para a aba Pedido.')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryAllByText('ORC-0001')).toHaveLength(0))
 
     await user.click(screen.getByRole('button', { name: 'Ver em Pedido' }))
@@ -154,9 +154,9 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('More actions for quote PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Finalise quote PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Confirm quote PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
-    expect(await screen.findByText('Quote PED-0001 finalised and moved to the Order tab.')).toBeInTheDocument()
+    expect(await screen.findByText('Quote PED-0001 confirmed and moved to the Order tab.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View in Orders' })).toBeInTheDocument()
   })
 
@@ -173,7 +173,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Confirmar orçamento PED-0001')[0])
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -210,11 +210,11 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
     await user.click(screen.getAllByLabelText('Visualizar orçamento PED-0001')[0])
 
-    const alert = await screen.findByText("Escolha os opcionais pendentes antes de finalizar: MESA-1 (Base, Tampo).")
+    const alert = await screen.findByText("Escolha os opcionais pendentes antes de confirmar: MESA-1 (Base, Tampo).")
     expect(alert).toBeInTheDocument()
     expect(screen.getByText(/Pendente: Base, Tampo/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Mais ações' }))
-    expect(screen.getByRole('menuitem', { name: 'Finalizar orçamento' })).toBeDisabled()
+    expect(screen.getByRole('menuitem', { name: 'Confirmar orçamento' })).toBeDisabled()
   })
 
   it('Finalizar abre a confirmação com o catálogo e a tabela; Cancelar não finaliza', async () => {
@@ -233,11 +233,11 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Confirmar orçamento PED-0001')[0])
     const confirmation = await screen.findByTestId('finalize-confirmation')
-    expect(confirmation).toHaveTextContent('Finalizar este orçamento com o catálogo Catálogo Sala')
+    expect(confirmation).toHaveTextContent('Confirmar este orçamento com o catálogo Catálogo Sala')
     await waitFor(() => expect(screen.getByTestId('finalize-confirmation')).toHaveTextContent('(tabela Corporativo)?'))
-    expect(screen.getByText(/vira pedido ao ser finalizado/)).toBeInTheDocument()
+    expect(screen.getByText(/vira pedido ao ser confirmado/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(screen.queryByTestId('finalize-confirmation')).not.toBeInTheDocument()
@@ -254,8 +254,8 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('More actions for quote PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Finalise quote PED-0001')[0])
-    expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('Finalise this quote with the Living catalogue')
+    await user.click(screen.getAllByLabelText('Confirm quote PED-0001')[0])
+    expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('Confirm this quote with the Living catalogue')
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
   })
@@ -268,7 +268,7 @@ describe('PedidosPage por aba (Orçamento x Pedido)', () => {
     await screen.findAllByText('ORC-0001')
 
     await user.click(screen.getAllByLabelText('Mais ações do orçamento PED-0001')[0])
-    await user.click(screen.getAllByLabelText('Finalizar orçamento PED-0001')[0])
+    await user.click(screen.getAllByLabelText('Confirmar orçamento PED-0001')[0])
     expect(await screen.findByTestId('finalize-confirmation')).toHaveTextContent('itens de mais de um catálogo')
   })
 })
