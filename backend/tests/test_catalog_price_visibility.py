@@ -33,6 +33,7 @@ def _product() -> SimpleNamespace:
         observacao=None,
         all_optionals_categories=None,
         photo_path=None,
+        photos=[],
         optionals=[],
         set_items=[],
         components=[],

@@ -31,6 +31,20 @@ def test_openapi_exposes_product_photo_removal():
     assert "delete" in schema["paths"]["/api/v1/products/{product_id}/photo"]
 
 
+def test_openapi_exposes_product_photo_gallery():
+    schema = app.openapi()
+    paths = schema["paths"]
+    base = "/api/v1/products/{product_id}/photos"
+
+    assert "post" in paths[base]
+    assert "delete" in paths[f"{base}/{{photo_id}}"]
+    assert "put" in paths[f"{base}/order"]
+    assert "put" in paths[f"{base}/{{photo_id}}/primary"]
+    assert "post" in paths["/api/v1/products/platform/EU/{product_id}/photos"]
+    props = schema["components"]["schemas"]["ProductRead"]["properties"]
+    assert "photos" in props and "photo_count" in props
+
+
 def test_openapi_http_endpoint_is_disabled_outside_debug_mode():
     if not settings.DEBUG:
         assert app.openapi_url is None

@@ -272,6 +272,21 @@ class SuppliedFabricWrite(BaseModel):
     price_arquiteto: Decimal = Field(..., ge=0, le=100_000_000, decimal_places=2)
 
 
+class ProductPhotoRead(BaseModel):
+    """Foto da galeria. `photo_url`/`thumbnail_url` são assinadas no router."""
+    id: uuid.UUID
+    position: int
+    is_primary: bool
+    photo_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ProductPhotosOrder(BaseModel):
+    photo_ids: List[uuid.UUID] = Field(..., min_length=1, max_length=50)
+
+
 class ProductRead(ProductBase):
     id: uuid.UUID
     supplied_fabric: Optional[SuppliedFabricRead] = None
@@ -290,6 +305,9 @@ class ProductRead(ProductBase):
     vat_rate: Optional[Decimal] = None
     photo_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    # Galeria: `photo_url`/`thumbnail_url` acima são sempre a foto principal.
+    photos: List[ProductPhotoRead] = Field(default_factory=list)
+    photo_count: int = 0
     catalog: Optional[CatalogRead] = None
     optionals: List[OptionalColorRead] = []
     optional_applications: List[OptionalApplicationRead] = Field(default_factory=list)

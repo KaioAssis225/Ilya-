@@ -46,4 +46,4 @@ def test_free_country_iroko_is_the_single_head_after_vat_exempt():
     supplied_fabric = script.get_revision("supplied_fabric_eu_r42")
     assert supplied_fabric is not None
     assert supplied_fabric.down_revision == "order_item_attachments_r41"
-    assert script.get_heads() == ["supplied_fabric_eu_r42"]
+    assert script.get_heads() == ["product_photos_r43"]

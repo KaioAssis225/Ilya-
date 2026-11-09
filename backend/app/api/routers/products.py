@@ -26,7 +26,9 @@ from app.schemas.product import (
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
     ProductBatchRequest, OptionalApplicationWrite, OptionalApplicationRead,
     ProductFilterOptionsRead, SuppliedFabricRead, SuppliedFabricWrite,
+    ProductPhotoRead, ProductPhotosOrder,
 )
+from app.core import product_photos
 from app.core.supplied_fabric import SUPPLIED_FABRIC_MARKET, round_money
 from app.schemas.optional import OptionalColorRead
 from app.api.routers.optionals import fill_optional_media
@@ -113,6 +115,17 @@ def _to_read(product: Product, price_scope: PriceScope = None) -> ProductRead:
         data.price_corporativo = None
     data.photo_url = _build_photo_url(product.photo_path)
     data.thumbnail_url = build_thumbnail_url(product.photo_path)
+    data.photos = [
+        ProductPhotoRead(
+            id=photo.id,
+            position=photo.position,
+            is_primary=photo.is_primary,
+            photo_url=_build_photo_url(photo.photo_path),
+            thumbnail_url=build_thumbnail_url(photo.photo_path),
+        )
+        for photo in product.photos
+    ]
+    data.photo_count = len(data.photos)
     for opt_read, opt_orm in zip(data.optionals, product.optionals):
         fill_optional_media(opt_read, opt_orm.photo_path)
     data.set_items = [
@@ -1277,28 +1290,36 @@ async def delete_product(
     await db.commit()
 
 
-@router.post("/{product_id}/upload-photo", response_model=ProductRead)
-async def upload_photo(
+async def _photo_editable_product(
+    db: AsyncSession,
     product_id: uuid.UUID,
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db_session),
-    current_user: User = _ADMIN_VENDEDOR,
-    principal: MarketPrincipal = Depends(get_current_principal),
-):
-    result = await db.execute(select(Product).where(
-        Product.id == product_id,
-        Product.market_code == principal.code,
-        Product.is_active.is_(True),
-        exists().where(
-            ProductMarket.product_id == Product.id,
-            ProductMarket.market_code == principal.code,
-            ProductMarket.is_available.is_(True),
-        ),
-    ))
+    principal: MarketPrincipal,
+    *,
+    block_shared_eu: bool = True,
+) -> Product:
+    """Produto do mercado ativo, travado (`FOR UPDATE`) e com a galeria fresca.
+
+    A trava serializa contagem, ordem e troca de principal. Produto EU também
+    disponível no BR tem as fotos do catálogo-base: só o Brasil altera (403)."""
+    result = await db.execute(
+        select(Product)
+        .where(
+            Product.id == product_id,
+            Product.market_code == principal.code,
+            Product.is_active.is_(True),
+            exists().where(
+                ProductMarket.product_id == Product.id,
+                ProductMarket.market_code == principal.code,
+                ProductMarket.is_available.is_(True),
+            ),
+        )
+        .with_for_update(of=Product)
+        .execution_options(populate_existing=True)
+    )
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
-    if principal.code == "EU":
+    if block_shared_eu and principal.code == "EU":
         is_shared_with_br = (await db.execute(select(exists().where(
             ProductMarket.product_id == product_id,
             ProductMarket.market_code == "BR",
@@ -1306,7 +1327,11 @@ async def upload_photo(
         )))).scalar_one()
         if is_shared_with_br:
             raise HTTPException(status_code=403, detail="Altere as fotos do catálogo-base no mercado Brasil.")
-    content, ext = await sanitize_image_upload(
+    return product
+
+
+async def _sanitized_photo_upload(file: UploadFile) -> tuple[bytes, str]:
+    return await sanitize_image_upload(
         file,
         max_bytes=settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
         max_size_label=f"{settings.MAX_UPLOAD_SIZE_MB}MB",
@@ -1314,20 +1339,21 @@ async def upload_photo(
         max_pixels=settings.MAX_IMAGE_PIXELS,
         max_dimension=settings.MAX_IMAGE_DIMENSION,
     )
-    old_photo_path = product.photo_path
-    save_path = await persist_upload(
-        content, settings.UPLOAD_DIR, ext, market=product.market_code
-    )
-    product.photo_path = save_path
+
+
+async def _commit_photo_change(db: AsyncSession, new_path: str | None = None) -> None:
     try:
         await db.commit()
     except Exception:
         await db.rollback()
-        await delete_upload(save_path)
+        if new_path:
+            await delete_upload(new_path)
         raise
-    # A foto antiga pode ser a do produto BR de origem, ainda não copiada para
-    # o bucket europeu. `market` impede apagar arquivo de outro mercado.
-    await delete_upload_if_unreferenced(db, old_photo_path, market=product.market_code)
+
+
+async def _photo_response(
+    db: AsyncSession, product: Product, principal: MarketPrincipal, current_user: User
+) -> ProductRead:
     await db.refresh(product)
     if principal.code == "BR":
         return _to_read(product)
@@ -1337,6 +1363,104 @@ async def upload_photo(
         principal,
         await _visible_price_profile(db, current_user),
     ))[0]
+
+
+@router.post("/{product_id}/photos", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+async def add_product_photo(
+    product_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Acrescenta uma foto à galeria (a primeira vira a principal)."""
+    product = await _photo_editable_product(db, product_id, principal)
+    await product_photos.prepare(db, product, require_capacity=True)
+    content, ext = await _sanitized_photo_upload(file)
+    save_path = await persist_upload(
+        content, settings.UPLOAD_DIR, ext, market=product.market_code
+    )
+    try:
+        await product_photos.add_photo(db, product, save_path)
+    except Exception:
+        await db.rollback()
+        await delete_upload(save_path)
+        raise
+    await _commit_photo_change(db, save_path)
+    return await _photo_response(db, product, principal, current_user)
+
+
+@router.delete("/{product_id}/photos/{photo_id}", response_model=ProductRead)
+async def remove_product_photo(
+    product_id: uuid.UUID,
+    photo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Remove uma foto; removendo a principal, a próxima assume. O arquivo só
+    sai do storage se nenhuma outra linha do banco o usa."""
+    product = await _photo_editable_product(db, product_id, principal)
+    old_path = await product_photos.remove_photo(db, product, photo_id)
+    await _commit_photo_change(db)
+    await delete_upload_if_unreferenced(db, old_path, market=product.market_code)
+    return await _photo_response(db, product, principal, current_user)
+
+
+@router.put("/{product_id}/photos/order", response_model=ProductRead)
+async def reorder_product_photos(
+    product_id: uuid.UUID,
+    payload: ProductPhotosOrder,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    product = await _photo_editable_product(db, product_id, principal)
+    await product_photos.reorder(db, product, payload.photo_ids)
+    await _commit_photo_change(db)
+    return await _photo_response(db, product, principal, current_user)
+
+
+@router.put("/{product_id}/photos/{photo_id}/primary", response_model=ProductRead)
+async def set_primary_product_photo(
+    product_id: uuid.UUID,
+    photo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Define a foto principal (a que aparece no catálogo, orçamento e PDF)."""
+    product = await _photo_editable_product(db, product_id, principal)
+    await product_photos.set_primary(db, product, photo_id)
+    await _commit_photo_change(db)
+    return await _photo_response(db, product, principal, current_user)
+
+
+@router.post("/{product_id}/upload-photo", response_model=ProductRead)
+async def upload_photo(
+    product_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN_VENDEDOR,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Legado (upload em lote por código): a nova foto SUBSTITUI a principal."""
+    product = await _photo_editable_product(db, product_id, principal)
+    content, ext = await _sanitized_photo_upload(file)
+    save_path = await persist_upload(
+        content, settings.UPLOAD_DIR, ext, market=product.market_code
+    )
+    try:
+        old_photo_path = await product_photos.replace_primary(db, product, save_path)
+    except Exception:
+        await db.rollback()
+        await delete_upload(save_path)
+        raise
+    await _commit_photo_change(db, save_path)
+    # A foto antiga pode ser a do produto BR de origem, ainda não copiada para
+    # o bucket europeu. `market` impede apagar arquivo de outro mercado.
+    await delete_upload_if_unreferenced(db, old_photo_path, market=product.market_code)
+    return await _photo_response(db, product, principal, current_user)
 
 
 @router.delete("/{product_id}/photo", response_model=ProductRead)
@@ -1346,43 +1470,35 @@ async def delete_photo(
     current_user: User = _ADMIN_VENDEDOR,
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    """Remove a foto do produto no mercado ativo.
+    """Legado: remove a foto principal (a próxima da galeria assume).
 
     Produtos europeus ainda podem apontar para uma imagem herdada do Brasil.
     Nesse caso a referência EU é limpa, mas o arquivo pertencente ao bucket BR
     é preservado por ``delete_upload_if_unreferenced(..., market=...)``.
     """
-    result = await db.execute(select(Product).where(
-        Product.id == product_id,
-        Product.market_code == principal.code,
-        Product.is_active.is_(True),
-        exists().where(
-            ProductMarket.product_id == Product.id,
-            ProductMarket.market_code == principal.code,
-            ProductMarket.is_available.is_(True),
-        ),
-    ))
-    product = result.scalar_one_or_none()
-    if not product:
-        raise HTTPException(status_code=404, detail="Produto não encontrado.")
-
-    old_photo_path = product.photo_path
-    product.photo_path = None
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
+    product = await _photo_editable_product(db, product_id, principal, block_shared_eu=False)
+    old_photo_path = await product_photos.remove_primary(db, product)
+    await _commit_photo_change(db)
     await delete_upload_if_unreferenced(db, old_photo_path, market=product.market_code)
-    await db.refresh(product)
-    if principal.code == "BR":
-        return _to_read(product)
-    return (await _to_market_reads(
-        db,
-        [product],
-        principal,
-        await _visible_price_profile(db, current_user),
-    ))[0]
+    return await _photo_response(db, product, principal, current_user)
+
+
+@router.post("/platform/EU/{product_id}/photos", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+async def add_europe_photo_before_activation(
+    product_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Acrescenta foto à galeria do produto EU durante a preparação com o mercado fechado."""
+    principal = _bind_platform_eu_principal(db, platform)
+    return await add_product_photo(
+        product_id,
+        file,
+        db=db,
+        current_user=principal.actor,
+        principal=principal,
+    )
 
 
 @router.post("/platform/EU/{product_id}/upload-photo", response_model=ProductRead)
