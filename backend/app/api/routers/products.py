@@ -19,13 +19,13 @@ from app.models.optional_category import OptionalCategory
 from app.models.optional_application import ProductOptionalApplication
 from app.models.catalog import Catalog
 from app.models.user import User, UserRole
-from app.models.market import ProductMarket, ProductPrice, PriceList, UserMarket, VAT_APPROVED
+from app.models.market import ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, UserMarket, VAT_APPROVED
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
     ProductBatchRequest, OptionalApplicationWrite, OptionalApplicationRead,
-    ProductFilterOptionsRead,
+    ProductFilterOptionsRead, SuppliedFabricRead,
 )
 from app.schemas.optional import OptionalColorRead
 from app.api.routers.optionals import fill_optional_media
@@ -161,6 +161,14 @@ async def _to_market_reads(
             prices.setdefault(product_id, {})[code] = amount
     localized_names: dict[uuid.UUID, tuple[str | None, str | None]] = {}
     approved_vat: dict[uuid.UUID, Decimal] = {}
+    supplied_fabric_rows: dict[uuid.UUID, ProductSuppliedFabric] = {}
+    if market == "EU" and ids:
+        supplied_fabric_rows = {
+            row.product_id: row
+            for row in (await db.execute(
+                select(ProductSuppliedFabric).where(ProductSuppliedFabric.product_id.in_(ids))
+            )).scalars()
+        }
     if market == "EU" and ids:
         localized_rows = (await db.execute(
             select(
@@ -209,6 +217,16 @@ async def _to_market_reads(
         item.currency = context.currency
         item.market_prices = prices.get(product.id, {})
         if market == "EU":
+            fabric = supplied_fabric_rows.get(product.id)
+            if fabric is not None:
+                item.supplied_fabric = SuppliedFabricRead(
+                    linear_meters=fabric.linear_meters,
+                    prices={
+                        code: fabric.price_for(code)
+                        for code in PRICE_LIST_ORDER
+                        if allows_price(price_scope, code) and fabric.price_for(code) is not None
+                    },
+                )
             item.vat_rate = approved_vat.get(product.id)
             descriptions = localized_names.get(product.id)
             if descriptions:

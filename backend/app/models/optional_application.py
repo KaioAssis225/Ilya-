@@ -57,6 +57,9 @@ class OrderItemOptionalChoice(Base):
     # Presente só na opção "Customizado" (optional_custom_r26): vazio na escolha
     # atual; com texto nos pedidos feitos quando havia a caixa de descrição.
     custom_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Opção TECIDO FORNECIDO (só EU, categoria TECIDOS_IBTW): não consome opcional
+    # do cadastro (optional_id vazio), igual ao "Customizado".
+    supplied_fabric: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     component_name: Mapped[str | None] = mapped_column(String(20000), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
 

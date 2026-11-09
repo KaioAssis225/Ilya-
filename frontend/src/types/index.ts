@@ -75,15 +75,24 @@ export interface OptionalChoice {
   optional_name: string
   /** Texto da opção "Customizado"; vazio nas escolhas do cadastro. */
   custom_text?: string | null
+  /** Opção TECIDO FORNECIDO (Portugal): o cliente fornece o tecido. */
+  supplied_fabric?: boolean
   component_name: string | null
   display_order: number
 }
 
-/** Um opcional do cadastro (optional_id) ou a opção "Customizado" (custom_text). */
+/** Um opcional do cadastro (optional_id), a opção "Customizado" (custom_text) ou TECIDO FORNECIDO (supplied_fabric). */
 export interface OptionalChoiceInput {
   application_id: string
   optional_id?: string | null
   custom_text?: string | null
+  supplied_fabric?: boolean
+}
+
+/** Metragem linear de tecido e preço "sem tecido" por tabela; só em produtos EU importados. */
+export interface SuppliedFabric {
+  linear_meters: number | string
+  prices: Record<string, number | string>
 }
 
 export interface ProductSetItem {
@@ -152,6 +161,8 @@ export interface Product {
   market_code?: 'BR' | 'EU'
   currency?: 'BRL' | 'EUR'
   market_prices?: Record<string, number>
+  /** Presente só nos produtos EU que aceitam TECIDO FORNECIDO. */
+  supplied_fabric?: SuppliedFabric | null
   observacao: string | null
   all_optionals_categories: string | null
   optionals: OptionalColor[]
@@ -349,6 +360,8 @@ export interface OrderItem {
   profundidade: number
   opt_categories: Record<string, string>
   optional_choices?: OptionalChoice[]
+  /** Metragem linear de tecido do cliente (TECIDO FORNECIDO); vazio nos demais itens. */
+  supplied_fabric_meters?: number | string | null
   qty: number
   unit_price: number
   discount: number
@@ -373,7 +386,7 @@ export interface OrderHistory {
   user: { id: string; full_name: string } | null
   action: string
   details: string | null
-  items_snapshot?: { product_code: string; is_special?: boolean; special_code?: string | null; special_percent?: number | null; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; component_name: string | null }[]; comment?: string | null }[] | null
+  items_snapshot?: { product_code: string; is_special?: boolean; special_code?: string | null; special_percent?: number | null; legacy_optionals: Record<string, string>; applications: { application_name: string; application_name_en: string | null; optional_name: string; custom_text?: string | null; supplied_fabric?: boolean; component_name: string | null }[]; supplied_fabric_meters?: string | null; comment?: string | null }[] | null
   created_at: string
 }
 

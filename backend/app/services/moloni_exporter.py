@@ -290,7 +290,11 @@ def _line_summary(product_summary: str | None, item: OrderItem, locale: str) -> 
     legacy_lines = [f"{category}: {value}" for category, value in item.opt_categories.items()]
     comment_line = f"{'Comment' if locale == 'en-GB' else 'Comentário'}: {item.comment}" if item.comment else ""
     measurement_line = _rug_measurement_line(item, locale)
-    return "\n".join(part for part in [product_summary or "", measurement_line, *legacy_lines, *choice_lines, comment_line] if part)
+    meters = getattr(item, "supplied_fabric_meters", None)
+    fabric_line = "" if meters is None else (
+        f"{'Fabric required' if locale == 'en-GB' else 'Tecido necessário'}: {_plain_decimal(meters, locale)} m"
+    )
+    return "\n".join(part for part in [product_summary or "", measurement_line, *legacy_lines, *choice_lines, fabric_line, comment_line] if part)
 
 async def active_moloni_connection(db: AsyncSession) -> MoloniConnection | None:
     """Conexão ativa única. Com duas ativas o destino dos dados EU seria

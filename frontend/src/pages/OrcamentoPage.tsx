@@ -26,7 +26,7 @@ import {
   writeCartPriceList,
   type PriceListCode,
 } from '../lib/cart'
-import { allowedForApplication, allowsCustomFor, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, isCustomChoice, isLegacyCustom, productApplications, requiredApplicationProgress, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, allowsCustomFor, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, formatFabricMeters, isCustomChoice, isLegacyCustom, isSuppliedChoice, nextApplicationChoices, offersSuppliedFabric, productApplications, requiredApplicationProgress, SUPPLIED_FABRIC_OPTION, suppliedFabricLabel, suppliedFabricLine, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput, OrderItemAttachment } from '../types'
@@ -724,6 +724,8 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
   if (!entries.length) return null
   const progress = requiredApplicationProgress(product, choices, allOptionals)
   const errors = validateApplicationChoices(product, choices, allOptionals)
+  // Ao escolher TECIDO FORNECIDO aparece o campo (só leitura) com a metragem da planilha.
+  const fabricLine = suppliedFabricLine(product, choices, undefined)
   const groups = new Map<string, { categoryName: string; entries: typeof entries }>()
   for (const entry of entries) {
     const existing = groups.get(entry.application.category_code)
@@ -748,7 +750,9 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
       {group.entries.map(({ application, componentName }) => {
         const choice = choices.find(candidate => candidate.application_id === application.id)
         const custom = choice ? isCustomChoice(choice) : false
-        const value = custom ? CUSTOM_OPTION : choice?.optional_id ?? ''
+        const supplied = choice ? isSuppliedChoice(choice) : false
+        const offersSupplied = offersSuppliedFabric(product, application)
+        const value = supplied ? SUPPLIED_FABRIC_OPTION : custom ? CUSTOM_OPTION : choice?.optional_id ?? ''
         const missing = application.required && !value
         const options = allowedForApplication(application, allOptionals)
         const selected = options.find(option => option.id === value)
@@ -774,9 +778,11 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
             </button>}
             <OptionalCombobox
               value={value}
-              onChange={next => onChange(application.id, next === CUSTOM_OPTION
-                ? { application_id: application.id, custom_text: '' }
-                : next ? { application_id: application.id, optional_id: next } : null)}
+              onChange={next => onChange(application.id, next === SUPPLIED_FABRIC_OPTION
+                ? { application_id: application.id, supplied_fabric: true }
+                : next === CUSTOM_OPTION
+                  ? { application_id: application.id, custom_text: '' }
+                  : next ? { application_id: application.id, optional_id: next } : null)}
               onPreview={onPreview}
               label={`${group.categoryName}: ${areaName}`}
               placeholder={english ? 'Choose an option' : 'Escolha uma opção'}
@@ -790,6 +796,7 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
                   optional: option,
                 })),
                 ...(allowCustom && allowsCustomFor(options) ? [{ value: CUSTOM_OPTION, label: customOptionLabel(english), photoUrl: null }] : []),
+                ...(offersSupplied ? [{ value: SUPPLIED_FABRIC_OPTION, label: suppliedFabricLabel(english), photoUrl: null }] : []),
               ]}
               className="min-w-0 flex-1 px-2 py-1 text-[11px] font-medium"
             />
@@ -797,6 +804,18 @@ function ApplicationSelectors({ product, choices, allOptionals, onChange, onPrev
         </div>
       })}
     </div>)}
+    {fabricLine && <label className="grid min-h-9 grid-cols-[minmax(128px,0.9fr)_minmax(0,1.1fr)] items-stretch rounded-md border border-line bg-bg-2/40">
+      <span className="flex items-center border-r border-line px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
+        {english ? 'Fabric required' : 'Tecido necessário'}
+      </span>
+      <input
+        readOnly
+        tabIndex={-1}
+        aria-label={english ? 'Fabric required (linear metres)' : 'Tecido necessário (metros lineares)'}
+        value={formatFabricMeters(fabricLine.meters, english)}
+        className="min-w-0 bg-transparent px-2 py-1 text-[11px] font-semibold tabular-nums text-ink outline-none"
+      />
+    </label>}
     {errors.filter(error => !error.endsWith('escolha obrigatória')).map((error, index) => <p key={index} className="text-xs text-danger" role="alert">{error}</p>)}
   </section>
 }
@@ -865,6 +884,12 @@ function effectivePrice(product: Product, profile: string | undefined): number {
   const price = product.market_prices?.[profile ?? 'lojista']
     ?? (profile === 'corporativo' ? product.price_corporativo : product.price_lojista)
   return price ?? 0
+}
+
+// TECIDO FORNECIDO troca o preço normal pelo da planilha ("sem tecido") da mesma
+// tabela. Só prévia: o servidor recalcula o valor faturado pelo banco.
+function linePrice(product: Product, choices: OptionalChoiceInput[], profile: string | undefined): number {
+  return suppliedFabricLine(product, choices, profile)?.price ?? effectivePrice(product, profile)
 }
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
@@ -968,8 +993,8 @@ function MobileCartCard({
   const allowCustom = allowsCustomOption(measurementMarket) && optionalsReady
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
   const pricing = item.is_special
-    ? calculateSpecialLinePricing(effectivePrice(item._product, priceProfile), item.special_percent ?? 0, item.qty)
-    : calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
+    ? calculateSpecialLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.special_percent ?? 0, item.qty)
+    : calculateLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.discount, item.qty)
   const hasDiscount = item.discount > 0
   const soldByArea = isAreaProduct(item._product)
   const pieces = item.area_pieces ?? 1
@@ -1725,9 +1750,11 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
               } : {}),
               displayDescription: item.description,
               opt_categories: item.opt_categories,
-              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice))).map(choice => isCustomChoice(choice)
-                ? { application_id: choice.application_id!, custom_text: choice.custom_text }
-                : { application_id: choice.application_id!, optional_id: choice.optional_id! }),
+              optional_choices: (item.optional_choices ?? []).filter(choice => choice.application_id && (choice.optional_id || isCustomChoice(choice) || isSuppliedChoice(choice))).map(choice => isSuppliedChoice(choice)
+                ? { application_id: choice.application_id!, supplied_fabric: true }
+                : isCustomChoice(choice)
+                  ? { application_id: choice.application_id!, custom_text: choice.custom_text }
+                  : { application_id: choice.application_id!, optional_id: choice.optional_id! }),
               source_order_item_id: item.id,
               preserve_optional_choices: !copyId,
               saved_choices: item.optional_choices ?? [],
@@ -1783,10 +1810,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
     setCart(previous => previous.map(item => item.line_id !== lineId ? item : {
       ...item,
       preserve_optional_choices: false,
-      optional_choices: [
-        ...item.optional_choices.filter(candidate => candidate.application_id !== applicationId),
-        ...(choice ? [choice] : []),
-      ],
+      optional_choices: nextApplicationChoices(item._product, item.optional_choices, applicationId, choice),
     }))
   }
 
@@ -2012,8 +2036,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
 
   // Como o servidor: soma de subtotais de linha já arredondados.
   const lineSubtotal = (i: CartItem) => (i.is_special
-    ? calculateSpecialLinePricing(effectivePrice(i._product, priceProfile), i.special_percent ?? 0, i.qty).subtotal
-    : calculateLinePricing(effectivePrice(i._product, priceProfile), i.discount, i.qty).subtotal)
+    ? calculateSpecialLinePricing(linePrice(i._product, i.optional_choices, priceProfile), i.special_percent ?? 0, i.qty).subtotal
+    : calculateLinePricing(linePrice(i._product, i.optional_choices, priceProfile), i.discount, i.qty).subtotal)
 
   const total = roundMoney(cart.reduce((sum, i) => sum + lineSubtotal(i), 0))
 
@@ -2327,7 +2351,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
           <div className="text-[11px] pr-5 flex-1 min-w-0">
             <p className="text-gold font-mono font-semibold">{selectedProduct.product_code}</p>
             <p className="text-ink font-medium truncate">{selectedProduct.description}</p>
-            <p className="text-gold font-bold mt-0.5"><SafePrice value={effectivePrice(selectedProduct, priceProfile)} currency={currency} locale={locale} /></p>
+            <p className="text-gold font-bold mt-0.5"><SafePrice value={linePrice(selectedProduct, selectedChoices, priceProfile)} currency={currency} locale={locale} /></p>
           </div>
         </div>
       )}
@@ -2336,10 +2360,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
         allowCustom={allowsCustomOption(market) && optionalsReady}
         incompleteAllowed={market === 'EU'}
         onPreview={photoUrl => setActivePhotoModal(photoUrl)}
-        onChange={(applicationId, choice) => setSelectedChoices(previous => [
-          ...previous.filter(candidate => candidate.application_id !== applicationId),
-          ...(choice ? [choice] : []),
-        ])}
+        onChange={(applicationId, choice) => setSelectedChoices(previous =>
+          nextApplicationChoices(selectedProduct, previous, applicationId, choice))}
       />}
       <button
         type="button"
@@ -2525,8 +2547,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                   {filteredCart.map((item) => {
                     const ipiRate = taxRate(item._product)
                     const pricing = item.is_special
-                      ? calculateSpecialLinePricing(effectivePrice(item._product, priceProfile), item.special_percent ?? 0, item.qty)
-                      : calculateLinePricing(effectivePrice(item._product, priceProfile), item.discount, item.qty)
+                      ? calculateSpecialLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.special_percent ?? 0, item.qty)
+                      : calculateLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.discount, item.qty)
                     // Brasil: IPI entra na linha. Portugal: IVA só no fecho
                     // (Subtotal → IVA → Total), como numa fatura.
                     const lineTotal = market === 'EU' ? pricing.subtotal : roundMoney(pricing.subtotal + lineTax(pricing.subtotal, ipiRate))
