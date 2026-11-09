@@ -453,4 +453,5 @@ async def test_import_flags_products_without_a_fabric_application(
     await db_session.commit()
     response = await _import(client, s, _HEADER + f"{code};1;1;1;1;1\n")
     assert response.status_code == 200, response.text
-    assert response.json()["without_fabric_application"] == [code]
+    assert response.json()["without_fabric_category"] == [code]
+    assert response.json()["fabric_via_application"] == [] and response.json()["fabric_via_legacy_selector"] == []
