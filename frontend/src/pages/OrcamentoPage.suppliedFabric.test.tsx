@@ -143,4 +143,32 @@ describe('OrcamentoPage — TECIDO FORNECIDO (EU)', () => {
     const [line] = await screen.findAllByRole('listitem', { name: /SF0343/ })
     expect(within(line).getAllByText(/SUPPLIED FABRIC/).length).toBeGreaterThan(0)
   })
+
+  it("produto ainda no seletor antigo: oferece a opção, mostra a metragem e troca o preço", async () => {
+    const legacy = {
+      ...sofa(true),
+      optional_applications: [],
+      optionals: [{ ...LINEN, id: "opt-linho-antigo" }],
+    } as unknown as Product
+    install(legacy)
+    const user = renderQuote()
+    const [line] = await screen.findAllByRole("listitem", { name: /SF0343/ })
+    expect(line.textContent).toMatch(/1000,00/)
+
+    const [combobox] = await screen.findAllByRole("combobox", { name: "Tecidos IBTW" })
+    fireEvent.click(combobox)
+    fireEvent.click(screen.getByRole("option", { name: "TECIDO FORNECIDO" }))
+
+    const field = (await screen.findAllByLabelText("Tecido necessário (metros lineares)"))[0] as HTMLInputElement
+    expect(field.value).toBe("13,2 m")
+    await waitFor(() => expect(line.textContent).toMatch(/700,10/))
+    const stored = JSON.parse(localStorage.getItem(cartStorageKey(user.id, "EU")) ?? "[]")
+    expect(stored[0].opt_categories).toEqual({ TECIDOS_IBTW: "TECIDO FORNECIDO" })
+
+    const [again] = await screen.findAllByRole("combobox", { name: "Tecidos IBTW" })
+    fireEvent.click(again)
+    fireEvent.click(screen.getByRole("option", { name: "Linho" }))
+    await waitFor(() => expect(screen.queryByLabelText("Tecido necessário (metros lineares)")).toBeNull())
+    await waitFor(() => expect(line.textContent).toMatch(/1000,00/))
+  })
 })

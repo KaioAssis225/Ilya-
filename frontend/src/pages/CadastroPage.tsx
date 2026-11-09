@@ -10,7 +10,10 @@ import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
 import { BR_PRODUCT_COLUMN_KEYS, EU_PRODUCT_COLUMN_KEYS, INITIAL_PRODUCT_COLUMN_WIDTHS, PRODUCT_COLUMN_MIN_WIDTHS, fittedProductColumnWidths, type ProductColumnKey } from '../lib/productColumns'
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
-import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto, useDeleteProductPhoto } from '../hooks/useProducts'
+import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto, useDeleteProductPhoto, useSaveSuppliedFabric, useDeleteSuppliedFabric } from '../hooks/useProducts'
+import { SUPPLIED_FABRIC_CATEGORY } from '../lib/optionalApplications'
+import { SuppliedFabricSection } from '../components/SuppliedFabricSection'
+import { EMPTY_FABRIC_FORM, fabricFormToInput, suppliedFabricFormState, suppliedFabricToForm, type SuppliedFabricForm } from '../lib/suppliedFabricForm'
 import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients'
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
@@ -927,6 +930,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
   const uploadM = useUploadProductPhoto()
   const deletePhotoM = useDeleteProductPhoto()
   const createTypeM = useCreateProductType()
+  const saveFabricM = useSaveSuppliedFabric()
+  const deleteFabricM = useDeleteSuppliedFabric()
+  // TECIDO FORNECIDO: só Portugal, só quem cadastra produto (admin e produtos; o servidor confere).
+  const canEditSuppliedFabric = isEurope && (user?.role === 'admin' || user?.role === 'produtos')
+  const [fabricForm, setFabricForm] = useState<SuppliedFabricForm>(EMPTY_FABRIC_FORM)
+  const [fabricHadData, setFabricHadData] = useState(false)
 
   // Categorias de opcionais sempre lidas do banco — nunca de uma lista fixa (V-Bloco65-cats)
   const catLabel = (code: string) => optionalCategoryLabel(optCategories.find(c => c.code === code)?.name ?? code, english)
@@ -1066,6 +1075,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
     setActiveCategories([]); setAllOptCats(new Set()); setPhotoPreview(null); setPendingFile(null); setPhotoRemoved(false)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
+    setFabricForm(EMPTY_FABRIC_FORM); setFabricHadData(false)
     setShowForm(true)
   }
   function openEdit(p: Product, showOptionals = false) {
@@ -1130,6 +1140,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       })),
     })
     setPhotoPreview(p.photo_url ?? null); setPendingFile(null); setPhotoRemoved(false); setEditing(p)
+    setFabricForm(suppliedFabricToForm(p.supplied_fabric)); setFabricHadData(!!p.supplied_fabric)
     setAreaLimitError(null)
     setAddItemCode(''); setAddItemQty(1)
     setCompForm(EMPTY_COMP); setCompActiveCategories([]); setEditingCompIndex(null)
@@ -1184,6 +1195,13 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
       return
     }
     const activeCatsSet = new Set(activeCategories)
+    // TECIDO FORNECIDO: tudo preenchido grava, tudo vazio tira a opção; meio preenchido não salva.
+    const fabricApplies = canEditSuppliedFabric && !isConjunto && activeCatsSet.has(SUPPLIED_FABRIC_CATEGORY)
+    const fabricState = fabricApplies ? suppliedFabricFormState(fabricForm) : 'empty'
+    if (fabricState === 'partial') {
+      setFormError(tx('Tecido fornecido: preencha a metragem e os quatro preços "sem tecido", ou deixe tudo vazio.'))
+      return
+    }
     // Exclude optionals from "all" categories — those are selected freely in the cart
     const filteredOptionalIds = isConjunto ? [] : (form.optional_ids ?? []).filter((optId) => {
       const opt = allOptionals.find((o) => o.id === optId)
@@ -1217,9 +1235,12 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
         const updated = await updateM.mutateAsync({ id: editing.id, data: updatePayload })
         if (pendingFile) await uploadM.mutateAsync({ id: updated.id, file: pendingFile })
         else if (photoRemoved) await deletePhotoM.mutateAsync(updated.id)
+        if (fabricState === 'filled') await saveFabricM.mutateAsync({ id: updated.id, data: fabricFormToInput(fabricForm) })
+        else if (fabricApplies && fabricHadData) await deleteFabricM.mutateAsync(updated.id)
       } else {
         const created = await createM.mutateAsync(payload)
         if (pendingFile) await uploadM.mutateAsync({ id: created.id, file: pendingFile })
+        if (fabricState === 'filled') await saveFabricM.mutateAsync({ id: created.id, data: fabricFormToInput(fabricForm) })
       }
       setShowForm(false)
     } catch (err) {
@@ -2144,6 +2165,10 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   </div>
                 )}
               </div>
+            )}
+
+            {canEditSuppliedFabric && !isConjuntoType(form.type) && activeCategories.includes(SUPPLIED_FABRIC_CATEGORY) && (
+              <SuppliedFabricSection tx={tx} value={fabricForm} onChange={setFabricForm} color={color} />
             )}
 
             <div>

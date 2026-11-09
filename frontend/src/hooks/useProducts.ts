@@ -101,6 +101,31 @@ export function useCreateProduct() {
   })
 }
 
+/** Valores do TECIDO FORNECIDO de um produto EU (metragem e preço "sem tecido" por tabela). */
+export interface SuppliedFabricInput {
+  linear_meters: number
+  price_lojista: number
+  price_corporativo: number
+  price_pvp: number
+  price_arquiteto: number
+}
+
+export function useSaveSuppliedFabric() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, { id: string; data: SuppliedFabricInput }>({
+    mutationFn: ({ id, data }) => api.put(`/products/${id}/supplied-fabric`, data).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
+export function useDeleteSuppliedFabric() {
+  const qc = useQueryClient()
+  return useMutation<void, Error, string>({
+    mutationFn: (id) => api.delete(`/products/${id}/supplied-fabric`).then(() => undefined),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
 export function useUpdateProduct() {
   const qc = useQueryClient()
   return useMutation<Product, Error, { id: string; data: ProductUpdate }>({

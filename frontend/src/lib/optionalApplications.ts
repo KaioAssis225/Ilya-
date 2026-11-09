@@ -40,6 +40,19 @@ export function offersSuppliedFabric(product: Product, application: Pick<Optiona
     && application.category_code === SUPPLIED_FABRIC_CATEGORY
 }
 
+/** Texto gravado em opt_categories quando o seletor antigo escolhe TECIDO FORNECIDO. */
+export const LEGACY_SUPPLIED_FABRIC_VALUE = 'TECIDO FORNECIDO'
+
+/** No seletor antigo (produto sem aplicação) a escolha é o próprio texto, guardado em opt_categories. */
+export function isLegacySuppliedFabric(value: string | undefined | null): boolean {
+  return (value ?? '').trim().toUpperCase() === 'TECIDO FORNECIDO'
+}
+
+/** O seletor antigo da categoria de tecidos IBTW oferece a opção em produto EU com dados. */
+export function offersSuppliedFabricLegacy(product: Product, categoryCode: string): boolean {
+  return product.market_code === 'EU' && product.supplied_fabric != null && categoryCode === SUPPLIED_FABRIC_CATEGORY
+}
+
 export interface SuppliedFabricLine {
   /** Metragem linear de tecido (coluna "MTS TECIDO" da planilha). */
   meters: number
@@ -52,13 +65,16 @@ export function suppliedFabricLine(
   product: Product,
   choices: Pick<OptionalChoiceInput, 'application_id' | 'supplied_fabric'>[],
   priceProfile: string | undefined,
+  legacySelections: Partial<Record<string, string>> = {},
 ): SuppliedFabricLine | null {
   const fabric = product.supplied_fabric
   if (!fabric) return null
   const offered = new Set(productApplications(product)
     .filter(entry => offersSuppliedFabric(product, entry.application))
     .map(entry => entry.application.id))
-  if (!choices.some(choice => isSuppliedChoice(choice) && offered.has(choice.application_id))) return null
+  const legacy = offersSuppliedFabricLegacy(product, SUPPLIED_FABRIC_CATEGORY)
+    && isLegacySuppliedFabric(legacySelections[SUPPLIED_FABRIC_CATEGORY])
+  if (!legacy && !choices.some(choice => isSuppliedChoice(choice) && offered.has(choice.application_id))) return null
   const price = fabric.prices?.[priceProfile ?? 'lojista']
   return { meters: Number(fabric.linear_meters), price: price == null ? null : Number(price) }
 }
@@ -126,6 +142,7 @@ export function choiceValue(choice: Pick<OptionalChoice, 'optional_name' | 'cust
 }
 
 function legacyValue(value: string, english: boolean): string {
+  if (isLegacySuppliedFabric(value)) return suppliedFabricLabel(english)
   if (!isLegacyCustom(value)) return optionalName(value, english)
   return customValue(value.slice(CUSTOM_LEGACY_VALUE.length).replace(/^:\s*/, ''), english)
 }
