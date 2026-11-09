@@ -26,7 +26,7 @@ import {
   writeCartPriceList,
   type PriceListCode,
 } from '../lib/cart'
-import { allowedForApplication, allowsCustomFor, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, formatFabricMeters, isCustomChoice, isLegacyCustom, isSuppliedChoice, nextApplicationChoices, offersSuppliedFabric, productApplications, requiredApplicationProgress, SUPPLIED_FABRIC_OPTION, suppliedFabricLabel, suppliedFabricLine, validateApplicationChoices } from '../lib/optionalApplications'
+import { allowedForApplication, allowsCustomFor, allowsCustomOption, applicationName, CUSTOM_LEGACY_VALUE, CUSTOM_OPTION, customOptionLabel, formatChoice, formatFabricMeters, isCustomChoice, isLegacyCustom, isSuppliedChoice, LEGACY_SUPPLIED_FABRIC_VALUE, nextApplicationChoices, offersSuppliedFabric, offersSuppliedFabricLegacy, productApplications, requiredApplicationProgress, SUPPLIED_FABRIC_OPTION, suppliedFabricLabel, suppliedFabricLine, validateApplicationChoices } from '../lib/optionalApplications'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
 import type { Product, Client, Representative, ClientCreate, OptionalColor, OptionalChoice, OptionalChoiceInput, OrderItemAttachment } from '../types'
@@ -489,6 +489,8 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
   const productCats = Array.from(new Set(item._product.optionals.map(o => o.category)))
   const allCats = Array.from(new Set([...productCats, ...Array.from(freeCats)]))
   if (allCats.length === 0) return null
+  // Seletor antigo: ao escolher TECIDO FORNECIDO aparece a metragem (só leitura).
+  const legacyFabricLine = suppliedFabricLine(item._product, [], undefined, item.opt_categories)
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">
       {allCats.map(cat => {
@@ -529,12 +531,24 @@ function OptionalSelectors({ item, allOptionals, onChange, onPreview, catLabel, 
                   optional: option,
                 })),
                 ...(allowCustom && allowsCustomFor(available) ? [{ value: CUSTOM_OPTION, label: customOptionLabel(isEnglish), photoUrl: null }] : []),
+                // Produto ainda no seletor antigo: o valor da escolha é o próprio texto.
+                ...(offersSuppliedFabricLegacy(item._product, cat) ? [{ value: LEGACY_SUPPLIED_FABRIC_VALUE, label: suppliedFabricLabel(isEnglish), photoUrl: null }] : []),
               ]}
               className="min-w-0 max-w-[240px]"
             />
           </div>
         )
       })}
+      {legacyFabricLine && <label className="flex min-h-9 items-center gap-1 rounded-md border border-bg-2 bg-surface-quiet px-1.5 py-0.5">
+        <span className="type-label whitespace-nowrap">{isEnglish ? 'Fabric required' : 'Tecido necessário'}:</span>
+        <input
+          readOnly
+          tabIndex={-1}
+          aria-label={isEnglish ? 'Fabric required (linear metres)' : 'Tecido necessário (metros lineares)'}
+          value={formatFabricMeters(legacyFabricLine.meters, isEnglish)}
+          className="w-20 bg-transparent text-[11px] font-semibold tabular-nums text-ink outline-none"
+        />
+      </label>}
     </div>
   )
 }
@@ -888,8 +902,13 @@ function effectivePrice(product: Product, profile: string | undefined): number {
 
 // TECIDO FORNECIDO troca o preço normal pelo da planilha ("sem tecido") da mesma
 // tabela. Só prévia: o servidor recalcula o valor faturado pelo banco.
-function linePrice(product: Product, choices: OptionalChoiceInput[], profile: string | undefined): number {
-  return suppliedFabricLine(product, choices, profile)?.price ?? effectivePrice(product, profile)
+function linePrice(
+  product: Product,
+  choices: OptionalChoiceInput[],
+  profile: string | undefined,
+  legacySelections: Partial<Record<string, string>> = {},
+): number {
+  return suppliedFabricLine(product, choices, profile, legacySelections)?.price ?? effectivePrice(product, profile)
 }
 
 // ── Mobile cart card ──────────────────────────────────────────────────────────
@@ -993,8 +1012,8 @@ function MobileCartCard({
   const allowCustom = allowsCustomOption(measurementMarket) && optionalsReady
   const measurementLocale = locale === 'en-GB' ? 'en-GB' : locale === 'pt-PT' ? 'pt-PT' : 'pt-BR'
   const pricing = item.is_special
-    ? calculateSpecialLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.special_percent ?? 0, item.qty)
-    : calculateLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.discount, item.qty)
+    ? calculateSpecialLinePricing(linePrice(item._product, item.optional_choices, priceProfile, item.opt_categories), item.special_percent ?? 0, item.qty)
+    : calculateLinePricing(linePrice(item._product, item.optional_choices, priceProfile, item.opt_categories), item.discount, item.qty)
   const hasDiscount = item.discount > 0
   const soldByArea = isAreaProduct(item._product)
   const pieces = item.area_pieces ?? 1
@@ -2036,8 +2055,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
 
   // Como o servidor: soma de subtotais de linha já arredondados.
   const lineSubtotal = (i: CartItem) => (i.is_special
-    ? calculateSpecialLinePricing(linePrice(i._product, i.optional_choices, priceProfile), i.special_percent ?? 0, i.qty).subtotal
-    : calculateLinePricing(linePrice(i._product, i.optional_choices, priceProfile), i.discount, i.qty).subtotal)
+    ? calculateSpecialLinePricing(linePrice(i._product, i.optional_choices, priceProfile, i.opt_categories), i.special_percent ?? 0, i.qty).subtotal
+    : calculateLinePricing(linePrice(i._product, i.optional_choices, priceProfile, i.opt_categories), i.discount, i.qty).subtotal)
 
   const total = roundMoney(cart.reduce((sum, i) => sum + lineSubtotal(i), 0))
 
@@ -2547,8 +2566,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                   {filteredCart.map((item) => {
                     const ipiRate = taxRate(item._product)
                     const pricing = item.is_special
-                      ? calculateSpecialLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.special_percent ?? 0, item.qty)
-                      : calculateLinePricing(linePrice(item._product, item.optional_choices, priceProfile), item.discount, item.qty)
+                      ? calculateSpecialLinePricing(linePrice(item._product, item.optional_choices, priceProfile, item.opt_categories), item.special_percent ?? 0, item.qty)
+                      : calculateLinePricing(linePrice(item._product, item.optional_choices, priceProfile, item.opt_categories), item.discount, item.qty)
                     // Brasil: IPI entra na linha. Portugal: IVA só no fecho
                     // (Subtotal → IVA → Total), como numa fatura.
                     const lineTotal = market === 'EU' ? pricing.subtotal : roundMoney(pricing.subtotal + lineTax(pricing.subtotal, ipiRate))

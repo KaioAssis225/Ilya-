@@ -570,14 +570,20 @@ async def _resolve_supplied_fabric(
     market_code: str,
     choices: list[OrderItemOptionalChoice],
     price_list_code: str,
+    opt_categories: dict | None = None,
 ) -> SuppliedFabricLine | None:
     """Preço "sem tecido" e metragem de um item com TECIDO FORNECIDO.
 
     Lê SEMPRE do banco, na tabela de preço do orçamento: nada que o cliente
     envie (preço, metragem) é usado. Sem escolha de tecido fornecido devolve
     None e o preço normal vale. Sem dado para o produto, a escolha é recusada.
+
+    Vale tanto para a aplicação (`supplied_fabric`) quanto para o seletor antigo
+    de opcionais, em que a categoria de tecidos recebe o valor TECIDO FORNECIDO
+    em `opt_categories` (produtos que ainda não foram convertidos em aplicações).
     """
-    if not any(choice.supplied_fabric for choice in choices):
+    legacy = str((opt_categories or {}).get(SUPPLIED_FABRIC_CATEGORY, "")).strip().upper() == SUPPLIED_FABRIC_NAME
+    if not legacy and not any(choice.supplied_fabric for choice in choices):
         return None
     row = await db.get(ProductSuppliedFabric, product.id) if market_code == SUPPLIED_FABRIC_MARKET else None
     price = row.price_for(price_list_code) if row is not None else None
@@ -588,7 +594,13 @@ async def _resolve_supplied_fabric(
         )
     # O preço da planilha é "sem tecido": vale para o produto todo, então não
     # pode haver outro tecido IBTW do mesmo item escolhido do cadastro.
-    if any(choice.category_code == SUPPLIED_FABRIC_CATEGORY and not choice.supplied_fabric for choice in choices):
+    # No seletor antigo a categoria é uma só; misturar com aplicação da mesma
+    # categoria não acontece pelo front e é recusado.
+    mixed = any(
+        choice.category_code == SUPPLIED_FABRIC_CATEGORY and (legacy or not choice.supplied_fabric)
+        for choice in choices
+    )
+    if mixed:
         raise HTTPException(
             status_code=422,
             detail=f"TECIDO FORNECIDO deve valer para todos os tecidos IBTW do produto '{product.product_code}'.",
@@ -1524,7 +1536,7 @@ async def _create_order_core(
                 require_complete=market_code != "EU",
             )
             supplied_fabric = await _resolve_supplied_fabric(
-                db, product, market_code, optional_choices, price_list.code,
+                db, product, market_code, optional_choices, price_list.code, item_in.opt_categories,
             )
             base_price = supplied_fabric.unit_price if supplied_fabric else price_map[product.id]
             product_type = type_map.get(product.type)
@@ -2286,7 +2298,7 @@ async def update_order(
                 require_complete=principal.code != "EU",
             )
             supplied_fabric = await _resolve_supplied_fabric(
-                db, product, order.market_code, optional_choices, price_list.code,
+                db, product, order.market_code, optional_choices, price_list.code, item_in.opt_categories,
             )
             base_price = supplied_fabric.unit_price if supplied_fabric else price_map[product.id]
             product_type = type_map.get(product.type)

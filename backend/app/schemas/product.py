@@ -263,6 +263,15 @@ class SuppliedFabricRead(BaseModel):
     prices: dict[str, Decimal] = Field(default_factory=dict)
 
 
+class SuppliedFabricWrite(BaseModel):
+    """Cadastro do TECIDO FORNECIDO de um produto EU: metragem e preço "sem tecido" das 4 tabelas."""
+    linear_meters: Decimal = Field(..., gt=0, le=1_000, decimal_places=2)
+    price_lojista: Decimal = Field(..., ge=0, le=100_000_000, decimal_places=2)
+    price_corporativo: Decimal = Field(..., ge=0, le=100_000_000, decimal_places=2)
+    price_pvp: Decimal = Field(..., ge=0, le=100_000_000, decimal_places=2)
+    price_arquiteto: Decimal = Field(..., ge=0, le=100_000_000, decimal_places=2)
+
+
 class ProductRead(ProductBase):
     id: uuid.UUID
     supplied_fabric: Optional[SuppliedFabricRead] = None

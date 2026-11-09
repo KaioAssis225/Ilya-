@@ -25,8 +25,9 @@ from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
     ProductSetItemRead, ProductSetComponentCreate, ProductSetComponentRead,
     ProductBatchRequest, OptionalApplicationWrite, OptionalApplicationRead,
-    ProductFilterOptionsRead, SuppliedFabricRead,
+    ProductFilterOptionsRead, SuppliedFabricRead, SuppliedFabricWrite,
 )
+from app.core.supplied_fabric import SUPPLIED_FABRIC_MARKET, round_money
 from app.schemas.optional import OptionalColorRead
 from app.api.routers.optionals import fill_optional_media
 from app.core.config import settings
@@ -1168,6 +1169,70 @@ async def update_europe_product_before_activation(
         current_user=principal.actor,
         principal=principal,
     )
+
+
+async def _eu_product_for_supplied_fabric(
+    db: AsyncSession, product_id: uuid.UUID, principal: MarketPrincipal,
+) -> Product:
+    """Produto ativo do mercado EU da sessão; qualquer outro caso é 404."""
+    product = (await db.execute(select(Product).where(
+        Product.id == product_id,
+        Product.market_code == principal.code,
+        Product.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if principal.code != SUPPLIED_FABRIC_MARKET or product is None:
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
+    return product
+
+
+@router.put("/{product_id}/supplied-fabric", response_model=SuppliedFabricRead)
+async def put_supplied_fabric(
+    product_id: uuid.UUID,
+    payload: SuppliedFabricWrite,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Grava metragem e preços "sem tecido" (TECIDO FORNECIDO) do produto EU.
+
+    Só admin/produtos. Os valores já chegam validados (metragem > 0, preços >= 0,
+    2 casas); aqui só arredonda por segurança e faz o upsert.
+    """
+    product = await _eu_product_for_supplied_fabric(db, product_id, principal)
+    values = {
+        "linear_meters": round_money(payload.linear_meters),
+        "price_lojista": round_money(payload.price_lojista),
+        "price_corporativo": round_money(payload.price_corporativo),
+        "price_pvp": round_money(payload.price_pvp),
+        "price_arquiteto": round_money(payload.price_arquiteto),
+    }
+    row = await db.get(ProductSuppliedFabric, product.id)
+    if row is None:
+        db.add(ProductSuppliedFabric(product_id=product.id, **values))
+    else:
+        for field, value in values.items():
+            setattr(row, field, value)
+    await db.commit()
+    return SuppliedFabricRead(
+        linear_meters=values["linear_meters"],
+        prices={code: values[f"price_{code}"] for code in PRICE_LIST_ORDER},
+    )
+
+
+@router.delete("/{product_id}/supplied-fabric", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_supplied_fabric(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = _ADMIN,
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Tira a opção TECIDO FORNECIDO do produto. Pedidos já feitos não mudam (snapshot)."""
+    product = await _eu_product_for_supplied_fabric(db, product_id, principal)
+    row = await db.get(ProductSuppliedFabric, product.id)
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
