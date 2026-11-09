@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, type AuthUser } from '../contexts/AuthContext'
 import { AuthContext } from '../hooks/useAuth'
 import PrivateApp from '../PrivateApp'
@@ -81,6 +81,17 @@ function readCart(user: AuthUser) {
     optional_choices: Array<{ application_id: string; optional_id: string }>
   }> : []
 }
+
+/** jsdom não tem IntersectionObserver; o card com foto o usa. Nunca intersecta. */
+function stubIntersectionObserver() {
+  vi.stubGlobal('IntersectionObserver', class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  })
+}
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('ProdutosPage de catálogo em DOM', () => {
   it('oculta grupos e subgrupos sem produtos na aba Produtos', async () => {
@@ -327,6 +338,46 @@ describe('ProdutosPage de catálogo em DOM', () => {
     cart = readCart(authUser)
     expect(cart).toHaveLength(2)
     expect(cart.map(line => line.opt_categories.MADEIRA)).toEqual(['Nogueira', 'Carvalho'])
+  })
+
+  it('mostra o selo de quantidade no card e a galeria navegável no detalhe', async () => {
+    stubIntersectionObserver()
+    const user = userEvent.setup()
+    const photos = ['a', 'b', 'c'].map((id, position) => ({
+      id, position, is_primary: id === 'b',
+      photo_url: `/media/${id}.jpg`, thumbnail_url: `/media/${id}-thumb.jpg`,
+    }))
+    const product = detailProduct({
+      photo_url: '/media/b.jpg', thumbnail_url: '/media/b-thumb.jpg', photos, photo_count: 3,
+    })
+    installDetailProduct(product)
+    renderProductPage(<ProdutosPage />, productTestUser('admin', 'BR'))
+
+    expect(await screen.findByLabelText('3 fotos')).toBeInTheDocument()
+    await user.click(screen.getByText(product.description))
+
+    const gallery = await screen.findByRole('group', { name: 'Fotos do produto' })
+    expect(within(gallery).getAllByRole('tab')).toHaveLength(3)
+    expect(within(gallery).getByRole('tab', { name: 'Foto 2 de 3' })).toHaveAttribute('aria-selected', 'true')
+    await user.click(within(gallery).getByRole('button', { name: 'Próxima foto' }))
+    expect(within(gallery).getByRole('tab', { name: 'Foto 3 de 3' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('produto com uma foto não mostra selo nem galeria', async () => {
+    stubIntersectionObserver()
+    const user = userEvent.setup()
+    const product = detailProduct({
+      photo_url: '/media/a.jpg', thumbnail_url: '/media/a-thumb.jpg',
+      photos: [{ id: 'a', position: 0, is_primary: true, photo_url: '/media/a.jpg', thumbnail_url: '/media/a-thumb.jpg' }],
+      photo_count: 1,
+    })
+    installDetailProduct(product)
+    renderProductPage(<ProdutosPage />, productTestUser('admin', 'BR'))
+
+    await user.click(await screen.findByText(product.description))
+
+    expect(screen.queryByLabelText(/fotos$/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Fotos do produto' })).not.toBeInTheDocument()
   })
 
   it('lista a categoria livre e omite ou grava a seleção de TECIDO', async () => {
