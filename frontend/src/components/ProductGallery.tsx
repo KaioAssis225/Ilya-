@@ -11,6 +11,10 @@ interface ProductGalleryProps {
   renderImage: (photo: ProductPhoto) => ReactNode
   /** Pede o pré-carregamento do original das fotos vizinhas. */
   onPreload?: (url: string) => void
+  /** Só para quem edita produtos: mostra "Definir como principal" na foto atual (se não for a principal). */
+  onMakePrimary?: (photo: ProductPhoto) => void
+  makePrimaryBusy?: boolean
+  makePrimaryError?: string | null
 }
 
 function initialPhotoId(photos: ProductPhoto[]) {
@@ -22,7 +26,9 @@ function initialPhotoId(photos: ProductPhoto[]) {
  * (←/→/Home/End), deslizar no celular e faixa de miniaturas. Abre na principal.
  * A foto atual é guardada por id, então recarregar a lista não muda a posição.
  */
-export function ProductGallery({ photos, english, renderImage, onPreload }: ProductGalleryProps) {
+export function ProductGallery({
+  photos, english, renderImage, onPreload, onMakePrimary, makePrimaryBusy = false, makePrimaryError = null,
+}: ProductGalleryProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => initialPhotoId(photos))
   const touchStartX = useRef<number | null>(null)
   const count = photos.length
@@ -46,6 +52,7 @@ export function ProductGallery({ photos, english, renderImage, onPreload }: Prod
     next: english ? 'Next photo' : 'Próxima foto',
     gallery: english ? 'Product photos' : 'Fotos do produto',
     photo: (position: number) => english ? `Photo ${position} of ${count}` : `Foto ${position} de ${count}`,
+    makePrimary: english ? 'Set as main photo' : 'Definir como principal',
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -111,6 +118,17 @@ export function ProductGallery({ photos, english, renderImage, onPreload }: Prod
           </>
         )}
       </div>
+      {onMakePrimary && !current.is_primary && (
+        <button
+          type="button"
+          disabled={makePrimaryBusy}
+          onClick={() => onMakePrimary(current)}
+          className="btn-secondary min-h-11 flex-shrink-0 self-center px-4 text-xs"
+        >
+          {label.makePrimary}
+        </button>
+      )}
+      {makePrimaryError && <p role="alert" className="flex-shrink-0 text-center text-xs font-medium text-danger">{makePrimaryError}</p>}
       <div role="tablist" aria-label={label.gallery} className="flex flex-shrink-0 gap-2 overflow-x-auto pb-1">
         {photos.map((photo, position) => (
           <button

@@ -363,6 +363,50 @@ describe('ProdutosPage de catálogo em DOM', () => {
     expect(within(gallery).getByRole('tab', { name: 'Foto 3 de 3' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  it('admin define a principal pela galeria e o detalhe mostra o retorno do servidor', async () => {
+    stubIntersectionObserver()
+    const user = userEvent.setup()
+    const make = (primaryId: string) => ['a', 'b', 'c'].map((id, position) => ({
+      id, position, is_primary: id === primaryId,
+      photo_url: `/media/${id}.jpg`, thumbnail_url: `/media/${id}-thumb.jpg`,
+    }))
+    const product = detailProduct({ photo_url: '/media/a.jpg', thumbnail_url: '/media/a-thumb.jpg', photos: make('a'), photo_count: 3 })
+    installDetailProduct(product)
+    const calls: string[] = []
+    server.use(http.put('*/products/:id/photos/:photoId/primary', ({ params }) => {
+      calls.push(String(params.photoId))
+      return HttpResponse.json({ ...product, photo_url: '/media/b.jpg', thumbnail_url: '/media/b-thumb.jpg', photos: make('b') })
+    }))
+    renderProductPage(<ProdutosPage />, productTestUser('admin', 'BR'))
+
+    await user.click(await screen.findByText(product.description))
+    const gallery = await screen.findByRole('group', { name: 'Fotos do produto' })
+    await user.click(within(gallery).getByRole('button', { name: 'Próxima foto' }))
+    await user.click(within(gallery).getByRole('button', { name: 'Definir como principal' }))
+
+    await waitFor(() => expect(calls).toEqual(['b']))
+    await waitFor(() => expect(within(gallery).queryByRole('button', { name: 'Definir como principal' })).not.toBeInTheDocument())
+    expect(within(gallery).getByRole('tab', { name: 'Foto 2 de 3' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('quem não edita produtos (representante) não vê "Definir como principal"', async () => {
+    stubIntersectionObserver()
+    const user = userEvent.setup()
+    const photos = ['a', 'b'].map((id, position) => ({
+      id, position, is_primary: id === 'a',
+      photo_url: `/media/${id}.jpg`, thumbnail_url: `/media/${id}-thumb.jpg`,
+    }))
+    const product = detailProduct({ photo_url: '/media/a.jpg', thumbnail_url: '/media/a-thumb.jpg', photos, photo_count: 2 })
+    installDetailProduct(product)
+    renderProductPage(<ProdutosPage />, productTestUser('representante', 'BR'))
+
+    await user.click(await screen.findByText(product.description))
+    const gallery = await screen.findByRole('group', { name: 'Fotos do produto' })
+    await user.click(within(gallery).getByRole('button', { name: 'Próxima foto' }))
+
+    expect(within(gallery).queryByRole('button', { name: 'Definir como principal' })).not.toBeInTheDocument()
+  })
+
   it('produto com uma foto não mostra selo nem galeria', async () => {
     stubIntersectionObserver()
     const user = userEvent.setup()

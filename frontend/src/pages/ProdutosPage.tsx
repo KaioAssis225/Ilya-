@@ -9,7 +9,8 @@ import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useImageRetry } from '../hooks/useImageRetry'
 import { useLocale } from '../hooks/useLocale'
-import { productsPageQueryOptions, useProductFilterOptions, useProductsPage, type ProductFilterOptions } from '../hooks/useProducts'
+import { productsPageQueryOptions, useProductFilterOptions, useProductsPage, useSetPrimaryProductPhoto, type ProductFilterOptions } from '../hooks/useProducts'
+import { parseApiError } from '../lib/personForm'
 import { useCatalogs } from '../hooks/useCatalogs'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { isConjuntoType } from '../lib/productType'
@@ -672,7 +673,16 @@ function ProductFullView({
   userId,
   market,
   onClose,
-}: { product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void }) {
+  canManagePhotos = false,
+  onPhotosUpdated,
+}: {
+  product: Product; priceTable: PriceTable; userId: string; market: 'BR' | 'EU'; onClose: () => void
+  /** admin / vendedor / produtos: mostra "Definir como principal" na galeria. */
+  canManagePhotos?: boolean
+  onPhotosUpdated?: (updated: Product) => void
+}) {
+  const setPrimaryM = useSetPrimaryProductPhoto()
+  const [primaryError, setPrimaryError] = useState<string | null>(null)
   const [added, setAdded] = useState(false)
   const [validationAlert, setValidationAlert] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -823,6 +833,14 @@ function ProductFullView({
                   photos={product.photos!}
                   english={english}
                   onPreload={preloadGalleryImage}
+                  makePrimaryBusy={setPrimaryM.isPending}
+                  makePrimaryError={primaryError}
+                  onMakePrimary={canManagePhotos ? (photo => {
+                    setPrimaryError(null)
+                    setPrimaryM.mutateAsync({ id: product.id, photoId: photo.id })
+                      .then(updated => onPhotosUpdated?.(updated))
+                      .catch(err => setPrimaryError(parseApiError(err)))
+                  }) : undefined}
                   renderImage={photo => (
                     <FullProductImage
                       fill
@@ -1732,6 +1750,11 @@ export default function ProdutosPage() {
           userId={user.id}
           market={user.active_market}
           onClose={() => setSelected(null)}
+          canManagePhotos={user.role === 'admin' || user.role === 'vendedor' || user.role === 'produtos'}
+          // Só os campos de foto: o resto do produto aberto (ex.: descrição no idioma ativo) não muda.
+          onPhotosUpdated={updated => setSelected(current => current
+            ? { ...current, photo_url: updated.photo_url, thumbnail_url: updated.thumbnail_url, photos: updated.photos, photo_count: updated.photo_count }
+            : current)}
         />
       )}
 
