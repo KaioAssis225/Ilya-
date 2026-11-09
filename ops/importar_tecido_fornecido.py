@@ -183,8 +183,10 @@ def salvar_relatorio(caminho: Path, resultado: dict) -> None:
             escritor.writerow([sku, "SEM_MUDANCA", ""])
         for sku in resultado["unknown_skus"]:
             escritor.writerow([sku, "IGNORADO_NAO_EXISTE_NO_EU", "Codigo nao cadastrado no mercado EU."])
-        for sku in resultado["without_fabric_application"]:
-            escritor.writerow([sku, "AVISO_SEM_APLICACAO_TECIDOS_IBTW", "A opcao nao aparece ate o produto ter uma aplicacao da categoria TECIDOS_IBTW."])
+        for sku in resultado["fabric_via_legacy_selector"]:
+            escritor.writerow([sku, "OK_SELETOR_ANTIGO", "Tem TECIDOS_IBTW no seletor antigo: a opcao aparece."])
+        for sku in resultado["without_fabric_category"]:
+            escritor.writerow([sku, "AVISO_SEM_TECIDOS_IBTW", "Sem TECIDOS_IBTW em aplicacao nem no seletor antigo: a opcao nao aparece ate o produto ter essa categoria."])
 
 
 def texto_resumo(resultado: dict) -> str:
@@ -194,7 +196,9 @@ def texto_resumo(resultado: dict) -> str:
         f"Vao ser ATUALIZADOS:                          {len(resultado['to_update'])}",
         f"Sem mudanca:                                  {len(resultado['unchanged'])}",
         f"IGNORADOS (codigo nao existe no EU):          {len(resultado['unknown_skus'])}",
-        f"AVISO (produto sem aplicacao TECIDOS_IBTW):   {len(resultado['without_fabric_application'])}",
+        f"Com TECIDOS_IBTW em aplicacao (opcao aparece): {len(resultado['fabric_via_application'])}",
+        f"Com TECIDOS_IBTW no seletor antigo (aparece):   {len(resultado['fabric_via_legacy_selector'])}",
+        f"AVISO (sem TECIDOS_IBTW em nenhum dos dois):    {len(resultado['without_fabric_category'])}",
     ])
 
 

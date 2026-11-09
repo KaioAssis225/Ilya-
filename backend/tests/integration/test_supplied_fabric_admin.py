@@ -218,3 +218,36 @@ async def test_legacy_selector_without_data_is_rejected(client: AsyncClient, db_
     response = await client.post("/api/v1/orders", json=_legacy_order(s, code, "TECIDO FORNECIDO"), headers=_auth(s.token))
     assert response.status_code == 422
     assert await _count_orders(db_session, s) == 0
+
+
+# ── Aviso da importação: aplicação, seletor antigo ou nenhum dos dois ────────
+
+async def test_import_warning_considers_application_legacy_selector_and_free_category(
+    client: AsyncClient, db_session: AsyncSession,
+) -> None:
+    s = await _scenario(db_session)
+    legacy_direct = await _legacy_product(db_session, s, with_data=False)       # product_optionals
+    legacy_free = await _legacy_product(db_session, s, with_data=False)         # "permitir todos"
+    free_id = await _product_id(db_session, legacy_free)
+    await db_session.execute(product_optionals.delete().where(product_optionals.c.product_id == free_id))
+    free = (await db_session.execute(select(Product).where(Product.id == free_id).execution_options(**_SKIP))).scalar_one()
+    free.all_optionals_categories = f"OUTRA, {SUPPLIED_FABRIC_CATEGORY}"
+    bare = await make_product(db_session, market_code="EU", product_code=f"TFB-{uuid.uuid4().hex[:6].upper()}", description="Sem tecido")
+    await make_product_market(db_session, bare)
+    other_category = await make_product(db_session, market_code="EU", product_code=f"TFC-{uuid.uuid4().hex[:6].upper()}", description="Outra categoria")
+    other_category.all_optionals_categories = "OUTRA"
+    await make_product_market(db_session, other_category)
+    await db_session.commit()
+
+    lines = [s.code_with, legacy_direct, legacy_free, bare.product_code, other_category.product_code]
+    body = "COD;PVP;LOJISTA;ARQUITETO;CORPORATIVO;MTS TECIDO\n" + "".join(f"{code};1;1;1;1;1\n" for code in lines)
+    response = await client.post(
+        "/api/v1/markets/EU/supplied-fabric/import",
+        files={"file": ("t.csv", body.encode(), "text/csv")},
+        headers=_auth(s.platform_token),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["fabric_via_application"] == [s.code_with]
+    assert data["fabric_via_legacy_selector"] == sorted([legacy_direct, legacy_free])
+    assert data["without_fabric_category"] == sorted([bare.product_code, other_category.product_code])

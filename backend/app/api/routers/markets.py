@@ -40,7 +40,7 @@ from app.models.product import Product
 from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
 from app.api.routers.product_groups import product_type_key
-from app.models.optional_color import OptionalColor
+from app.models.optional_color import OptionalColor, product_optionals
 from app.models.client import Client
 from app.models.representative import Representative
 
@@ -692,17 +692,47 @@ async def import_europe_supplied_fabric(
         )
         .execution_options(skip_market_scope=True)
     )).scalars()) if product_ids else set()
+    # Seletor antigo: a categoria liga ao produto por um opcional direto
+    # (tabela `product_optionals` → `optionals.category`) ou por "permitir todos"
+    # (coluna `products.all_optionals_categories`, lista separada por vírgula).
+    with_legacy_selector: set[uuid.UUID] = set()
+    if product_ids:
+        with_legacy_selector |= set((await db.execute(
+            select(product_optionals.c.product_id)
+            .join(OptionalColor, OptionalColor.id == product_optionals.c.optional_id)
+            .where(
+                product_optionals.c.product_id.in_(product_ids.values()),
+                OptionalColor.category == SUPPLIED_FABRIC_CATEGORY,
+                OptionalColor.market_code == "EU",
+            )
+            .execution_options(skip_market_scope=True)
+        )).scalars())
+        for free_id, free_categories in (await db.execute(
+            select(Product.id, Product.all_optionals_categories)
+            .where(Product.id.in_(product_ids.values()), Product.all_optionals_categories.is_not(None))
+            .execution_options(skip_market_scope=True)
+        )).all():
+            if SUPPLIED_FABRIC_CATEGORY in {part.strip() for part in (free_categories or "").split(",")}:
+                with_legacy_selector.add(free_id)
 
     to_create: list[str] = []
     to_update: list[dict] = []
     unchanged: list[str] = []
-    no_application: list[str] = []
+    via_application: list[str] = []
+    via_legacy_selector: list[str] = []
+    without_category: list[str] = []
     for row in rows:
         product_id = product_ids.get(row["sku"])
         if product_id is None:
             continue
-        if product_id not in with_application:
-            no_application.append(row["sku"])
+        # A opção aparece nos dois jeitos de configurar o produto; só some se
+        # o produto não tem a categoria em nenhum deles.
+        if product_id in with_application:
+            via_application.append(row["sku"])
+        elif product_id in with_legacy_selector:
+            via_legacy_selector.append(row["sku"])
+        else:
+            without_category.append(row["sku"])
         current = existing.get(product_id)
         if current is None:
             to_create.append(row["sku"])
@@ -738,7 +768,11 @@ async def import_europe_supplied_fabric(
         "to_update": sorted(to_update, key=lambda item: item["sku"]),
         "unchanged": sorted(unchanged),
         "unknown_skus": sorted(skus - set(product_ids)),
-        "without_fabric_application": sorted(no_application),
+        # Como a categoria TECIDOS_IBTW chega ao produto: aplicação, seletor
+        # antigo, ou nenhum dos dois (a opção não aparece até configurar).
+        "fabric_via_application": sorted(via_application),
+        "fabric_via_legacy_selector": sorted(via_legacy_selector),
+        "without_fabric_category": sorted(without_category),
         "applied": applied, "errors": [],
     }
 

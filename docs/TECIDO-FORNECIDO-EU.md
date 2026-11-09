@@ -70,11 +70,12 @@ do backend (a migration roda no deploy).
 
    Digite usuário e senha da conta de plataforma. O resumo mostra quantos serão
    **criados**, **atualizados**, **ignorados** (código que não existe no EU) e
-   **avisos** (produto sem aplicação `TECIDOS_IBTW`: a opção não aparece nele até
-   existir a aplicação). O relatório completo fica em `logs/tecido-fornecido/`.
+   **com TECIDOS_IBTW** (em aplicação ou no seletor antigo: a opção aparece) e
+   **avisos** (produto sem `TECIDOS_IBTW` em nenhum dos dois: a opção não aparece
+   nele até o produto ter essa categoria). O relatório completo fica em `logs/tecido-fornecido/`.
 3. Confira o relatório. Se houver "IGNORADO_NAO_EXISTE_NO_EU", são códigos da
    planilha que não estão no catálogo de Portugal: nada quebra, só ficam de fora.
-   Se **todos** vierem como aviso de "sem aplicação", a categoria de tecidos IBTW
+   Se **todos** vierem como aviso de "sem TECIDOS_IBTW", a categoria de tecidos IBTW
    deste ambiente provavelmente tem outro código: pare e avise antes de gravar.
 4. Grave tudo:
 

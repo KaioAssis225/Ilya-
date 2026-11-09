@@ -40,7 +40,7 @@ CABECALHO = ["COD", "PVP", "LOJISTA", "ARQUITETO", "CORPORATIVO", "MTS TECIDO "]
 RESPOSTA = {
     "market": "EU", "currency": "EUR", "dry_run": True, "rows_in_file": 2,
     "to_create": ["AA0001"], "to_update": [{"sku": "AA0002", "changes": {"price_pvp": {"from": "1.00", "to": "2.00"}}}],
-    "unchanged": [], "unknown_skus": ["ZZ9999"], "without_fabric_application": ["AA0001"], "applied": 0, "errors": [],
+    "unchanged": [], "unknown_skus": ["ZZ9999"], "fabric_via_application": [], "fabric_via_legacy_selector": ["AA0002"], "without_fabric_category": ["AA0001"], "applied": 0, "errors": [],
 }
 
 
@@ -97,7 +97,10 @@ class ImportadorTest(unittest.TestCase):
         relatorio = next((self.dir / "out").glob("relatorio-dry-run-*.csv")).read_text(encoding="utf-8-sig")
         self.assertIn("AA0001;CRIAR", relatorio)
         self.assertIn("ZZ9999;IGNORADO_NAO_EXISTE_NO_EU", relatorio)
-        self.assertIn("AVISO_SEM_APLICACAO_TECIDOS_IBTW", relatorio)
+        self.assertIn("AA0001;AVISO_SEM_TECIDOS_IBTW", relatorio)
+        self.assertIn("AA0002;OK_SELETOR_ANTIGO", relatorio)
+        self.assertTrue(any("seletor antigo (aparece):   1" in linha for linha in saida))
+        self.assertTrue(any("em nenhum dos dois):    1" in linha for linha in saida))
 
     def test_apply_pede_confirmacao_e_so_grava_depois(self) -> None:
         arquivo = self.dir / "p.xlsx"
