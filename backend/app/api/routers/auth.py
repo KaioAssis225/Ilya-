@@ -775,12 +775,14 @@ def _order_personal_data(order: Order) -> dict:
                 "ipi": item.ipi_rate,
                 "opcionais": item.opt_categories,
                 "comentario": item.comment,
+                "tecido_fornecido_metros": item.supplied_fabric_meters,
                 "aplicacoes_do_opcional": [
                     {
                         "aplicacao": choice.application_name,
                         "categoria": choice.category_name,
                         "opcao": choice.optional_name,
                         "customizacao": choice.custom_text,
+                        "tecido_fornecido": choice.supplied_fabric,
                         "componente": choice.component_name,
                     }
                     for choice in item.optional_choices

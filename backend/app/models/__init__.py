@@ -26,7 +26,7 @@ from app.models.privacy_event import PrivacyEvent
 from app.models.privacy_incident import PrivacyIncident
 from app.models.retention import LegalHold, RetentionReview
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument, OrderEmailWebhookEvent
-from app.models.market import Market, UserMarket, PriceList, ProductMarket, ProductPrice, MarketTaxRate, MarketOrderCounter, MarketQuoteCounter, UserPlatformPermission, PLATFORM_CAPABILITIES
+from app.models.market import Market, UserMarket, PriceList, ProductMarket, ProductPrice, MarketTaxRate, MarketOrderCounter, MarketQuoteCounter, UserPlatformPermission, ProductSuppliedFabric, PLATFORM_CAPABILITIES
 
 __all__ = [
     "Base",
@@ -67,5 +67,5 @@ __all__ = [
     "OrderEmailDelivery", "OrderEmailDocument", "OrderEmailWebhookEvent",
     "Market", "UserMarket", "PriceList", "ProductMarket", "ProductPrice", "MarketTaxRate",
     "MarketOrderCounter", "MarketQuoteCounter",
-    "UserPlatformPermission", "PLATFORM_CAPABILITIES",
+    "UserPlatformPermission", "ProductSuppliedFabric", "PLATFORM_CAPABILITIES",
 ]

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { allowsCustomFor, allowsCustomOption, CUSTOM_LEGACY_VALUE, formatChoice, orderOptionalSlots, requiredApplicationProgress, validateApplicationChoices } from './optionalApplications.ts'
+import { allowsCustomFor, allowsCustomOption, CUSTOM_LEGACY_VALUE, formatChoice, nextApplicationChoices, offersSuppliedFabric, orderOptionalSlots, requiredApplicationProgress, suppliedFabricLine, validateApplicationChoices } from './optionalApplications.ts'
 import type { OptionalApplication, OptionalColor, OrderItem, Product } from '../types'
 
 const option = (id: string, category: string, brand: 'ILYA' | 'IBTW' = 'ILYA'): OptionalColor => ({ id, category, color_name: id, brand }) as OptionalColor
@@ -148,4 +148,68 @@ test('Portugal salva o orçamento incompleto, mas ainda rejeita escolha inválid
   )
   // Sem a flag (Brasil) a exigência continua.
   assert.match(validateApplicationChoices(product([app]), [], optionals, true)[0], /Pés: escolha pendente/)
+})
+
+// ── TECIDO FORNECIDO (Portugal) ───────────────────────────────────────────────
+
+const fabricApp = (id: string) => application(id, 'TECIDOS_IBTW', false)
+const fabricProduct = (market: 'EU' | 'BR' = 'EU', withData = true): Product => ({
+  market_code: market,
+  optional_applications: [fabricApp('tecido'), fabricApp('almofadas'), application('Pés')],
+  components: [],
+  supplied_fabric: withData ? { linear_meters: '13.20', prices: { lojista: '700.10', pvp: 800 } } : null,
+}) as unknown as Product
+
+test('a opção só é oferecida em produto EU com dado, na categoria de tecidos IBTW', () => {
+  const item = fabricProduct()
+  assert.equal(offersSuppliedFabric(item, fabricApp('x')), true)
+  assert.equal(offersSuppliedFabric(item, application('Pés')), false)
+  assert.equal(offersSuppliedFabric(fabricProduct('EU', false), fabricApp('x')), false)
+  assert.equal(offersSuppliedFabric(fabricProduct('BR'), fabricApp('x')), false)
+})
+
+test('suppliedFabricLine dá metragem e preço da tabela só quando há escolha de tecido fornecido', () => {
+  const item = fabricProduct()
+  assert.equal(suppliedFabricLine(item, [], 'lojista'), null)
+  assert.equal(suppliedFabricLine(item, [{ application_id: 'tecido', optional_id: 'taupe' } as never], 'lojista'), null)
+  const line = suppliedFabricLine(item, [{ application_id: 'tecido', supplied_fabric: true }], 'lojista')
+  assert.deepEqual(line, { meters: 13.2, price: 700.1 })
+  assert.equal(suppliedFabricLine(item, [{ application_id: 'tecido', supplied_fabric: true }], 'pvp')?.price, 800)
+  // Tabela sem preço visível: a prévia cai para o preço normal (price null), o servidor decide.
+  assert.equal(suppliedFabricLine(item, [{ application_id: 'tecido', supplied_fabric: true }], 'corporativo')?.price, null)
+  // Escolha numa aplicação que não oferece a opção não conta.
+  assert.equal(suppliedFabricLine(item, [{ application_id: 'Pés', supplied_fabric: true }], 'lojista'), null)
+})
+
+test('tecido fornecido vale para todos os tecidos IBTW do produto e desfaz ao trocar', () => {
+  const item = fabricProduct()
+  const marked = nextApplicationChoices(item, [{ application_id: 'almofadas', optional_id: 'taupe' }, { application_id: 'Pés', optional_id: 'taupe' }], 'tecido', { application_id: 'tecido', supplied_fabric: true })
+  assert.deepEqual(marked.map(choice => [choice.application_id, choice.supplied_fabric ?? false, choice.optional_id ?? null]).sort(), [
+    ['Pés', false, 'taupe'], ['almofadas', true, null], ['tecido', true, null],
+  ])
+  const back = nextApplicationChoices(item, marked, 'tecido', { application_id: 'tecido', optional_id: 'taupe' })
+  assert.deepEqual(back.map(choice => choice.application_id).sort(), ['Pés', 'tecido'])
+  assert.deepEqual(nextApplicationChoices(item, marked, 'tecido', null).map(choice => choice.application_id), ['Pés'])
+})
+
+test('validação: tecido fornecido exige a oferta e não mistura com outro tecido IBTW', () => {
+  const item = fabricProduct()
+  const optionals = [option('taupe', 'TECIDOS_IBTW')]
+  assert.deepEqual(validateApplicationChoices(item, [{ application_id: 'tecido', supplied_fabric: true }, { application_id: 'almofadas', supplied_fabric: true }], optionals, true, {}, true), [])
+  assert.match(validateApplicationChoices(item, [{ application_id: 'tecido', supplied_fabric: true }, { application_id: 'almofadas', optional_id: 'taupe' }], optionals, false, {}, true).join(';'), /todos os tecidos IBTW/)
+  assert.match(validateApplicationChoices(item, [{ application_id: 'Pés', supplied_fabric: true }], optionals, false, {}, true)[0], /indisponível/)
+  assert.match(validateApplicationChoices(fabricProduct('EU', false), [{ application_id: 'tecido', supplied_fabric: true }], optionals, false, {}, true)[0], /indisponível/)
+  // Aplicação obrigatória conta como preenchida com tecido fornecido.
+  const required = { ...fabricProduct(), optional_applications: [application('tecido', 'TECIDOS_IBTW', true)] } as unknown as Product
+  assert.equal(requiredApplicationProgress(required, [{ application_id: 'tecido', supplied_fabric: true }], optionals).missing, 0)
+})
+
+test('pedido e PDF mostram TECIDO FORNECIDO e a metragem do item', () => {
+  const item = {
+    opt_categories: {},
+    supplied_fabric_meters: '13.20',
+    optional_choices: [{ id: '1', application_id: 'tecido', optional_id: null, application_name: 'Tecido', application_name_en: 'Fabric', category_code: 'TECIDOS_IBTW', category_name: 'Tecidos IBTW', optional_name: 'TECIDO FORNECIDO', supplied_fabric: true, component_name: null, display_order: 0 }],
+  } as unknown as Pick<OrderItem, 'opt_categories' | 'optional_choices'>
+  assert.deepEqual(orderOptionalSlots(item, false, code => code).map(slot => slot.value), ['TECIDO FORNECIDO', '13,2 m'])
+  assert.deepEqual(orderOptionalSlots(item, true, code => code).map(slot => [slot.label, slot.value]), [['Fabric', 'SUPPLIED FABRIC'], ['Fabric required', '13.2 m']])
 })

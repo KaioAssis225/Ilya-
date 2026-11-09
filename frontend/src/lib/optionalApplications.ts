@@ -19,6 +19,80 @@ export const CUSTOM_OPTION = '__custom__'
  *  anteriores podem trazer "Customizado: <texto>", da época da caixa de texto. */
 export const CUSTOM_LEGACY_VALUE = 'Customizado'
 
+/** Valor da opção "Tecido fornecido" no seletor; não é id de opcional. */
+export const SUPPLIED_FABRIC_OPTION = '__supplied_fabric__'
+/** Categoria de tecidos IBTW de Portugal: só nas aplicações dela existe TECIDO FORNECIDO. */
+export const SUPPLIED_FABRIC_CATEGORY = 'TECIDOS_IBTW'
+
+export function suppliedFabricLabel(english: boolean): string {
+  return english ? 'SUPPLIED FABRIC' : 'TECIDO FORNECIDO'
+}
+
+/** TECIDO FORNECIDO é marcado por supplied_fabric (sem optional_id nem custom_text). */
+export function isSuppliedChoice(choice: Pick<OptionalChoiceInput, 'supplied_fabric'>): boolean {
+  return choice.supplied_fabric === true
+}
+
+/** A opção só aparece em produto EU com dados importados, na aplicação de tecidos IBTW. */
+export function offersSuppliedFabric(product: Product, application: Pick<OptionalApplication, 'category_code'>): boolean {
+  return product.market_code === 'EU'
+    && product.supplied_fabric != null
+    && application.category_code === SUPPLIED_FABRIC_CATEGORY
+}
+
+export interface SuppliedFabricLine {
+  /** Metragem linear de tecido (coluna "MTS TECIDO" da planilha). */
+  meters: number
+  /** Preço unitário "sem tecido" da tabela do orçamento; null se a tabela não é visível. */
+  price: number | null
+}
+
+/** Dado do tecido fornecido quando alguma aplicação do produto está nesta opção; só prévia, o servidor recalcula. */
+export function suppliedFabricLine(
+  product: Product,
+  choices: Pick<OptionalChoiceInput, 'application_id' | 'supplied_fabric'>[],
+  priceProfile: string | undefined,
+): SuppliedFabricLine | null {
+  const fabric = product.supplied_fabric
+  if (!fabric) return null
+  const offered = new Set(productApplications(product)
+    .filter(entry => offersSuppliedFabric(product, entry.application))
+    .map(entry => entry.application.id))
+  if (!choices.some(choice => isSuppliedChoice(choice) && offered.has(choice.application_id))) return null
+  const price = fabric.prices?.[priceProfile ?? 'lojista']
+  return { meters: Number(fabric.linear_meters), price: price == null ? null : Number(price) }
+}
+
+/** 13,2 m (pt-PT) / 13.2 m (en-GB). */
+export function formatFabricMeters(meters: number | string, english: boolean): string {
+  return `${new Intl.NumberFormat(english ? 'en-GB' : 'pt-PT', { maximumFractionDigits: 2 }).format(Number(meters))} m`
+}
+
+/**
+ * Aplica a escolha de uma aplicação. TECIDO FORNECIDO vale para todos os tecidos
+ * IBTW do produto (o preço da planilha é "sem tecido"): escolher numa aplicação
+ * marca as outras, e trocar por outra opção desmarca as irmãs.
+ */
+export function nextApplicationChoices(
+  product: Product,
+  choices: OptionalChoiceInput[],
+  applicationId: string,
+  choice: OptionalChoiceInput | null,
+): OptionalChoiceInput[] {
+  const fabricIds = productApplications(product)
+    .filter(entry => offersSuppliedFabric(product, entry.application))
+    .map(entry => entry.application.id)
+  const wasSupplied = choices.some(candidate => candidate.application_id === applicationId && isSuppliedChoice(candidate))
+  let next = [...choices.filter(candidate => candidate.application_id !== applicationId), ...(choice ? [choice] : [])]
+  if (choice && isSuppliedChoice(choice) && fabricIds.includes(applicationId)) {
+    next = next.filter(candidate => !fabricIds.includes(candidate.application_id) || candidate.application_id === applicationId)
+    next.push(...fabricIds.filter(id => id !== applicationId).map(id => ({ application_id: id, supplied_fabric: true })))
+  } else if (wasSupplied) {
+    next = next.filter(candidate => !(isSuppliedChoice(candidate) && fabricIds.includes(candidate.application_id)))
+  }
+  return next
+}
+
 /** "Customizado" existe só em Portugal; no Brasil o pedido usa apenas opcionais do cadastro. */
 export function allowsCustomOption(market: 'BR' | 'EU'): boolean {
   return market === 'EU'
@@ -46,7 +120,8 @@ function customValue(text: string | null | undefined, english: boolean): string 
   return text ? `${customOptionLabel(english)}: ${text}` : customOptionLabel(english)
 }
 
-export function choiceValue(choice: Pick<OptionalChoice, 'optional_name' | 'custom_text'>, english: boolean): string {
+export function choiceValue(choice: Pick<OptionalChoice, 'optional_name' | 'custom_text' | 'supplied_fabric'>, english: boolean): string {
+  if (isSuppliedChoice(choice)) return suppliedFabricLabel(english)
   return isCustomChoice(choice) ? customValue(choice.custom_text, english) : optionalName(choice.optional_name, english)
 }
 
@@ -82,6 +157,7 @@ export function requiredApplicationProgress(
   const filled = required.filter(({ application }) => {
     const choice = choicesByApplication.get(application.id)
     if (!choice) return false
+    if (isSuppliedChoice(choice)) return offersSuppliedFabric(product, application)
     const options = allowedForApplication(application, allOptionals)
     if (isCustomChoice(choice)) return allowsCustomFor(options)
     return options.some(option => option.id === choice.optional_id)
@@ -119,6 +195,10 @@ export function validateApplicationChoices(
     const application = byId.get(choice.application_id)
     if (!application || seenApplications.has(choice.application_id)) { errors.push('Aplicação inválida ou repetida'); continue }
     seenApplications.add(choice.application_id)
+    if (isSuppliedChoice(choice)) {
+      if (!offersSuppliedFabric(product, application)) errors.push(`${application.name}: Tecido fornecido indisponível`)
+      continue
+    }
     const options = allowedForApplication(application, allOptionals)
     if (isCustomChoice(choice)) {
       if (!allowsCustomFor(options)) errors.push(`${application.name}: Customizado indisponível`)
@@ -132,6 +212,12 @@ export function validateApplicationChoices(
     const previous = used.get(key)
     if (previous && (!previous.allow_repeat || !application.allow_repeat)) errors.push(`${application.name}: escolha repetida`)
     used.set(key, application)
+  }
+  // O preço da planilha é "sem tecido": não mistura com outro tecido IBTW do mesmo produto.
+  const fabricApplications = applications.filter(application => offersSuppliedFabric(product, application))
+  const fabricChoices = choices.filter(choice => fabricApplications.some(application => application.id === choice.application_id))
+  if (fabricChoices.some(isSuppliedChoice) && fabricChoices.some(choice => !isSuppliedChoice(choice))) {
+    errors.push('Tecido fornecido deve valer para todos os tecidos IBTW do produto')
   }
   if (requireCompleteSelection && !allowIncomplete) {
     for (const application of applications) {
@@ -153,10 +239,11 @@ export function formatChoice(choice: OptionalChoice, english: boolean): string {
 }
 
 export function orderOptionalSlots(
-  item: Pick<OrderItem, 'opt_categories' | 'optional_choices'>,
+  item: Pick<OrderItem, 'opt_categories' | 'optional_choices'> & { supplied_fabric_meters?: number | string | null },
   english: boolean,
   categoryLabel: (code: string) => string,
 ): { label: string; value: string }[] {
+  const meters = item.supplied_fabric_meters
   return [
     ...Object.entries(item.opt_categories ?? {}).map(([category, value]) => ({
       label: optionalCategoryLabel(categoryLabel(category), english), value: legacyValue(value, english),
@@ -165,5 +252,9 @@ export function orderOptionalSlots(
       label: `${choice.component_name ? `${choice.component_name} — ` : ''}${english && choice.application_name_en ? choice.application_name_en : choice.application_name}`,
       value: choiceValue(choice, english),
     })),
+    ...(meters == null ? [] : [{
+      label: english ? 'Fabric required' : 'Tecido necessário',
+      value: formatFabricMeters(meters, english),
+    }]),
   ]
 }

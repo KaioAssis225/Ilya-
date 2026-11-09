@@ -22,7 +22,7 @@ import type { Order, OrderHistory, OrderSummary, OrderStage, Product, Client, Re
 import { formatDimensions } from '../lib/measurements'
 import { useLocale } from '../hooks/useLocale'
 import { optionalName, optionalCategoryLabel } from '../lib/optionalLabels'
-import { choiceValue } from '../lib/optionalApplications'
+import { choiceValue, formatFabricMeters } from '../lib/optionalApplications'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { formatArea, formatRugSize } from '../lib/areaProduct'
 import { resolveOrderStage, stageLabel, describeStageChange, STAGE_BADGE_CLASS } from '../lib/orderStage'
@@ -731,6 +731,12 @@ function OrderDetailModal({
                             const optionals = [
                               ...parsed.map((optional) => ({ key: `legacy-${optional.label}`, label: optional.label, thumbnail: optional.thumbnail, photo: optional.photo })),
                               ...choiceDetails.map(({ choice, label, thumbnail, photo }) => ({ key: `choice-${choice.id}`, label, thumbnail, photo })),
+                              ...(item.supplied_fabric_meters == null ? [] : [{
+                                key: 'supplied-fabric-meters',
+                                label: `${viewText('Tecido necessário', 'Fabric required')}: ${formatFabricMeters(item.supplied_fabric_meters, optionalEnglish)}`,
+                                thumbnail: null,
+                                photo: null,
+                              }]),
                             ]
                             const isExpanded = expandedOptionalItems.has(item.id)
                             const detailsId = `order-item-optionals-${item.id}`

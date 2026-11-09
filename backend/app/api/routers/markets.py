@@ -21,11 +21,15 @@ from app.core import media_orphans
 from app.core.config import settings
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.core.uploads import copy_upload_to_market, read_upload_limited
+from app.core.supplied_fabric import SUPPLIED_FABRIC_CATEGORY, round_money
+from app.models.optional_application import ProductOptionalApplication
+from app.models.optional_category import OptionalCategory
 from app.models.market import (
     Market,
     PriceList,
     ProductMarket,
     ProductPrice,
+    ProductSuppliedFabric,
     UserMarket,
     VAT_APPROVED,
     VAT_PENDING,
@@ -566,6 +570,176 @@ async def import_europe_catalog(
     return {
         "market": "EU", "currency": "EUR", "imported": len(parsed), "errors": [],
         "pending_vat_approval": len(parsed),
+    }
+
+
+# ── TECIDO FORNECIDO (Portugal) ──────────────────────────────────────────────
+# Preços "sem tecido" e metragem linear por produto EU, vindos da planilha da
+# fábrica. Importação em CSV, só platform_admin, com simulação (dry-run) como
+# padrão: nada é gravado até `dry_run=false`.
+
+_FABRIC_HEADER_ALIASES = {
+    "cod": "product_code", "codigo": "product_code", "código": "product_code",
+    "product_code": "product_code",
+    "pvp": "pvp", "lojista": "lojista", "arquiteto": "arquiteto", "corporativo": "corporativo",
+    "mts tecido": "linear_meters", "mts_tecido": "linear_meters",
+    "metros": "linear_meters", "linear_meters": "linear_meters",
+}
+_FABRIC_FIELDS = ("linear_meters", "price_lojista", "price_corporativo", "price_pvp", "price_arquiteto")
+
+
+def _fabric_csv_rows(raw: bytes) -> tuple[list[dict], list[str]]:
+    """Lê o CSV (`;` ou `,`) da planilha. Linhas inválidas viram erro; nada é gravado."""
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(422, "CSV deve estar em UTF-8.")
+    first_line = content.splitlines()[0] if content.strip() else ""
+    delimiter = ";" if first_line.count(";") >= first_line.count(",") else ","
+    reader = csv.reader(io.StringIO(content), delimiter=delimiter)
+    try:
+        header = next(reader)
+    except StopIteration:
+        raise HTTPException(422, "Arquivo vazio.")
+    columns = {
+        _FABRIC_HEADER_ALIASES[name.strip().lower()]: index
+        for index, name in enumerate(header)
+        if name.strip().lower() in _FABRIC_HEADER_ALIASES
+    }
+    needed = {"product_code", "pvp", "lojista", "arquiteto", "corporativo", "linear_meters"}
+    if not needed.issubset(columns):
+        raise HTTPException(
+            422,
+            "Cabeçalho obrigatório: COD, PVP, LOJISTA, ARQUITETO, CORPORATIVO, MTS TECIDO "
+            f"(faltando: {', '.join(sorted(needed - set(columns)))}).",
+        )
+    rows: list[dict] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for line, values in enumerate(reader, start=2):
+        if not any(value.strip() for value in values):
+            continue
+
+        def cell(name: str) -> str:
+            index = columns[name]
+            return values[index] if index < len(values) else ""
+
+        sku = cell("product_code").strip().upper()
+        if not sku or sku in seen:
+            errors.append(f"Linha {line}: código vazio ou repetido ({sku or 'vazio'}).")
+            continue
+        seen.add(sku)
+        try:
+            prices = {code: round_money(_decimal_csv(cell(code))) for code in _EU_LISTS}
+            meters = round_money(_decimal_csv(cell("linear_meters")))
+            if any(value < 0 for value in prices.values()) or meters <= 0:
+                raise ValueError("fora do limite")
+        except (InvalidOperation, ValueError):
+            errors.append(f"Linha {line} ({sku}): preço inválido/negativo ou metragem vazia/zero.")
+            continue
+        rows.append({
+            "sku": sku,
+            "linear_meters": meters,
+            "price_lojista": prices["lojista"],
+            "price_corporativo": prices["corporativo"],
+            "price_pvp": prices["pvp"],
+            "price_arquiteto": prices["arquiteto"],
+        })
+    return rows, errors
+
+
+@router.post("/EU/supplied-fabric/import", status_code=status.HTTP_200_OK)
+async def import_europe_supplied_fabric(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(True, description="true (padrão) só simula e lista o que mudaria."),
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Importa preços sem tecido e metragem (TECIDO FORNECIDO) de produtos EU.
+
+    Colunas: COD, PVP, LOJISTA, ARQUITETO, CORPORATIVO, MTS TECIDO (os nomes da
+    planilha). Os preços são arredondados no servidor para 2 casas, ROUND_HALF_UP.
+    Linha malformada rejeita o arquivo inteiro. Código que não existe no EU não é
+    erro: vai para `unknown_skus` e o resto é importado. Cria ou atualiza; nunca
+    apaga um produto que ficou fora do arquivo.
+    """
+    raw = await read_upload_limited(file, 10 * 1024 * 1024, max_size_label="10MB")
+    rows, errors = _fabric_csv_rows(raw)
+    if errors:
+        raise HTTPException(422, {"message": "Importação rejeitada; nenhum dado foi alterado.", "errors": errors[:100]})
+    if not rows:
+        raise HTTPException(422, "O arquivo não tem nenhuma linha de dados.")
+    skus = {row["sku"] for row in rows}
+    products = (await db.execute(
+        select(Product.id, Product.product_code)
+        .where(Product.market_code == "EU", Product.product_code.in_(skus))
+        .execution_options(skip_market_scope=True)
+    )).all()
+    product_ids = {sku: product_id for product_id, sku in products}
+    existing = {
+        row.product_id: row
+        for row in (await db.execute(
+            select(ProductSuppliedFabric).where(ProductSuppliedFabric.product_id.in_(product_ids.values()))
+        )).scalars()
+    } if product_ids else {}
+    with_application = set((await db.execute(
+        select(ProductOptionalApplication.product_id)
+        .join(OptionalCategory, OptionalCategory.id == ProductOptionalApplication.category_id)
+        .where(
+            ProductOptionalApplication.product_id.in_(product_ids.values()),
+            OptionalCategory.code == SUPPLIED_FABRIC_CATEGORY,
+            OptionalCategory.market_code == "EU",
+        )
+        .execution_options(skip_market_scope=True)
+    )).scalars()) if product_ids else set()
+
+    to_create: list[str] = []
+    to_update: list[dict] = []
+    unchanged: list[str] = []
+    no_application: list[str] = []
+    for row in rows:
+        product_id = product_ids.get(row["sku"])
+        if product_id is None:
+            continue
+        if product_id not in with_application:
+            no_application.append(row["sku"])
+        current = existing.get(product_id)
+        if current is None:
+            to_create.append(row["sku"])
+            continue
+        changes = {
+            field: {"from": str(getattr(current, field)), "to": str(row[field])}
+            for field in _FABRIC_FIELDS if getattr(current, field) != row[field]
+        }
+        if changes:
+            to_update.append({"sku": row["sku"], "changes": changes})
+        else:
+            unchanged.append(row["sku"])
+
+    applied = 0
+    if not dry_run:
+        for row in rows:
+            product_id = product_ids.get(row["sku"])
+            if product_id is None:
+                continue
+            values = {field: row[field] for field in _FABRIC_FIELDS}
+            await db.execute(pg_insert(ProductSuppliedFabric).values(
+                product_id=product_id, **values,
+            ).on_conflict_do_update(
+                index_elements=[ProductSuppliedFabric.product_id],
+                set_={**values, "updated_at": func.now()},
+            ))
+            applied += 1
+        await db.commit()
+    return {
+        "market": "EU", "currency": "EUR", "dry_run": dry_run,
+        "rows_in_file": len(rows),
+        "to_create": sorted(to_create),
+        "to_update": sorted(to_update, key=lambda item: item["sku"]),
+        "unchanged": sorted(unchanged),
+        "unknown_skus": sorted(skus - set(product_ids)),
+        "without_fabric_application": sorted(no_application),
+        "applied": applied, "errors": [],
     }
 
 

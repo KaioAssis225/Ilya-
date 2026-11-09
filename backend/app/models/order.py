@@ -241,6 +241,10 @@ class OrderItem(Base, TimestampMixin):
     is_special: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     special_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     special_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
+    # Snapshot da metragem linear de tecido quando o item usa TECIDO FORNECIDO
+    # (tecido do cliente, só EU); NULL nos demais itens. O unit_price acima já é
+    # o preço "sem tecido" resolvido pelo servidor.
+    supplied_fabric_meters: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
 
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 

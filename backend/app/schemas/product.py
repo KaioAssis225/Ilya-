@@ -253,8 +253,19 @@ class ProductFilterOptionsRead(BaseModel):
     types: List[ProductFilterTypeRead] = Field(default_factory=list)
 
 
+class SuppliedFabricRead(BaseModel):
+    """TECIDO FORNECIDO do produto EU: metragem e preço "sem tecido" por tabela.
+
+    Só para exibir a prévia no orçamento; o pedido recalcula tudo pelo banco.
+    `prices` traz apenas as tabelas que o usuário logado pode ver.
+    """
+    linear_meters: Decimal
+    prices: dict[str, Decimal] = Field(default_factory=dict)
+
+
 class ProductRead(ProductBase):
     id: uuid.UUID
+    supplied_fabric: Optional[SuppliedFabricRead] = None
     # Bloco 96: preço que a role logada não pode ver sai como null em vez de
     # trafegar até o browser. Conta de cliente-final recebe apenas o preço do
     # próprio perfil de faturamento (lojista OU corporativo).

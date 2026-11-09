@@ -21,18 +21,20 @@ def is_legacy_custom(value: str) -> bool:
 
 
 class OptionalChoiceCreate(BaseModel):
-    """Um opcional do cadastro (`optional_id`) ou a opção "Customizado"
-    (`custom_text` presente; vazio quando não há descrição) — nunca os dois."""
+    """Um opcional do cadastro (`optional_id`), a opção "Customizado"
+    (`custom_text` presente; vazio quando não há descrição) ou TECIDO FORNECIDO
+    (`supplied_fabric`, só Portugal) — exatamente uma das três."""
     application_id: uuid.UUID
     optional_id: Optional[uuid.UUID] = None
     custom_text: Optional[str] = Field(None, max_length=1000)
+    supplied_fabric: bool = False
 
     @model_validator(mode="after")
     def validate_single_choice(self) -> "OptionalChoiceCreate":
         if self.custom_text is not None:
             self.custom_text = self.custom_text.strip()
-        if (self.optional_id is None) == (self.custom_text is None):
-            raise ValueError("Escolha um opcional ou a opção Customizado.")
+        if [self.optional_id is not None, self.custom_text is not None, self.supplied_fabric].count(True) != 1:
+            raise ValueError("Escolha um opcional, a opção Customizado ou Tecido fornecido.")
         return self
 
 
@@ -46,6 +48,7 @@ class OptionalChoiceRead(BaseModel):
     category_name: str
     optional_name: str
     custom_text: Optional[str] = None
+    supplied_fabric: bool = False
     component_name: Optional[str] = None
     display_order: int
 
@@ -211,6 +214,8 @@ class OrderItemRead(BaseModel):
     is_special: bool = False
     special_code: Optional[str] = None
     special_percent: Optional[Decimal] = None
+    # Metragem linear de tecido do cliente (TECIDO FORNECIDO); vazio nos demais itens.
+    supplied_fabric_meters: Optional[Decimal] = None
     # Opcionais ainda sem escolha (só preenchido em orçamento EU em aberto).
     pending_optionals: List[str] = Field(default_factory=list)
     created_at: datetime

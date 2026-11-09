@@ -5,7 +5,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Literal
+from typing import List, Literal, NamedTuple
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,8 +45,13 @@ from app.models.optional_color import OptionalColor, product_optionals
 from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
 from app.models.product_type import ProductType
 from app.models.user import User, UserRole
-from app.models.market import ProductMarket, ProductPrice, PriceList, VAT_APPROVED
+from app.models.market import ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, VAT_APPROVED
 from app.core.markets import MarketPrincipal, require_launch_country
+from app.core.supplied_fabric import (
+    SUPPLIED_FABRIC_CATEGORY,
+    SUPPLIED_FABRIC_MARKET,
+    SUPPLIED_FABRIC_NAME,
+)
 from app.core.vat_exemption import VAT_EXEMPTION_REASONS
 from app.schemas.order import is_legacy_custom, OptionalChoiceCreate, OrderCopyRead, OrderCopyRequest, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderStageUpdate, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
@@ -282,6 +287,7 @@ def _choice_snapshot(item: OrderItem) -> list[dict]:
             "category_name": choice.category_name,
             "optional_name": choice.optional_name,
             "custom_text": choice.custom_text,
+            "supplied_fabric": choice.supplied_fabric,
             "component_name": choice.component_name,
             "display_order": choice.display_order,
         }
@@ -296,6 +302,7 @@ def _items_history_snapshot(items: list[OrderItem]) -> list[dict]:
         {"product_code": item.product_code, "is_special": getattr(item, "is_special", False),
          "special_code": getattr(item, "special_code", None),
          "special_percent": None if getattr(item, "special_percent", None) is None else str(item.special_percent),
+         "supplied_fabric_meters": None if getattr(item, "supplied_fabric_meters", None) is None else str(item.supplied_fabric_meters),
          "legacy_optionals": item.opt_categories,
          "applications": _choice_snapshot(item), "comment": item.comment,
          "attachments": [
@@ -417,8 +424,8 @@ async def _resolve_item_choices(
     # An unchanged historical line is copied as a snapshot, even if the master
     # application or optional was removed after the original order.
     if source is not None and source.product_code == item_in.product_code and source.opt_categories == item_in.opt_categories:
-        old_pairs = {(row.application_id, row.optional_id, row.custom_text) for row in source.optional_choices}
-        new_pairs = {(row.application_id, row.optional_id, row.custom_text) for row in item_in.optional_choices}
+        old_pairs = {(row.application_id, row.optional_id, row.custom_text, row.supplied_fabric) for row in source.optional_choices}
+        new_pairs = {(row.application_id, row.optional_id, row.custom_text, row.supplied_fabric) for row in item_in.optional_choices}
         if item_in.preserve_optional_choices or "optional_choices" not in item_in.model_fields_set or new_pairs == old_pairs:
             return [OrderItemOptionalChoice(
                 id=uuid.uuid4(), application_id=row.application_id,
@@ -426,6 +433,7 @@ async def _resolve_item_choices(
                 application_name_en=row.application_name_en,
                 category_code=row.category_code, category_name=row.category_name,
                 optional_name=row.optional_name, custom_text=row.custom_text,
+                supplied_fabric=row.supplied_fabric,
                 component_name=row.component_name, display_order=row.display_order,
             ) for row in source.optional_choices]
 
@@ -486,6 +494,20 @@ async def _resolve_item_choices(
     for app_id, choice in chosen.items():
         app = application_map[app_id]
         component_name = component_map[app.component_id].description if app.component_id else None
+        if choice.supplied_fabric:
+            # Como o "Customizado", não consome opcional do cadastro. Só a
+            # categoria de tecidos IBTW de Portugal oferece esta escolha; se o
+            # produto tem dados e qual é o preço, `_resolve_supplied_fabric` decide.
+            if market_code != SUPPLIED_FABRIC_MARKET or app.category.code != SUPPLIED_FABRIC_CATEGORY:
+                raise HTTPException(status_code=422, detail=f"TECIDO FORNECIDO não está disponível em '{app.name}'.")
+            result.append(OrderItemOptionalChoice(
+                id=uuid.uuid4(), application_id=app.id, optional_id=None,
+                application_name=app.name, application_name_en=app.name_en,
+                category_code=app.category.code, category_name=app.category.name,
+                optional_name=SUPPLIED_FABRIC_NAME, supplied_fabric=True,
+                component_name=component_name, display_order=app.display_order,
+            ))
+            continue
         if choice.custom_text is not None:
             # "Customizado" não consome opcional do cadastro, então não passa
             # pela lista de permitidos nem pela regra de repetição.
@@ -535,6 +557,43 @@ async def _resolve_item_choices(
             ),
         )
     return result
+
+
+class SuppliedFabricLine(NamedTuple):
+    meters: Decimal
+    unit_price: Decimal
+
+
+async def _resolve_supplied_fabric(
+    db: AsyncSession,
+    product: Product,
+    market_code: str,
+    choices: list[OrderItemOptionalChoice],
+    price_list_code: str,
+) -> SuppliedFabricLine | None:
+    """Preço "sem tecido" e metragem de um item com TECIDO FORNECIDO.
+
+    Lê SEMPRE do banco, na tabela de preço do orçamento: nada que o cliente
+    envie (preço, metragem) é usado. Sem escolha de tecido fornecido devolve
+    None e o preço normal vale. Sem dado para o produto, a escolha é recusada.
+    """
+    if not any(choice.supplied_fabric for choice in choices):
+        return None
+    row = await db.get(ProductSuppliedFabric, product.id) if market_code == SUPPLIED_FABRIC_MARKET else None
+    price = row.price_for(price_list_code) if row is not None else None
+    if row is None or price is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"O produto '{product.product_code}' não aceita TECIDO FORNECIDO.",
+        )
+    # O preço da planilha é "sem tecido": vale para o produto todo, então não
+    # pode haver outro tecido IBTW do mesmo item escolhido do cadastro.
+    if any(choice.category_code == SUPPLIED_FABRIC_CATEGORY and not choice.supplied_fabric for choice in choices):
+        raise HTTPException(
+            status_code=422,
+            detail=f"TECIDO FORNECIDO deve valer para todos os tecidos IBTW do produto '{product.product_code}'.",
+        )
+    return SuppliedFabricLine(meters=_decimal(row.linear_meters), unit_price=_decimal(price))
 
 
 async def _next_codes(
@@ -1464,6 +1523,10 @@ async def _create_order_core(
                 source_items.get(item_in.source_order_item_id),
                 require_complete=market_code != "EU",
             )
+            supplied_fabric = await _resolve_supplied_fabric(
+                db, product, market_code, optional_choices, price_list.code,
+            )
+            base_price = supplied_fabric.unit_price if supplied_fabric else price_map[product.id]
             product_type = type_map.get(product.type)
             if market_code == "EU":
                 vat_rate, vat_status = product_vat.get(product.id, (None, None))
@@ -1482,13 +1545,13 @@ async def _create_order_core(
             if item_in.is_special:
                 special_code = _resolve_special_code(item_in, product.product_code, used_special_codes)
                 unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_special_order_line(
-                    base_price=price_map[product.id], qty=qty,
+                    base_price=base_price, qty=qty,
                     special_percent=item_in.special_percent, tax_rate=ipi_rate,
                     product_code=product.product_code,
                 )
             else:
                 unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_order_line(
-                    unit_price=price_map[product.id], qty=qty,
+                    unit_price=base_price, qty=qty,
                     discount=(min(item_in.discount or _ZERO, max_discount) if lenient else item_in.discount or _ZERO),
                     max_discount=max_discount, product_code=product.product_code, tax_rate=ipi_rate,
                 )
@@ -1529,6 +1592,7 @@ async def _create_order_core(
                 is_special=item_in.is_special,
                 special_code=special_code,
                 special_percent=item_in.special_percent,
+                supplied_fabric_meters=supplied_fabric.meters if supplied_fabric else None,
             ))
             if not lenient:
                 strict_items.append(order_items[-1])
@@ -1638,6 +1702,7 @@ def _copy_item_payload(item: OrderItem) -> OrderItemCreate:
                 application_id=choice.application_id,
                 optional_id=choice.optional_id,
                 custom_text=choice.custom_text,
+                supplied_fabric=choice.supplied_fabric,
             )
             for choice in item.optional_choices
             if choice.application_id is not None
@@ -2220,6 +2285,10 @@ async def update_order(
                 old_item_map.get(item_in.source_order_item_id),
                 require_complete=principal.code != "EU",
             )
+            supplied_fabric = await _resolve_supplied_fabric(
+                db, product, order.market_code, optional_choices, price_list.code,
+            )
+            base_price = supplied_fabric.unit_price if supplied_fabric else price_map[product.id]
             product_type = type_map.get(product.type)
             if order.market_code == "EU":
                 vat_rate, vat_status = product_vat.get(product.id, (None, None))
@@ -2250,13 +2319,13 @@ async def update_order(
             if item_in.is_special:
                 special_code = _resolve_special_code(item_in, product.product_code, used_special_codes)
                 unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_special_order_line(
-                    base_price=price_map[product.id], qty=qty,
+                    base_price=base_price, qty=qty,
                     special_percent=item_in.special_percent, tax_rate=ipi_rate,
                     product_code=product.product_code,
                 )
             else:
                 unit_price, discount, subtotal, ipi_rate, ipi_value = _calculate_order_line(
-                    unit_price=price_map[product.id], qty=qty,
+                    unit_price=base_price, qty=qty,
                     discount=item_in.discount or _ZERO, max_discount=line_max_discount,
                     product_code=product.product_code, tax_rate=ipi_rate,
                 )
@@ -2298,6 +2367,7 @@ async def update_order(
                 is_special=item_in.is_special,
                 special_code=special_code,
                 special_percent=item_in.special_percent,
+                supplied_fabric_meters=supplied_fabric.meters if supplied_fabric else None,
             ))
             new_item_attachments[new_item_id] = attachment_rows.get(item_index, [])
 

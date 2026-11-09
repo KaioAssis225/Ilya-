@@ -260,3 +260,43 @@ class UserPlatformPermission(Base, TimestampMixin):
             name="ck_user_platform_permissions_capability",
         ),
     )
+
+
+class ProductSuppliedFabric(Base, TimestampMixin):
+    """Preços "sem tecido" e metragem linear de tecido de um produto EU.
+
+    Existe só para os produtos que aceitam a opção TECIDO FORNECIDO (tecido do
+    cliente). Fica numa tabela própria, e não em `product_markets`, porque só
+    uma parte do catálogo tem esses dados e `product_markets` participa de toda
+    leitura de preço/IVA: assim a tabela crítica não ganha 5 colunas quase
+    sempre vazias. Os 4 preços seguem as listas EU (`price_lists.code`) e são
+    gravados com 2 casas (ROUND_HALF_UP) na importação. Só produtos do mercado EU
+    entram aqui (a importação confere); o BR nunca lê esta tabela.
+    """
+
+    __tablename__ = "product_supplied_fabric"
+
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), primary_key=True
+    )
+    linear_meters: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    price_lojista: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    price_corporativo: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    price_pvp: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    price_arquiteto: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("linear_meters > 0", name="ck_product_supplied_fabric_meters"),
+        CheckConstraint(
+            "price_lojista >= 0 AND price_corporativo >= 0 AND price_pvp >= 0 AND price_arquiteto >= 0",
+            name="ck_product_supplied_fabric_prices",
+        ),
+    )
+
+    def price_for(self, price_list_code: str) -> Decimal | None:
+        return {
+            "lojista": self.price_lojista,
+            "corporativo": self.price_corporativo,
+            "pvp": self.price_pvp,
+            "arquiteto": self.price_arquiteto,
+        }.get(price_list_code)
