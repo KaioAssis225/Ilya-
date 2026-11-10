@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
+import { useAuth } from './useAuth'
 
 export interface DashboardMetrics {
   revenue_total: number
@@ -10,7 +11,15 @@ export interface DashboardMetrics {
   orders_finalized: number
   orders_open: number
   orders_cancelled: number
+  // Etapas dos pedidos confirmados (aba "Pedidos"); 0 na aba de orçamentos.
+  revenue_production: number
+  revenue_delivered: number
+  orders_production: number
+  orders_delivered: number
 }
+
+/** Aba do dashboard: orçamentos (não confirmados) ou pedidos (confirmados). */
+export type DashboardKind = 'quotes' | 'orders'
 
 // Região não é um campo próprio do cliente — é derivada do UF (client.state)
 // pelo backend (app/core/regions.py), então o filtro aqui é só uma lista fixa.
@@ -36,6 +45,7 @@ export interface DashboardProductRanking {
 }
 
 export interface DashboardOverview {
+  kind: DashboardKind | null
   start_date: string
   end_date: string
   granularity: 'day' | 'week' | 'month'
@@ -50,6 +60,7 @@ export interface DashboardFilters {
   end_date?: string
   rep_id?: string
   region?: string
+  kind?: DashboardKind
 }
 
 export function useDashboardOverview(filters: DashboardFilters) {
@@ -57,6 +68,7 @@ export function useDashboardOverview(filters: DashboardFilters) {
     queryKey: ['dashboard-overview', filters],
     queryFn: async () => {
       const params: Record<string, string> = {}
+      if (filters.kind) params.kind = filters.kind
       if (filters.start_date) params.start_date = filters.start_date
       if (filters.end_date) params.end_date = filters.end_date
       if (filters.rep_id) params.rep_id = filters.rep_id
@@ -64,5 +76,53 @@ export function useDashboardOverview(filters: DashboardFilters) {
       const res = await api.get('/dashboard/overview', { params })
       return res.data
     },
+  })
+}
+
+export type ClientContactFilter = 'all' | 'yes' | 'no'
+
+export interface ClientContactRow {
+  id: string
+  name: string
+  contact_name: string | null
+  phone: string
+  email: string | null
+  city: string
+  country: string
+  rep_id: string | null
+  rep_name: string | null
+  contacted: boolean
+}
+
+export interface ClientsDashboard {
+  total: number
+  contacted: number
+  not_contacted: number
+  contacted_pct: number
+  filtered_total: number
+  items: ClientContactRow[]
+}
+
+export interface ClientsDashboardParams {
+  contacted: ClientContactFilter
+  q?: string
+  skip?: number
+  limit?: number
+}
+
+/** Contadores e lista vêm do servidor, já limitados à carteira do usuário. */
+export function useClientsDashboard(params: ClientsDashboardParams, enabled = true) {
+  const { user } = useAuth()
+  return useQuery<ClientsDashboard>({
+    queryKey: ['dashboard-clients', user?.id, user?.active_market, params],
+    queryFn: async () => {
+      const query: Record<string, string | number> = { contacted: params.contacted }
+      if (params.q) query.q = params.q
+      if (params.skip) query.skip = params.skip
+      if (params.limit) query.limit = params.limit
+      return (await api.get('/dashboard/clients', { params: query })).data
+    },
+    enabled,
+    placeholderData: keepPreviousData,
   })
 }

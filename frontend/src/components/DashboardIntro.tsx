@@ -39,12 +39,15 @@ function useCountUp(target: number | null, durationMs: number) {
 export default function DashboardIntro({
   revenueTotal,
   ordersTotal,
+  ordersLabel = 'Orçamentos',
   onDone,
   locale = 'pt-BR',
   currencyCode = 'BRL',
 }: {
   revenueTotal: number | null
   ordersTotal: number | null
+  /** Rótulo do contador (Orçamentos ou Pedidos, conforme a aba aberta). */
+  ordersLabel?: string
   onDone: () => void
   locale?: string
   currencyCode?: string
@@ -135,7 +138,7 @@ export default function DashboardIntro({
           <div className="w-px h-8 bg-line" />
           <div className="text-center">
             <span className="block text-xl font-semibold text-ink">{integer.format(orders)}</span>
-            <span className="block text-[10px] uppercase tracking-wider text-muted mt-0.5">Orçamentos</span>
+            <span className="block text-[10px] uppercase tracking-wider text-muted mt-0.5">{ordersLabel}</span>
           </div>
         </div>
       </div>
