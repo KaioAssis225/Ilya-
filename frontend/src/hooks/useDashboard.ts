@@ -63,9 +63,10 @@ export interface DashboardFilters {
   kind?: DashboardKind
 }
 
-export function useDashboardOverview(filters: DashboardFilters) {
+export function useDashboardOverview(filters: DashboardFilters, enabled = true) {
   return useQuery<DashboardOverview>({
     queryKey: ['dashboard-overview', filters],
+    enabled,
     queryFn: async () => {
       const params: Record<string, string> = {}
       if (filters.kind) params.kind = filters.kind

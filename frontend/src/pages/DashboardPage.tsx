@@ -4,6 +4,8 @@ import { Download, LayoutDashboard } from 'lucide-react'
 import { useDashboardOverview, DASHBOARD_REGIONS, type DashboardKind } from '../hooks/useDashboard'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
+import ClientesDashboardContent from '../components/ClientesDashboardContent'
+import { canSeeClientsDashboard } from '../lib/clientsDashboardAccess'
 import { useAuth } from '../hooks/useAuth'
 import { csvRow } from '../lib/csv'
 
@@ -76,11 +78,16 @@ const TAB_TEXT: Record<DashboardKind, { name: string; singular: string; plural: 
 
 // Aba escolhida: vai na URL (?aba=pedidos) e fica lembrada para a próxima visita.
 const TAB_STORAGE_KEY = 'ilya-dashboard-tab'
-const TAB_PARAM: Record<DashboardKind, string> = { quotes: 'orcamentos', orders: 'pedidos' }
+// Terceira aba (só Portugal): mostra o dashboard de Clientes dentro do BI.
+type DashboardTab = DashboardKind | 'clients'
+const TAB_PARAM: Record<DashboardTab, string> = { quotes: 'orcamentos', orders: 'pedidos', clients: 'clientes' }
+const TAB_LABEL: Record<DashboardTab, string> = { quotes: 'Orçamentos', orders: 'Pedidos', clients: 'Clientes' }
+const TAB_VALUES: DashboardTab[] = ['quotes', 'orders', 'clients']
 
-function readStoredTab(): DashboardKind {
+function readStoredTab(): DashboardTab {
   try {
-    return localStorage.getItem(TAB_STORAGE_KEY) === 'orders' ? 'orders' : 'quotes'
+    const stored = localStorage.getItem(TAB_STORAGE_KEY)
+    return TAB_VALUES.find(value => value === stored) ?? 'quotes'
   } catch {
     return 'quotes'
   }
@@ -159,10 +166,14 @@ export default function DashboardPage() {
   const [region, setRegion] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('aba')
-  const [storedTab] = useState<DashboardKind>(readStoredTab)
-  const tab: DashboardKind = tabParam === TAB_PARAM.orders ? 'orders' : tabParam === TAB_PARAM.quotes ? 'quotes' : storedTab
-  const text = TAB_TEXT[tab]
-  const metricDefs = TAB_METRICS[tab]
+  const [storedTab] = useState<DashboardTab>(readStoredTab)
+  const clientsAllowed = !!user && canSeeClientsDashboard(user)
+  const requestedTab: DashboardTab = TAB_VALUES.find(value => TAB_PARAM[value] === tabParam) ?? storedTab
+  // Aba Clientes pedida (URL ou memória) sem permissão: cai em Orçamentos.
+  const tab: DashboardTab = requestedTab === 'clients' && !clientsAllowed ? 'quotes' : requestedTab
+  const kind: DashboardKind = tab === 'clients' ? 'quotes' : tab
+  const text = TAB_TEXT[kind]
+  const metricDefs = TAB_METRICS[kind]
   const [activeMetric, setActiveMetric] = useState<MetricKey>('revenue_total')
   const activeDef = (metricDefs.find(([key]) => key === activeMetric) ?? metricDefs[0])[1]
   const [repsExpanded, setRepsExpanded] = useState(false)
@@ -186,9 +197,9 @@ export default function DashboardPage() {
     ...(selectedRep ? [selectedRep] : []),
     ...(repsPage?.items ?? []).filter((rep) => rep.id !== selectedRep?.id),
   ]
-  const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined, region: region || undefined, kind: tab })
+  const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined, region: region || undefined, kind }, tab !== 'clients')
 
-  function selectTab(next: DashboardKind) {
+  function selectTab(next: DashboardTab) {
     if (next === tab) return
     try { localStorage.setItem(TAB_STORAGE_KEY, next) } catch { /* sem storage: só a URL guarda a aba */ }
     setActiveMetric('revenue_total')
@@ -212,7 +223,7 @@ export default function DashboardPage() {
   }
 
   function exportCsv() {
-    if (!data) return
+    if (!data || tab === 'clients') return
     const lines = [
       csvRow(['Métrica', 'Valor']),
       ...metricDefs.map(([key, def]) => csvRow([def.label, data.metrics[key]])),
@@ -226,7 +237,7 @@ export default function DashboardPage() {
     const blob = new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `dashboard-bi-${TAB_PARAM[tab]}_${startDate}_${endDate}.csv`
+    link.download = `dashboard-bi-${TAB_PARAM[kind]}_${startDate}_${endDate}.csv`
     link.click()
     URL.revokeObjectURL(link.href)
   }
@@ -235,9 +246,9 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-bg">
       {showIntro && (
         <DashboardIntro
-          revenueTotal={data ? data.metrics.revenue_total : null}
-          ordersTotal={data ? data.metrics.orders_total : null}
-          ordersLabel={text.name}
+          revenueTotal={tab === 'clients' ? 0 : data ? data.metrics.revenue_total : null}
+          ordersTotal={tab === 'clients' ? 0 : data ? data.metrics.orders_total : null}
+          ordersLabel={tab === 'clients' ? TAB_LABEL.clients : text.name}
           onDone={hideIntro}
           locale={locale}
           currencyCode={currencyCode}
@@ -249,11 +260,11 @@ export default function DashboardPage() {
             <h1 className="font-display text-2xl font-semibold text-ink flex items-center gap-2">
               <LayoutDashboard className="w-6 h-6 text-gold" /> Dashboard BI Comercial
             </h1>
-            <p className="text-sm text-muted mt-1">{text.subtitle}</p>
+            <p className="text-sm text-muted mt-1">{tab === 'clients' ? 'Quem já foi contactado e quem ainda falta contactar' : text.subtitle}</p>
           </div>
           <button
             onClick={exportCsv}
-            disabled={!data}
+            disabled={!data || tab === 'clients'}
             className="flex items-center gap-2 px-4 py-2 border border-line text-ink-2 rounded-xl text-sm font-medium hover:bg-white transition-colors disabled:opacity-50"
           >
             <Download className="w-4 h-4" /> Exportar CSV
@@ -262,23 +273,29 @@ export default function DashboardPage() {
 
         {/* Abas: orçamentos e pedidos têm indicadores e listas separados. */}
         <div role="tablist" aria-label="Tipo de documento" className="inline-flex w-full md:w-auto mb-5 p-1 rounded-xl border border-line bg-white">
-          {(['quotes', 'orders'] as DashboardKind[]).map(kind => {
-            const selected = tab === kind
+          {TAB_VALUES.filter(value => value !== 'clients' || clientsAllowed).map(value => {
+            const selected = tab === value
             return (
               <button
-                key={kind}
+                key={value}
                 type="button"
                 role="tab"
                 aria-selected={selected}
-                onClick={() => selectTab(kind)}
+                onClick={() => selectTab(value)}
                 className={`flex-1 md:flex-none min-h-11 px-6 rounded-lg text-sm font-semibold transition-colors ${selected ? 'bg-gold text-white' : 'text-ink-2 hover:bg-bg'}`}
               >
-                {TAB_TEXT[kind].name}
+                {TAB_LABEL[value]}
               </button>
             )
           })}
         </div>
 
+        {tab === 'clients' ? (
+          <div role="tabpanel" aria-label={TAB_LABEL.clients}>
+            <ClientesDashboardContent />
+          </div>
+        ) : (
+        <>
         {/* Filtros */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-2">
           <label className="flex flex-col gap-1">
@@ -443,6 +460,8 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   )
