@@ -16,6 +16,7 @@ import { createPrivateQueryClient, disposePrivateQueryClient } from './lib/query
 import { MarketTransition } from './components/MarketTransition'
 import { LocaleProvider } from './contexts/LocaleContext'
 import { useLocale } from './hooks/useLocale'
+import { canSeeClientsDashboard } from './lib/clientsDashboardAccess'
 import { LanguageSwitcher } from './components/LanguageSwitcher'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
@@ -50,10 +51,6 @@ function canSeeCadastros(user: AuthUser) {
 
 // Dashboard de Clientes (contactados x não contactados): o dado "contactado"
 // só existe na ficha de Portugal; o servidor aplica a carteira de cada usuário.
-function canSeeClientsDashboard(user: AuthUser) {
-  return canSeeCadastros(user) && user.active_market === 'EU'
-}
-
 function canSeeOptionals(user: AuthUser) {
   return ['admin', 'vendedor', 'representante', 'cliente', 'produtos'].includes(user.role)
 }
