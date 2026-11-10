@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
 import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine, SlidersHorizontal } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine, SlidersHorizontal, Images } from 'lucide-react'
 import { cartEntryUnits, cartStorageKey, configureProductPath, notifyCartChanged, withRugPieces, writeCartPriceList } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
@@ -16,6 +16,7 @@ import { isConjuntoType } from '../lib/productType'
 import { SafePrice } from '../components/SafePrice'
 import { OptionalSwatchImage } from '../components/OptionalSwatchImage'
 import { OptionalZoomDialog } from '../components/OptionalZoomDialog'
+import { ProductGallery } from '../components/ProductGallery'
 import type { OptionalChoiceInput, OptionalColor, PageResult, Product } from '../types'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, formatArea, isAreaProduct } from '../lib/areaProduct'
@@ -126,7 +127,15 @@ function CatalogImage({ product }: { product: Product }) {
   )
 }
 
-function FullProductImage({ product }: { product: Product }) {
+function preloadGalleryImage(url: string) {
+  void preloadFullImage(url, 'low').catch(() => undefined)
+}
+
+function FullProductImage({ product, fill = false }: {
+  product: Pick<Product, 'description' | 'thumbnail_url' | 'photo_url'>
+  /** Dentro da galeria, a altura vem do contêiner em vez da própria imagem. */
+  fill?: boolean
+}) {
   const preview = product.thumbnail_url ?? product.photo_url
   const original = product.photo_url
   const hasDistinctPreview = Boolean(preview && original && preview !== original)
@@ -145,7 +154,7 @@ function FullProductImage({ product }: { product: Product }) {
   }, [original])
 
   return (
-    <div className="relative w-full h-[40vh] md:h-full overflow-hidden">
+    <div className={`relative w-full overflow-hidden ${fill ? 'h-full' : 'h-[40vh] md:h-full'}`}>
       {preview && (
         <img
           src={preview}
@@ -809,7 +818,19 @@ function ProductFullView({
         {/* Foto: metade esquerda no desktop, topo no mobile */}
         <div className="md:w-[55%] md:h-full flex-shrink-0 bg-bg flex items-center justify-center p-6 md:p-14">
           {product.photo_url
-            ? <FullProductImage product={product} />
+            ? (product.photos?.length ?? 0) > 1
+              ? <ProductGallery
+                  photos={product.photos!}
+                  english={english}
+                  onPreload={preloadGalleryImage}
+                  renderImage={photo => (
+                    <FullProductImage
+                      fill
+                      product={{ description: product.description, thumbnail_url: photo.thumbnail_url, photo_url: photo.photo_url }}
+                    />
+                  )}
+                />
+              : <FullProductImage product={product} />
             : <div className="w-full h-[40vh] md:h-full flex items-center justify-center">
                 <span className="text-muted text-sm tracking-widest uppercase">{english ? 'No photo' : 'Sem foto'}</span>
               </div>
@@ -1519,13 +1540,22 @@ export default function ProdutosPage() {
                     cortava fotos não-quadradas; contain sobre linho criava
                     moldura dupla.) O padding dá respiro a móveis que encostam
                     nas bordas da própria foto. */}
-                <div className="w-full aspect-square overflow-hidden bg-white p-3 md:p-4">
+                <div className="relative w-full aspect-square overflow-hidden bg-white p-3 md:p-4">
                   {product.photo_url
                     ? <CatalogImage product={product} />
                     : <div className="w-full h-full flex items-center justify-center">
                         <span className="text-muted text-[11px] uppercase tracking-widest">{locale === 'en-GB' ? 'No photo' : 'Sem foto'}</span>
                       </div>
                   }
+                  {(product.photo_count ?? 0) > 1 && (
+                    <span
+                      className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-line bg-white/90 px-2 py-0.5 text-[11px] font-medium tabular-nums text-ink-2 shadow-sm"
+                      aria-label={locale === 'en-GB' ? `${product.photo_count} photos` : `${product.photo_count} fotos`}
+                    >
+                      <Images className="h-3 w-3" aria-hidden="true" />
+                      {product.photo_count}
+                    </span>
+                  )}
                 </div>
                 <div className="w-full flex-1 px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">

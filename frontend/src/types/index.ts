@@ -169,10 +169,22 @@ export interface Product {
   optional_applications?: OptionalApplication[]
   set_items: ProductSetItem[]
   components: ProductSetComponent[]
+  /** Foto principal (a mesma de `photos` com `is_primary`). */
   photo_url: string | null
   thumbnail_url?: string | null
+  /** Galeria ordenada; opcional durante um deploy gradual (API antiga não envia). */
+  photos?: ProductPhoto[]
+  photo_count?: number
   created_at: string
   updated_at: string
+}
+
+export interface ProductPhoto {
+  id: string
+  position: number
+  is_primary: boolean
+  photo_url: string | null
+  thumbnail_url: string | null
 }
 
 export interface ProductCreate {
