@@ -8,7 +8,7 @@ import type { AuthUser, UserRole } from '../contexts/AuthContext'
 import PrivateApp from '../PrivateApp'
 import { productTestUser, renderProductPage } from '../test/productTestUtils'
 import { server } from '../test/setup'
-import ClientesDashboardPage from './ClientesDashboardPage'
+import ClientesDashboardContent from '../components/ClientesDashboardContent'
 
 const ROWS = [
   { id: 'c1', name: 'Alfa Pendente', contact_name: 'Ana', phone: '+351 911', email: 'ana@alfa.pt', city: 'Lisboa', country: 'Portugal', rep_id: 'r1', rep_name: 'Rep Alfa', contacted: false },
@@ -38,7 +38,7 @@ describe('Dashboard de Clientes', () => {
 
   it('mostra indicadores do servidor e a lista com o estado de contacto', async () => {
     installClients()
-    renderProductPage(<ClientesDashboardPage />, productTestUser('admin', 'EU'), ['/clientes'])
+    renderProductPage(<ClientesDashboardContent />, productTestUser('admin', 'EU'), ['/clientes'])
 
     expect((await screen.findAllByText('Alfa Pendente')).length).toBeGreaterThan(0)
     expect(screen.getByTestId('kpi-total')).toHaveTextContent('2')
@@ -55,7 +55,7 @@ describe('Dashboard de Clientes', () => {
   it('o filtro Não contactados e a busca são enviados ao servidor', async () => {
     const requests = installClients()
     const user = userEvent.setup()
-    renderProductPage(<ClientesDashboardPage />, productTestUser('admin', 'EU'), ['/clientes'])
+    renderProductPage(<ClientesDashboardContent />, productTestUser('admin', 'EU'), ['/clientes'])
     await screen.findAllByText('Alfa Pendente')
 
     await user.click(screen.getByRole('button', { name: 'Não contactados' }))
@@ -71,17 +71,21 @@ describe('Dashboard de Clientes', () => {
 
   it('mostra erro quando o servidor nega ou falha', async () => {
     server.use(http.get('*/dashboard/clients', () => new HttpResponse(null, { status: 500 })))
-    renderProductPage(<ClientesDashboardPage />, productTestUser('representante', 'EU'), ['/clientes'])
+    renderProductPage(<ClientesDashboardContent />, productTestUser('representante', 'EU'), ['/clientes'])
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os clientes.')
   })
 })
 
-describe('Dashboard de Clientes: entrada no menu e guarda da rota', () => {
+describe('Dashboard de Clientes: só dentro do BI', () => {
   beforeEach(() => localStorage.clear())
 
-  function userFor(role: UserRole, market: 'BR' | 'EU'): AuthUser {
-    return { ...productTestUser(role, market), linked_id: role === 'cliente' ? 'client-1' : null }
+  function userFor(role: UserRole, market: 'BR' | 'EU', canViewDashboard = false): AuthUser {
+    return {
+      ...productTestUser(role, market),
+      linked_id: role === 'cliente' ? 'client-1' : null,
+      can_view_dashboard: canViewDashboard,
+    }
   }
 
   function renderApp(user: AuthUser, path: string) {
@@ -89,6 +93,7 @@ describe('Dashboard de Clientes: entrada no menu e guarda da rota', () => {
       http.get('*/notifications', () => HttpResponse.json([])),
       http.get('*/products', () => HttpResponse.json([])),
       http.get('*/products/article-categories', () => HttpResponse.json([])),
+      http.get('*/products/filter-options', () => HttpResponse.json({})),
       http.get('*/product-types', () => HttpResponse.json([])),
       http.get('*/product-groups', () => HttpResponse.json([])),
       http.get('*/catalogs', () => HttpResponse.json([])),
@@ -98,7 +103,13 @@ describe('Dashboard de Clientes: entrada no menu e guarda da rota', () => {
       http.get('*/clients/:id', () => HttpResponse.json([])),
       http.get('*/representatives', () => HttpResponse.json([])),
       http.post('*/products/batch', () => HttpResponse.json([])),
+      http.get('*/dashboard/overview', () => HttpResponse.json({
+        kind: 'quotes', start_date: '2026-01-01', end_date: '2026-01-31', granularity: 'month',
+        metrics: {}, chart: [], representatives: [], products: [],
+      })),
     )
+    // Por último: o glob '*/clients' acima também casaria com /dashboard/clients.
+    installClients()
     const auth = {
       user, accessToken: 't', isLoading: false,
       login: vi.fn(), logout: vi.fn(), refreshSession: vi.fn(), refreshMe: vi.fn(), switchMarket: vi.fn(),
@@ -111,38 +122,32 @@ describe('Dashboard de Clientes: entrada no menu e guarda da rota', () => {
   }
 
   it.each(['admin', 'vendedor', 'representante', 'cadastros', 'produtos'] as UserRole[])(
-    'Portugal: %s vê a entrada Clientes no menu e abre a tela', async role => {
-      installClients()
-      renderApp(userFor(role, 'EU'), '/clientes')
+    'Portugal: %s não tem "Clientes" no menu normal', async role => {
+      renderApp(userFor(role, 'EU'), '/produtos')
 
-      expect(await screen.findByRole('heading', { name: 'Clientes', level: 1 })).toBeInTheDocument()
-      const nav = screen.getAllByRole('navigation', { name: 'Navegação principal' })[0]
-      expect(within(nav).getByRole('link', { name: 'Clientes' })).toHaveAttribute('aria-current', 'page')
+      await screen.findByRole('heading', { name: 'Catálogo de produtos', level: 1 })
+      expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
     },
   )
 
-  it('conta de cliente não vê a entrada e é redirecionada', async () => {
-    renderApp(userFor('cliente', 'EU'), '/clientes')
+  it('/clientes (link salvo) leva ao botão Clientes dentro do BI', async () => {
+    renderApp(userFor('admin', 'EU'), '/clientes')
+
+    expect(await screen.findByRole('tab', { name: 'Clientes', hidden: true })).toHaveAttribute('aria-selected', 'true')
+    expect((await screen.findAllByText('Alfa Pendente')).length).toBeGreaterThan(0)
+  })
+
+  it('/clientes sem acesso ao BI cai na tela inicial do usuário', async () => {
+    renderApp(userFor('representante', 'EU'), '/clientes')
 
     expect(await screen.findByRole('heading', { name: 'Novo Orçamento', hidden: true, level: 1 })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Clientes', hidden: true })).not.toBeInTheDocument()
   })
 
-  it('executivo não acessa e vai para o Dashboard', async () => {
-    server.use(http.get('*/dashboard/overview', () => HttpResponse.json({
-      kind: 'quotes', start_date: '2026-01-01', end_date: '2026-01-31', granularity: 'month',
-      metrics: {}, chart: [], representatives: [], products: [],
-    })))
-    renderApp(userFor('executivo', 'EU'), '/clientes')
-
-    expect(await screen.findByRole('heading', { name: 'Dashboard BI Comercial', hidden: true, level: 1 })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
-  })
-
-  it('Brasil não tem a entrada (o dado "contactado" é só de Portugal)', async () => {
+  it('/clientes no Brasil abre o BI em Orçamentos, sem aba Clientes', async () => {
     renderApp(userFor('admin', 'BR'), '/clientes')
 
-    expect(await screen.findByRole('heading', { name: 'Cadastros', hidden: true })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Clientes' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'Orçamentos', hidden: true })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: 'Clientes', hidden: true })).not.toBeInTheDocument()
   })
 })
