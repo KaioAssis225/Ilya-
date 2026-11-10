@@ -118,6 +118,31 @@ describe('ProductGallery', () => {
     expect(mainSrc()).toBe('/media/a.jpg')
   })
 
+  it('só oferece "Definir como principal" a quem pode, e fora da foto que já é a principal', async () => {
+    const user = userEvent.setup()
+    const onMakePrimary = vi.fn()
+    const { unmount } = renderGallery()
+    expect(screen.queryByRole('button', { name: 'Definir como principal' })).not.toBeInTheDocument()
+    unmount()
+
+    renderGallery(THREE, { onMakePrimary })
+    expect(screen.queryByRole('button', { name: 'Definir como principal' })).not.toBeInTheDocument() // abre na principal
+
+    await user.click(screen.getByRole('button', { name: 'Próxima foto' }))
+    await user.click(screen.getByRole('button', { name: 'Definir como principal' }))
+
+    expect(onMakePrimary).toHaveBeenCalledWith(expect.objectContaining({ id: 'c' }))
+  })
+
+  it('mostra o erro e trava o atalho enquanto a troca está em andamento', async () => {
+    const user = userEvent.setup()
+    renderGallery(THREE, { onMakePrimary: vi.fn(), makePrimaryBusy: true, makePrimaryError: 'Sem permissão.' })
+    await user.click(screen.getByRole('button', { name: 'Próxima foto' }))
+
+    expect(screen.getByRole('button', { name: 'Definir como principal' })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Sem permissão.')
+  })
+
   it('usa rótulos em inglês no mercado EU', () => {
     renderGallery(THREE, { english: true })
 

@@ -34,6 +34,7 @@ import { NumberField } from '../components/NumberField'
 import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup'
 import { formatBrazilianPhone, PHONE_INPUT_MAX_LENGTH } from '../lib/phone'
 import { normalizePersonPayload, parseApiError } from '../lib/personForm'
+import { ProductPhotosManager } from '../components/ProductPhotosManager'
 import { formatDimensions } from '../lib/measurements'
 import { areaLimit, isAreaCatalogName, isAreaProduct } from '../lib/areaProduct'
 import { PRODUCT_DIMENSION_LIMIT_MESSAGE, hasDimensionOverLimit } from '../lib/productMeasureLimit'
@@ -2208,6 +2209,17 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   setPendingFile(file); setPhotoRemoved(false); setPhotoPreview(URL.createObjectURL(file))
                 }} />
             </div>
+
+            {editing?.photos
+              ? <ProductPhotosManager
+                  product={editing}
+                  color={color}
+                  onUpdated={(updated) => {
+                    // A principal pode ter mudado; sem troca/remoção pendente, o quadro acima a acompanha.
+                    if (!pendingFile && !photoRemoved) setPhotoPreview(updated.photo_url ?? null)
+                  }}
+                />
+              : !editing && <p className="text-[11px] text-muted">{tx('Salve o produto para adicionar mais fotos à galeria.')}</p>}
 
             <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>{tx('Cancelar')}</button>

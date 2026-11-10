@@ -158,6 +158,40 @@ export function useUploadProductPhoto() {
   })
 }
 
+/** Galeria: cada mutação devolve o produto completo já com `photos` atualizado. */
+function usePhotoGalleryMutation<TVariables>(request: (variables: TVariables) => Promise<Product>) {
+  const qc = useQueryClient()
+  return useMutation<Product, Error, TVariables>({
+    mutationFn: request,
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  })
+}
+
+export function useAddProductPhotoToGallery() {
+  return usePhotoGalleryMutation<{ id: string; file: File }>(({ id, file }) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api
+      .post<Product>(`/products/${id}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then((r) => r.data)
+  })
+}
+
+export function useRemoveProductGalleryPhoto() {
+  return usePhotoGalleryMutation<{ id: string; photoId: string }>(({ id, photoId }) =>
+    api.delete<Product>(`/products/${id}/photos/${photoId}`).then((r) => r.data))
+}
+
+export function useReorderProductGalleryPhotos() {
+  return usePhotoGalleryMutation<{ id: string; photoIds: string[] }>(({ id, photoIds }) =>
+    api.put<Product>(`/products/${id}/photos/order`, { photo_ids: photoIds }).then((r) => r.data))
+}
+
+export function useSetPrimaryProductPhoto() {
+  return usePhotoGalleryMutation<{ id: string; photoId: string }>(({ id, photoId }) =>
+    api.put<Product>(`/products/${id}/photos/${photoId}/primary`).then((r) => r.data))
+}
+
 export function useDeleteProductPhoto() {
   const qc = useQueryClient()
   return useMutation<Product, Error, string>({

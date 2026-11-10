@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
@@ -256,6 +256,40 @@ describe('CadastroPage — foto do produto', () => {
     expect(calls).toEqual(['patch:eu-photo-1', 'upload:eu-photo-1'])
     expect(screen.getByRole('heading', { name: 'Editar Produto' })).toBeVisible()
     expect(screen.getByRole('img', { name: 'Mesa com foto' })).toHaveAttribute('src', 'blob:p06/mesa.png')
+  })
+})
+
+describe('CadastroPage — galeria do produto', () => {
+  it('produto novo explica que as fotos extras vêm depois de salvar', async () => {
+    const user = userEvent.setup()
+    installBrCreate([])
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'BR'))
+
+    await clickNewProduct(user)
+
+    expect(screen.getByText('Salve o produto para adicionar mais fotos à galeria.')).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Galeria de fotos' })).not.toBeInTheDocument()
+  })
+
+  it('edição mostra o gerenciador com as fotos e o quadro único continua funcionando', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const photos = ['a', 'b'].map((id, position) => ({
+      id, position, is_primary: id === 'a',
+      photo_url: `/media/${id}.jpg`, thumbnail_url: `/media/${id}-thumb.jpg`,
+    }))
+    installEuEdit(calls, { photos, photo_count: 2 } as Partial<ProductFixture>)
+    installPhotoHandlers({ market: 'EU', calls })
+    renderProductPage(<CadastroPage />, productTestUser('admin', 'EU'))
+
+    await openEdit(user)
+
+    const gallery = screen.getByRole('region', { name: 'Galeria de fotos' })
+    expect(within(gallery).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(gallery).getByRole('button', { name: 'Definir a foto 2 como principal' })).toBeEnabled()
+    // O quadro de foto única segue como antes (primeiro campo de arquivo do formulário).
+    expect(photoInput()).not.toHaveAttribute('multiple')
+    expect(screen.getByRole('img', { name: 'Mesa com foto' })).toHaveAttribute('src', SIGNED_PHOTO)
   })
 })
 
