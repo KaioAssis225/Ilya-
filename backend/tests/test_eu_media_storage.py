@@ -180,6 +180,12 @@ def _count(value):
     return result
 
 
+def _pairs(rows):
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
 def test_sincronizacao_copia_e_troca_a_referencia(buckets, monkeypatch):
     produto = SimpleNamespace(
         id=uuid.uuid4(), product_code="IAC0120",
@@ -198,7 +204,7 @@ def test_sincronizacao_copia_e_troca_a_referencia(buckets, monkeypatch):
     monkeypatch.setattr(markets_module, "copy_upload_to_market", fake_copy)
     db = MagicMock()
     db.execute = AsyncMock(side_effect=[
-        _scalars([produto]), _scalars([opcional]), _count(0), _count(0),
+        _scalars([produto]), _scalars([opcional]), _pairs([]), _count(0), _count(0), _count(0),
     ])
     db.commit = AsyncMock()
 
@@ -226,7 +232,7 @@ def test_falha_de_um_arquivo_nao_interrompe_o_lote(buckets, monkeypatch):
     monkeypatch.setattr(markets_module, "copy_upload_to_market", fake_copy)
     db = MagicMock()
     db.execute = AsyncMock(side_effect=[
-        _scalars([quebrado, bom]), _scalars([]), _count(1), _count(0),
+        _scalars([quebrado, bom]), _scalars([]), _pairs([]), _count(1), _count(0), _count(0),
     ])
     db.commit = AsyncMock()
 
@@ -236,6 +242,40 @@ def test_falha_de_um_arquivo_nao_interrompe_o_lote(buckets, monkeypatch):
     assert resposta["remaining"] == 1
     assert resposta["failed"][0]["code"] == "X1"
     assert quebrado.photo_path == "object://products/x.png"
+
+
+def test_sincronizacao_copia_a_galeria_e_a_principal_acompanha_o_espelho(buckets, monkeypatch):
+    produto = SimpleNamespace(
+        id=uuid.uuid4(), product_code="G1", photo_path="object://products/p.png",
+    )
+    principal = SimpleNamespace(
+        id=uuid.uuid4(), photo_path="object://products/p.png", is_primary=True,
+    )
+    extra = SimpleNamespace(
+        id=uuid.uuid4(), photo_path="object://products/e.png", is_primary=False,
+    )
+    copiados = []
+
+    async def fake_copy(path, *, kind):
+        copiados.append(path)
+        return f"object://eu-products/{path.rsplit('/', 1)[-1]}"
+
+    monkeypatch.setattr(markets_module, "copy_upload_to_market", fake_copy)
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[
+        _scalars([]), _scalars([]),
+        _pairs([(principal, produto), (extra, produto)]),
+        _count(0), _count(0), _count(0),
+    ])
+    db.commit = AsyncMock()
+
+    resposta = asyncio.run(markets_module.sync_europe_media(limit=20, db=db, _=None))
+
+    assert resposta == {"copied": 2, "failed": [], "remaining": 0}
+    assert copiados == ["object://products/p.png", "object://products/e.png"]
+    assert principal.photo_path == "object://eu-products/p.png"
+    assert produto.photo_path == "object://eu-products/p.png"  # espelho da principal
+    assert extra.photo_path == "object://eu-products/e.png"
 
 
 def test_sincronizacao_exige_bucket_europeu(monkeypatch):

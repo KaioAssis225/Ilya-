@@ -172,6 +172,7 @@ def test_delete_photo_clears_reference_and_deletes_only_from_active_market():
             id=uuid.uuid4(),
             photo_path="object://products/cadeira.jpg",
             market_code="BR",
+            photos=[],
         )
         db = AsyncMock()
         db.execute.return_value = _ScalarResult(product)

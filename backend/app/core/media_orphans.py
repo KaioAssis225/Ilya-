@@ -258,7 +258,7 @@ _ANY_UUID_RE = re.compile(_UUID)
 # Uma referência a foto tem pelo menos o UUID (36); coluna varchar menor não cabe.
 _MIN_REFERENCE_COLUMN_LENGTH = 36
 _REFERENCE_CHECK_TIMEOUT_MS = 10_000
-_PRIORITY_TABLES = ("products", "optional_colors")
+_PRIORITY_TABLES = ("products", "product_photos", "optional_colors")
 _REFERENCE_COLUMNS_SQL = text(
     """
     SELECT n.nspname AS schema_name, c.relname AS table_name, a.attname AS column_name

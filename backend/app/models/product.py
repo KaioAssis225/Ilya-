@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
@@ -62,6 +62,12 @@ class Product(Base, TimestampMixin):
     optionals: Mapped[list["OptionalColor"]] = relationship(
         "OptionalColor", secondary=product_optionals, lazy="selectin"
     )
+    # Galeria. `photo_path` continua sendo a foto principal (espelho mantido por
+    # `app.core.product_photos`), então quem lê só `photo_path` não muda.
+    photos: Mapped[list["ProductPhoto"]] = relationship(
+        "ProductPhoto", order_by="ProductPhoto.position, ProductPhoto.created_at",
+        cascade="all, delete-orphan", lazy="selectin",
+    )
     set_items: Mapped[list["ProductSetItem"]] = relationship(
         "ProductSetItem", foreign_keys="ProductSetItem.set_id",
         cascade="all, delete-orphan", lazy="selectin",
@@ -110,6 +116,38 @@ class Product(Base, TimestampMixin):
             },
         ),
     )
+
+class ProductPhoto(Base, TimestampMixin):
+    """Foto da galeria de um produto. O mercado vem do produto (sem coluna própria).
+
+    Invariante, mantida só por `app.core.product_photos`: com fotos, exatamente
+    uma é principal e `products.photo_path` é o caminho dela; sem fotos,
+    `photo_path` é NULL.
+    """
+
+    __tablename__ = "product_photos"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    photo_path: Mapped[str] = mapped_column(String(255), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("product_id", "photo_path", name="uq_product_photos_product_path"),
+        Index("ix_product_photos_product_position", "product_id", "position"),
+        Index(
+            "uq_product_photos_one_primary",
+            "product_id",
+            unique=True,
+            postgresql_where=text("is_primary"),
+        ),
+    )
+
 
 class ProductSetItem(Base, TimestampMixin):
     __tablename__ = "product_set_items"

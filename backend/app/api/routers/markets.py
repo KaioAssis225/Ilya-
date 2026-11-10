@@ -36,7 +36,7 @@ from app.models.market import (
     VAT_REJECTED,
     VAT_SOURCE_IMPORT,
 )
-from app.models.product import Product
+from app.models.product import Product, ProductPhoto
 from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
 from app.api.routers.product_groups import product_type_key
@@ -333,6 +333,42 @@ async def sync_europe_media(
             await db.commit()
             copied += 1
 
+    # Galeria: fotos extras (e a linha da principal) ainda emprestadas do BR.
+    # `products.photo_path` é o espelho da principal e acompanha a linha dela.
+    budget = limit - copied - len(failed)
+    if budget > 0:
+        gallery = (await db.execute(
+            select(ProductPhoto, Product)
+            .join(Product, Product.id == ProductPhoto.product_id)
+            .where(
+                Product.market_code == "EU",
+                not_(ProductPhoto.photo_path.like(_NOT_YET_EU_PHOTO)),
+            )
+            .order_by(Product.product_code, ProductPhoto.position)
+            .limit(budget)
+            .execution_options(skip_market_scope=True)
+        )).all()
+        for photo, owner in gallery:
+            if photo.is_primary and (owner.photo_path or "").startswith("object://eu-"):
+                photo.photo_path = owner.photo_path  # principal já copiada acima
+                await db.commit()
+                continue
+            try:
+                new_path = await copy_upload_to_market(photo.photo_path, kind="products")
+            except Exception as exc:  # um arquivo ruim não interrompe o lote
+                failed.append({
+                    "kind": "product_photos",
+                    "id": str(photo.id),
+                    "code": owner.product_code,
+                    "error": type(exc).__name__,
+                })
+                continue
+            photo.photo_path = new_path
+            if photo.is_primary:
+                owner.photo_path = new_path
+            await db.commit()
+            copied += 1
+
     remaining = 0
     for model in (Product, OptionalColor):
         remaining += (await db.execute(
@@ -344,6 +380,15 @@ async def sync_europe_media(
             )
             .execution_options(skip_market_scope=True)
         )).scalar_one()
+    remaining += (await db.execute(
+        select(func.count()).select_from(ProductPhoto)
+        .join(Product, Product.id == ProductPhoto.product_id)
+        .where(
+            Product.market_code == "EU",
+            not_(ProductPhoto.photo_path.like(_NOT_YET_EU_PHOTO)),
+        )
+        .execution_options(skip_market_scope=True)
+    )).scalar_one()
     return {"copied": copied, "failed": failed, "remaining": remaining}
 
 
