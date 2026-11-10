@@ -1,12 +1,21 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import and_, case, false, func, select
+from sqlalchemy import and_, case, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_principal, get_db_session, is_client_account, require_dashboard_access
+from app.api.deps import (
+    get_current_principal,
+    get_db_session,
+    is_client_account,
+    require_dashboard_access,
+    require_directory_access,
+)
 from app.core.limiter import limiter
+from app.core.search import literal_contains_pattern
 from app.core.regions import REGIONS, states_for_region
 from app.models.client import Client
 from app.models.order import Order, OrderItem
@@ -14,6 +23,8 @@ from app.models.representative import Representative
 from app.models.user import User, UserRole
 from app.schemas.dashboard import (
     ChartPoint,
+    ClientContactRow,
+    ClientsDashboard,
     DashboardMetrics,
     DashboardOverview,
     ProductRanking,
@@ -40,6 +51,10 @@ async def get_overview(
     end_date: date | None = Query(default=None),
     rep_id: uuid.UUID | None = Query(default=None),
     region: str | None = Query(default=None),
+    # Aba do dashboard: "quotes" = orçamentos (ainda não confirmados, abertos ou
+    # cancelados, datados pela criação); "orders" = pedidos (orçamentos
+    # confirmados, datados pela confirmação). Ausente = tudo junto (legado).
+    kind: Literal["quotes", "orders"] | None = Query(default=None),
     ranking_limit: int = Query(default=100, ge=5, le=500),
     db: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_dashboard_access),
@@ -63,11 +78,16 @@ async def get_overview(
         datetime.min.time(),
         tzinfo=timezone.utc,
     )
+    date_column = Order.finalized_at if kind == "orders" else Order.created_at
     conditions = [
         Order.market_code == principal.code,
-        Order.created_at >= start_dt,
-        Order.created_at < end_exclusive,
+        date_column >= start_dt,
+        date_column < end_exclusive,
     ]
+    if kind == "quotes":
+        conditions.append(Order.is_finalized.is_(False))
+    elif kind == "orders":
+        conditions.append(Order.is_finalized.is_(True))
     if current_user.role == UserRole.representante:
         conditions.append(
             Order.rep_id == current_user.rep_id
@@ -95,6 +115,15 @@ async def get_overview(
     open_condition = and_(
         Order.is_finalized.is_(False),
         Order.is_cancelled.is_(False),
+    )
+    delivered_condition = and_(
+        Order.is_finalized.is_(True),
+        Order.order_stage == "delivered",
+    )
+    # Pedido sem etapa gravada conta como "em produção" (mesma regra do app).
+    production_condition = and_(
+        Order.is_finalized.is_(True),
+        Order.order_stage.is_distinct_from("delivered"),
     )
     metrics_stmt = filtered(
         select(
@@ -140,6 +169,16 @@ async def get_overview(
             func.count(Order.id)
             .filter(Order.is_cancelled.is_(True))
             .label("orders_cancelled"),
+            func.coalesce(
+                func.sum(case((production_condition, Order.total_with_ipi), else_=0)),
+                0,
+            ).label("revenue_production"),
+            func.coalesce(
+                func.sum(case((delivered_condition, Order.total_with_ipi), else_=0)),
+                0,
+            ).label("revenue_delivered"),
+            func.count(Order.id).filter(production_condition).label("orders_production"),
+            func.count(Order.id).filter(delivered_condition).label("orders_delivered"),
         ).select_from(Order)
     )
     metrics_row = (await db.execute(metrics_stmt)).one()
@@ -152,13 +191,17 @@ async def get_overview(
         orders_finalized=int(metrics_row.orders_finalized),
         orders_open=int(metrics_row.orders_open),
         orders_cancelled=int(metrics_row.orders_cancelled),
+        revenue_production=float(metrics_row.revenue_production),
+        revenue_delivered=float(metrics_row.revenue_delivered),
+        orders_production=int(metrics_row.orders_production),
+        orders_delivered=int(metrics_row.orders_delivered),
     )
 
     span_days = (end_date - start_date).days + 1
     granularity = "day" if span_days <= 45 else "week" if span_days <= 180 else "month"
     bucket = func.date_trunc(
         granularity,
-        func.timezone("UTC", Order.created_at),
+        func.timezone("UTC", date_column),
     ).label("bucket")
     chart_stmt = filtered(
         select(
@@ -236,6 +279,7 @@ async def get_overview(
     ]
 
     return DashboardOverview(
+        kind=kind,
         start_date=start_date,
         end_date=end_date,
         granularity=granularity,
@@ -243,4 +287,111 @@ async def get_overview(
         chart=chart,
         representatives=representatives,
         products=products,
+    )
+
+
+@router.get("/clients", response_model=ClientsDashboard)
+@limiter.limit("30/minute")
+async def get_clients_dashboard(
+    request: Request,
+    response: Response,
+    contacted: Literal["all", "yes", "no"] = Query(default="all"),
+    q: str | None = Query(default=None, max_length=200),
+    skip: int = Query(default=0, ge=0, le=1_000_000),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_directory_access),
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Dashboard de Clientes: quem já foi contactado e quem ainda não.
+
+    Mesmo escopo da listagem de clientes: representante só enxerga a própria
+    carteira, admin e operadores internos o mercado inteiro, e conta de cliente
+    não tem acesso. Os contadores vêm do servidor, sobre a carteira inteira do
+    usuário (sem depender do filtro ou da busca da lista).
+    """
+    if is_client_account(current_user):
+        raise HTTPException(
+            status_code=403, detail="Operação não permitida para o seu nível de acesso."
+        )
+    # "Cliente contactado" só existe na ficha de Portugal; no Brasil o campo é
+    # descartado no cadastro, então o indicador não faria sentido.
+    if principal.code != "EU":
+        raise HTTPException(
+            status_code=404,
+            detail="Dashboard de clientes disponível apenas no mercado Portugal.",
+        )
+
+    scope = [Client.market_code == principal.code]
+    if current_user.role == UserRole.representante:
+        scope.append(
+            Client.rep_id == current_user.rep_id
+            if current_user.rep_id is not None
+            else false()
+        )
+
+    counts = (
+        await db.execute(
+            select(
+                func.count(Client.id).label("total"),
+                func.count(Client.id).filter(Client.contacted.is_(True)).label("contacted"),
+            )
+            .select_from(Client)
+            .where(*scope)
+        )
+    ).one()
+    total = int(counts.total)
+    contacted_count = int(counts.contacted)
+
+    filters = list(scope)
+    if contacted == "yes":
+        filters.append(Client.contacted.is_(True))
+    elif contacted == "no":
+        filters.append(Client.contacted.is_(False))
+    search = q.strip() if q else ""
+    if search:
+        pattern = literal_contains_pattern(search)
+        filters.append(
+            or_(
+                Client.name.ilike(pattern, escape="\\"),
+                Client.contact_name.ilike(pattern, escape="\\"),
+                Client.email.ilike(pattern, escape="\\"),
+            )
+        )
+
+    filtered_total = (
+        await db.execute(select(func.count()).select_from(Client).where(*filters))
+    ).scalar_one()
+    rows = (
+        await db.execute(
+            select(Client, Representative.name.label("rep_name"))
+            .outerjoin(Representative, Representative.id == Client.rep_id)
+            .where(*filters)
+            .order_by(Client.contacted.asc(), func.lower(Client.name).asc(), Client.id.asc())
+            .offset(skip)
+            .limit(limit)
+        )
+    ).all()
+    items = [
+        ClientContactRow(
+            id=client.id,
+            name=client.name,
+            contact_name=client.contact_name,
+            phone=client.phone,
+            email=client.email,
+            city=client.city,
+            country=client.country,
+            rep_id=client.rep_id,
+            rep_name=rep_name,
+            contacted=bool(client.contacted),
+        )
+        for client, rep_name in rows
+    ]
+    return ClientsDashboard(
+        total=total,
+        contacted=contacted_count,
+        not_contacted=total - contacted_count,
+        contacted_pct=round(contacted_count / total * 100, 1) if total else 0.0,
+        filtered_total=int(filtered_total),
+        items=items,
     )

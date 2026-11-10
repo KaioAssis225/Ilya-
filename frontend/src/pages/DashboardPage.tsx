@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'react-router'
 import { Download, LayoutDashboard } from 'lucide-react'
-import { useDashboardOverview, DASHBOARD_REGIONS } from '../hooks/useDashboard'
+import { useDashboardOverview, DASHBOARD_REGIONS, type DashboardKind } from '../hooks/useDashboard'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
 import { useAuth } from '../hooks/useAuth'
@@ -38,36 +39,69 @@ function todayISO(offsetDays = 0) {
   return d.toISOString().slice(0, 10)
 }
 
-type MetricKey = 'revenue_total' | 'revenue_finalized' | 'revenue_open' | 'revenue_cancelled' | 'orders_total' | 'orders_finalized' | 'orders_open' | 'orders_cancelled'
+type MetricKey =
+  | 'revenue_total' | 'revenue_finalized' | 'revenue_open' | 'revenue_cancelled'
+  | 'revenue_production' | 'revenue_delivered'
+  | 'orders_total' | 'orders_finalized' | 'orders_open' | 'orders_cancelled'
+  | 'orders_production' | 'orders_delivered'
+
+interface MetricDef { label: string; small: string; kind: 'revenue' | 'orders' }
 
 // As chaves seguem o contrato da API (`revenue_*` / `orders_*`); só os rótulos
-// mudam — no vocabulário comercial da Ilya é "Orçamento" e "Valor".
-const METRIC_CONFIG: Record<MetricKey, { label: string; small: string; kind: 'revenue' | 'orders' }> = {
-  revenue_total: { label: 'Valor total', small: 'Todos os orçamentos', kind: 'revenue' },
-  revenue_finalized: { label: 'Valor finalizado', small: 'Orçamentos faturados', kind: 'revenue' },
-  revenue_open: { label: 'Valor em aberto', small: 'Aguardando finalização', kind: 'revenue' },
-  revenue_cancelled: { label: 'Valor cancelado', small: 'Cancelamentos totais', kind: 'revenue' },
-  orders_total: { label: 'Orçamentos total', small: 'Todos os status', kind: 'orders' },
-  orders_finalized: { label: 'Orçamentos finalizados', small: 'Faturados', kind: 'orders' },
-  orders_open: { label: 'Orçamentos em aberto', small: 'Aguardando finalização', kind: 'orders' },
-  orders_cancelled: { label: 'Orçamentos cancelados', small: 'Cancelados totalmente', kind: 'orders' },
+// mudam. Cada aba mostra apenas os indicadores do seu tipo: "Orçamento" é o
+// documento ainda não confirmado; "Pedido" é o orçamento já confirmado.
+const TAB_METRICS: Record<DashboardKind, [MetricKey, MetricDef][]> = {
+  quotes: [
+    ['revenue_total', { label: 'Valor total', small: 'Orçamentos não cancelados', kind: 'revenue' }],
+    ['revenue_open', { label: 'Valor em aberto', small: 'Aguardando confirmação', kind: 'revenue' }],
+    ['revenue_cancelled', { label: 'Valor cancelado', small: 'Cancelamentos totais', kind: 'revenue' }],
+    ['orders_total', { label: 'Orçamentos total', small: 'Em aberto e cancelados', kind: 'orders' }],
+    ['orders_open', { label: 'Orçamentos em aberto', small: 'Aguardando confirmação', kind: 'orders' }],
+    ['orders_cancelled', { label: 'Orçamentos cancelados', small: 'Cancelados totalmente', kind: 'orders' }],
+  ],
+  orders: [
+    ['revenue_total', { label: 'Valor total', small: 'Todos os pedidos', kind: 'revenue' }],
+    ['revenue_production', { label: 'Valor em produção', small: 'Em produção', kind: 'revenue' }],
+    ['revenue_delivered', { label: 'Valor entregue', small: 'Entregues', kind: 'revenue' }],
+    ['orders_total', { label: 'Pedidos total', small: 'Confirmados no período', kind: 'orders' }],
+    ['orders_production', { label: 'Pedidos em produção', small: 'Etapa produção', kind: 'orders' }],
+    ['orders_delivered', { label: 'Pedidos entregues', small: 'Etapa entregue', kind: 'orders' }],
+  ],
 }
 
-function DashboardChart({ series, activeMetric, granularity, locale, currency, integer }: {
+const TAB_TEXT: Record<DashboardKind, { name: string; singular: string; plural: string; subtitle: string }> = {
+  quotes: { name: 'Orçamentos', singular: 'orçamento', plural: 'orçamentos', subtitle: 'Valores e orçamentos consolidados' },
+  orders: { name: 'Pedidos', singular: 'pedido', plural: 'pedidos', subtitle: 'Valores e pedidos confirmados consolidados' },
+}
+
+// Aba escolhida: vai na URL (?aba=pedidos) e fica lembrada para a próxima visita.
+const TAB_STORAGE_KEY = 'ilya-dashboard-tab'
+const TAB_PARAM: Record<DashboardKind, string> = { quotes: 'orcamentos', orders: 'pedidos' }
+
+function readStoredTab(): DashboardKind {
+  try {
+    return localStorage.getItem(TAB_STORAGE_KEY) === 'orders' ? 'orders' : 'quotes'
+  } catch {
+    return 'quotes'
+  }
+}
+
+function DashboardChart({ series, metric, noun, granularity, locale, currency, integer }: {
   series: { key: string; revenue: number; orders: number }[]
-  activeMetric: MetricKey
+  metric: MetricDef
+  noun: string
   granularity: string
   locale: string
   currency: Intl.NumberFormat
   integer: Intl.NumberFormat
 }) {
-  const kind = METRIC_CONFIG[activeMetric].kind
+  const kind = metric.kind
   const values = series.map(p => (kind === 'revenue' ? p.revenue : p.orders))
   const max = Math.max(...values, 1) * 1.15
   const width = 1000, height = 260, left = 64, top = 20
 
   if (series.length === 0) {
-    return <p className="py-16 text-center text-sm text-muted">Nenhum orçamento encontrado para os filtros selecionados.</p>
+    return <p className="py-16 text-center text-sm text-muted">Nenhum {noun} encontrado para os filtros selecionados.</p>
   }
 
   const step = series.length === 1 ? width : width / (series.length - 1)
@@ -75,7 +109,7 @@ function DashboardChart({ series, activeMetric, granularity, locale, currency, i
   const showEvery = Math.max(1, Math.ceil(series.length / 7))
 
   return (
-    <svg viewBox={`0 0 ${left + width + 20} ${height + top + 50}`} className="w-full h-auto max-h-[340px]" role="img" aria-label={`Gráfico de ${METRIC_CONFIG[activeMetric].label}`}>
+    <svg viewBox={`0 0 ${left + width + 20} ${height + top + 50}`} className="w-full h-auto max-h-[340px]" role="img" aria-label={`Gráfico de ${metric.label}`}>
       {[0, 1, 2, 3, 4].map(i => {
         const y = top + (height / 4) * i
         const value = max - (max / 4) * i
@@ -123,7 +157,14 @@ export default function DashboardPage() {
   const [repId, setRepId] = useState('')
   const [repQuery, setRepQuery] = useState('')
   const [region, setRegion] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('aba')
+  const [storedTab] = useState<DashboardKind>(readStoredTab)
+  const tab: DashboardKind = tabParam === TAB_PARAM.orders ? 'orders' : tabParam === TAB_PARAM.quotes ? 'quotes' : storedTab
+  const text = TAB_TEXT[tab]
+  const metricDefs = TAB_METRICS[tab]
   const [activeMetric, setActiveMetric] = useState<MetricKey>('revenue_total')
+  const activeDef = (metricDefs.find(([key]) => key === activeMetric) ?? metricDefs[0])[1]
   const [repsExpanded, setRepsExpanded] = useState(false)
   const [productsExpanded, setProductsExpanded] = useState(false)
   // Bloco 95: animação de entrada toda vez que a página monta (toda vez que
@@ -145,13 +186,22 @@ export default function DashboardPage() {
     ...(selectedRep ? [selectedRep] : []),
     ...(repsPage?.items ?? []).filter((rep) => rep.id !== selectedRep?.id),
   ]
-  const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined, region: region || undefined })
+  const { data, isLoading } = useDashboardOverview({ start_date: startDate, end_date: endDate, rep_id: repId || undefined, region: region || undefined, kind: tab })
+
+  function selectTab(next: DashboardKind) {
+    if (next === tab) return
+    try { localStorage.setItem(TAB_STORAGE_KEY, next) } catch { /* sem storage: só a URL guarda a aba */ }
+    setActiveMetric('revenue_total')
+    setRepsExpanded(false)
+    setProductsExpanded(false)
+    setSearchParams({ aba: TAB_PARAM[next] }, { replace: true })
+  }
 
   const chartTotal = useMemo(() => {
     if (!data) return 0
-    const kind = METRIC_CONFIG[activeMetric].kind
+    const kind = activeDef.kind
     return data.chart.reduce((sum, p) => sum + (kind === 'revenue' ? p.revenue : p.orders), 0)
-  }, [data, activeMetric])
+  }, [data, activeDef])
 
   function clearFilters() {
     setStartDate(todayISO(-29))
@@ -165,16 +215,9 @@ export default function DashboardPage() {
     if (!data) return
     const lines = [
       csvRow(['Métrica', 'Valor']),
-      csvRow(['Valor total', data.metrics.revenue_total]),
-      csvRow(['Valor finalizado', data.metrics.revenue_finalized]),
-      csvRow(['Valor em aberto', data.metrics.revenue_open]),
-      csvRow(['Valor cancelado', data.metrics.revenue_cancelled]),
-      csvRow(['Orçamentos total', data.metrics.orders_total]),
-      csvRow(['Orçamentos finalizados', data.metrics.orders_finalized]),
-      csvRow(['Orçamentos em aberto', data.metrics.orders_open]),
-      csvRow(['Orçamentos cancelados', data.metrics.orders_cancelled]),
+      ...metricDefs.map(([key, def]) => csvRow([def.label, data.metrics[key]])),
       '',
-      csvRow(['Representante', 'Orçamentos', 'Valor']),
+      csvRow(['Representante', text.name, 'Valor']),
       ...data.representatives.map(r => csvRow([r.name, r.orders, r.revenue])),
       '',
       csvRow(['Código', 'Descrição', 'Quantidade', 'Valor']),
@@ -183,7 +226,7 @@ export default function DashboardPage() {
     const blob = new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `dashboard-bi_${startDate}_${endDate}.csv`
+    link.download = `dashboard-bi-${TAB_PARAM[tab]}_${startDate}_${endDate}.csv`
     link.click()
     URL.revokeObjectURL(link.href)
   }
@@ -194,6 +237,7 @@ export default function DashboardPage() {
         <DashboardIntro
           revenueTotal={data ? data.metrics.revenue_total : null}
           ordersTotal={data ? data.metrics.orders_total : null}
+          ordersLabel={text.name}
           onDone={hideIntro}
           locale={locale}
           currencyCode={currencyCode}
@@ -205,7 +249,7 @@ export default function DashboardPage() {
             <h1 className="font-display text-2xl font-semibold text-ink flex items-center gap-2">
               <LayoutDashboard className="w-6 h-6 text-gold" /> Dashboard BI Comercial
             </h1>
-            <p className="text-sm text-muted mt-1">Valores e orçamentos consolidados</p>
+            <p className="text-sm text-muted mt-1">{text.subtitle}</p>
           </div>
           <button
             onClick={exportCsv}
@@ -214,6 +258,25 @@ export default function DashboardPage() {
           >
             <Download className="w-4 h-4" /> Exportar CSV
           </button>
+        </div>
+
+        {/* Abas: orçamentos e pedidos têm indicadores e listas separados. */}
+        <div role="tablist" aria-label="Tipo de documento" className="inline-flex w-full md:w-auto mb-5 p-1 rounded-xl border border-line bg-white">
+          {(['quotes', 'orders'] as DashboardKind[]).map(kind => {
+            const selected = tab === kind
+            return (
+              <button
+                key={kind}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => selectTab(kind)}
+                className={`flex-1 md:flex-none min-h-11 px-6 rounded-lg text-sm font-semibold transition-colors ${selected ? 'bg-gold text-white' : 'text-ink-2 hover:bg-bg'}`}
+              >
+                {TAB_TEXT[kind].name}
+              </button>
+            )
+          })}
         </div>
 
         {/* Filtros */}
@@ -260,17 +323,16 @@ export default function DashboardPage() {
         )}
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 border border-line rounded-xl bg-white overflow-hidden mb-6">
-          {(Object.keys(METRIC_CONFIG) as MetricKey[]).map((key, i) => {
-            const config = METRIC_CONFIG[key]
+        <div role="tabpanel" aria-label={text.name} className="grid grid-cols-2 md:grid-cols-3 border border-line rounded-xl bg-white overflow-hidden mb-6">
+          {metricDefs.map(([key, config], i) => {
             const value = data?.metrics[key] ?? 0
             const selected = activeMetric === key
             return (
               <button
                 key={key}
                 onClick={() => setActiveMetric(key)}
-                // Divisórias por breakpoint: 2 colunas × 4 linhas no mobile, 4 × 2 a partir de md.
-                className={`text-left p-4 border-line ${i % 2 === 0 ? 'max-md:border-r' : ''} ${i < 6 ? 'max-md:border-b' : ''} ${i % 4 !== 3 ? 'md:border-r' : ''} ${i < 4 ? 'md:border-b' : ''} transition-colors ${selected ? 'bg-gold-wash' : 'hover:bg-bg'}`}
+                // Divisórias por breakpoint: 2 colunas × 3 linhas no mobile, 3 × 2 a partir de md.
+                className={`text-left p-4 border-line ${i % 2 === 0 ? 'max-md:border-r' : ''} ${i < 4 ? 'max-md:border-b' : ''} ${i % 3 !== 2 ? 'md:border-r' : ''} ${i < 3 ? 'md:border-b' : ''} transition-colors ${selected ? 'bg-gold-wash' : 'hover:bg-bg'}`}
                 style={selected ? { boxShadow: 'inset 0 3px var(--color-gold)' } : undefined}
               >
                 <span className="text-xs text-muted">{config.label}</span>
@@ -287,19 +349,19 @@ export default function DashboardPage() {
         <div className="bg-white border border-line rounded-xl p-4 md:p-5 mb-6">
           <div className="flex items-start justify-between gap-3 mb-2">
             <div>
-              <h3 className="text-base font-semibold text-ink">{METRIC_CONFIG[activeMetric].label}</h3>
+              <h3 className="text-base font-semibold text-ink">{activeDef.label}</h3>
               <p className="text-xs text-muted mt-0.5">
-                Evolução {data?.granularity === 'day' ? 'diária' : data?.granularity === 'week' ? 'semanal' : 'mensal'} em {METRIC_CONFIG[activeMetric].kind === 'revenue' ? 'reais' : 'número de orçamentos'}
+                Evolução {data?.granularity === 'day' ? 'diária' : data?.granularity === 'week' ? 'semanal' : 'mensal'} em {activeDef.kind === 'revenue' ? 'reais' : `número de ${text.plural}`}
               </p>
             </div>
             <span className="text-gold font-bold text-base whitespace-nowrap">
-              {METRIC_CONFIG[activeMetric].kind === 'revenue' ? currency.format(chartTotal) : `${integer.format(chartTotal)} orçamentos`}
+              {activeDef.kind === 'revenue' ? currency.format(chartTotal) : `${integer.format(chartTotal)} ${text.plural}`}
             </span>
           </div>
           {isLoading ? (
             <p className="py-16 text-center text-sm text-muted">Carregando…</p>
           ) : (
-            <DashboardChart series={data?.chart ?? []} activeMetric={activeMetric} granularity={data?.granularity ?? 'day'} locale={locale} currency={currency} integer={integer} />
+            <DashboardChart series={data?.chart ?? []} metric={activeDef} noun={text.singular} granularity={data?.granularity ?? 'day'} locale={locale} currency={currency} integer={integer} />
           )}
         </div>
 
@@ -309,7 +371,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-ink">Desempenho por Representante</h3>
-                <p className="text-[11px] text-muted mt-0.5">Orçamentos e valor no período filtrado</p>
+                <p className="text-[11px] text-muted mt-0.5">{text.name} e valor no período filtrado</p>
               </div>
               {(data?.representatives.length ?? 0) > 5 && (
                 <button onClick={() => setRepsExpanded(v => !v)} className="text-xs text-gold hover:underline flex-shrink-0">
@@ -322,7 +384,7 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="text-left text-xs text-muted uppercase tracking-wider">
                     <th className="py-2">Nome</th>
-                    <th className="py-2 text-right">Orçamentos</th>
+                    <th className="py-2 text-right">{text.name}</th>
                     <th className="py-2 text-right">Valor</th>
                   </tr>
                 </thead>
