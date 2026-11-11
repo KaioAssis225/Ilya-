@@ -53,6 +53,7 @@ from app.core.markets import (
 )
 from app.models.notification import Notification
 from app.core.stock_access import can_use_stock
+from app.core.stock_handoff import stock_handoff_configured
 from app.models.market import (
     BR_MARKET,
     ProductMarket,
@@ -482,8 +483,11 @@ async def me(
     data["can_approve_tax"] = bool(principal.access and principal.access.can_approve_tax)
     data["allowed_markets"] = await allowed_markets(db, current_user)
     # Só a sessão do mercado BR enxerga o acesso ao Estoque (EU e plataforma não).
+    # Sem a chave de assinatura o link some (o emissor responderia 503).
     data["can_access_stock"] = (
-        principal.code == BR_MARKET and can_use_stock(principal.user)
+        principal.code == BR_MARKET
+        and can_use_stock(principal.user)
+        and stock_handoff_configured()
     )
     return data
 

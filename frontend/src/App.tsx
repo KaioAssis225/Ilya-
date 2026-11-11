@@ -13,6 +13,7 @@ import type { MarketCode } from './components/MarketFlag'
 const PrivateApp = lazy(() => import('./PrivateApp'))
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
 const PlatformApp = lazy(() => import('./PlatformApp'))
+const EstoqueConectarPage = lazy(() => import('./pages/EstoqueConectarPage'))
 
 function isClient(user: AuthUser) {
   return user.role === 'cliente' || (user.role === 'vendedor' && Boolean(user.linked_id))
@@ -39,7 +40,11 @@ function PrivateGate() {
     return <MarketTransition market={storedMarket === 'EU' ? 'EU' : 'BR'} />
   }
 
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) {
+    // Só esta rota volta ao ponto de origem depois do login (lista fechada).
+    const from = location.pathname === '/estoque/conectar' ? location.pathname : undefined
+    return <Navigate to="/login" replace state={from ? { from } : undefined} />
+  }
   if (user.must_change_password && location.pathname !== '/trocar-senha') {
     return <Navigate to="/trocar-senha" replace />
   }
@@ -65,6 +70,7 @@ export default function App() {
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/platform/*" element={<PlatformAuthProvider><PlatformApp /></PlatformAuthProvider>} />
             <Route element={<PrivateGate />}>
+              <Route path="/estoque/conectar" element={<EstoqueConectarPage />} />
               <Route path="/*" element={<PrivateApp />} />
             </Route>
           </Routes>

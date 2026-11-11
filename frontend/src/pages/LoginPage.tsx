@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { MarketFlag, type MarketCode } from '../components/MarketFlag'
@@ -17,6 +17,9 @@ function nowMs(): number {
 export default function LoginPage() {
   const { login, user, switchMarket } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  // Único destino além da raiz: a página que o Estoque abriu em popup (login único).
+  const afterLogin = (location.state as { from?: string } | null)?.from === '/estoque/conectar' ? '/estoque/conectar' : '/'
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -28,8 +31,8 @@ export default function LoginPage() {
   const authenticatingRef = useRef(false)
 
   useEffect(() => {
-    if (user && !authenticatingRef.current && !choosingMarket) navigate('/', { replace: true })
-  }, [choosingMarket, navigate, user])
+    if (user && !authenticatingRef.current && !choosingMarket) navigate(afterLogin, { replace: true })
+  }, [afterLogin, choosingMarket, navigate, user])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -42,7 +45,7 @@ export default function LoginPage() {
         setChoosingMarket(true)
         return
       }
-      navigate('/', { replace: true })
+      navigate(afterLogin, { replace: true })
     } catch {
       setError('Usuário ou senha incorretos.')
       authenticatingRef.current = false
@@ -61,7 +64,7 @@ export default function LoginPage() {
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       const remaining = Math.max(0, (reduceMotion ? 0 : 1650) - (nowMs() - startedAt))
       if (remaining > 0) await new Promise(resolve => window.setTimeout(resolve, remaining))
-      navigate('/', { replace: true })
+      navigate(afterLogin, { replace: true })
     } catch {
       setError('Não foi possível abrir esse ambiente. Tente novamente.')
       setChoosingMarket(false)

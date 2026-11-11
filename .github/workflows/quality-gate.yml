@@ -139,7 +139,8 @@ jobs:
   backend-integration:
     name: Backend — testes de integração (PostgreSQL real)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A suíte já gasta ~4m45s na main; com 5 min o job era cancelado a cada teste novo.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend

@@ -124,6 +124,13 @@ class Settings(BaseSettings):
     # Refresh é limitado por sessão (hash do cookie), não por IP — assim uma
     # sessão em loop é contida sem derrubar os colegas atrás do mesmo NAT.
     RATE_LIMIT_REFRESH: str = "10/minute"
+    # Login unico com o Estoque Brasil. A chave privada ES256 (PEM) vem SOMENTE
+    # de variavel de ambiente, colocada pelo dono do Railway; nunca em arquivo,
+    # log ou commit. Sem a chave (ou sem kid/origem) o emissor responde 503.
+    STOCK_HANDOFF_PRIVATE_KEY: str = ""
+    STOCK_HANDOFF_KID: str = ""
+    STOCK_APP_ORIGIN: str = ""
+    RATE_LIMIT_STOCK_HANDOFF: str = "10/minute"
     RATE_LIMIT_REDIS_TIMEOUT_SECONDS: float = 2.0
     LOGIN_FAILURE_WINDOW_MINUTES: int = 15
     LOGIN_DIRECTED_ALERT_THRESHOLD: int = 20
