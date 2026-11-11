@@ -57,6 +57,7 @@ from tests.factories import (
     make_product_market,
     make_product_price,
     make_product_type,
+    make_representative,
     make_user,
     make_user_market,
 )
@@ -779,7 +780,24 @@ async def test_reg_price_eu_quote_client_account_can_pick_any_active_list(
     assert own.json()["price_list_code"] == "lojista"
 
 
-async def test_eu_pvp_admin_discount_cap_is_70(
+async def _rep_user(db: AsyncSession, client_id: uuid.UUID, max_discount: str) -> Admin:
+    """Representante EU com o desconto máximo dado e dono do cliente."""
+    rep = await make_representative(db, market_code="EU", name="Rep PT desconto")
+    rep.max_discount = D(max_discount)
+    cliente = (await db.execute(
+        select(Client).where(Client.id == client_id).execution_options(**_SKIP_SCOPE)
+    )).scalar_one()
+    cliente.rep_id = rep.id
+    user = await make_user(
+        db, email=f"p07-rep-{uuid.uuid4().hex[:10]}@ilya-test.invalid",
+        role=UserRole.representante, home_market="EU",
+    )
+    await make_user_market(db, user, market_code="EU", role="representante", rep_id=rep.id)
+    await db.commit()
+    return Admin(create_access_token(user.id, "representante", user.auth_version, "EU"), user.id)
+
+
+async def test_eu_pvp_admin_sem_representante_aceita_ate_100(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     admin = await _admin(db_session, "EU")
@@ -790,20 +808,80 @@ async def test_eu_pvp_admin_discount_cap_is_70(
 
     ok = await _post_order(
         client, admin, client_id,
-        [{"product_code": code, "qty": 1, "discount": "70.00"}],
+        [{"product_code": code, "qty": 1, "discount": "72.00"}],
         price_list_code="pvp",
     )
     assert ok.status_code == 201, ok.text
-    assert _dec(ok.json()["items"][0]["discount"]) == D("70.00")
+    assert _dec(ok.json()["items"][0]["discount"]) == D("72.00")
 
-    above_cap = await _post_order(
-        client, admin, client_id,
-        [{"product_code": code, "qty": 1, "discount": "70.01"}],
-        price_list_code="pvp",
+
+async def test_eu_pvp_admin_segue_o_cadastro_do_representante_do_pedido(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
     )
-    assert above_cap.status_code == 422, above_cap.text
+    client_id = await _client(db_session, "EU", "pvp")
+    rep = await make_representative(db_session, market_code="EU", name="Rep PT 72")
+    rep.max_discount = D("72.00")
+    await db_session.commit()
+
+    def _body(discount: str) -> dict:
+        return {
+            "client_id": str(client_id), "rep_id": str(rep.id), "price_list_code": "pvp",
+            "items": [{"product_code": code, "qty": 1, "discount": discount}],
+        }
+
+    ok = await client.post("/api/v1/orders", json=_body("72.00"), headers=_auth(admin.token))
+    assert ok.status_code == 201, ok.text
+    assert _dec(ok.json()["items"][0]["discount"]) == D("72.00")
+
+    above = await client.post("/api/v1/orders", json=_body("72.01"), headers=_auth(admin.token))
+    assert above.status_code == 422, above.text
+
+
+async def test_eu_pvp_representante_cadastro_72_aceita_72_e_recusa_72_01(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "pvp")
+    rep_user = await _rep_user(db_session, client_id, "72.00")
+
+    ok = await _post_order(
+        client, rep_user, client_id,
+        [{"product_code": code, "qty": 1, "discount": "72.00"}], price_list_code="pvp",
+    )
+    assert ok.status_code == 201, ok.text
+    assert _dec(ok.json()["items"][0]["discount"]) == D("72.00")
+
+    above = await _post_order(
+        client, rep_user, client_id,
+        [{"product_code": code, "qty": 1, "discount": "72.01"}], price_list_code="pvp",
+    )
+    assert above.status_code == 422, above.text
     await _discard_failed_request(db_session)
     assert await _order_count(db_session, client_id) == 1
+
+
+async def test_eu_pvp_representante_com_cadastro_10_recusa_11(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    admin = await _admin(db_session, "EU")
+    code, _ = await _product(
+        db_session, "EU", admin.user_id, amounts=_EU_AMOUNTS, tax_rate=D("23.00"),
+    )
+    client_id = await _client(db_session, "EU", "pvp")
+    rep_user = await _rep_user(db_session, client_id, "10.00")
+
+    response = await _post_order(
+        client, rep_user, client_id,
+        [{"product_code": code, "qty": 1, "discount": "11.00"}], price_list_code="pvp",
+    )
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize("profile", ["lojista", "corporativo", "arquiteto"])

@@ -72,7 +72,6 @@ _HUNDRED = Decimal("100")
 _CENT = Decimal("0.01")
 _MAX_ORDER_TOTAL = Decimal("999999999999999999.99")
 _EU_DISCOUNT_PRICE_LIST = "pvp"
-_EU_PVP_ADMIN_MAX_DISCOUNT = Decimal("70.00")
 
 
 def _decimal(value: object) -> Decimal:
@@ -821,7 +820,8 @@ def _resolve_max_discount(
         if is_client_account(current_user):
             return _ZERO
         if current_user.role == UserRole.admin:
-            return _EU_PVP_ADMIN_MAX_DISCOUNT
+            # Sem teto fixo: vale o cadastro do representante do pedido; sem cadastro, 100.
+            return _decimal(rep.max_discount) if rep else _HUNDRED
         if current_user.role == UserRole.representante or is_internal_operator(current_user):
             return _decimal(rep.max_discount) if rep else _ZERO
         return _ZERO

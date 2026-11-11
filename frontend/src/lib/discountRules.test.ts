@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { UserRole } from '../contexts/AuthContext'
-import {
-  EU_PVP_ADMIN_MAX_DISCOUNT,
-  lineMaxDiscount,
-  orderMaxDiscount,
-} from './discountRules'
+import { lineMaxDiscount, orderMaxDiscount } from './discountRules'
 
 describe('orderMaxDiscount', () => {
   it.each<[string, UserRole]>([
@@ -21,8 +17,13 @@ describe('orderMaxDiscount', () => {
     expect(orderMaxDiscount('EU', profile, role, 100)).toBe(0)
   })
 
-  it('pvp admin recebe 70', () => {
-    expect(orderMaxDiscount('EU', 'pvp', 'admin', 100)).toBe(EU_PVP_ADMIN_MAX_DISCOUNT)
+  it('pvp admin segue o cadastro (72 vira 72, sem teto de 70)', () => {
+    expect(orderMaxDiscount('EU', 'pvp', 'admin', 72)).toBe(72)
+    expect(orderMaxDiscount('EU', 'pvp', 'admin', 100)).toBe(100)
+  })
+
+  it.each<UserRole>(['representante', 'vendedor', 'admin'])('pvp %s com cadastro 72 aceita 72', (role) => {
+    expect(orderMaxDiscount('EU', 'pvp', role, 72)).toBe(72)
   })
 
   it.each<UserRole>(['representante', 'vendedor'])(

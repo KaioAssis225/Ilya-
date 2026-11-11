@@ -69,10 +69,15 @@ class TestResolveMaxDiscount:
             _user(role), _client("100.00"), None, "EU", profile
         ) == Decimal("0")
 
-    def test_eu_pvp_admin_recebe_setenta_por_cento(self):
+    def test_eu_pvp_admin_sem_cadastro_recebe_cem_por_cento(self):
         assert _resolve_max_discount(
-            _user(UserRole.admin), _client("100.00"), None, "EU", "pvp"
-        ) == Decimal("70.00")
+            _user(UserRole.admin), _client("0.00"), None, "EU", "pvp"
+        ) == Decimal("100")
+
+    def test_eu_pvp_admin_usa_cadastro_do_representante(self):
+        assert _resolve_max_discount(
+            _user(UserRole.admin), _client("0.00"), _rep("72.00"), "EU", "pvp"
+        ) == Decimal("72.00")
 
     def test_eu_pvp_operador_interno_usa_limite_do_representante(self):
         assert _resolve_max_discount(
@@ -150,8 +155,8 @@ class TestValidateDiscount:
         [
             (UserRole.representante, "pvp", "10.01", True),
             (UserRole.representante, "pvp", "10.00", False),
-            (UserRole.admin, "pvp", "71.00", True),
-            (UserRole.admin, "pvp", "70.00", False),
+            (UserRole.admin, "pvp", "72.00", False),
+            (UserRole.admin, "pvp", "100.00", False),
             (UserRole.cliente, "pvp", "1.00", True),
             (UserRole.admin, "lojista", "1.00", True),
         ],
