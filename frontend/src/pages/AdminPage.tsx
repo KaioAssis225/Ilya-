@@ -6,6 +6,7 @@ import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresent
 import RetentionGovernancePanel from '../components/RetentionGovernancePanel'
 import IncidentRegistryPanel from '../components/IncidentRegistryPanel'
 import { useDialog } from '../hooks/useDialog'
+import { canGrantStockAccess } from '../lib/stockAccess'
 import { useAuth } from '../hooks/useAuth'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -133,7 +134,7 @@ export default function AdminPage() {
 
   function openEdit(u: UserRead) {
     const homeAccess = u.market_accesses.find(access => access.market_code === u.home_market)
-    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: homeAccess?.role ?? u.role, rep_id: homeAccess?.rep_id ?? u.rep_id, is_active: u.is_active, can_view_dashboard: homeAccess?.can_view_dashboard ?? u.can_view_dashboard, home_market: u.home_market, allowed_markets: u.allowed_markets, market_accesses: u.market_accesses })
+    setEditForm({ email: u.email, username: u.username ?? '', full_name: u.full_name, role: homeAccess?.role ?? u.role, rep_id: homeAccess?.rep_id ?? u.rep_id, is_active: u.is_active, can_view_dashboard: homeAccess?.can_view_dashboard ?? u.can_view_dashboard, has_stock_access: u.has_stock_access, home_market: u.home_market, allowed_markets: u.allowed_markets, market_accesses: u.market_accesses })
     setRepQuery('')
     setError(null)
     setModal({ mode: 'edit', user: u })
@@ -153,7 +154,7 @@ export default function AdminPage() {
     e.preventDefault()
     setError(null)
     try {
-      await createM.mutateAsync(form)
+      await createM.mutateAsync({ ...form, has_stock_access: canGrantStockAccess(form.allowed_markets, form.role) && (form.has_stock_access ?? false) })
       setModal(null)
       showToast('Usuário criado com sucesso!')
     } catch (err: unknown) {
@@ -167,7 +168,7 @@ export default function AdminPage() {
     if (!modal?.user) return
     setError(null)
     try {
-      await updateM.mutateAsync({ id: modal.user.id, ...editForm })
+      await updateM.mutateAsync({ id: modal.user.id, ...editForm, has_stock_access: canGrantStockAccess(editForm.allowed_markets, editForm.role) && (editForm.has_stock_access ?? false) })
       setModal(null)
       showToast('Usuário atualizado!')
     } catch (err: unknown) {
@@ -273,14 +274,15 @@ export default function AdminPage() {
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">E-mail</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Perfil</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Status</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Estoque</th>
                 <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={5} className="text-center py-10 text-muted">Carregando…</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-muted">Carregando…</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-10 text-muted">Nenhum usuário encontrado.</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-muted">Nenhum usuário encontrado.</td></tr>
               ) : users.map(u => (
                 <tr key={u.id} className="border-t border-line hover:bg-surface-quiet transition-colors">
                   <td className="px-5 py-3 font-medium text-ink">{u.full_name}</td>
@@ -295,6 +297,11 @@ export default function AdminPage() {
                       ? <span className="flex items-center gap-1 text-xs text-olive"><UserCheck className="w-3.5 h-3.5" /> Ativo</span>
                       : <span className="flex items-center gap-1 text-xs text-terracotta"><UserX className="w-3.5 h-3.5" /> Inativo</span>
                     }
+                  </td>
+                  <td className="px-5 py-3">
+                    {u.has_stock_access && canGrantStockAccess(u.allowed_markets, u.role)
+                      ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap bg-gold/15 text-gold">Estoque</span>
+                      : <span className="text-xs text-muted">—</span>}
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-1 justify-end">
@@ -415,6 +422,15 @@ export default function AdminPage() {
                     {repsLoading && <span className="text-[11px] text-muted">Buscando…</span>}
                   </label>
                 )}
+                {canGrantStockAccess(form.allowed_markets, form.role) && (
+                  <fieldset className="space-y-2 rounded-xl border border-line p-3">
+                    <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Acesso às aplicações</legend>
+                    <label className="flex min-h-11 items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.has_stock_access ?? false} onChange={e => setForm({ ...form, has_stock_access: e.target.checked })} className="w-4 h-4 accent-gold" />
+                      <span className="text-sm text-ink-2">Acesso ao Estoque</span>
+                    </label>
+                  </fieldset>
+                )}
                 {error && <p className="text-xs text-terracotta">{error}</p>}
                 <div className="flex gap-2 pt-1">
                   <button type="button" onClick={() => setModal(null)} className="flex-1 py-2 border border-line text-muted rounded-lg text-sm hover:bg-bg transition-colors">Cancelar</button>
@@ -523,6 +539,15 @@ export default function AdminPage() {
                     <input type="checkbox" checked={editForm.can_view_dashboard ?? false} onChange={e => setEditForm({ ...editForm, can_view_dashboard: e.target.checked })} className="w-4 h-4 accent-gold" />
                     <span className="text-sm text-ink-2">Pode ver o Dashboard BI</span>
                   </label>
+                )}
+                {canGrantStockAccess(editForm.allowed_markets, editForm.role) && (
+                  <fieldset className="space-y-2 rounded-xl border border-line p-3">
+                    <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Acesso às aplicações</legend>
+                    <label className="flex min-h-11 items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={editForm.has_stock_access ?? false} onChange={e => setEditForm({ ...editForm, has_stock_access: e.target.checked })} className="w-4 h-4 accent-gold" />
+                      <span className="text-sm text-ink-2">Acesso ao Estoque</span>
+                    </label>
+                  </fieldset>
                 )}
                 {error && <p className="text-xs text-terracotta">{error}</p>}
                 <div className="flex gap-2 pt-1">

@@ -5,7 +5,7 @@ import uuid
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +25,8 @@ from app.core.client_invites import (
     client_identity_isolated,
 )
 from app.core.platform import lock_platform_admin_guard
+from app.core.privacy_audit import record_privacy_event
+from app.core.stock_access import stock_access_denial
 from app.core.security import hash_password, validate_password_strength
 from app.core.search import literal_contains_pattern
 from app.models.user import User, UserRole
@@ -41,7 +43,7 @@ from app.models.market import (
     VAT_APPROVED,
 )
 from app.schemas.auth import (
-    UserRead,
+    UserAdminRead,
     UserCreate,
     UserUpdate,
     UserPasswordReset,
@@ -257,7 +259,50 @@ async def _replace_market_links(
             setattr(current, field, getattr(incoming, field))
 
 
-@router.get("", response_model=list[UserRead])
+def _reconcile_stock_access(
+    db: AsyncSession,
+    request: Request,
+    *,
+    actor_id: uuid.UUID,
+    user: User,
+    requested: bool | None,
+) -> bool:
+    """Aplica `has_stock_access` com as regras do login único. Devolve se mudou.
+
+    - Marcar exige conta elegível (vínculo BR ativo; nem cliente nem
+      benchmark_readonly): senão 422, sem revelar mais que o necessário.
+    - Se o valor já gravado deixou de ser elegível (ex.: BR removido), o acesso
+      é retirado junto, para a coluna nunca prometer o que o emissor recusa.
+    - Toda mudança é auditada; o chamador incrementa `auth_version`.
+    """
+    denial = stock_access_denial(user)
+    target = user.has_stock_access if requested is None else requested
+    reason = "admin_change"
+    if target and denial is not None:
+        if requested:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Acesso ao Estoque exige vínculo ativo no mercado Brasil e "
+                "papel diferente de cliente ou identidade técnica.",
+            )
+        target = False
+        reason = f"auto_{denial}"
+    if target == user.has_stock_access:
+        return False
+    user.has_stock_access = target
+    record_privacy_event(
+        db,
+        actor_user_id=actor_id,
+        subject_type="user",
+        subject_id=user.id,
+        action="stock_access_granted" if target else "stock_access_revoked",
+        request=request,
+        context={"reason": reason},
+    )
+    return True
+
+
+@router.get("", response_model=list[UserAdminRead], response_model_exclude={"__all__": {"can_access_stock"}})
 async def list_users(
     response: Response,
     skip: int = Query(default=0, ge=0, le=1_000_000),
@@ -330,11 +375,12 @@ async def list_users(
     return users
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserAdminRead, response_model_exclude={"can_access_stock"}, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
-    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     # BUG-03 (Bloco 88): mesma política de complexidade do change-password
     try:
@@ -376,6 +422,7 @@ async def create_user(
             "Identidade sem mercado usa o papel técnico vendedor e não aceita vínculo comercial.",
         )
     user = User(
+        id=uuid.uuid4(),
         email=normalized_email,
         username=body.username,
         hashed_password=hash_password(body.password),
@@ -387,6 +434,11 @@ async def create_user(
         home_market=body.home_market if home_link else "BR",
     )
     user.allowed_market_links = links
+    if body.has_stock_access:
+        _reconcile_stock_access(
+            db, request, actor_id=platform.user.id, user=user, requested=True
+        )
+        user.auth_version = 1  # ainda não gravado: o default 0 só vale no flush
     db.add(user)
     try:
         await db.commit()
@@ -455,12 +507,13 @@ async def get_platform_permissions(
     return {"user_id": user_id, "capabilities": sorted(capabilities)}
 
 
-@router.patch("/{user_id}", response_model=UserRead)
+@router.patch("/{user_id}", response_model=UserAdminRead, response_model_exclude={"can_access_stock"})
 async def update_user(
     user_id: uuid.UUID,
     body: UserUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
-    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -472,6 +525,7 @@ async def update_user(
         for field, value in submitted.items()
         if value is not None or field == "rep_id"
     }
+    stock_requested = changes.pop("has_stock_access", None)
     market_accesses = changes.pop("market_accesses", None)
     market_access_changed = market_accesses is not None
     legacy_identity_synced = False
@@ -601,6 +655,9 @@ async def update_user(
         ).values(revoked_at=datetime.now(timezone.utc)))
     for field, value in changes.items():
         setattr(user, field, value)
+    stock_changed = _reconcile_stock_access(
+        db, request, actor_id=platform.user.id, user=user, requested=stock_requested
+    )
     if identity_security_changed:
         user.auth_version += 1
         await db.execute(
@@ -621,6 +678,9 @@ async def update_user(
             )
             .values(revoked=True, revoked_at=datetime.now(timezone.utc))
         )
+    if stock_changed and not identity_security_changed:
+        # O Estoque lê auth_version: mudar o acesso derruba/atualiza a sessão lá.
+        user.auth_version += 1
     try:
         await db.commit()
     except IntegrityError:
