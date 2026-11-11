@@ -322,20 +322,66 @@ jobs:
       # saída). Por isso: timeout curto por tentativa e até 3 tentativas.
       - name: Instalar dependências de sistema do Chromium (apt)
         shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 12
         run: |
+          # security.ubuntu.com ficou fora do ar (InRelease com Err em todas as
+          # tentativas). As libs do Chromium vêm do espelho principal do runner,
+          # então removemos as fontes security/backports antes do apt update.
+          sudo python3 - <<'PY'
+          import glob, re
+          for path in glob.glob("/etc/apt/sources.list.d/*.sources"):
+              out = []
+              for stanza in open(path).read().split("\n\n"):
+                  if "security.ubuntu.com" in stanza:
+                      continue
+                  def suites(m):
+                      keep = [x for x in m.group(2).split()
+                              if not x.endswith(("-security", "-backports"))]
+                      return m.group(1) + " ".join(keep)
+                  stanza = re.sub(r"(?m)^(Suites:[ \t]*)(.*)$", suites, stanza)
+                  if re.search(r"(?m)^Suites:[ \t]*$", stanza):
+                      continue
+                  out.append(stanza)
+              open(path, "w").write("\n\n".join(out))
+          for path in ["/etc/apt/sources.list"] + glob.glob("/etc/apt/sources.list.d/*.list"):
+              try:
+                  lines = open(path).read().splitlines()
+              except OSError:
+                  continue
+              keep = [l for l in lines if not re.search(r"security\.ubuntu\.com|-security|-backports", l)]
+              open(path, "w").write("\n".join(keep) + "\n")
+          PY
+          grep -rhE "^(URIs|Suites|deb )" /etc/apt/sources.list /etc/apt/sources.list.d/ || true
+
+          limpar_apt() {
+            # o timeout mata o python/sudo, mas o apt-get filho (root) sobrevive
+            # segurando o lock; sem isto as próximas tentativas morrem no lock.
+            sudo pkill -9 -x apt-get || true
+            sudo pkill -9 -x apt || true
+            sudo pkill -9 -x dpkg || true
+            for _ in $(seq 1 30); do
+              sudo fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || break
+              sleep 1
+            done
+            sudo dpkg --configure -a || true
+          }
+
           for attempt in 1 2 3; do
             echo "::group::install-deps — tentativa $attempt/3"
-            if timeout 150 python -m playwright install-deps chromium; then
+            if timeout -s KILL 150 python -m playwright install-deps chromium; then
               echo "::endgroup::"
               exit 0
             fi
             echo "::endgroup::"
             echo "::warning::install-deps falhou na tentativa $attempt/3"
+            limpar_apt
             [ "$attempt" -lt 3 ] && sleep $((attempt * 15))
           done
-          echo "::error::install-deps falhou nas 3 tentativas"
-          exit 1
+          # Os espelhos do Ubuntu podem ficar inacessíveis do runner (DNS/rede).
+          # O runner já traz a maioria das libs; seguimos e deixamos o próprio
+          # teste de renderização decidir: se faltar lib, ele falha com a causa.
+          echo "::warning::install-deps falhou nas 3 tentativas; seguindo com as libs já presentes no runner"
+          exit 0
 
       - name: Baixar Chromium do Playwright
         if: steps.playwright-cache.outputs.cache-hit != 'true'
