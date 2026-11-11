@@ -1,4 +1,5 @@
 from app.api.routers.products import router as products_router
+from app.api.routers.prototypes import router as prototypes_router
 from app.api.routers.clients import router as clients_router
 from app.api.routers.reps import router as reps_router
 from app.api.routers.orders import router as orders_router
@@ -22,4 +23,4 @@ from app.api.routers.order_emails import router as order_emails_router
 from app.api.routers.resend_webhooks import router as resend_webhooks_router
 from app.api.routers.order_item_attachments import router as order_item_attachments_router
 
-__all__ = ["products_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "catalogs_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router", "privacy_router", "markets_router", "moloni_router", "order_emails_router", "resend_webhooks_router", "order_item_attachments_router"]
+__all__ = ["products_router", "prototypes_router", "clients_router", "reps_router", "orders_router", "optionals_router", "product_types_router", "product_groups_router", "catalogs_router", "optional_categories_router", "auth_router", "users_router", "notifications_router", "utils_router", "import_router", "dashboard_router", "media_router", "integrations_router", "privacy_router", "markets_router", "moloni_router", "order_emails_router", "resend_webhooks_router", "order_item_attachments_router"]

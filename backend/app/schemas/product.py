@@ -289,6 +289,8 @@ class ProductPhotosOrder(BaseModel):
 
 class ProductRead(ProductBase):
     id: uuid.UUID
+    # Protótipo (só EU): o catálogo nunca devolve true; só as rotas de protótipo.
+    is_prototype: bool = False
     supplied_fabric: Optional[SuppliedFabricRead] = None
     # Bloco 96: preço que a role logada não pode ver sai como null em vez de
     # trafegar até o browser. Conta de cliente-final recebe apenas o preço do

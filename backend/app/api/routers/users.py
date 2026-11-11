@@ -148,6 +148,31 @@ async def _validated_rep_assignment(
     return rep_id
 
 
+def _has_prototype_access(links) -> bool:
+    return any(link.market_code == "EU" and link.can_manage_prototypes for link in links)
+
+
+def _audit_prototype_access(
+    db: AsyncSession, request: Request, *, actor_id: uuid.UUID, user: User, before: bool, after: bool
+) -> None:
+    """Liga/desliga da área de protótipos fica na trilha, como o acesso ao Estoque."""
+    if before == after:
+        return
+    record_privacy_event(
+        db,
+        actor_user_id=actor_id,
+        subject_type="user",
+        subject_id=user.id,
+        action="prototype_access_granted" if after else "prototype_access_revoked",
+        request=request,
+        context={"market": "EU"},
+    )
+
+
+# Papéis que podem receber a área de protótipos (vínculo EU).
+_PROTOTYPE_ROLES = frozenset({UserRole.admin, UserRole.vendedor, UserRole.produtos})
+
+
 async def _build_market_links(
     items: list[UserMarketAccessInput | dict], db: AsyncSession
 ) -> list[UserMarket]:
@@ -163,6 +188,7 @@ async def _build_market_links(
             len(items) != 1
             or items[0].can_view_dashboard
             or items[0].can_approve_tax
+            or items[0].can_manage_prototypes
             or items[0].order_rep_id is not None
         ):
             raise HTTPException(422, "Identidade técnica exige um mercado e nenhuma capacidade extra.")
@@ -224,6 +250,14 @@ async def _build_market_links(
                 ).execution_options(skip_market_scope=True))).scalar_one_or_none()
                 if valid is None:
                     raise HTTPException(422, "Representante de pedidos não pertence ao mercado informado.")
+        if item.can_manage_prototypes and (
+            item.market_code != "EU" or item.role not in _PROTOTYPE_ROLES
+        ):
+            raise HTTPException(
+                422,
+                "Protótipos só podem ser liberados no mercado EU, para admin, "
+                "vendedor ou produtos.",
+            )
         links.append(UserMarket(
             market_code=item.market_code,
             role=item.role.value,
@@ -233,6 +267,7 @@ async def _build_market_links(
             order_rep_id=item.order_rep_id,
             can_view_dashboard=item.can_view_dashboard,
             can_approve_tax=item.can_approve_tax,
+            can_manage_prototypes=item.can_manage_prototypes,
         ))
     return links
 
@@ -254,7 +289,7 @@ async def _replace_market_links(
             continue
         for field in (
             "role", "status", "linked_client_id", "rep_id", "order_rep_id",
-            "can_view_dashboard", "can_approve_tax",
+            "can_view_dashboard", "can_approve_tax", "can_manage_prototypes",
         ):
             setattr(current, field, getattr(incoming, field))
 
@@ -434,6 +469,10 @@ async def create_user(
         home_market=body.home_market if home_link else "BR",
     )
     user.allowed_market_links = links
+    _audit_prototype_access(
+        db, request, actor_id=platform.user.id, user=user,
+        before=False, after=_has_prototype_access(links),
+    )
     if body.has_stock_access:
         _reconcile_stock_access(
             db, request, actor_id=platform.user.id, user=user, requested=True
@@ -554,7 +593,12 @@ async def update_user(
             changes["rep_id"] = None
             changes["linked_id"] = None
             changes["can_view_dashboard"] = False
+        prototype_before = _has_prototype_access(user.allowed_market_links)
         await _replace_market_links(db, user, links)
+        _audit_prototype_access(
+            db, request, actor_id=platform.user.id, user=user,
+            before=prototype_before, after=_has_prototype_access(user.allowed_market_links),
+        )
         legacy_identity_synced = True
     elif "home_market" in changes:
         if changes["home_market"] not in user.allowed_markets:

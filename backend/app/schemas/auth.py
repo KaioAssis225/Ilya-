@@ -43,6 +43,8 @@ class UserMarketAccessInput(BaseModel):
     order_rep_id: uuid.UUID | None = None
     can_view_dashboard: bool = False
     can_approve_tax: bool = False
+    # Área de protótipos; só o vínculo EU aceita (a API recusa em BR).
+    can_manage_prototypes: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -62,6 +64,8 @@ class UserRead(BaseModel):
     can_view_dashboard: bool = False
     # Permissão fiscal do vínculo do mercado ativo (aprovar IVA em Portugal).
     can_approve_tax: bool = False
+    # Área de protótipos do mercado ativo (só EU; calculado em /auth/me).
+    can_manage_prototypes: bool = False
     home_market: Literal["BR", "EU"] = "BR"
     active_market: Literal["BR", "EU"] = "BR"
     allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])

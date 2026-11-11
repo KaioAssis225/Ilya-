@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func, text
+from sqlalchemy import CheckConstraint, Sequence, String, Text, Numeric, Boolean, Integer, ForeignKey, ForeignKeyConstraint, Index, Table, Column, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from app.models.base import Base, TimestampMixin
@@ -15,6 +15,20 @@ product_set_component_optionals = Table(
     Column("optional_id", PGUUID(as_uuid=True), ForeignKey("optionals.id", ondelete="CASCADE"), primary_key=True),
     Index("ix_product_set_component_optionals_optional_id", "optional_id"),
 )
+
+
+# Numeração dos protótipos (PROT-0001…): `nextval` é atômico, então dois
+# cadastros simultâneos nunca recebem o mesmo número. Rollback deixa buraco.
+PROTOTYPE_CODE_PREFIX = "PROT-"
+prototype_code_seq = Sequence("prototype_code_seq", metadata=Base.metadata)
+
+
+def format_prototype_code(number: int) -> str:
+    return f"{PROTOTYPE_CODE_PREFIX}{number:04d}"
+
+
+def is_prototype_code(code: str | None) -> bool:
+    return (code or "").strip().upper().startswith(PROTOTYPE_CODE_PREFIX)
 
 
 class Product(Base, TimestampMixin):
@@ -57,6 +71,16 @@ class Product(Base, TimestampMixin):
     # do Ilya Estoque) e desativação sem exclusão física.
     source_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    # Protótipo (só EU, prototypes_r45): produto reservado a quem tem
+    # `user_markets.can_manage_prototypes` e que nunca aparece fora das rotas de
+    # protótipo e do orçamento do próprio dono. A negação por padrão fica em
+    # `app.db.market_scope` (todo SELECT sobre Product ganha is_prototype = false).
+    is_prototype: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
 
     catalog: Mapped["Catalog | None"] = relationship("Catalog", lazy="selectin")
     optionals: Mapped[list["OptionalColor"]] = relationship(
@@ -91,6 +115,27 @@ class Product(Base, TimestampMixin):
             name="ck_products_area_limit_requires_max",
         ),
         UniqueConstraint("market_code", "product_code", name="uq_products_market_code"),
+        # Protótipo: só EU, sempre com dono e sempre com o prefixo reservado.
+        # A recíproca (produto normal não usa PROT-) é regra de aplicação: um
+        # CHECK nos dois sentidos poderia quebrar linhas legadas já gravadas.
+        CheckConstraint(
+            "NOT is_prototype OR market_code = 'EU'",
+            name="ck_products_prototype_eu",
+        ),
+        CheckConstraint(
+            "NOT is_prototype OR created_by_user_id IS NOT NULL",
+            name="ck_products_prototype_owner",
+        ),
+        CheckConstraint(
+            "NOT is_prototype OR product_code LIKE 'PROT-%'",
+            name="ck_products_prototype_code_prefix",
+        ),
+        Index(
+            "ix_products_prototype_owner",
+            "created_by_user_id",
+            "id",
+            postgresql_where=text("is_prototype"),
+        ),
         Index("ix_products_market_id", "market_code", "id"),
         Index("ix_products_market_article_category", "market_code", "article_category_path"),
         Index(

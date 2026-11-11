@@ -6,7 +6,8 @@ from sqlalchemy import select
 
 from app.db.session import get_db as get_db_session
 from app.models.user import User, UserRole
-from app.models.market import BR_MARKET, UserPlatformPermission
+from app.models.market import BR_MARKET, EU_MARKET, UserPlatformPermission
+from app.db.market_scope import PROTOTYPE_OWNER_INFO_KEY
 from app.core.security import decode_access_token
 from app.core.markets import (
     MarketActor,
@@ -67,7 +68,8 @@ def _enforce_readonly_canary(principal: MarketPrincipal, request: Request | None
         raise HTTPException(status_code=403, detail="Vínculo técnico inválido.")
     links = principal.user.allowed_market_links
     if (len(links) != 1 or links[0].market_code != principal.code
-            or links[0].can_approve_tax or links[0].linked_client_id or links[0].rep_id):
+            or links[0].can_approve_tax or links[0].can_manage_prototypes
+            or links[0].linked_client_id or links[0].rep_id):
         raise HTTPException(status_code=403, detail="Vínculo técnico inválido.")
     if request is not None:
         route = request.scope.get("route")
@@ -166,6 +168,40 @@ async def get_current_user(
 ) -> MarketActor:
     """Ator comercial efetivo; papéis e vínculos vêm de user_markets."""
     return principal.actor
+
+
+PROTOTYPE_ROLES = frozenset({UserRole.admin, UserRole.vendedor, UserRole.produtos})
+
+
+def prototype_access_allowed(principal: MarketPrincipal) -> bool:
+    """Área de protótipos: mercado ativo EU, vínculo com a permissão ligada e
+    um papel interno que a aceita. Lida do vínculo a cada requisição."""
+    return (
+        principal.code == EU_MARKET
+        and principal.access is not None
+        and principal.actor.can_manage_prototypes
+        and principal.actor.role in PROTOTYPE_ROLES
+    )
+
+
+async def require_prototype_manager(
+    principal: MarketPrincipal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Guarda das rotas de protótipo. Sem a permissão a resposta é 404, igual à
+    de uma rota inexistente: a área não revela que existe.
+
+    Também abre, só nesta requisição, a visão dos protótipos do PRÓPRIO usuário
+    para as consultas sobre Product (negação por padrão em `app.db.market_scope`).
+    A visão é fechada ao fim da requisição, mesmo que a sessão seja reaproveitada.
+    """
+    if not prototype_access_allowed(principal):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id
+    try:
+        yield principal
+    finally:
+        db.sync_session.info.pop(PROTOTYPE_OWNER_INFO_KEY, None)
 
 
 def require_br_fiscal_admin(

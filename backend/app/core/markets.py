@@ -56,6 +56,10 @@ class MarketActor:
     def can_approve_tax(self) -> bool:
         return self.access.can_approve_tax
 
+    @property
+    def can_manage_prototypes(self) -> bool:
+        return bool(self.access.can_manage_prototypes) and self.access.market_code == EU_MARKET
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.identity, name)
 

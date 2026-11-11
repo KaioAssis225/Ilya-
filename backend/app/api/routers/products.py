@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
@@ -11,7 +12,9 @@ from app.api.price_access import PRICE_LIST_ORDER, PriceScope, allows_price, vis
 from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
-from app.models.product import Product, ProductSetItem, ProductSetComponent
+from app.models.product import (
+    PROTOTYPE_CODE_PREFIX, Product, ProductSetItem, ProductSetComponent, is_prototype_code,
+)
 from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
 from app.models.optional_color import OptionalColor
@@ -19,7 +22,10 @@ from app.models.optional_category import OptionalCategory
 from app.models.optional_application import ProductOptionalApplication
 from app.models.catalog import Catalog
 from app.models.user import User, UserRole
-from app.models.market import ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, UserMarket, VAT_APPROVED
+from app.models.market import (
+    ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, UserMarket,
+    VAT_APPROVED, VAT_SOURCE_PROTOTYPE,
+)
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductRead,
@@ -745,12 +751,32 @@ async def get_products_batch(
     )
 
 
+def reject_reserved_prototype_code(code: str | None) -> None:
+    """O prefixo PROT- é só dos protótipos, que o recebem do servidor."""
+    if is_prototype_code(code):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"O prefixo {PROTOTYPE_CODE_PREFIX} é reservado aos protótipos.",
+        )
+
+
 async def _create_product_for_market(
     payload: ProductCreate,
     db: AsyncSession,
     market_code: str,
     fiscal_actor_user_id: uuid.UUID | None = None,
+    *,
+    prototype_owner_id: uuid.UUID | None = None,
+    prototype_vat_rate: Decimal | None = None,
 ) -> Product:
+    """Cria o produto. `prototype_owner_id` cria um protótipo (só EU): o código
+    já vem gerado no payload e o IVA informado fica como aprovado pelo dono."""
+    is_prototype = prototype_owner_id is not None
+    if not is_prototype:
+        if market_code == "EU":
+            reject_reserved_prototype_code(payload.product_code)
+    elif market_code != "EU" or prototype_vat_rate is None:
+        raise RuntimeError("Protótipo exige mercado EU e IVA informado.")
     await _validate_product_dimensions(
         db,
         market_code,
@@ -789,7 +815,12 @@ async def _create_product_for_market(
         "description_pt_pt",
         "description_en",
     })
-    product = Product(market_code=market_code, **product_data)
+    product = Product(
+        market_code=market_code,
+        is_prototype=is_prototype,
+        created_by_user_id=prototype_owner_id,
+        **product_data,
+    )
     product.optionals = await _resolve_optionals(db, payload.optional_ids, market_code)
     if payload.is_set:
         product.set_items = await _resolve_set_items(
@@ -826,11 +857,25 @@ async def _create_product_for_market(
             status_code=422,
             detail="Informe os nomes do produto em português de Portugal e inglês.",
         )
+    vat_fields = (
+        {
+            # O criador do protótipo informa o IVA; o protótipo não passa pela
+            # revisão fiscal do catálogo (nunca é faturado nem vai ao Moloni).
+            "vat_rate": prototype_vat_rate,
+            "vat_status": VAT_APPROVED,
+            "vat_source": VAT_SOURCE_PROTOTYPE,
+            "approved_by_user_id": prototype_owner_id,
+            "approved_at": datetime.now(timezone.utc),
+        }
+        if is_prototype
+        else {}
+    )
     db.add(ProductMarket(
         product_id=product.id,
         market_code=market_code,
         is_available=True,
         **localized_fields,
+        **vat_fields,
     ))
     lists = (await db.execute(select(PriceList).where(
         PriceList.market_code == market_code,
@@ -981,6 +1026,8 @@ async def update_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
+    if "product_code" in payload.model_fields_set and principal.code == "EU":
+        reject_reserved_prototype_code(payload.product_code)
 
     if principal.code == "BR" and "type" in payload.model_fields_set and payload.type != product.type:
         if payload.type is None:

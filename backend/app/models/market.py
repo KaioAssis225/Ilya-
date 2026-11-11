@@ -22,6 +22,8 @@ VAT_REJECTED = "rejected"
 # fica `legacy_unknown`; toda taxa vinda do import nasce `import` e pendente.
 VAT_SOURCE_LEGACY = "legacy_unknown"
 VAT_SOURCE_IMPORT = "import"
+# IVA informado pelo criador de um protótipo (prototypes_r45): aprovado por ele.
+VAT_SOURCE_PROTOTYPE = "prototype"
 
 
 class Market(Base, TimestampMixin):
@@ -60,8 +62,16 @@ class UserMarket(Base, TimestampMixin):
     )
     can_view_dashboard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_approve_tax: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Área de protótipos (prototypes_r45): só vale no vínculo EU.
+    can_manage_prototypes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     __table_args__ = (
+        CheckConstraint(
+            "NOT can_manage_prototypes OR market_code = 'EU'",
+            name="ck_user_markets_prototypes_eu",
+        ),
         ForeignKeyConstraint(
             ["linked_client_id", "market_code"],
             ["clients.id", "clients.market_code"],

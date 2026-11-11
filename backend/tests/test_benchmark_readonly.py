@@ -19,7 +19,7 @@ from app.schemas.auth import UserMarketAccessInput
 def _principal(*, market="BR", links=None):
     if links is None:
         links = [SimpleNamespace(
-            market_code=market, can_approve_tax=False,
+            market_code=market, can_approve_tax=False, can_manage_prototypes=False,
             linked_client_id=None, rep_id=None,
         )]
     actor = SimpleNamespace(role=UserRole.benchmark_readonly, can_view_dashboard=False,
@@ -61,9 +61,9 @@ def test_mutations_and_extra_reads_are_forbidden(method, template):
 
 
 def test_market_link_must_be_unique_and_without_tax_capability():
-    br = SimpleNamespace(market_code="BR", can_approve_tax=False,
+    br = SimpleNamespace(market_code="BR", can_approve_tax=False, can_manage_prototypes=False,
                          linked_client_id=None, rep_id=None)
-    eu = SimpleNamespace(market_code="EU", can_approve_tax=False,
+    eu = SimpleNamespace(market_code="EU", can_approve_tax=False, can_manage_prototypes=False,
                          linked_client_id=None, rep_id=None)
     with pytest.raises(HTTPException) as exc:
         _enforce_readonly_canary(_principal(links=[br, eu]), _request("GET", "/api/v1/orders"))

@@ -260,7 +260,8 @@ def test_orm_market_scope_does_not_reuse_previous_market():
             "('00000000000000000000000000000002', 'EU')"
         ))
         connection.execute(text(
-            "CREATE TABLE products (id CHAR(32) PRIMARY KEY, market_code VARCHAR(2) NOT NULL)"
+            "CREATE TABLE products (id CHAR(32) PRIMARY KEY, market_code VARCHAR(2) NOT NULL, "
+            "is_prototype BOOLEAN NOT NULL DEFAULT 0, created_by_user_id CHAR(32))"
         ))
         connection.execute(text(
             "INSERT INTO products (id, market_code) VALUES "
