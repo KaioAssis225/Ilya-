@@ -377,8 +377,11 @@ jobs:
             limpar_apt
             [ "$attempt" -lt 3 ] && sleep $((attempt * 15))
           done
-          echo "::error::install-deps falhou nas 3 tentativas"
-          exit 1
+          # Os espelhos do Ubuntu podem ficar inacessíveis do runner (DNS/rede).
+          # O runner já traz a maioria das libs; seguimos e deixamos o próprio
+          # teste de renderização decidir: se faltar lib, ele falha com a causa.
+          echo "::warning::install-deps falhou nas 3 tentativas; seguindo com as libs já presentes no runner"
+          exit 0
 
       - name: Baixar Chromium do Playwright
         if: steps.playwright-cache.outputs.cache-hit != 'true'
