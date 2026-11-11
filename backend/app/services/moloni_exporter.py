@@ -13,6 +13,7 @@ from app.models.market import ProductMarket
 from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExportJob, MoloniProductLink, MoloniTaxMapping
 from app.models.order import Order, OrderItem
 from app.models.product import Product
+from app.services.moloni_jobs import order_has_prototype_items
 
 class MoloniError(RuntimeError): pass
 
@@ -312,6 +313,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
     if not connection: raise MoloniError("Nenhuma conexão Moloni ativa.")
     order = (await db.execute(select(Order).where(Order.id == job.order_id).options(selectinload(Order.items)))).scalar_one()
     if order.market_code != "EU" or not order.is_finalized: raise MoloniError("Pedido não é um pedido EU finalizado.")
+    if await order_has_prototype_items(db, order.id): raise MoloniError("Pedido com protótipo não é enviado ao Moloni.")
     client = (await db.execute(select(Client).where(Client.id == order.client_id))).scalar_one()
     if not client.tax_id: raise MoloniError("Cliente EU sem NIF/tax_id.")
     api = MoloniApi(connection, db)

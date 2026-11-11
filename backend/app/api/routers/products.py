@@ -9,7 +9,7 @@ from sqlalchemy.orm import load_only, noload
 
 from app.api.catalog_access import visible_catalog_scope
 from app.api.price_access import PRICE_LIST_ORDER, PriceScope, allows_price, visible_price_scope
-from app.api.deps import get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
+from app.api.deps import open_prototype_view, get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
 from app.models.product import (
@@ -374,7 +374,12 @@ async def _replace_applications(
     optional_ids = {optional_id for item in items for optional_id in item.allowed_optional_ids}
     optionals = await _resolve_optionals(db, list(optional_ids), market_code)
     optional_map = {row.id: row for row in optionals}
-    all_codes = {category_map[item.category_id].code for item in items if item.allow_all}
+    # Grupo/opção de protótipo só serve ao próprio protótipo.
+    if any(c.prototype_id not in (None, product.id) for c in categories) or any(
+        o.prototype_id not in (None, product.id) for o in optionals
+    ):
+        raise HTTPException(status_code=422, detail="Grupo de opcionais de outro protótipo.")
+    all_codes ={category_map[item.category_id].code for item in items if item.allow_all}
     available_codes = set((await db.execute(select(OptionalColor.category).where(
         OptionalColor.market_code == market_code, OptionalColor.category.in_(all_codes),
     ))).scalars().all()) if all_codes else set()
@@ -718,7 +723,11 @@ async def list_products(
     )
 
 
-@router.post("/batch", response_model=List[ProductRead])
+@router.post(
+    "/batch", response_model=List[ProductRead],
+    # O dono enxerga os PRÓPRIOS protótipos ao montar/ver o orçamento.
+    dependencies=[Depends(open_prototype_view)],
+)
 async def get_products_batch(
     payload: ProductBatchRequest,
     language: Literal["pt-PT", "en-GB"] = Query(default="pt-PT"),

@@ -49,8 +49,8 @@ class Session:
 
 def fixture(category="PINTURA", required=True, allow_repeat=True, component_id=None, allowed=True):
     product = SimpleNamespace(id=uuid.uuid4(), all_optionals_categories="")
-    cat = SimpleNamespace(code=category, name=category.title())
-    optional = SimpleNamespace(id=uuid.uuid4(), market_code="BR", category=category, color_name="Taupe")
+    cat = SimpleNamespace(code=category, name=category.title(), prototype_id=None)
+    optional = SimpleNamespace(id=uuid.uuid4(), market_code="BR", category=category, color_name="Taupe", prototype_id=None)
     application = SimpleNamespace(
         id=uuid.uuid4(), product_id=product.id, component_id=component_id,
         category=cat, name="Pintura dos pés", name_en="Leg paint",
@@ -215,8 +215,8 @@ def test_history_snapshot_keeps_financial_terms():
 
 def test_product_application_creation_reuses_master_category_and_option():
     product_id, category_id, optional_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    category = SimpleNamespace(id=category_id, market_code="BR", code="PINTURA", name="Pintura")
-    optional = SimpleNamespace(id=optional_id, market_code="BR", category="PINTURA")
+    category = SimpleNamespace(id=category_id, market_code="BR", code="PINTURA", name="Pintura", prototype_id=None)
+    optional = SimpleNamespace(id=optional_id, market_code="BR", category="PINTURA", prototype_id=None)
 
     class SaveSession:
         def __init__(self): self.added = []

@@ -20,7 +20,7 @@ from app.core.observability import external_exception, external_invalid, httpx_e
 from app.models.moloni import MoloniConnection, MoloniOAuthState, MoloniExportJob, MoloniTaxMapping
 from app.models.order import Order
 from app.services.moloni_exporter import MoloniError, active_moloni_connection
-from app.services.moloni_jobs import enqueue_finalized_eu_order
+from app.services.moloni_jobs import enqueue_finalized_eu_order, order_has_prototype_items
 
 router = APIRouter(prefix="/api/v1/integrations/moloni", tags=["moloni"])
 _ADMIN = Depends(require_platform_capability("platform_admin"))
@@ -137,6 +137,8 @@ async def enqueue_existing(order_id: uuid.UUID, db: AsyncSession = Depends(get_d
         raise HTTPException(404, "Pedido não encontrado.")
     if order.market_code != "EU" or not order.is_finalized:
         raise HTTPException(422, "Somente pedido EU finalizado pode ser exportado.")
+    if await order_has_prototype_items(db, order.id):
+        raise HTTPException(422, "Pedido com protótipo não é enviado ao Moloni.")
     await enqueue_finalized_eu_order(db, order.id)
     await db.commit()
     return {"queued": True, "order_id": str(order.id)}

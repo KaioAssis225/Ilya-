@@ -204,6 +204,23 @@ async def require_prototype_manager(
         db.sync_session.info.pop(PROTOTYPE_OWNER_INFO_KEY, None)
 
 
+async def open_prototype_view(
+    principal: MarketPrincipal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Orçamento do dono: quem tem a permissão enxerga os PRÓPRIOS protótipos
+    nas consultas de produto desta requisição (para usá-los nos itens). Quem não
+    tem a permissão segue sem ver nada. A visão fecha ao fim da requisição."""
+    if not prototype_access_allowed(principal):
+        yield
+        return
+    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id
+    try:
+        yield
+    finally:
+        db.sync_session.info.pop(PROTOTYPE_OWNER_INFO_KEY, None)
+
+
 def require_br_fiscal_admin(
     principal: MarketPrincipal = Depends(get_current_principal),
 ) -> MarketPrincipal:

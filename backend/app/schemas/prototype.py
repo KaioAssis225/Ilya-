@@ -105,3 +105,45 @@ class PrototypeUpdate(BaseModel):
     @classmethod
     def validate_dimension_limit(cls, value: Optional[Decimal]) -> Optional[Decimal]:
         return ensure_dimension_within_limit(value)
+
+
+class PrototypeOptionWrite(BaseModel):
+    """Opção de um grupo do protótipo. Com `id`, mantém/renomeia a existente."""
+
+    id: Optional[uuid.UUID] = None
+    name: str = Field(..., min_length=1, max_length=100)
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value):
+        return _strip(value)
+
+
+class PrototypeOptionalGroupWrite(BaseModel):
+    """Grupo de opcionais que existe só neste protótipo."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    options: List[PrototypeOptionWrite] = Field(..., min_length=1, max_length=100)
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value):
+        return _strip(value)
+
+
+class PrototypeOptionRead(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class PrototypeOptionalGroupRead(BaseModel):
+    """`id` é o `category_id` a usar em `optional_applications` do protótipo."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    options: List[PrototypeOptionRead]

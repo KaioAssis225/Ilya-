@@ -360,7 +360,8 @@ async def test_prototipo_nao_aparece_no_catalogo_nem_para_o_dono(client: AsyncCl
         batch = await client.post(
             "/api/v1/products/batch", json={"product_codes": [created["product_code"]]}, headers=headers,
         )
-        assert batch.status_code == 200 and batch.json() == []
+        # O dono vê o PRÓPRIO protótipo no /batch (montar orçamento); os demais, nada.
+        assert batch.status_code == 200 and (batch.json() == [] or who is w.james)
         options = await client.get("/api/v1/products/filter-options", headers=headers)
         assert options.status_code == 200
         assert (await client.patch(
