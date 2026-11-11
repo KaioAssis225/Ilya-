@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { ChevronLeft, ChevronRight, KeyRound, Pencil, Plus, Search, ShieldCheck, Trash2, UserCheck, UserX, X } from 'lucide-react'
 import { useUsersPage, useCreateUser, useUpdateUser, useResetUserPassword, useDeleteUser } from '../hooks/useUsers'
 import type { UserRead, UserCreate, UserUpdate } from '../hooks/useUsers'
@@ -63,7 +64,7 @@ export default function AdminPage() {
   const [userPage, setUserPage] = useState(1)
   const [userQuery, setUserQuery] = useState('')
   const debouncedUserQuery = useDebouncedValue(userQuery.trim(), 300)
-  const { data: usersPage, isLoading, isFetching } = useUsersPage({
+  const { data: usersPage, isLoading, isFetching, error: usersError } = useUsersPage({
     skip: (userPage - 1) * USERS_PER_PAGE,
     limit: USERS_PER_PAGE,
     q: debouncedUserQuery || undefined,
@@ -200,6 +201,26 @@ export default function AdminPage() {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(msg ?? 'Erro ao excluir.')
     }
+  }
+
+  // Na sessão de mercado estas rotas exigem token de plataforma e respondem 401/403:
+  // em vez de uma tela vazia, mostramos para onde ir.
+  const usersStatus = (usersError as { response?: { status?: number } } | null)?.response?.status
+  if (usersStatus === 401 || usersStatus === 403) {
+    return (
+      <div className="min-h-screen bg-bg">
+        <div className="max-w-xl mx-auto px-4 sm:px-6 py-10 pb-28 md:pb-10">
+          <div role="alert" className="bg-white border border-line rounded-2xl shadow-sm p-6 text-center">
+            <ShieldCheck className="w-8 h-8 text-gold mx-auto" />
+            <h1 className="font-display text-xl font-semibold text-ink mt-3">A administração de contas fica na Plataforma</h1>
+            <p className="text-sm text-muted mt-2">
+              Contas, acessos (inclusive ao Estoque) e permissões são gerenciados na área da Plataforma, com login próprio.
+            </p>
+            <Link to="/platform" className="btn-primary mt-5 inline-flex">Ir para a Plataforma</Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
