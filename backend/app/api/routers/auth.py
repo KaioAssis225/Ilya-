@@ -481,6 +481,9 @@ async def me(
     data["max_discount"] = max_discount
     data["active_market"] = principal.code
     data["can_approve_tax"] = bool(principal.access and principal.access.can_approve_tax)
+    data["can_manage_prototypes"] = bool(
+        principal.access and principal.actor.can_manage_prototypes
+    )
     data["allowed_markets"] = await allowed_markets(db, current_user)
     # Só a sessão do mercado BR enxerga o acesso ao Estoque (EU e plataforma não).
     # Sem a chave de assinatura o link some (o emissor responderia 503).

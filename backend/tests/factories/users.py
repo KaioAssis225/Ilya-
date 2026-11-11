@@ -46,6 +46,7 @@ async def make_user_market(
     status: str = "active",
     rep_id: uuid.UUID | None = None,
     linked_client_id: uuid.UUID | None = None,
+    can_manage_prototypes: bool = False,
 ) -> UserMarket:
     """Cria um UserMarket (vínculo usuário-mercado) e devolve a instância."""
     um = UserMarket(
@@ -55,6 +56,7 @@ async def make_user_market(
         status=status,
         rep_id=rep_id,
         linked_client_id=linked_client_id,
+        can_manage_prototypes=can_manage_prototypes,
     )
     db.add(um)
     await db.flush()
