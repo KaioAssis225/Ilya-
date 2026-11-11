@@ -5,6 +5,8 @@ import { useLocale } from './useLocale'
 import { useAuth } from './useAuth'
 
 const KEY = 'products'
+/** Prefixo da API das fotos: produtos por padrão; `/prototypes` na área de protótipos. */
+export const PRODUCTS_PATH = '/products'
 
 export interface ProductPageParams {
   skip?: number
@@ -168,28 +170,28 @@ function usePhotoGalleryMutation<TVariables>(request: (variables: TVariables) =>
 }
 
 export function useAddProductPhotoToGallery() {
-  return usePhotoGalleryMutation<{ id: string; file: File }>(({ id, file }) => {
+  return usePhotoGalleryMutation<{ id: string; file: File; basePath?: string }>(({ id, file, basePath = PRODUCTS_PATH }) => {
     const form = new FormData()
     form.append('file', file)
     return api
-      .post<Product>(`/products/${id}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .post<Product>(`${basePath}/${id}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then((r) => r.data)
   })
 }
 
 export function useRemoveProductGalleryPhoto() {
-  return usePhotoGalleryMutation<{ id: string; photoId: string }>(({ id, photoId }) =>
-    api.delete<Product>(`/products/${id}/photos/${photoId}`).then((r) => r.data))
+  return usePhotoGalleryMutation<{ id: string; photoId: string; basePath?: string }>(({ id, photoId, basePath = PRODUCTS_PATH }) =>
+    api.delete<Product>(`${basePath}/${id}/photos/${photoId}`).then((r) => r.data))
 }
 
 export function useReorderProductGalleryPhotos() {
-  return usePhotoGalleryMutation<{ id: string; photoIds: string[] }>(({ id, photoIds }) =>
-    api.put<Product>(`/products/${id}/photos/order`, { photo_ids: photoIds }).then((r) => r.data))
+  return usePhotoGalleryMutation<{ id: string; photoIds: string[]; basePath?: string }>(({ id, photoIds, basePath = PRODUCTS_PATH }) =>
+    api.put<Product>(`${basePath}/${id}/photos/order`, { photo_ids: photoIds }).then((r) => r.data))
 }
 
 export function useSetPrimaryProductPhoto() {
-  return usePhotoGalleryMutation<{ id: string; photoId: string }>(({ id, photoId }) =>
-    api.put<Product>(`/products/${id}/photos/${photoId}/primary`).then((r) => r.data))
+  return usePhotoGalleryMutation<{ id: string; photoId: string; basePath?: string }>(({ id, photoId, basePath = PRODUCTS_PATH }) =>
+    api.put<Product>(`${basePath}/${id}/photos/${photoId}/primary`).then((r) => r.data))
 }
 
 export function useDeleteProductPhoto() {

@@ -30,6 +30,8 @@ export interface UserMarketAccess {
   order_rep_id: string | null
   can_view_dashboard: boolean
   can_approve_tax: boolean
+  /** Área de protótipos (só vínculo EU; liga o admin da plataforma). */
+  can_manage_prototypes: boolean
 }
 
 export interface UserCreate {

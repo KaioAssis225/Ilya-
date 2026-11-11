@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
+import { LayoutGrid, Layers3, FlaskConical, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -28,6 +28,7 @@ const OpcionaisPage = lazy(() => import('./pages/OpcionaisPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
+const PrototiposPage = lazy(() => import('./pages/PrototiposPage'))
 
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
@@ -58,6 +59,11 @@ function canSeeOptionals(user: AuthUser) {
 // só acessa a aba Dashboard.
 function canSeeDashboard(user: AuthUser) {
   return user.role === 'admin' || user.role === 'executivo' || user.can_view_dashboard
+}
+
+// Área de protótipos: só EU e só para quem o admin liberou (o servidor confere de novo).
+function canSeePrototypes(user: AuthUser) {
+  return user.active_market === 'EU' && user.can_manage_prototypes === true
 }
 
 function canSeeAdmin(user: AuthUser) {
@@ -120,6 +126,12 @@ function BottomNav() {
         <LayoutGrid className="w-5 h-5" />
         <span className="text-[11px] font-semibold uppercase tracking-wider">{t('products')}</span>
       </NavLink>
+      {canSeePrototypes(user) && (
+        <NavLink to="/prototipos" className={itemClass('/prototipos')} aria-label="Protótipos">
+          <FlaskConical className="w-5 h-5" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">Protótipos</span>
+        </NavLink>
+      )}
       {canSeeOptionals(user) && (
         <NavLink to="/opcionais" className={itemClass('/opcionais')} aria-label={t('optionals')}>
           <Layers3 className="w-5 h-5" />
@@ -221,6 +233,7 @@ function Nav() {
             <div className="hidden min-w-0 items-center gap-1 overflow-x-auto md:flex">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
+              {canSeePrototypes(user) && <NavLink to="/prototipos" className={linkClass} aria-label="Protótipos">Protótipos</NavLink>}
               {canSeeOptionals(user) && <NavLink to="/opcionais" className={linkClass} aria-label={t('optionals')}>{t('optionals')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
@@ -355,6 +368,14 @@ export default function PrivateApp() {
                     }
                   />
                   <Route path="/produtos" element={<ProdutosPage />} />
+                  <Route
+                    path="/prototipos"
+                    element={
+                      <RoleGuard allowed={canSeePrototypes}>
+                        <PrototiposPage />
+                      </RoleGuard>
+                    }
+                  />
                   <Route
                     path="/opcionais"
                     element={
