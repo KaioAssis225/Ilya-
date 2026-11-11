@@ -52,7 +52,14 @@ from app.core.markets import (
     require_market_access,
 )
 from app.models.notification import Notification
-from app.models.market import ProductMarket, UserMarket, UserPlatformPermission, VAT_APPROVED
+from app.core.stock_access import can_use_stock
+from app.models.market import (
+    BR_MARKET,
+    ProductMarket,
+    UserMarket,
+    UserPlatformPermission,
+    VAT_APPROVED,
+)
 from app.models.order import Order
 from app.models.order_history import OrderHistory
 from app.models.privacy_event import PrivacyEvent
@@ -474,6 +481,10 @@ async def me(
     data["active_market"] = principal.code
     data["can_approve_tax"] = bool(principal.access and principal.access.can_approve_tax)
     data["allowed_markets"] = await allowed_markets(db, current_user)
+    # Só a sessão do mercado BR enxerga o acesso ao Estoque (EU e plataforma não).
+    data["can_access_stock"] = (
+        principal.code == BR_MARKET and can_use_stock(principal.user)
+    )
     return data
 
 

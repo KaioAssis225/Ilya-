@@ -66,8 +66,18 @@ class UserRead(BaseModel):
     active_market: Literal["BR", "EU"] = "BR"
     allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])
     market_accesses: list[UserMarketAccessInput] = Field(default_factory=list)
+    # Calculado no servidor só em /auth/me: o menu "Estoque" aparece quando é
+    # verdadeiro. Nunca devolve `has_stock_access`, que é visão exclusiva da
+    # administração (ver UserAdminRead).
+    can_access_stock: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class UserAdminRead(UserRead):
+    """Resposta das rotas /users (somente administrador da plataforma)."""
+
+    has_stock_access: bool = False
 
 
 class UserCreate(BaseModel):
@@ -81,6 +91,7 @@ class UserCreate(BaseModel):
     rep_id: Optional[uuid.UUID] = None
     home_market: Literal["BR", "EU"] = "BR"
     market_accesses: list[UserMarketAccessInput] = Field(default_factory=list)
+    has_stock_access: bool = False
 
     @field_validator("username")
     @classmethod
@@ -108,6 +119,7 @@ class UserUpdate(BaseModel):
     can_view_dashboard: Optional[bool] = None
     home_market: Optional[Literal["BR", "EU"]] = None
     market_accesses: Optional[list[UserMarketAccessInput]] = None
+    has_stock_access: Optional[bool] = None
 
     @field_validator("username")
     @classmethod

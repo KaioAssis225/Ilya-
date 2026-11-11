@@ -398,7 +398,9 @@ def test_platform_identity_can_be_created_without_commercial_market():
             market_accesses=[],
         )
         with patch("app.api.routers.users.hash_password", return_value="hashed"):
-            created = await create_user(body=body, db=db, _=MagicMock())
+            created = await create_user(
+                body=body, request=MagicMock(), db=db, platform=MagicMock()
+            )
         assert created.allowed_market_links == []
         assert created.allowed_markets == []
         assert created.home_market == "BR"
@@ -468,7 +470,9 @@ def test_changing_market_link_revokes_only_commercial_refresh_families():
                 )
             ]),
         ):
-            await update_user(user_id=user.id, body=body, db=db, _=MagicMock())
+            await update_user(
+                user_id=user.id, body=body, request=MagicMock(), db=db, platform=MagicMock()
+            )
 
         revocations = [
             str(call.args[0])

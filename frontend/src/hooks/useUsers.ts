@@ -12,6 +12,8 @@ export interface UserRead {
   order_rep_id: string | null
   is_active: boolean
   can_view_dashboard: boolean
+  /** Visão exclusiva da administração (login único com o Estoque Brasil). */
+  has_stock_access: boolean
   home_market: 'BR' | 'EU'
   allowed_markets: Array<'BR' | 'EU'>
   market_accesses: UserMarketAccess[]
@@ -38,6 +40,7 @@ export interface UserCreate {
   rep_id?: string | null
   home_market: 'BR' | 'EU'
   allowed_markets: Array<'BR' | 'EU'>
+  has_stock_access?: boolean
 }
 
 export interface UserUpdate {
@@ -48,6 +51,7 @@ export interface UserUpdate {
   rep_id?: string | null
   is_active?: boolean
   can_view_dashboard?: boolean
+  has_stock_access?: boolean
   home_market?: 'BR' | 'EU'
   allowed_markets?: Array<'BR' | 'EU'>
   market_accesses?: UserMarketAccess[]

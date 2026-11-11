@@ -37,6 +37,12 @@ class User(Base, TimestampMixin):
     # Bloco 95: admin pode habilitar o Dashboard BI para qualquer role sem alterar
     # as demais permissões. Role `executivo` sempre tem acesso, independente da flag.
     can_view_dashboard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Login único com o Estoque Brasil. Só o administrador da plataforma altera
+    # e só vale para quem tem BR (app.core.stock_access). Mudar o valor
+    # incrementa `auth_version`, que é o que o Estoque lê para derrubar a sessão.
+    has_stock_access: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     home_market: Mapped[str] = mapped_column(
         ForeignKey("markets.code"), nullable=False, default="BR", server_default="BR"
     )

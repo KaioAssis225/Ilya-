@@ -34,6 +34,8 @@ export interface AuthUser {
   can_view_dashboard: boolean
   /** Permissão fiscal no mercado ativo (aprovar IVA em Portugal). */
   can_approve_tax?: boolean
+  /** Calculado no servidor: mostra o link "Estoque" (só sessão BR com acesso). */
+  can_access_stock?: boolean
   home_market: 'BR' | 'EU'
   active_market: 'BR' | 'EU'
   allowed_markets: Array<'BR' | 'EU'>
