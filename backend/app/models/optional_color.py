@@ -23,6 +23,10 @@ class OptionalColor(Base, TimestampMixin):
     color_name: Mapped[str] = mapped_column(String(100), nullable=False)
     brand: Mapped[str] = mapped_column(String(4), nullable=False, default="ILYA", server_default="ILYA")
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Opção que existe só dentro de um grupo de protótipo (prototype_options_r46).
+    prototype_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     __table_args__ = (
         CheckConstraint("brand IN ('ILYA', 'IBTW')", name="ck_optionals_brand"),

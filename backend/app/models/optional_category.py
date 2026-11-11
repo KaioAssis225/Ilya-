@@ -13,6 +13,11 @@ class OptionalCategory(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Grupo que existe só dentro de um protótipo (prototype_options_r46): fora
+    # das listas gerais por negação padrão em `app.db.market_scope`.
+    prototype_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     __table_args__ = (
         UniqueConstraint("market_code", "code", name="uq_optional_categories_market_code"),

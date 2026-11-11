@@ -7,12 +7,14 @@ igual a "criar produto": mesmos campos, preços por lista, nomes PT/EN, fotos e
 opcionais. Tudo daqui exige `require_prototype_manager` (404 sem permissão) e só
 enxerga protótipos do próprio usuário (ownership).
 """
+import re
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_prototype_manager
@@ -30,9 +32,18 @@ from app.api.routers.products import (
 from app.core.markets import MarketPrincipal
 from app.core.search import literal_contains_pattern
 from app.models.market import ProductMarket, VAT_APPROVED, VAT_SOURCE_PROTOTYPE
+from app.models.optional_application import ProductOptionalApplication
+from app.models.optional_category import OptionalCategory
+from app.models.optional_color import OptionalColor
 from app.models.product import Product, format_prototype_code, prototype_code_seq
 from app.schemas.product import ProductCreate, ProductPhotosOrder, ProductRead, ProductUpdate
-from app.schemas.prototype import PrototypeCreate, PrototypeUpdate
+from app.schemas.prototype import (
+    PrototypeCreate,
+    PrototypeOptionalGroupRead,
+    PrototypeOptionalGroupWrite,
+    PrototypeOptionRead,
+    PrototypeUpdate,
+)
 
 router = APIRouter(prefix="/api/v1/prototypes", tags=["prototypes"])
 
@@ -274,3 +285,149 @@ async def set_primary_prototype_photo(
     return await set_primary_product_photo(
         prototype_id, photo_id, db=db, current_user=principal.actor, principal=principal,
     )
+
+
+# ── Grupos de opcionais que existem só neste protótipo ────────────────────────
+# Um grupo local é uma categoria + opções com `prototype_id`. Nunca aparece nas
+# listas gerais (negação por padrão no ORM). Para usá-lo, o protótipo recebe uma
+# `optional_applications` apontando para o `id` do grupo, como com os grupos gerais.
+
+_LOCAL_OPTION_BRAND = "IBTW"  # não é acabamento ILYA: aceita "Customizado"
+
+
+def _slug(text_: str) -> str:
+    ascii_text = unicodedata.normalize("NFKD", text_).encode("ascii", "ignore").decode().upper()
+    return re.sub(r"[^A-Z0-9]+", "-", ascii_text).strip("-")[:20] or "GRUPO"
+
+
+async def _group_read(db: AsyncSession, category: OptionalCategory) -> PrototypeOptionalGroupRead:
+    options = (await db.execute(
+        select(OptionalColor).where(
+            OptionalColor.prototype_id == category.prototype_id,
+            OptionalColor.category == category.code,
+        ).order_by(OptionalColor.color_name, OptionalColor.id)
+    )).scalars().all()
+    return PrototypeOptionalGroupRead(
+        id=category.id, code=category.code, name=category.name,
+        options=[PrototypeOptionRead(id=o.id, name=o.color_name) for o in options],
+    )
+
+
+async def _own_group(
+    db: AsyncSession, product: Product, category_id: uuid.UUID
+) -> OptionalCategory:
+    category = (await db.execute(select(OptionalCategory).where(
+        OptionalCategory.id == category_id, OptionalCategory.prototype_id == product.id,
+    ))).scalar_one_or_none()
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Grupo de opcionais não encontrado.")
+    return category
+
+
+def _unique_names(options) -> None:
+    names = [o.name.casefold() for o in options]
+    if len(names) != len(set(names)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Opções repetidas no grupo.")
+
+
+@router.get("/{prototype_id}/optional-groups", response_model=List[PrototypeOptionalGroupRead])
+async def list_prototype_optional_groups(
+    prototype_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = _MANAGER,
+):
+    product = await _own_prototype(db, principal, prototype_id)
+    categories = (await db.execute(
+        select(OptionalCategory).where(OptionalCategory.prototype_id == product.id)
+        .order_by(OptionalCategory.name, OptionalCategory.id)
+    )).scalars().all()
+    return [await _group_read(db, c) for c in categories]
+
+
+@router.post(
+    "/{prototype_id}/optional-groups", response_model=PrototypeOptionalGroupRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_prototype_optional_group(
+    prototype_id: uuid.UUID,
+    payload: PrototypeOptionalGroupWrite,
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = _MANAGER,
+):
+    product = await _own_prototype(db, principal, prototype_id)
+    _unique_names(payload.options)
+    category = OptionalCategory(
+        market_code=principal.code, prototype_id=product.id, name=payload.name,
+        code=f"{product.product_code}-{_slug(payload.name)}-{uuid.uuid4().hex[:4].upper()}"[:50],
+    )
+    db.add(category)
+    await db.flush()
+    for option in payload.options:
+        db.add(OptionalColor(
+            market_code=principal.code, prototype_id=product.id, category=category.code,
+            color_name=option.name, brand=_LOCAL_OPTION_BRAND,
+        ))
+    product.source_version += 1
+    await db.commit()
+    return await _group_read(db, category)
+
+
+@router.put("/{prototype_id}/optional-groups/{category_id}", response_model=PrototypeOptionalGroupRead)
+async def replace_prototype_optional_group(
+    prototype_id: uuid.UUID,
+    category_id: uuid.UUID,
+    payload: PrototypeOptionalGroupWrite,
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = _MANAGER,
+):
+    """Renomeia o grupo e reconcilia as opções: com `id` mantém, sem `id` cria,
+    as que não vierem saem. Orçamentos já feitos guardam o nome (snapshot)."""
+    product = await _own_prototype(db, principal, prototype_id)
+    category = await _own_group(db, product, category_id)
+    _unique_names(payload.options)
+    existing = {o.id: o for o in (await db.execute(select(OptionalColor).where(
+        OptionalColor.prototype_id == product.id, OptionalColor.category == category.code,
+    ))).scalars().all()}
+    kept: set[uuid.UUID] = set()
+    for option in payload.options:
+        if option.id is not None:
+            row = existing.get(option.id)
+            if row is None or option.id in kept:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Opção não pertence ao grupo.")
+            row.color_name = option.name
+            kept.add(row.id)
+        else:
+            db.add(OptionalColor(
+                market_code=principal.code, prototype_id=product.id, category=category.code,
+                color_name=option.name, brand=_LOCAL_OPTION_BRAND,
+            ))
+    for option_id, row in existing.items():
+        if option_id not in kept:
+            await db.delete(row)
+    category.name = payload.name
+    product.source_version += 1
+    await db.commit()
+    await db.refresh(category)
+    return await _group_read(db, category)
+
+
+@router.delete("/{prototype_id}/optional-groups/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_prototype_optional_group(
+    prototype_id: uuid.UUID,
+    category_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    principal: MarketPrincipal = _MANAGER,
+):
+    """Apaga o grupo, suas opções e as aplicações do protótipo que o usam."""
+    product = await _own_prototype(db, principal, prototype_id)
+    category = await _own_group(db, product, category_id)
+    await db.execute(delete(ProductOptionalApplication).where(
+        ProductOptionalApplication.category_id == category.id
+    ))
+    await db.execute(delete(OptionalColor).where(
+        OptionalColor.prototype_id == product.id, OptionalColor.category == category.code,
+    ))
+    await db.delete(category)
+    product.source_version += 1
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

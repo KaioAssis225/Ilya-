@@ -5,7 +5,7 @@ um ID conhecido de outro mercado não seja materializado por engano (IDOR).
 """
 import uuid
 
-from sqlalchemy import event, or_
+from sqlalchemy import event, or_, select
 from sqlalchemy.orm import Session, with_loader_criteria
 
 from app.models.client import Client
@@ -61,28 +61,44 @@ def prototype_visibility(execute_state) -> uuid.UUID | bool:
 
 
 def _prototype_criteria(visibility: uuid.UUID | bool):
+    """Critérios por modelo: Product (o próprio protótipo) e, para os grupos de
+    opcionais que só existem dentro de um protótipo, `prototype_id`."""
     if visibility is True:
-        return None
+        return []
     if visibility is False:
-        return Product.is_prototype.is_(False)
-    return or_(Product.is_prototype.is_(False), Product.created_by_user_id == visibility)
+        return [
+            (Product, Product.is_prototype.is_(False)),
+            (OptionalCategory, OptionalCategory.prototype_id.is_(None)),
+            (OptionalColor, OptionalColor.prototype_id.is_(None)),
+        ]
+    mine = select(Product.id).where(
+        Product.is_prototype.is_(True), Product.created_by_user_id == visibility
+    )
+    return [
+        (Product, or_(Product.is_prototype.is_(False), Product.created_by_user_id == visibility)),
+        (OptionalCategory, or_(
+            OptionalCategory.prototype_id.is_(None), OptionalCategory.prototype_id.in_(mine)
+        )),
+        (OptionalColor, or_(
+            OptionalColor.prototype_id.is_(None), OptionalColor.prototype_id.in_(mine)
+        )),
+    ]
 
 
 @event.listens_for(Session, "do_orm_execute")
 def add_prototype_scope(execute_state) -> None:
-    """Negação por padrão: nenhum SELECT sobre Product devolve protótipo.
+    """Negação por padrão: nenhum SELECT sobre Product (nem sobre os grupos de
+    opcionais de protótipo) devolve protótipo.
 
     Vale com ou sem mercado ativo e mesmo com `skip_market_scope`: esta barreira
     é de acesso (quem pode ver), não de mercado.
     """
     if not execute_state.is_select:
         return
-    criteria = _prototype_criteria(prototype_visibility(execute_state))
-    if criteria is None:
-        return
-    execute_state.statement = execute_state.statement.options(
-        with_loader_criteria(Product, criteria, include_aliases=True)
-    )
+    statement = execute_state.statement
+    for model, criteria in _prototype_criteria(prototype_visibility(execute_state)):
+        statement = statement.options(with_loader_criteria(model, criteria, include_aliases=True))
+    execute_state.statement = statement
 
 
 @event.listens_for(Session, "do_orm_execute")

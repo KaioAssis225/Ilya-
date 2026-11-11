@@ -22,7 +22,7 @@ class _Db:
 def test_finalized_eu_enqueue_uses_conflict_safe_insert():
     db = _Db()
     asyncio.run(enqueue_finalized_eu_order(db, uuid.uuid4()))
-    compiled = str(db.statements[0].compile(dialect=__import__('sqlalchemy').dialects.postgresql.dialect()))
+    compiled = str(db.statements[-1].compile(dialect=__import__('sqlalchemy').dialects.postgresql.dialect()))
     assert "ON CONFLICT ON CONSTRAINT uq_moloni_export_jobs_order DO NOTHING" in compiled
 
 

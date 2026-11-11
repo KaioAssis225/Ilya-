@@ -14,6 +14,7 @@ from sqlalchemy import and_, false, func, or_, select, text, tuple_
 from sqlalchemy.orm import load_only, noload, selectinload
 
 from app.api.deps import (
+    open_prototype_view,
     get_db_session,
     get_current_principal,
     get_current_user,
@@ -39,7 +40,7 @@ from app.services.moloni_jobs import enqueue_finalized_eu_order
 from app.services.order_email_jobs import enqueue_order_emails
 from app.models.client import Client
 from app.models.representative import Representative
-from app.models.product import Product
+from app.models.product import Product, is_prototype_code
 from app.models.product import ProductSetComponent
 from app.models.optional_color import OptionalColor, product_optionals
 from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
@@ -58,7 +59,9 @@ from app.services.integration_events import enqueue_event
 from app.services.area_products import area_from_dimensions, is_area_product
 
 logger = logging.getLogger("ilya.orders")
-router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
+router = APIRouter(
+    prefix="/api/v1/orders", tags=["orders"], dependencies=[Depends(open_prototype_view)],
+)
 
 _ANY = Depends(get_current_user)
 _ADMIN_VENDEDOR = Depends(require_roles(UserRole.admin, UserRole.vendedor))
@@ -2514,7 +2517,11 @@ async def finalize_order(
         order_id=order.id,
         user_id=current_user.id,
         action="finalized",
-        details=f"código externo: {payload.external_code}" if payload.external_code else None,
+        details="; ".join(filter(None, [
+            f"código externo: {payload.external_code}" if payload.external_code else None,
+            "contém protótipo: não é enviado ao Moloni"
+            if any(is_prototype_code(item.product_code) for item in order.items) else None,
+        ])) or None,
     ))
     await touch_client_activity(db, order.client_id, terminal_at)
     if order.market_code == "EU":

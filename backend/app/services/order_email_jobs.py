@@ -98,7 +98,10 @@ async def _snapshot_v2(
                         ProductSetComponent.optionals
                     ),
                 )
-                .execution_options(populate_existing=True)
+                # PDF do pedido: a foto/dados do protótipo do dono do orçamento.
+                .execution_options(
+                    populate_existing=True, include_prototypes=order.number_owner_id,
+                )
             )
         )
         .scalars()
@@ -110,6 +113,7 @@ async def _snapshot_v2(
             select(OptionalCategory.code, OptionalCategory.name)
             .where(OptionalCategory.market_code == order.market_code)
             .order_by(OptionalCategory.code)
+            .execution_options(include_prototypes=order.number_owner_id)
         )
     ).all()
     category_labels = {row.code: row.name for row in categories}
