@@ -1,7 +1,5 @@
 import type { UserRole } from '../contexts/AuthContext'
 
-export const EU_PVP_ADMIN_MAX_DISCOUNT = 70
-
 export function orderMaxDiscount(
   market: 'BR' | 'EU',
   priceProfile: string,
@@ -11,8 +9,9 @@ export function orderMaxDiscount(
 ): number {
   if (market === 'BR') return configuredUserLimit
   if (priceProfile !== 'pvp' || isClientAccount) return 0
-  if (role === 'admin') return EU_PVP_ADMIN_MAX_DISCOUNT
-  if (role === 'representante' || role === 'vendedor') {
+  // Só o cadastro do representante limita (0–100); o servidor decide.
+  // Admin sem representante vinculado: o chamador passa 100.
+  if (role === 'admin' || role === 'representante' || role === 'vendedor') {
     return Math.min(100, Math.max(0, configuredUserLimit))
   }
   return 0

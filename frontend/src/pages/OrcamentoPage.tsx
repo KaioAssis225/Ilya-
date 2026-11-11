@@ -1617,7 +1617,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
     market,
     priceProfile,
     user?.role,
-    resolvedRep?.max_discount ?? user?.max_discount ?? 0,
+    resolvedRep?.max_discount ?? (market === 'EU' && user?.role === 'admin' ? 100 : user?.max_discount ?? 0),
     isClientUser,
   )
 
