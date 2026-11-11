@@ -27,7 +27,11 @@ from tests.factories import (
     make_user_market,
 )
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.integration,
+    pytest.mark.usefixtures("stock_keys"),  # sem chave o link some (can_access_stock=false)
+]
 
 _PASSWORD = "TestPassword1"
 

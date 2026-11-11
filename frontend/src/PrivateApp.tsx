@@ -16,6 +16,7 @@ import { createPrivateQueryClient, disposePrivateQueryClient } from './lib/query
 import { MarketTransition } from './components/MarketTransition'
 import { LocaleProvider } from './contexts/LocaleContext'
 import { useLocale } from './hooks/useLocale'
+import { StockLink } from './components/StockLink'
 import { LanguageSwitcher } from './components/LanguageSwitcher'
 // Rotas além do login são code-split — reduz o bundle inicial que o usuário
 // não autenticado precisa baixar antes de ver a tela de entrada.
@@ -168,6 +169,7 @@ function BottomNav() {
           <span className="text-[11px] font-semibold uppercase tracking-wider">{t('admin')}</span>
         </NavLink>
       )}
+      <StockLink variant="mobile" />
       <button
         type="button"
         // Fica na zona do polegar: um toque acidental derrubava a sessão.
@@ -233,6 +235,7 @@ function Nav() {
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label={t('orders')}>{t('orders')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos-finalizados" className={linkClass} aria-label={t('placedOrders')}>{t('placedOrders')}</NavLink>}
               {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
+              <StockLink variant="desktop" className="nav-link shrink-0" />
             </div>
           )}
         </div>

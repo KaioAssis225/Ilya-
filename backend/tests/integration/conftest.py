@@ -111,3 +111,16 @@ async def client(db_session: AsyncSession) -> AsyncClient:
             yield ac
     finally:
         app.dependency_overrides.pop(_dep, None)
+
+
+@pytest.fixture
+def stock_keys(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Configura o emissor do Estoque com um par ES256 novo; devolve a PÚBLICA."""
+    from app.core.config import settings
+    from tests.factories.stock_keys import make_es256_pair
+
+    private_pem, public_pem = make_es256_pair()
+    monkeypatch.setattr(settings, "STOCK_HANDOFF_PRIVATE_KEY", private_pem)
+    monkeypatch.setattr(settings, "STOCK_HANDOFF_KID", "stock-handoff-test")
+    monkeypatch.setattr(settings, "STOCK_APP_ORIGIN", "http://localhost:5174")
+    return public_pem
