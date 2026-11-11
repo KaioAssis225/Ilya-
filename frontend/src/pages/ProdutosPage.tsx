@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router'
 import { optionalName, optionalCategoryLabel, optionalMatchesSearch } from '../lib/optionalLabels'
 import { optionalBrand } from '../lib/optionalGroups'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine, SlidersHorizontal, Images } from 'lucide-react'
+import { X, ShoppingCart, Check, ImageIcon, Search, Plus, Minus, ChevronDown, ZoomIn, PenLine, SlidersHorizontal, Images, FlaskConical } from 'lucide-react'
 import { cartEntryUnits, cartStorageKey, configureProductPath, notifyCartChanged, withRugPieces, writeCartPriceList } from '../lib/cart'
 import { useCartQuantities } from '../hooks/useCart'
 import { useAuth } from '../hooks/useAuth'
 import { useImageRetry } from '../hooks/useImageRetry'
 import { useLocale } from '../hooks/useLocale'
 import { productsPageQueryOptions, useProductFilterOptions, useProductsPage, useSetPrimaryProductPhoto, type ProductFilterOptions } from '../hooks/useProducts'
+import { usePrototypesPage } from '../hooks/usePrototypes'
 import { parseApiError } from '../lib/personForm'
 import { useCatalogs } from '../hooks/useCatalogs'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
@@ -1110,8 +1111,13 @@ export default function ProdutosPage() {
   const [zoomOptional, setZoomOptional] = useState<{ optional: OptionalColor; type: string } | null>(null)
 
   const [page, setPage] = useState(1)
+  // "Visualizar protótipo": só quem tem a permissão. Troca o catálogo pelos PRÓPRIOS
+  // protótipos (o catálogo comum nunca os traz); o servidor confere a permissão.
+  const canViewPrototypes = user?.active_market === 'EU' && user.can_manage_prototypes === true
+  const [showPrototypesRequested, setShowPrototypes] = useState(false)
+  const showPrototypes = canViewPrototypes && showPrototypesRequested
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
-  const { data: productsPage, isLoading, isError, refetch, isFetching } = useProductsPage({
+  const productsQuery = useProductsPage({
     skip: (page - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
     q: debouncedSearch || undefined,
@@ -1121,7 +1127,13 @@ export default function ProdutosPage() {
     sort_by: CATALOG_SORTS[sort].sort_by,
     sort_dir: CATALOG_SORTS[sort].sort_dir,
     language: locale,
-  })
+  }, !showPrototypes)
+  const prototypesQuery = usePrototypesPage({
+    skip: (page - 1) * PAGE_SIZE,
+    limit: PAGE_SIZE,
+    q: debouncedSearch || undefined,
+  }, showPrototypes)
+  const { data: productsPage, isLoading, isError, refetch, isFetching } = showPrototypes ? prototypesQuery : productsQuery
   const products = useMemo(() => productsPage?.items ?? [], [productsPage])
   const totalProducts = productsPage?.total ?? 0
   const totalPages = productsPage
@@ -1186,7 +1198,7 @@ export default function ProdutosPage() {
   }, [products])
 
   useEffect(() => {
-    if (!productsPage || page >= totalPages) return
+    if (showPrototypes || !productsPage || page >= totalPages) return
     const options = productsPageQueryOptions({
       skip: page * PAGE_SIZE,
       limit: PAGE_SIZE,
@@ -1222,7 +1234,13 @@ export default function ProdutosPage() {
     totalPages,
     locale,
     sort,
+    showPrototypes,
   ])
+
+  function togglePrototypes() {
+    setShowPrototypes(current => !current)
+    setPage(1)
+  }
 
   function handleGroupChange(groupId: string) {
     setSelectedGroupId(groupId)
@@ -1290,6 +1308,24 @@ export default function ProdutosPage() {
             {t('catalogTitle')}
           </h1>
           <p className="text-sm text-muted mt-1">{t('catalogSubtitle')}</p>
+          {canViewPrototypes && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={togglePrototypes}
+                aria-pressed={showPrototypes}
+                className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors ${showPrototypes ? 'border-gold bg-gold text-white' : 'border-line bg-white text-ink-2 hover:border-gold'}`}
+              >
+                <FlaskConical className="h-4 w-4" aria-hidden="true" />
+                {english ? 'View prototypes' : 'Visualizar protótipo'}
+              </button>
+              {showPrototypes && (
+                <p role="status" className="text-xs text-muted">
+                  {english ? 'Showing only your prototypes. Filters by catalogue, group and type do not apply.' : 'A mostrar só os seus protótipos. Os filtros de catálogo, grupo e tipo não se aplicam.'}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-8 lg:items-start">
@@ -1577,7 +1613,7 @@ export default function ProdutosPage() {
                 </div>
                 <div className="w-full flex-1 px-4 pt-3.5 pb-4 md:px-5 md:pt-4 md:pb-5 border-t border-line/60">
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className="type-code">{product.product_code}</span>
+                    <span className="type-code">{product.product_code}{product.is_prototype && <span className="ml-2 rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold">{english ? 'Prototype' : 'Protótipo'}</span>}</span>
                     {selectedGroupId === '' && product.type && (
                       <span className="type-label whitespace-nowrap">{localizeFurnitureTerm(product.type, locale)}</span>
                     )}

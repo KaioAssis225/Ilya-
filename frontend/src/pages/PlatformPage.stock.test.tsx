@@ -15,7 +15,7 @@ vi.mock('../components/MoloniIntegrationPanel', () => ({ default: () => null }))
 function access(patch: Partial<UserMarketAccess> = {}): UserMarketAccess {
   return {
     market_code: 'BR', role: 'vendedor', status: 'active', linked_client_id: null,
-    rep_id: null, order_rep_id: null, can_view_dashboard: false, can_approve_tax: false, ...patch,
+    rep_id: null, order_rep_id: null, can_view_dashboard: false, can_approve_tax: false, can_manage_prototypes: false, ...patch,
   }
 }
 
@@ -122,5 +122,65 @@ describe('PlatformPage — Acesso ao Estoque', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salvar identidade e mercados' }))
     await waitFor(() => expect(patches).toHaveLength(1))
     expect(patches[0].has_stock_access).toBe(false)
+  })
+})
+
+describe('PlatformPage — Acesso aos protótipos', () => {
+  const PROTO_ROWS: UserRead[] = [
+    identity('u-james', 'James Pereira', [access({ market_code: 'EU', can_manage_prototypes: true })]),
+    identity('u-eva', 'Eva Europa', [access({ market_code: 'EU' })]),
+    identity('u-bia', 'Bia Brasil', [access()]),
+    identity('u-cad', 'Caio Cadastros', [access({ market_code: 'EU', role: 'cadastros' })]),
+  ]
+
+  it('mostra o selo Protótipos só para quem tem o acesso', async () => {
+    install()
+    server.use(http.get('*/users', () => HttpResponse.json(PROTO_ROWS)))
+    renderPlatform()
+    const marked = (await screen.findByText('James Pereira')).closest('tr') as HTMLElement
+    expect(within(marked).getByText('Protótipos')).toBeInTheDocument()
+    const plain = screen.getByText('Eva Europa').closest('tr') as HTMLElement
+    expect(within(plain).queryByText('Protótipos')).not.toBeInTheDocument()
+  })
+
+  it('a caixa só existe no bloco EU e o PATCH leva o valor marcado', async () => {
+    const patches: Array<Record<string, unknown>> = []
+    install(patches)
+    server.use(http.get('*/users', () => HttpResponse.json(PROTO_ROWS)))
+    renderPlatform()
+    await openEditor('Eva Europa')
+    const checkbox = screen.getByLabelText('Acesso aos protótipos')
+    expect(checkbox).not.toBeChecked()
+    await userEvent.click(checkbox)
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar identidade e mercados' }))
+    await waitFor(() => expect(patches).toHaveLength(1))
+    const accesses = patches[0].market_accesses as Array<Record<string, unknown>>
+    expect(accesses[0]).toMatchObject({ market_code: 'EU', can_manage_prototypes: true })
+  })
+
+  it('o admin desliga o acesso de quem já tem', async () => {
+    const patches: Array<Record<string, unknown>> = []
+    install(patches)
+    server.use(http.get('*/users', () => HttpResponse.json(PROTO_ROWS)))
+    renderPlatform()
+    await openEditor('James Pereira')
+    const checkbox = screen.getByLabelText('Acesso aos protótipos')
+    expect(checkbox).toBeChecked()
+    await userEvent.click(checkbox)
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar identidade e mercados' }))
+    await waitFor(() => expect(patches).toHaveLength(1))
+    const accesses = patches[0].market_accesses as Array<Record<string, unknown>>
+    expect(accesses[0].can_manage_prototypes).toBe(false)
+  })
+
+  it('vínculo BR não tem a caixa; papel não permitido a deixa desabilitada', async () => {
+    install()
+    server.use(http.get('*/users', () => HttpResponse.json(PROTO_ROWS)))
+    renderPlatform()
+    await openEditor('Bia Brasil')
+    expect(screen.queryByLabelText('Acesso aos protótipos')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+    await openEditor('Caio Cadastros')
+    expect(screen.getByLabelText('Acesso aos protótipos')).toBeDisabled()
   })
 })

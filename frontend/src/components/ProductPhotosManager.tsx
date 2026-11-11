@@ -19,6 +19,8 @@ interface ProductPhotosManagerProps {
   color: string
   /** Recebe o produto devolvido pelo servidor após cada mudança. */
   onUpdated?: (product: Product) => void
+  /** Prefixo da API das fotos (`/prototypes` na área de protótipos). */
+  basePath?: string
 }
 
 const byPosition = (photos: ProductPhoto[]) => [...photos].sort((a, b) => a.position - b.position)
@@ -28,7 +30,7 @@ const byPosition = (photos: ProductPhoto[]) => [...photos].sort((a, b) => a.posi
  * requisição própria e vale na hora (não espera o "Salvar" do formulário); o
  * servidor devolve o produto e a lista abaixo reflete exatamente esse retorno.
  */
-export function ProductPhotosManager({ product, color, onUpdated }: ProductPhotosManagerProps) {
+export function ProductPhotosManager({ product, color, onUpdated, basePath }: ProductPhotosManagerProps) {
   const tx = useCadastroText()
   const addM = useAddProductPhotoToGallery()
   const removeM = useRemoveProductGalleryPhoto()
@@ -71,7 +73,7 @@ export function ProductPhotosManager({ product, color, onUpdated }: ProductPhoto
     for (const [index, file] of accepted.entries()) {
       setProgress({ current: index + 1, total: accepted.length })
       try {
-        accept(await addM.mutateAsync({ id: product.id, file }))
+        accept(await addM.mutateAsync({ id: product.id, file, basePath }))
       } catch (err) {
         failures.push(`${file.name}: ${parseApiError(err)}`)
         break // 403/409 se repetem para os demais; para no primeiro erro
@@ -90,7 +92,7 @@ export function ProductPhotosManager({ product, color, onUpdated }: ProductPhoto
     const target = index + delta
     if (target < 0 || target >= ids.length) return
     ;[ids[index], ids[target]] = [ids[target], ids[index]]
-    void run(() => reorderM.mutateAsync({ id: product.id, photoIds: ids }))
+    void run(() => reorderM.mutateAsync({ id: product.id, photoIds: ids, basePath }))
   }
 
   const atLimit = photos.length >= MAX_PRODUCT_PHOTOS
@@ -159,7 +161,7 @@ export function ProductPhotosManager({ product, color, onUpdated }: ProductPhoto
                       className="btn-secondary min-h-11 flex-1 px-2 text-xs"
                       disabled={busy}
                       aria-label={tx('Definir a foto {n} como principal', { n: number })}
-                      onClick={() => void run(() => primaryM.mutateAsync({ id: product.id, photoId: photo.id }))}
+                      onClick={() => void run(() => primaryM.mutateAsync({ id: product.id, photoId: photo.id, basePath }))}
                     >
                       {tx('Definir como principal')}
                     </button>
@@ -191,7 +193,7 @@ export function ProductPhotosManager({ product, color, onUpdated }: ProductPhoto
                         aria-label={tx('Confirmar a remoção da foto {n}', { n: number })}
                         onClick={() => {
                           setConfirmingId(null)
-                          void run(() => removeM.mutateAsync({ id: product.id, photoId: photo.id }))
+                          void run(() => removeM.mutateAsync({ id: product.id, photoId: photo.id, basePath }))
                         }}
                       >
                         {tx('Confirmar remoção')}

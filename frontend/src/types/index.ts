@@ -145,6 +145,8 @@ export interface Product {
   vat_rate?: string | number | null
   type: string
   catalog_id: string | null
+  /** Protótipo (só EU): vem das rotas de protótipo e do orçamento do dono. */
+  is_prototype?: boolean
   catalog: { id: string; name: string } | null
   area_limit_enabled?: boolean
   max_area_m2?: number | string | null
