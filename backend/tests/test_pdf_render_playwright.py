@@ -587,3 +587,29 @@ async def test_render_cliente_com_lista_de_contatos_vazia_nao_mostra_bloco():
 
     assert "PED-VAZIO-01" in full_text
     assert "CONTATO DO CLIENTE" not in full_text
+
+
+async def test_render_eu_mostra_contato_principal_da_ficha_sem_contatos_adicionais():
+    # Cadastro EU com um contato só: nome em `contact_name`, telefone e e-mail nas
+    # colunas do cliente, `contacts` vazio.
+    snapshot = _make_snapshot(
+        market_code="EU",
+        currency="EUR",
+        locale="pt-PT",
+        code="PED-EU-PRINCIPAL",
+        items=[_make_item(currency="EUR", tax_label="IVA")],
+    )
+    snapshot["client"].update(
+        {
+            "contact_name": "Miguel Teste",
+            "phone": "00351 910 000 000",
+            "email": "miguel@example.com",
+            "contacts": [],
+        }
+    )
+
+    _, _, _, full_text = await _render(snapshot)
+
+    assert "FATURAR A" in full_text
+    assert "CONTACTO DO CLIENTE" in full_text
+    assert "Miguel Teste" in full_text
