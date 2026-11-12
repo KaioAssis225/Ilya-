@@ -44,6 +44,16 @@ describe('PrototiposPage', () => {
     expect(calls).not.toHaveBeenCalled()
   })
 
+  it('o admin (acesso sempre) vê o aviso de que enxerga os protótipos de todos', async () => {
+    installProductHandlers({ catalogs: [CATALOG] })
+    server.use(listHandler([prototypeFixture('PROT-0002', { description: 'Do James' })]))
+    const admin = { ...productTestUser('admin', 'EU'), can_manage_prototypes: true }
+    renderProductPage(<PrototiposPage />, admin, ['/prototipos'])
+    expect(await screen.findByText('PROT-0002')).toBeInTheDocument()
+    expect(screen.getByText(/Como admin, você vê e usa os protótipos de todos/)).toBeInTheDocument()
+    expect(screen.queryByText(/Só você vê estes itens/)).not.toBeInTheDocument()
+  })
+
   it('lista os protótipos do usuário e busca por texto', async () => {
     const seen: string[] = []
     installProductHandlers({ catalogs: [CATALOG] })

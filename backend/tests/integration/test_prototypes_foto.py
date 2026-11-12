@@ -66,7 +66,7 @@ async def test_a_url_da_foto_nao_vaza_para_quem_nao_e_dono(client: AsyncClient, 
     james = _auth(w.james, "vendedor")
     url = (await _upload(client, proto["id"], james)).json()["photo_url"]
     code = proto["product_code"]
-    for who, role in ((w.other, "vendedor"), (w.plain, "vendedor"), (w.admin, "admin")):
+    for who, role in ((w.other, "vendedor"), (w.plain, "vendedor"), (w.nobody, "produtos")):
         headers = _auth(who, role)
         responses = [
             await client.get(f"{PROTOTYPES}/{proto['id']}", headers=headers),

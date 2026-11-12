@@ -13,6 +13,10 @@ from app.models.refresh_token import RefreshToken
 from app.models.user import User, UserRole
 
 
+# Papéis que podem receber a área de protótipos por liberação (o admin tem sempre).
+PROTOTYPE_ROLES = frozenset({UserRole.admin, UserRole.vendedor, UserRole.produtos})
+
+
 @dataclass(frozen=True)
 class MarketContext:
     code: str
@@ -58,7 +62,21 @@ class MarketActor:
 
     @property
     def can_manage_prototypes(self) -> bool:
-        return bool(self.access.can_manage_prototypes) and self.access.market_code == EU_MARKET
+        """REGRA ÚNICA de acesso à área de protótipos (usada por todo o servidor
+        e exposta em /auth/me): só no mercado EU, e só para o admin do vínculo
+        EU ou para quem o admin liberou (`can_manage_prototypes`) com um papel
+        que aceita a área."""
+        if self.access.market_code != EU_MARKET:
+            return False
+        role = self.role
+        if role == UserRole.admin:
+            return True
+        return bool(self.access.can_manage_prototypes) and role in PROTOTYPE_ROLES
+
+    @property
+    def sees_all_prototypes(self) -> bool:
+        """Admin enxerga e opera os protótipos de todos; os demais, só os próprios."""
+        return self.access.market_code == EU_MARKET and self.role == UserRole.admin
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.identity, name)

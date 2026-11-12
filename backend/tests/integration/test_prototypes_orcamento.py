@@ -103,7 +103,7 @@ async def test_quem_nao_e_dono_recebe_404_como_produto_inexistente(client: Async
     proto = await _create(client, w)
     eu_client = await _eu_client(db_session)
     assert (await _quote(client, w.james, eu_client, "PROT-9999999")).status_code == 404
-    for who, role in ((w.other, "vendedor"), (w.plain, "vendedor"), (w.admin, "admin")):
+    for who, role in ((w.other, "vendedor"), (w.plain, "vendedor")):
         response = await _quote(client, who, eu_client, proto["product_code"], role=role)
         assert response.status_code == 404, (role, response.text)
         assert response.json()["detail"].startswith("Produto")
@@ -137,7 +137,7 @@ async def test_orcamento_misto_edicao_e_leitura_por_outros(client: AsyncClient, 
     assert {Decimal(str(i["qty"])) for i in edited.json()["items"]} == {Decimal("3")}
 
     # Quem não vê o protótipo ainda lê o orçamento (snapshot), mas não o reedita.
-    admin = _auth(w.admin, "admin")
+    admin = _auth(w.nobody, "produtos")
     read = await client.get(f"{ORDERS}/{order_id}", headers=admin)
     assert read.status_code == 200
     assert proto["product_code"] in {i["product_code"] for i in read.json()["items"]}
@@ -154,7 +154,7 @@ async def test_batch_devolve_protótipo_so_ao_dono(client: AsyncClient, db_sessi
     mine = await client.post("/api/v1/products/batch", json=body, headers=_auth(w.james, "vendedor"))
     assert [p["product_code"] for p in mine.json()] == [proto["product_code"]]
     assert mine.json()[0]["is_prototype"] is True
-    for who, role in ((w.other, "vendedor"), (w.plain, "vendedor"), (w.admin, "admin")):
+    for who, role in ((w.other, "vendedor"), (w.plain, "vendedor"), (w.nobody, "produtos")):
         theirs = await client.post("/api/v1/products/batch", json=body, headers=_auth(who, role))
         assert theirs.status_code == 200 and theirs.json() == []
     # O catálogo comum continua sem o protótipo, até para o dono.

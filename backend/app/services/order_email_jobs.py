@@ -98,9 +98,10 @@ async def _snapshot_v2(
                         ProductSetComponent.optionals
                     ),
                 )
-                # PDF do pedido: a foto/dados do protótipo do dono do orçamento.
+                # PDF do pedido já autorizado: foto/dados dos protótipos que o orçamento usa
+                # (quem montou pode ser o dono ou um admin, que usa os de todos).
                 .execution_options(
-                    populate_existing=True, include_prototypes=order.number_owner_id,
+                    populate_existing=True, include_prototypes=True,
                 )
             )
         )
@@ -113,7 +114,7 @@ async def _snapshot_v2(
             select(OptionalCategory.code, OptionalCategory.name)
             .where(OptionalCategory.market_code == order.market_code)
             .order_by(OptionalCategory.code)
-            .execution_options(include_prototypes=order.number_owner_id)
+            .execution_options(include_prototypes=True)
         )
     ).all()
     category_labels = {row.code: row.name for row in categories}

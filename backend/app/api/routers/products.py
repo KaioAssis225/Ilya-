@@ -9,7 +9,7 @@ from sqlalchemy.orm import load_only, noload
 
 from app.api.catalog_access import visible_catalog_scope
 from app.api.price_access import PRICE_LIST_ORDER, PriceScope, allows_price, visible_price_scope
-from app.api.deps import open_prototype_search, open_prototype_view, get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
+from app.api.deps import open_prototype_search, prototype_access_allowed, open_prototype_view, get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
 from app.models.product import (
@@ -579,6 +579,7 @@ async def list_products(
     catalog_id: uuid.UUID | None = Query(default=None),
     article_category_path: str | None = Query(default=None, max_length=255),
     include_total: bool = Query(default=True),
+    include_prototypes: bool = Query(default=False),
     sort_by: Literal[
         "product_code",
         "description",
@@ -695,6 +696,9 @@ async def list_products(
         "price_corporativo": Product.price_corporativo,
     }[sort_by]
     order_expression = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
+    # Busca do orçamento com protótipos: eles vêm primeiro, senão o limite da página
+    # (15) pode cortá-los quando muitos produtos comuns também batem com o texto.
+    prototype_first = bool(include_prototypes and search and prototype_access_allowed(principal))
     id_order = Product.id.desc() if sort_dir == "desc" else Product.id.asc()
 
     total: int | None = None
@@ -707,7 +711,7 @@ async def list_products(
     result = await db.execute(
         select(Product)
         .where(*filters)
-        .order_by(order_expression, id_order)
+        .order_by(*([Product.is_prototype.desc()] if prototype_first else []), order_expression, id_order)
         .offset(skip)
         .limit(limit if include_total else limit + 1)
     )

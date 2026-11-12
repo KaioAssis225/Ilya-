@@ -50,15 +50,21 @@ router = APIRouter(prefix="/api/v1/prototypes", tags=["prototypes"])
 _MANAGER = Depends(require_prototype_manager)
 
 
+def _ownership_filters(principal: MarketPrincipal) -> list:
+    """Dono: só os próprios. Admin: todos (regra única em `MarketActor`)."""
+    return [] if principal.actor.sees_all_prototypes else [Product.created_by_user_id == principal.user.id]
+
+
 async def _own_prototype(
     db: AsyncSession, principal: MarketPrincipal, prototype_id: uuid.UUID
 ) -> Product:
-    """Protótipo ativo do próprio usuário; qualquer outro caso é 404."""
+    """Protótipo ativo do próprio usuário (o admin alcança o de qualquer um);
+    qualquer outro caso é 404."""
     product = (await db.execute(select(Product).where(
         Product.id == prototype_id,
         Product.market_code == principal.code,
         Product.is_prototype.is_(True),
-        Product.created_by_user_id == principal.user.id,
+        *_ownership_filters(principal),
         Product.is_active.is_(True),
     ))).scalar_one_or_none()
     if product is None:
@@ -126,11 +132,11 @@ async def list_prototypes(
     db: AsyncSession = Depends(get_db_session),
     principal: MarketPrincipal = _MANAGER,
 ):
-    """Meus protótipos ativos (os mais novos primeiro por padrão)."""
+    """Meus protótipos ativos (os mais novos primeiro por padrão); o admin vê os de todos."""
     filters = [
         Product.market_code == principal.code,
         Product.is_prototype.is_(True),
-        Product.created_by_user_id == principal.user.id,
+        *_ownership_filters(principal),
         Product.is_active.is_(True),
     ]
     search = q.strip() if q else ""
