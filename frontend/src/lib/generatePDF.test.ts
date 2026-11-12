@@ -910,3 +910,89 @@ test.each([
   assert.ok(renderedTexts.includes('Cliente Teste'))
   assert.ok(renderedTexts.includes('cliente@example.com'))
 })
+
+// ── Contato principal da ficha (EU) ──────────────────────────────────────────
+// A primeira linha da seção "Contatos" do cadastro é o contato principal: fica
+// nas colunas do próprio cliente (contact_name, phone, email), e não em
+// `client_contacts`. É assim que o cadastro grava o cliente EU com um contato só.
+
+function makeEuClientComContatoPrincipal(overrides: Partial<Client> = {}): Client {
+  return makeClient({
+    name: 'Cliente Lda',
+    market_code: 'EU',
+    country: 'PT',
+    city: 'Matosinhos',
+    region: 'Porto',
+    cep: '4450-652',
+    tax_id: 'PT500000000',
+    contact_name: 'Miguel Teste',
+    phone: '00351 910 000 000',
+    email: 'miguel@example.com',
+    contacts: [],
+    ...overrides,
+  })
+}
+
+const pedidoEuPtPt = () =>
+  makeOrder({
+    market_code: 'EU',
+    currency: 'EUR',
+    locale: 'pt-PT',
+    items: [makeOrderItem({ currency: 'EUR', tax_label: 'IVA' })],
+  })
+
+test('EU: contato principal da ficha (contact_name) aparece em "FATURAR A" mesmo sem contatos adicionais', async () => {
+  await buildOrderPdf({
+    order: pedidoEuPtPt(),
+    client: makeEuClientComContatoPrincipal(),
+    rep: null,
+    products: [makeProduct({ market_code: 'EU' })],
+  })
+
+  assert.ok(renderedTexts.includes('FATURAR A'))
+  assert.ok(renderedTexts.includes('CONTACTO DO CLIENTE'))
+  assert.ok(renderedTexts.includes('Miguel Teste'))
+  // telefone e e-mail do contato saem também sob o rótulo do contato
+  assert.equal(renderedTexts.filter((t) => t === '00351 910 000 000').length, 2)
+  assert.equal(renderedTexts.filter((t) => t === 'miguel@example.com').length, 2)
+})
+
+test('EU: o contato principal vem antes dos contatos adicionais', async () => {
+  await buildOrderPdf({
+    order: pedidoEuPtPt(),
+    client: makeEuClientComContatoPrincipal({
+      contacts: [{ name: 'Adicional Teste', phone: '+351 911 111 111', email: 'adicional@example.com' }],
+    }),
+    rep: null,
+    products: [makeProduct({ market_code: 'EU' })],
+  })
+
+  assert.ok(renderedTexts.includes('Miguel Teste'))
+  assert.ok(!renderedTexts.includes('Adicional Teste'))
+})
+
+test('EU sem nome no contato principal: usa o primeiro contato adicional', async () => {
+  await buildOrderPdf({
+    order: pedidoEuPtPt(),
+    client: makeEuClientComContatoPrincipal({
+      contact_name: '',
+      contacts: [{ name: 'Adicional Teste', phone: '+351 911 111 111', email: 'adicional@example.com' }],
+    }),
+    rep: null,
+    products: [makeProduct({ market_code: 'EU' })],
+  })
+
+  assert.ok(renderedTexts.includes('CONTACTO DO CLIENTE'))
+  assert.ok(renderedTexts.includes('Adicional Teste'))
+})
+
+test('EU sem contato principal nem adicionais: sem o bloco', async () => {
+  await buildOrderPdf({
+    order: pedidoEuPtPt(),
+    client: makeEuClientComContatoPrincipal({ contact_name: null }),
+    rep: null,
+    products: [makeProduct({ market_code: 'EU' })],
+  })
+
+  assert.ok(!renderedTexts.includes('CONTACTO DO CLIENTE'))
+})

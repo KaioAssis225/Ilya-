@@ -132,11 +132,19 @@ function formatAddress(person: AddressParty, market: 'BR' | 'EU'): string {
 
 /**
  * Campos preenchidos (nome, telefone, e-mail) do primeiro contato salvo do
- * cliente, na ordem em que a ficha o devolve. Vazio quando não há contato:
- * pedidos antigos, cujo snapshot não guardou contatos, também caem aqui.
+ * cliente, na ordem da seção "Contatos" da ficha: primeiro o contato principal
+ * (gravado nas colunas do próprio cliente: `contact_name`, `phone`, `email`;
+ * só existe quando tem nome, ou seja, na ficha EU) e depois os adicionais
+ * (`contacts`). Vazio quando não há contato: pedidos antigos, cujo snapshot não
+ * guardou contatos, também caem aqui.
  */
-function firstClientContactFields(client: Pick<Client, 'contacts'>): string[] {
-  const contact = client.contacts?.[0]
+function firstClientContactFields(
+  client: Pick<Client, 'contact_name' | 'phone' | 'email' | 'contacts'>,
+): string[] {
+  const primaryName = client.contact_name?.trim()
+  const contact = primaryName
+    ? { name: primaryName, phone: client.phone, email: client.email }
+    : client.contacts?.[0]
   if (!contact) return []
   return [contact.name, contact.phone, contact.email]
     .map((value) => value?.trim())

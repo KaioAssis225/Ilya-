@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.core.config import settings
 from app.core.order_documents import OrderDocumentStorageError, put_document
 from app.core.security import create_access_token
+from app.models.client import Client
 from app.models.client_contact import ClientContact
 from app.models.market import PriceList
 from app.models.optional_category import OptionalCategory
@@ -548,4 +549,28 @@ async def test_snapshot_de_cliente_sem_contatos_tem_lista_vazia(
 
     snapshot = await _enqueue_e_le_snapshot(db_session, order, owner)
 
+    assert snapshot["client"]["contacts"] == []
+
+
+async def test_snapshot_leva_o_contato_principal_gravado_na_ficha(
+    db_session, monkeypatch
+):
+    # O cadastro EU grava a primeira linha de "Contatos" nas colunas do próprio
+    # cliente (contact_name, phone, email), sem nenhuma linha em client_contacts.
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "live")
+    order, owner = await _order(db_session, market="EU", client_email="miguel@example.com")
+    client = (
+        await db_session.execute(
+            select(Client).where(Client.id == order.client_id)
+        )
+    ).scalar_one()
+    client.contact_name = "Miguel Teste"
+    client.phone = "00351 910 000 000"
+    await db_session.flush()
+
+    snapshot = await _enqueue_e_le_snapshot(db_session, order, owner)
+
+    assert snapshot["client"]["contact_name"] == "Miguel Teste"
+    assert snapshot["client"]["phone"] == "00351 910 000 000"
+    assert snapshot["client"]["email"] == "miguel@example.com"
     assert snapshot["client"]["contacts"] == []
