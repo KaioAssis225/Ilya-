@@ -532,3 +532,58 @@ async def test_render_rejects_snapshot_v1():
         await renderer.render(snapshot)
 
     assert caught.value.code == "unsupported_snapshot"
+
+
+async def test_render_mostra_primeiro_contato_do_cliente():
+    snapshot = _make_snapshot(code="PED-CONTATO-01", items=[_make_item()])
+    snapshot["client"]["contacts"] = [
+        {"name": "Maria Teste", "phone": "+55 11 90000-0000", "email": "maria@example.com"},
+    ]
+
+    _, _, _, full_text = await _render(snapshot)
+
+    assert "CONTATO DO CLIENTE" in full_text
+    assert "Maria Teste" in full_text
+    assert "+55 11 90000-0000" in full_text
+    assert "maria@example.com" in full_text
+
+
+async def test_render_contato_em_ingles_no_mercado_eu():
+    snapshot = _make_snapshot(
+        market_code="EU",
+        currency="EUR",
+        locale="en-GB",
+        code="PED-EU-CONTATO",
+        items=[_make_item(currency="EUR", tax_label="IVA")],
+    )
+    snapshot["client"]["contacts"] = [
+        {"name": "Maria Teste", "phone": None, "email": "maria@example.com"},
+    ]
+
+    _, _, _, full_text = await _render(snapshot)
+
+    assert "CLIENT CONTACT" in full_text
+    assert "Maria Teste" in full_text
+    assert "maria@example.com" in full_text
+
+
+async def test_render_snapshot_antigo_sem_contatos_nao_mostra_bloco():
+    # Snapshot congelado antes desta funcionalidade: não tem a chave `contacts`.
+    snapshot = _make_snapshot(code="PED-ANTIGO-01", items=[_make_item()])
+    assert "contacts" not in snapshot["client"]
+
+    pdf_bytes, _, _, full_text = await _render(snapshot)
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert "Casa Jardim Ltda" in full_text
+    assert "CONTATO DO CLIENTE" not in full_text
+
+
+async def test_render_cliente_com_lista_de_contatos_vazia_nao_mostra_bloco():
+    snapshot = _make_snapshot(code="PED-VAZIO-01", items=[_make_item()])
+    snapshot["client"]["contacts"] = []
+
+    _, _, _, full_text = await _render(snapshot)
+
+    assert "PED-VAZIO-01" in full_text
+    assert "CONTATO DO CLIENTE" not in full_text

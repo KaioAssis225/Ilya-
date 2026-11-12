@@ -63,7 +63,7 @@ class Client(Base, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
         lazy="selectin",
-        order_by="ClientContact.position",
+        order_by="(ClientContact.position, ClientContact.created_at, ClientContact.id)",
     )
     # Tabelas de preço que o cliente pode ver; o perfil de faturamento continua
     # sempre visível. `false` + lista vazia = só o perfil de faturamento.

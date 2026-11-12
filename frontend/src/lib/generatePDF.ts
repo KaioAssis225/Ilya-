@@ -29,6 +29,8 @@ interface LoadedImage {
 const PDF_IMAGE_MAX_EDGE = 640
 const PDF_IMAGE_QUALITY = 0.84
 const PDF_IMAGE_CONCURRENCY = 3
+// Distância (mm) entre as linhas do contato do cliente no bloco "Cliente".
+const CONTACT_LINE_STEP = 4
 
 async function urlToBase64(url: string): Promise<LoadedImage | null> {
   return new Promise((resolve) => {
@@ -128,6 +130,19 @@ function formatAddress(person: AddressParty, market: 'BR' | 'EU'): string {
   return [street, locality, regionCountry].filter(Boolean).join(' - ')
 }
 
+/**
+ * Campos preenchidos (nome, telefone, e-mail) do primeiro contato salvo do
+ * cliente, na ordem em que a ficha o devolve. Vazio quando não há contato:
+ * pedidos antigos, cujo snapshot não guardou contatos, também caem aqui.
+ */
+function firstClientContactFields(client: Pick<Client, 'contacts'>): string[] {
+  const contact = client.contacts?.[0]
+  if (!contact) return []
+  return [contact.name, contact.phone, contact.email]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+}
+
 export interface BuildOrderPdfInput {
   order: Order
   client: Client
@@ -225,8 +240,24 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
 
   // ── Partes do pedido ────────────────────────────────────────────────────────
   const boxW = (w - 50) / 2
+  // Endereço e contato do cliente são medidos antes de desenhar as caixas: o
+  // contato é opcional e, quando existe, a caixa cresce para acomodá-lo. Sem
+  // contato, a altura continua exatamente a de antes.
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  const clientAddrLines = doc
+    .splitTextToSize(formatAddress(client, order.market_code), boxW - 8)
+    .slice(0, 2)
+  const contactFields = firstClientContactFields(client)
+  const contactLines = contactFields.flatMap((field) =>
+    doc.splitTextToSize(field, boxW - 8).slice(0, 2),
+  )
+  const contactTop = 34 + (clientAddrLines.length - 1) * 3.2 + 5.5
+  const partyBoxBaseH = seller ? 44 : 35
+  const partyBoxH = contactLines.length
+    ? Math.max(partyBoxBaseH, contactTop + 4.5 + (contactLines.length - 1) * CONTACT_LINE_STEP + 5)
+    : partyBoxBaseH
   doc.setFillColor(...LIGHT)
-  const partyBoxH = seller ? 44 : 35
   doc.roundedRect(20, y, boxW, partyBoxH, 2, 2, 'F')
   doc.roundedRect(20 + boxW + 10, y, boxW, partyBoxH, 2, 2, 'F')
 
@@ -283,8 +314,19 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
   doc.text(`${L.taxId}: ${clientTaxId || L.taxIdMissing}`, rx, y + 18)
   doc.text(client.phone, rx, y + 23)
   doc.text(client.email || L.noEmail, rx, y + 28)
-  const clientAddr = formatAddress(client, order.market_code)
-  doc.text(doc.splitTextToSize(clientAddr, boxW - 8).slice(0, 2), rx, y + 34)
+  doc.text(clientAddrLines, rx, y + 34)
+
+  // Primeiro contato salvo na ficha do cliente (nome, telefone e e-mail).
+  if (contactLines.length) {
+    doc.setFontSize(7)
+    doc.setFont('helvetica', 'bold')
+    doc.text(L.clientContact, rx, y + contactTop)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    contactLines.forEach((line, index) => {
+      doc.text(line, rx, y + contactTop + 4.5 + index * CONTACT_LINE_STEP)
+    })
+  }
 
   y += partyBoxH + 7
 
