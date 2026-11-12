@@ -1,5 +1,5 @@
 import uuid
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -212,6 +212,27 @@ async def open_prototype_view(
     nas consultas de produto desta requisição (para usá-los nos itens). Quem não
     tem a permissão segue sem ver nada. A visão fecha ao fim da requisição."""
     if not prototype_access_allowed(principal):
+        yield
+        return
+    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id
+    try:
+        yield
+    finally:
+        db.sync_session.info.pop(PROTOTYPE_OWNER_INFO_KEY, None)
+
+
+async def open_prototype_search(
+    include_prototypes: bool = Query(default=False),
+    q: str | None = Query(default=None, max_length=200),
+    principal: MarketPrincipal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Busca do orçamento: com `include_prototypes=true` E um texto em `q`, quem tem
+    a permissão de protótipos no mercado EU também acha os PRÓPRIOS protótipos
+    (por código ou nome). Para todos os outros o parâmetro é ignorado: o servidor
+    decide pela permissão, nunca pelo que o cliente pede. Sem texto não mistura
+    protótipo na lista (a lista vazia continua sendo só o catálogo)."""
+    if not (include_prototypes and (q or "").strip() and prototype_access_allowed(principal)):
         yield
         return
     db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id

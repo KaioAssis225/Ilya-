@@ -17,6 +17,8 @@ export interface ProductPageParams {
   catalog_id?: string
   article_category_path?: string
   include_total?: boolean
+  /** Busca do orçamento: com texto em `q`, acha também os PRÓPRIOS protótipos (o servidor confere a permissão). */
+  include_prototypes?: boolean
   sort_by?: 'product_code' | 'description' | 'type' | 'price_lojista' | 'price_corporativo'
   sort_dir?: 'asc' | 'desc'
   language?: 'pt-PT' | 'en-GB'
