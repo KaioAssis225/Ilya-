@@ -58,7 +58,7 @@ export function formatOrderMoney(
 
 export interface OrderDocumentLabels {
   documentTitle: string; order: string; date: string; quote: string; continued: string
-  seller: string; representative: string; client: string; none: string; noEmail: string
+  seller: string; representative: string; client: string; clientContact: string; none: string; noEmail: string
   taxId: string; taxIdMissing: string; commercialNotice: string; quoteCommercialNotice: string; page: string
   product: string; qty: string; basePrice: string; discount: string; netUnitPrice: string; subtotal: string
   dimensions: string; itemNote: string; itemComment: string; options: string; noPhoto: string
@@ -87,7 +87,7 @@ export interface OrderDocument {
 
 const PT_LABELS: OrderDocumentLabels = {
   documentTitle: 'CONFIRMAÇÃO DE PEDIDO', order: 'PEDIDO', date: 'Data', quote: 'Orçamento', continued: 'CONTINUAÇÃO',
-  seller: 'EMPRESA VENDEDORA', representative: 'REPRESENTANTE', client: 'CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
+  seller: 'EMPRESA VENDEDORA', representative: 'REPRESENTANTE', client: 'CLIENTE', clientContact: 'CONTATO DO CLIENTE', none: 'Nenhum', noEmail: 'E-mail não informado',
   taxId: 'CPF/CNPJ', taxIdMissing: 'não informado', commercialNotice: 'Pedido comercial. Este documento não substitui a nota fiscal.', quoteCommercialNotice: 'Orçamento comercial. Este documento não substitui a nota fiscal.', page: 'Página',
   product: 'PRODUTO', qty: 'QTD', basePrice: 'PREÇO-BASE', discount: 'DESCONTO (%)', netUnitPrice: 'VALOR C/ DESC.', subtotal: 'SUBTOTAL',
   dimensions: 'Dimensões', itemNote: 'Obs.', itemComment: 'Comentário', options: 'Opcionais', noPhoto: 'sem\nfoto',
@@ -99,7 +99,7 @@ const PT_LABELS: OrderDocumentLabels = {
 
 const PT_PT_LABELS: OrderDocumentLabels = {
   ...PT_LABELS,
-  seller: 'EMPRESA', representative: 'CONTACTO', client: 'FATURAR A',
+  seller: 'EMPRESA', representative: 'CONTACTO', client: 'FATURAR A', clientContact: 'CONTACTO DO CLIENTE',
   none: 'Nenhum', noEmail: 'E-mail não indicado', taxId: 'NIF / VAT', taxIdMissing: 'não indicado',
   commercialNotice: 'Confirmação de pedido comercial. Este documento não é uma fatura.',
   quoteCommercialNotice: 'Orçamento comercial. Este documento não é uma fatura.',
@@ -115,7 +115,7 @@ const PT_PT_LABELS: OrderDocumentLabels = {
 
 const EN_LABELS: OrderDocumentLabels = {
   documentTitle: 'ORDER CONFIRMATION', order: 'ORDER', date: 'Date', quote: 'Quote', continued: 'CONTINUED',
-  seller: 'COMPANY', representative: 'CONTACT', client: 'BILL TO', none: 'None', noEmail: 'No email provided',
+  seller: 'COMPANY', representative: 'CONTACT', client: 'BILL TO', clientContact: 'CLIENT CONTACT', none: 'None', noEmail: 'No email provided',
   taxId: 'VAT / TAX ID', taxIdMissing: 'not provided', commercialNotice: 'Commercial order confirmation. This document is not an invoice.', quoteCommercialNotice: 'Commercial quotation. This document is not an invoice.', page: 'Page',
   product: 'PRODUCT', qty: 'QTY', basePrice: 'BASE PRICE', discount: 'DISCOUNT (%)', netUnitPrice: 'NET UNIT PRICE', subtotal: 'SUBTOTAL',
   dimensions: 'Dimensions', itemNote: 'Note', itemComment: 'Comment', options: 'Options', noPhoto: 'no\nphoto',

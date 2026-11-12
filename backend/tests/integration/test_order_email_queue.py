@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.core.config import settings
 from app.core.order_documents import OrderDocumentStorageError, put_document
 from app.core.security import create_access_token
+from app.models.client_contact import ClientContact
 from app.models.market import PriceList
 from app.models.optional_category import OptionalCategory
 from app.models.optional_color import OptionalColor
@@ -460,3 +461,91 @@ async def test_enqueue_bug_does_not_prevent_finalization(client, db_session, mon
     assert response.status_code == 200, response.text
     assert response.json()["is_finalized"] is True
     assert (await db_session.execute(select(func.count()).select_from(OrderEmailDocument))).scalar_one() == 0
+
+
+# ── Contato do cliente no snapshot do PDF ────────────────────────────────────
+
+
+async def _snapshot_do_pedido(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "ORDER_EMAIL_MODE", "live")
+    order, owner = await _order(db_session)
+    return order, owner
+
+
+async def _enqueue_e_le_snapshot(db_session, order, owner):
+    await enqueue_order_emails(db_session, order, requested_by_user_id=owner.id)
+    document = (
+        await db_session.execute(
+            select(OrderEmailDocument).where(OrderEmailDocument.order_id == order.id)
+        )
+    ).scalar_one()
+    return document.snapshot
+
+
+async def test_snapshot_guarda_so_o_primeiro_contato_do_cliente(
+    db_session, monkeypatch
+):
+    order, owner = await _snapshot_do_pedido(db_session, monkeypatch)
+    db_session.add_all(
+        [
+            ClientContact(
+                client_id=order.client_id,
+                name="Segundo Contato",
+                phone="+55 11 91111-1111",
+                email="segundo@example.com",
+                position=1,
+            ),
+            ClientContact(
+                client_id=order.client_id,
+                name="Maria Teste",
+                phone="+55 11 90000-0000",
+                email="maria@example.com",
+                position=0,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    snapshot = await _enqueue_e_le_snapshot(db_session, order, owner)
+
+    assert snapshot["client"]["contacts"] == [
+        {
+            "name": "Maria Teste",
+            "phone": "+55 11 90000-0000",
+            "email": "maria@example.com",
+        }
+    ]
+    assert "segundo@example.com" not in str(snapshot)
+
+
+async def test_primeiro_contato_desempata_por_id_quando_a_posicao_e_igual(
+    db_session, monkeypatch
+):
+    order, owner = await _snapshot_do_pedido(db_session, monkeypatch)
+    db_session.add_all(
+        [
+            ClientContact(
+                id=uuid.UUID(int=2), client_id=order.client_id, name="B", position=0
+            ),
+            ClientContact(
+                id=uuid.UUID(int=1), client_id=order.client_id, name="A", position=0
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    snapshot = await _enqueue_e_le_snapshot(db_session, order, owner)
+
+    assert snapshot["client"]["contacts"] == [
+        {"name": "A", "phone": None, "email": None}
+    ]
+
+
+async def test_snapshot_de_cliente_sem_contatos_tem_lista_vazia(
+    db_session, monkeypatch
+):
+    order, owner = await _snapshot_do_pedido(db_session, monkeypatch)
+
+    snapshot = await _enqueue_e_le_snapshot(db_session, order, owner)
+
+    assert snapshot["client"]["contacts"] == []

@@ -205,7 +205,9 @@ class ClientDetailRead(ClientRead):
     """Resposta da API de clientes: a ficha mais os contatos adicionais.
 
     `ClientRead` segue sem contatos de propósito: ele alimenta snapshots de
-    e-mail de pedido, que não devem carregar dados pessoais de terceiros.
+    e-mail de pedido, que não devem carregar dados pessoais de terceiros. O
+    snapshot acrescenta por conta própria só o primeiro contato (nome, telefone
+    e e-mail), que o PDF imprime (ver `order_email_jobs._first_contact_snapshot`).
     """
 
     contacts: list[ClientContactRead] = Field(default_factory=list)

@@ -820,3 +820,93 @@ test('o texto do produto termina antes da primeira coluna numérica, mesmo com v
   const edges = ['QTD', 'PREÇO-BASE', 'DESCONTO (%)', 'VALOR C/ DESC.', 'IPI', 'SUBTOTAL'].map((label) => callsOf(label)[0].x)
   assert.deepEqual([...edges].sort((a, b) => a - b), edges)
 })
+
+// ── Primeiro contato salvo do cliente ────────────────────────────────────────
+// Dados fictícios. O contato vem de `client.contacts[0]` (ordem da ficha); no
+// pedido finalizado enviado por e-mail, do snapshot congelado na finalização.
+
+const CONTACT_FIELDS = ['Maria Teste', '+55 11 90000-0000', 'maria@example.com']
+
+test('BR: o primeiro contato do cliente aparece com nome, telefone e e-mail e rótulo em português', async () => {
+  const client = makeClient({
+    contacts: [
+      { name: 'Maria Teste', phone: '+55 11 90000-0000', email: 'maria@example.com' },
+      { name: 'Segundo Contato', phone: '+55 11 91111-1111', email: 'segundo@example.com' },
+    ],
+  })
+
+  await buildOrderPdf({ order: makeOrder(), client, rep: null, products: [makeProduct()] })
+
+  assert.ok(renderedTexts.includes('CONTATO DO CLIENTE'))
+  for (const field of CONTACT_FIELDS) assert.ok(renderedTexts.includes(field), field)
+  // Só o primeiro: o segundo não entra no documento.
+  assert.ok(!renderedTexts.includes('Segundo Contato'))
+  assert.ok(!renderedTexts.includes('segundo@example.com'))
+})
+
+test('orçamento também mostra o contato do cliente', async () => {
+  const client = makeClient({
+    contacts: [{ name: 'Maria Teste', phone: '+55 11 90000-0000', email: 'maria@example.com' }],
+  })
+  const order = makeOrder({ is_finalized: false, finalized_at: null })
+
+  await buildOrderPdf({ order, client, rep: null, products: [makeProduct()] })
+
+  assert.ok(renderedTexts.includes('CONTATO DO CLIENTE'))
+  for (const field of CONTACT_FIELDS) assert.ok(renderedTexts.includes(field), field)
+})
+
+test('EU pt-PT e en-GB: rótulo do contato do cliente traduzido', async () => {
+  const client = makeClient({
+    market_code: 'EU',
+    country: 'PT',
+    city: 'Lisboa',
+    region: 'Lisboa',
+    contacts: [{ name: 'Maria Teste', phone: '+351 910 000 000', email: 'maria@example.com' }],
+  })
+  const order = makeOrder({
+    market_code: 'EU',
+    currency: 'EUR',
+    locale: 'pt-PT',
+    items: [makeOrderItem({ currency: 'EUR', tax_label: 'IVA' })],
+  })
+
+  await buildOrderPdf({ order, client, rep: null, products: [makeProduct({ market_code: 'EU' })] })
+  assert.ok(renderedTexts.includes('CONTACTO DO CLIENTE'))
+  assert.ok(renderedTexts.includes('Maria Teste'))
+  assert.ok(renderedTexts.includes('+351 910 000 000'))
+
+  renderedTexts.length = 0
+  await buildOrderPdf({
+    order,
+    client,
+    rep: null,
+    products: [makeProduct({ market_code: 'EU' })],
+    documentLocale: 'en-GB',
+  })
+  assert.ok(renderedTexts.includes('CLIENT CONTACT'))
+  assert.ok(renderedTexts.includes('maria@example.com'))
+})
+
+test('contato só com nome: mostra o nome e não imprime telefone nem e-mail vazios', async () => {
+  const client = makeClient({ contacts: [{ name: 'Maria Teste', phone: null, email: '  ' }] })
+
+  await buildOrderPdf({ order: makeOrder(), client, rep: null, products: [makeProduct()] })
+
+  assert.ok(renderedTexts.includes('CONTATO DO CLIENTE'))
+  assert.ok(renderedTexts.includes('Maria Teste'))
+  assert.ok(!renderedTexts.some((text) => text.trim() === ''))
+})
+
+test.each([
+  ['sem a chave contacts (snapshot antigo)', undefined],
+  ['lista vazia', []],
+])('cliente %s: o PDF sai normal e sem o bloco de contato', async (_label, contacts) => {
+  const client = makeClient({ contacts })
+
+  await buildOrderPdf({ order: makeOrder(), client, rep: null, products: [makeProduct()] })
+
+  assert.ok(!renderedTexts.includes('CONTATO DO CLIENTE'))
+  assert.ok(renderedTexts.includes('Cliente Teste'))
+  assert.ok(renderedTexts.includes('cliente@example.com'))
+})

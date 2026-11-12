@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.models.client import Client
+from app.models.client_contact import ClientContact
 from app.models.optional_category import OptionalCategory
 from app.models.order import Order, OrderItem
 from app.models.order_email import OrderEmailDelivery, OrderEmailDocument
@@ -58,6 +59,34 @@ def _read_schema(schema, row, *, email: str | None = None) -> dict:
     if email is not None or getattr(row, "email", None) is not None:
         values["email"] = email
     return jsonable_encoder(schema.model_validate(values))
+
+
+async def _first_contact_snapshot(db: AsyncSession, client: Client) -> list[dict]:
+    """Primeiro contato salvo do cliente (``[]`` se não houver), para o PDF.
+
+    "Primeiro" segue a ordem da ficha (``position``), com desempate pela criação
+    e pelo id. Só esse contato entra no snapshot, e só com nome, telefone e
+    e-mail: o PDF não precisa de mais dados pessoais de terceiros do que isso.
+    O snapshot é congelado na finalização; os antigos não têm esta chave e o PDF
+    simplesmente não mostra o bloco.
+    """
+    contact = (
+        await db.execute(
+            select(ClientContact)
+            .where(ClientContact.client_id == client.id)
+            .order_by(
+                ClientContact.position,
+                ClientContact.created_at,
+                ClientContact.id,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        return []
+    return [
+        {"name": contact.name, "phone": contact.phone, "email": contact.email}
+    ]
 
 
 async def _snapshot_v2(
@@ -148,7 +177,10 @@ async def _snapshot_v2(
         "order": jsonable_encoder(
             OrderRead.model_validate(loaded_order), exclude={"history"}
         ),
-        "client": _read_schema(ClientRead, client, email=client_email),
+        "client": {
+            **_read_schema(ClientRead, client, email=client_email),
+            "contacts": await _first_contact_snapshot(db, client),
+        },
         "representative": (
             _read_schema(RepresentativeRead, representative, email=representative_email)
             if representative
