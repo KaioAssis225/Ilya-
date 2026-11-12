@@ -165,7 +165,12 @@ function usePhotoGalleryMutation<TVariables>(request: (variables: TVariables) =>
   const qc = useQueryClient()
   return useMutation<Product, Error, TVariables>({
     mutationFn: request,
-    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    // A mesma galeria serve produtos e protótipos: sem invalidar a lista de
+    // protótipos a miniatura nova só aparecia depois do cache vencer.
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: [KEY] }),
+      qc.invalidateQueries({ queryKey: ['prototypes'] }),
+    ]),
   })
 }
 
