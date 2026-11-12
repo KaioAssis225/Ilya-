@@ -93,6 +93,84 @@ describe('PrototiposPage', () => {
     expect(await screen.findByText(/Protótipo PROT-0007 criado/)).toBeInTheDocument()
   })
 
+  it('sobe as fotos escolhidas logo depois de criar, a primeira como principal', async () => {
+    const order: string[] = []
+    installProductHandlers({ catalogs: [CATALOG] })
+    server.use(
+      listHandler([]),
+      http.post('*/prototypes', async ({ request }) => {
+        order.push('create')
+        const body = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ ...prototypeFixture('PROT-0009'), ...body, description: body.description_pt_pt }, { status: 201 })
+      }),
+      http.post('*/prototypes/:id/photos', async ({ params }) => {
+        order.push(`photo:${String(params.id)}`)
+        const photo = { id: `ph-${order.length}`, position: order.length - 2, is_primary: order.length === 2, photo_url: '/m/a.png', thumbnail_url: '/m/a-t.webp' }
+        return HttpResponse.json({ ...prototypeFixture('PROT-0009'), photos: [photo], photo_count: 1, photo_url: '/m/a.png', thumbnail_url: '/m/a-t.webp' }, { status: 201 })
+      }),
+      http.get('*/prototypes/:id/optional-groups', () => HttpResponse.json([])),
+    )
+    renderProductPage(<PrototiposPage />, permittedUser(), ['/prototipos'])
+    await userEvent.click(await screen.findByRole('button', { name: /Novo protótipo/ }))
+    const form = await screen.findByRole('form', { name: 'Formulário de protótipo' })
+    await userEvent.type(within(form).getByLabelText(/Nome em português/), 'Poltrona')
+    await userEvent.type(within(form).getByLabelText(/Nome em inglês/), 'Armchair')
+    await userEvent.selectOptions(within(form).getByLabelText(/Catálogo/), CATALOG.id)
+    await userEvent.type(within(form).getByLabelText(/Altura/), '1')
+    await userEvent.type(within(form).getByLabelText(/Largura/), '1')
+    const png = new File(['x'], 'frente.png', { type: 'image/png' })
+    const webp = new File(['y'], 'lado.webp', { type: 'image/webp' })
+    await userEvent.upload(within(form).getByLabelText('Escolher fotos do protótipo'), [png, webp])
+    const chosen = within(form).getByRole('list', { name: 'Fotos escolhidas' })
+    expect(within(chosen).getByText('Principal')).toBeInTheDocument()
+    expect(within(chosen).getAllByRole('listitem')).toHaveLength(2)
+    await userEvent.click(within(form).getByRole('button', { name: 'Criar protótipo' }))
+    await waitFor(() => expect(order).toEqual(['create', 'photo:proto-PROT-0009', 'photo:proto-PROT-0009']))
+    expect(await screen.findByText(/Protótipo PROT-0009 criado/)).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Fotos escolhidas' })).not.toBeInTheDocument()
+  })
+
+  it('recusa na tela arquivo que não é imagem aceita ou passa de 5 MB', async () => {
+    installProductHandlers({ catalogs: [CATALOG] })
+    server.use(listHandler([]))
+    renderProductPage(<PrototiposPage />, permittedUser(), ['/prototipos'])
+    await userEvent.click(await screen.findByRole('button', { name: /Novo protótipo/ }))
+    const form = await screen.findByRole('form', { name: 'Formulário de protótipo' })
+    const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'grande.png', { type: 'image/png' })
+    const pdf = new File(['z'], 'ficha.pdf', { type: 'application/pdf' })
+    await userEvent.upload(within(form).getByLabelText('Escolher fotos do protótipo'), [big, pdf], { applyAccept: false })
+    expect(await within(form).findByRole('alert')).toHaveTextContent(/grande\.png: acima de 5 MB/)
+    expect(within(form).getByRole('alert')).toHaveTextContent(/ficha\.pdf: use JPG, PNG ou WEBP/)
+    expect(within(form).queryByRole('list', { name: 'Fotos escolhidas' })).not.toBeInTheDocument()
+  })
+
+  it('subir foto na edição atualiza a lista de protótipos (miniatura nova)', async () => {
+    let listed = 0
+    const proto = prototypeFixture()
+    installProductHandlers({ catalogs: [CATALOG] })
+    server.use(
+      http.get('*/prototypes', () => {
+        listed += 1
+        const withPhoto = listed > 1
+        return HttpResponse.json([{ ...proto, thumbnail_url: withPhoto ? '/m/nova-t.webp' : null, photo_url: withPhoto ? '/m/nova.png' : null }], {
+          headers: { 'X-Total-Count': '1', 'X-Has-More': 'false', 'X-Page-Size': '1' },
+        })
+      }),
+      http.get('*/prototypes/:id/optional-groups', () => HttpResponse.json([])),
+      http.post('*/prototypes/:id/photos', () => HttpResponse.json({
+        ...proto, photo_url: '/m/nova.png', thumbnail_url: '/m/nova-t.webp', photo_count: 1,
+        photos: [{ id: 'ph-1', position: 0, is_primary: true, photo_url: '/m/nova.png', thumbnail_url: '/m/nova-t.webp' }],
+      }, { status: 201 })),
+    )
+    const { container } = renderProductPage(<PrototiposPage />, permittedUser(), ['/prototipos'])
+    await userEvent.click(await screen.findByRole('button', { name: /Editar/ }))
+    const gallery = await screen.findByRole('region', { name: 'Galeria de fotos' })
+    expect(container.querySelector('ul[aria-label="Meus protótipos"] img')).toBeNull()
+    await userEvent.upload(within(gallery).getByLabelText('Adicionar fotos à galeria'), new File(['x'], 'a.png', { type: 'image/png' }))
+    await waitFor(() => expect(container.querySelector('ul[aria-label="Meus protótipos"] img')).not.toBeNull())
+    expect(container.querySelector('ul[aria-label="Meus protótipos"] img')).toHaveAttribute('src', '/m/nova-t.webp')
+  })
+
   it('não envia sem o catálogo', async () => {
     const posts = vi.fn()
     installProductHandlers({ catalogs: [CATALOG] })

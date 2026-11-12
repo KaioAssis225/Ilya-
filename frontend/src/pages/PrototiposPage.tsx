@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
-import { Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ImagePlus, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { OptionalApplicationGroup } from '../components/OptionalApplicationGroup'
-import { ProductPhotosManager } from '../components/ProductPhotosManager'
+import { MAX_PRODUCT_PHOTOS, ProductPhotosManager } from '../components/ProductPhotosManager'
+import { useAddProductPhotoToGallery } from '../hooks/useProducts'
 import { useAuth } from '../hooks/useAuth'
 import { useCatalogs } from '../hooks/useCatalogs'
 import { useOptionalCategories } from '../hooks/useOptionalCategories'
@@ -26,6 +27,9 @@ const PAGE_SIZE = 24
 const NO_TYPE = 'Outro'
 const EU_GREEN = '#2f7d5b'
 const DEFAULT_VAT = '23'
+// Mesmo teto do servidor (MAX_UPLOAD_SIZE_MB); o servidor decide, aqui só se evita envio inútil.
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 interface FormState {
   description_pt_pt: string
@@ -252,10 +256,32 @@ function PrototypeForm({ initial, onClose }: { initial: Product | null; onClose:
   const { data: categories = [] } = useOptionalCategories()
   const create = useCreatePrototype()
   const update = useUpdatePrototype()
+  const addPhoto = useAddProductPhotoToGallery()
+  const photoInput = useRef<HTMLInputElement>(null)
+  // Fotos escolhidas antes de salvar: sobem logo depois que o protótipo existe.
+  const [pendingPhotos, setPendingPhotos] = useState<Array<{ file: File; preview: string | null }>>([])
   const [saved, setSaved] = useState<Product | null>(initial)
   const [form, setForm] = useState<FormState>(initial ? formOf(initial) : EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => () => {
+    pendingPhotos.forEach(item => { if (item.preview) URL.revokeObjectURL(item.preview) })
+  }, [pendingPhotos])
+
+  function pickPhotos(files: File[]) {
+    const problems: string[] = []
+    const accepted: Array<{ file: File; preview: string | null }> = []
+    for (const file of files) {
+      if (!PHOTO_TYPES.includes(file.type)) problems.push(`${file.name}: use JPG, PNG ou WEBP.`)
+      else if (file.size > MAX_PHOTO_BYTES) problems.push(`${file.name}: acima de 5 MB.`)
+      else accepted.push({ file, preview: typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : null })
+    }
+    const room = MAX_PRODUCT_PHOTOS - pendingPhotos.length
+    if (accepted.length > room) problems.push(`Limite de ${MAX_PRODUCT_PHOTOS} fotos por protótipo.`)
+    setPendingPhotos(previous => [...previous, ...accepted.slice(0, Math.max(0, room))])
+    setError(problems.length ? problems.join(' · ') : null)
+  }
 
   const generalIds = useMemo(() => new Set(categories.map(category => category.id)), [categories])
   const usedGeneral = categories.filter(category => form.optional_applications.some(app => app.category_id === category.id))
@@ -288,15 +314,33 @@ function PrototypeForm({ initial, onClose }: { initial: Product | null; onClose:
       const response = saved
         ? await update.mutateAsync({ id: saved.id, data: payloadOf(form) })
         : await create.mutateAsync(payloadOf(form))
-      setSaved(response)
-      setForm(formOf(response))
-      setNotice(saved ? 'Protótipo atualizado.' : `Protótipo ${response.product_code} criado. Agora você pode adicionar fotos e grupos de opcionais.`)
+      let current = response
+      const failures: string[] = []
+      if (!saved) {
+        // Protótipo novo: as fotos escolhidas sobem agora (a primeira vira a principal).
+        for (const item of pendingPhotos) {
+          try {
+            current = await addPhoto.mutateAsync({ id: response.id, file: item.file, basePath: PROTOTYPES_PATH })
+          } catch (err) {
+            failures.push(`${item.file.name}: ${parseApiError(err)}`)
+            break
+          }
+        }
+        setPendingPhotos([])
+      }
+      setSaved(current)
+      setForm(formOf(current))
+      if (failures.length) {
+        setError(`Protótipo ${response.product_code} criado, mas nem todas as fotos subiram — ${failures.join(' · ')}. Tente de novo na galeria abaixo.`)
+      } else {
+        setNotice(saved ? 'Protótipo atualizado.' : `Protótipo ${response.product_code} criado. Agora você pode adicionar mais fotos e grupos de opcionais.`)
+      }
     } catch (err) {
       setError(parseApiError(err))
     }
   }
 
-  const busy = create.isPending || update.isPending
+  const busy = create.isPending || update.isPending || addPhoto.isPending
   const localApplications = form.optional_applications.filter(app => !generalIds.has(app.category_id))
 
   return (
@@ -379,6 +423,41 @@ function PrototypeForm({ initial, onClose }: { initial: Product | null; onClose:
         ))}
       </section>
 
+      {!saved && (
+        <section aria-label="Fotos do protótipo" className="space-y-2 rounded-xl border border-line p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Fotos</h3>
+              <p className="text-xs text-muted">Até {MAX_PRODUCT_PHOTOS} fotos (JPG, PNG ou WEBP, 5 MB cada). A primeira é a principal: aparece na lista, no orçamento e no PDF.</p>
+            </div>
+            <button type="button" className="btn-secondary inline-flex min-h-11 items-center gap-1 px-3 text-xs"
+              disabled={pendingPhotos.length >= MAX_PRODUCT_PHOTOS} onClick={() => photoInput.current?.click()}>
+              <ImagePlus className="h-4 w-4" aria-hidden="true" /> Escolher fotos
+            </button>
+            <input ref={photoInput} type="file" multiple accept=".jpg,.jpeg,.png,.webp" className="hidden"
+              aria-label="Escolher fotos do protótipo"
+              onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) pickPhotos(files) }} />
+          </div>
+          {pendingPhotos.length > 0 && (
+            <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5" aria-label="Fotos escolhidas">
+              {pendingPhotos.map((item, index) => (
+                <li key={`${item.file.name}-${index}`} className="relative overflow-hidden rounded-lg border border-line">
+                  {item.preview
+                    ? <img src={item.preview} alt="" className="aspect-square w-full object-cover" />
+                    : <span className="flex aspect-square items-center justify-center p-1 text-center text-[10px] text-muted">{item.file.name}</span>}
+                  {index === 0 && <span className="absolute left-1 top-1 rounded-full bg-gold px-2 py-0.5 text-[10px] font-semibold text-white">Principal</span>}
+                  <button type="button" className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-danger"
+                    aria-label={`Remover ${item.file.name}`}
+                    onClick={() => setPendingPhotos(previous => previous.filter((_, current) => current !== index))}>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {error && <p role="alert" className="text-sm font-medium text-danger">{error}</p>}
       {notice && <p role="status" className="text-sm text-emerald-800">{notice}</p>}
       <div className="flex justify-end gap-2">
@@ -399,7 +478,7 @@ function PrototypeForm({ initial, onClose }: { initial: Product | null; onClose:
           )}
         </>
       ) : (
-        <p className="text-xs text-muted">Salve o protótipo para adicionar fotos e criar grupos de opcionais só dele.</p>
+        <p className="text-xs text-muted">Salve o protótipo para criar grupos de opcionais só dele. As fotos escolhidas acima sobem junto.</p>
       )}
     </form>
   )
