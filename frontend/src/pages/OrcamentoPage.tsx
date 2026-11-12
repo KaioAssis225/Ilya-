@@ -1476,6 +1476,8 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
     limit: 15,
     q: debouncedProductQuery || undefined,
     include_total: false,
+    // Atalho: quem tem a área de protótipos acha o PROT-xxxx digitando o código ou o nome.
+    include_prototypes: market === 'EU' && user?.can_manage_prototypes === true ? true : undefined,
     sort_by: 'product_code',
     sort_dir: 'asc',
   })
@@ -2342,6 +2344,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                   : <ImageIcon className="w-8 h-8 text-faint flex-shrink-0" />}
                 <div className="truncate">
                   <span className="text-gold font-mono font-medium">{p.product_code}</span>
+                  {p.is_prototype && <span className="ml-1.5 rounded-full bg-gold/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold">{isEnglish ? 'Prototype' : 'Protótipo'}</span>}
                   <span className="text-ink ml-1.5 font-medium">{p.description}</span>
                   {dimLabel(p, market, locale) && <div className="type-meta font-mono mt-0.5">{dimLabel(p, market, locale)}</div>}
                 </div>
