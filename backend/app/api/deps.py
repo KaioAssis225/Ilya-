@@ -170,18 +170,20 @@ async def get_current_user(
     return principal.actor
 
 
-PROTOTYPE_ROLES = frozenset({UserRole.admin, UserRole.vendedor, UserRole.produtos})
-
-
 def prototype_access_allowed(principal: MarketPrincipal) -> bool:
-    """Área de protótipos: mercado ativo EU, vínculo com a permissão ligada e
-    um papel interno que a aceita. Lida do vínculo a cada requisição."""
+    """Área de protótipos: a regra única vive em `MarketActor.can_manage_prototypes`
+    (EU + admin do vínculo, ou liberação por usuário). Lida do vínculo a cada requisição."""
     return (
         principal.code == EU_MARKET
         and principal.access is not None
         and principal.actor.can_manage_prototypes
-        and principal.actor.role in PROTOTYPE_ROLES
     )
+
+
+def prototype_view_scope(principal: MarketPrincipal):
+    """Quem os protótipos visíveis a este principal pertencem: `True` para o admin
+    (vê todos) ou o id do próprio usuário. Só use depois de `prototype_access_allowed`."""
+    return True if principal.actor.sees_all_prototypes else principal.user.id
 
 
 async def require_prototype_manager(
@@ -192,12 +194,13 @@ async def require_prototype_manager(
     de uma rota inexistente: a área não revela que existe.
 
     Também abre, só nesta requisição, a visão dos protótipos do PRÓPRIO usuário
-    para as consultas sobre Product (negação por padrão em `app.db.market_scope`).
+    para as consultas sobre Product (negação por padrão em `app.db.market_scope`);
+    o admin enxerga os de todos.
     A visão é fechada ao fim da requisição, mesmo que a sessão seja reaproveitada.
     """
     if not prototype_access_allowed(principal):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
-    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id
+    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = prototype_view_scope(principal)
     try:
         yield principal
     finally:
@@ -214,7 +217,7 @@ async def open_prototype_view(
     if not prototype_access_allowed(principal):
         yield
         return
-    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id
+    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = prototype_view_scope(principal)
     try:
         yield
     finally:
@@ -235,7 +238,7 @@ async def open_prototype_search(
     if not (include_prototypes and (q or "").strip() and prototype_access_allowed(principal)):
         yield
         return
-    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = principal.user.id
+    db.sync_session.info[PROTOTYPE_OWNER_INFO_KEY] = prototype_view_scope(principal)
     try:
         yield
     finally:

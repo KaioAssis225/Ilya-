@@ -80,7 +80,7 @@ async def test_sem_permissao_nunca_acha_nem_por_codigo_exato(client: AsyncClient
     w = await _world(db_session)
     proto = await _create(client, w)
     code, name = proto["product_code"], "Poltrona protótipo"
-    for who, role in ((w.plain, "vendedor"), (w.admin, "admin"), (w.other, "vendedor")):
+    for who, role in ((w.plain, "vendedor"), (w.nobody, "produtos"), (w.other, "vendedor")):
         headers = _auth(who, role)
         for query in (code, code.lower(), "PROT-00", name):
             response = await _search(client, headers, query)

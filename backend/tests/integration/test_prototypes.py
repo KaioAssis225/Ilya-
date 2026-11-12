@@ -69,13 +69,14 @@ async def _person(
 
 
 class World:
-    def __init__(self, catalog, product_type, james, other, plain, admin):
+    def __init__(self, catalog, product_type, james, other, plain, admin, nobody):
         self.catalog = catalog
         self.type = product_type
         self.james = james
         self.other = other
         self.plain = plain
         self.admin = admin
+        self.nobody = nobody  # papel interno (produtos) SEM a liberação
 
     def body(self, **extra) -> dict:
         return {
@@ -99,8 +100,9 @@ async def _world(db: AsyncSession) -> World:
     other = await _person(db, "other", prototypes=True)
     plain = await _person(db, "plain")
     admin = await _person(db, "admin", role="admin")
+    nobody = await _person(db, "nobody", role="produtos")
     await db.commit()
-    return World(catalog, product_type, james, other, plain, admin)
+    return World(catalog, product_type, james, other, plain, admin, nobody)
 
 
 async def _create(client: AsyncClient, w: World, who=None, **extra) -> dict:
@@ -127,7 +129,7 @@ async def test_sem_permissao_tudo_responde_404(client: AsyncClient, db_session: 
     w = await _world(db_session)
     mine = await _create(client, w)
     fake = uuid.uuid4()
-    for who, role in ((w.plain, "vendedor"), (w.admin, "admin")):
+    for who, role in ((w.plain, "vendedor"), (w.nobody, "produtos")):
         headers = _auth(who, role)
         assert (await client.post(PROTOTYPES, json=w.body(), headers=headers)).status_code == 404
         assert (await client.get(PROTOTYPES, headers=headers)).status_code == 404
@@ -360,8 +362,9 @@ async def test_prototipo_nao_aparece_no_catalogo_nem_para_o_dono(client: AsyncCl
         batch = await client.post(
             "/api/v1/products/batch", json={"product_codes": [created["product_code"]]}, headers=headers,
         )
-        # O dono vê o PRÓPRIO protótipo no /batch (montar orçamento); os demais, nada.
-        assert batch.status_code == 200 and (batch.json() == [] or who is w.james)
+        # O dono (e o admin, que usa os de todos) vê o protótipo no /batch para montar o
+        # orçamento; os demais, nada. O catálogo comum acima segue sem ele para todos.
+        assert batch.status_code == 200 and (batch.json() == [] or who in (w.james, w.admin))
         options = await client.get("/api/v1/products/filter-options", headers=headers)
         assert options.status_code == 200
         assert (await client.patch(

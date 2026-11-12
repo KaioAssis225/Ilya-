@@ -516,7 +516,11 @@ export default function PrototiposPage() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-ink md:text-2xl">Protótipos</h1>
-            <p className="mt-1 text-sm text-muted">Só você vê estes itens. Eles entram nos seus orçamentos e não aparecem no catálogo dos outros.</p>
+            <p className="mt-1 text-sm text-muted">
+              {user.role === 'admin'
+                ? 'Como admin, você vê e usa os protótipos de todos. Eles não aparecem no catálogo.'
+                : 'Só você vê estes itens. Eles entram nos seus orçamentos e não aparecem no catálogo dos outros.'}
+            </p>
           </div>
           <button type="button" className="btn-primary inline-flex items-center gap-2" onClick={() => setEditing('new')}>
             <Plus className="h-4 w-4" aria-hidden="true" /> Novo protótipo
