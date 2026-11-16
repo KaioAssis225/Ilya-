@@ -43,9 +43,26 @@ class ShowroomBoxUpdate(BaseModel):
         return self
 
 
+class ShowroomOptionalChoiceInput(BaseModel):
+    optional_id: uuid.UUID
+    application_id: uuid.UUID | None = None
+    category_code: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def identifies_one_slot(self):
+        if (self.application_id is None) == (self.category_code is None):
+            raise ValueError("Informe a aplicação ou a categoria do opcional.")
+        if self.category_code is not None:
+            self.category_code = self.category_code.strip()
+        return self
+
+
 class ShowroomItemAdd(BaseModel):
     product_id: uuid.UUID
     quantity: int = Field(default=1, ge=1, le=1_000_000)
+    optional_choices: list[ShowroomOptionalChoiceInput] = Field(
+        default_factory=list, max_length=100,
+    )
 
 
 class ShowroomItemUpdate(BaseModel):
@@ -60,10 +77,23 @@ class ShowroomProductRead(BaseModel):
     unit_price: Decimal
 
 
+class ShowroomOptionalChoiceRead(BaseModel):
+    application_id: uuid.UUID | None = None
+    application_name: str | None = None
+    application_name_en: str | None = None
+    category_code: str
+    category_name: str
+    optional_id: uuid.UUID
+    optional_name: str
+    component_name: str | None = None
+    thumbnail_url: str | None = None
+
+
 class ShowroomItemRead(ShowroomProductRead):
     item_id: uuid.UUID
     quantity: int
     line_total: Decimal
+    optional_choices: list[ShowroomOptionalChoiceRead] = Field(default_factory=list)
 
 
 class ShowroomBoxRead(BaseModel):

@@ -8,7 +8,9 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -58,11 +60,20 @@ class ShowroomBoxItem(Base, TimestampMixin):
         ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    optional_configuration: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    configuration_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="base", server_default="base"
+    )
 
     product = relationship("Product", lazy="selectin")
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_showroom_box_items_quantity"),
-        UniqueConstraint("box_id", "product_id", name="uq_showroom_box_items_product"),
+        UniqueConstraint(
+            "box_id", "product_id", "configuration_key",
+            name="uq_showroom_box_items_configuration",
+        ),
         Index("ix_showroom_box_items_box", "box_id", "created_at"),
     )

@@ -7,6 +7,7 @@ import { vi } from 'vitest'
 import { type AuthUser, type UserRole } from '../contexts/AuthContext'
 import { AuthContext } from '../hooks/useAuth'
 import { LocaleProvider } from '../contexts/LocaleContext'
+import type { OptionalApplication, OptionalColor, ProductSetComponent, ProductSetItem } from '../types'
 import { server } from './setup'
 
 export function productTestUser(role: UserRole = 'admin', market: 'BR' | 'EU' = 'BR'): AuthUser {
@@ -69,10 +70,10 @@ export interface ProductFixture {
   market_prices: Record<string, number>
   observacao: string | null
   all_optionals_categories: string | null
-  optionals: never[]
-  optional_applications: never[]
-  set_items: never[]
-  components: never[]
+  optionals: OptionalColor[]
+  optional_applications: OptionalApplication[]
+  set_items: ProductSetItem[]
+  components: ProductSetComponent[]
   photo_url: string | null
   thumbnail_url: string | null
   created_at: string

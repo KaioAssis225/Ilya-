@@ -111,7 +111,7 @@ function DashboardFabGate() {
 function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
-  const { t } = useLocale()
+  const { locale, t } = useLocale()
   // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
   const cartUnits = countCartUnits(useCartQuantities(user?.id, user?.active_market))
   if (!user || user.must_change_password) return null
@@ -138,9 +138,9 @@ function BottomNav() {
         </NavLink>
       )}
       {canSeeShowrooms(user) && (
-        <NavLink to="/showrooms" className={itemClass('/showrooms')} aria-label="Estoque">
+        <NavLink to="/showrooms" className={itemClass('/showrooms')} aria-label={locale === 'en-GB' ? 'Stock' : 'Estoque'}>
           <Warehouse className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Estoque</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{locale === 'en-GB' ? 'Stock' : 'Estoque'}</span>
         </NavLink>
       )}
       {canSeeOptionals(user) && (
@@ -245,7 +245,7 @@ function Nav() {
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
               {canSeePrototypes(user) && <NavLink to="/prototipos" className={linkClass} aria-label="Protótipos">Protótipos</NavLink>}
-              {canSeeShowrooms(user) && <NavLink to="/showrooms" className={linkClass} aria-label="Estoque">Estoque</NavLink>}
+              {canSeeShowrooms(user) && <NavLink to="/showrooms" className={linkClass} aria-label={locale === 'en-GB' ? 'Stock' : 'Estoque'}>{locale === 'en-GB' ? 'Stock' : 'Estoque'}</NavLink>}
               {canSeeOptionals(user) && <NavLink to="/opcionais" className={linkClass} aria-label={t('optionals')}>{t('optionals')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
