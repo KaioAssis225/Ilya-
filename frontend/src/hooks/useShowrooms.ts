@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
+import { useLocale } from './useLocale'
 
 export type ShowroomPriceList = 'lojista' | 'arquiteto' | 'corporativo' | 'pvp'
 
@@ -15,6 +16,25 @@ export interface ShowroomItem extends ShowroomProduct {
   item_id: string
   quantity: number
   line_total: number | string
+  optional_choices: ShowroomOptionalChoice[]
+}
+
+export interface ShowroomOptionalChoiceInput {
+  optional_id: string
+  application_id?: string
+  category_code?: string
+}
+
+export interface ShowroomOptionalChoice {
+  application_id: string | null
+  application_name: string | null
+  application_name_en: string | null
+  category_code: string
+  category_name: string
+  optional_id: string
+  optional_name: string
+  component_name: string | null
+  thumbnail_url: string | null
 }
 
 export interface ShowroomBox {
@@ -34,19 +54,23 @@ export interface ShowroomBox {
 const KEY = ['showroom-boxes'] as const
 
 export function useShowroomBoxes() {
+  const { locale } = useLocale()
   return useQuery<ShowroomBox[]>({
-    queryKey: KEY,
-    queryFn: () => api.get<ShowroomBox[]>('/showroom-boxes').then(response => response.data),
+    queryKey: [...KEY, locale],
+    queryFn: () => api.get<ShowroomBox[]>('/showroom-boxes', {
+      params: { language: locale },
+    }).then(response => response.data),
   })
 }
 
 export function useShowroomProducts(priceList: ShowroomPriceList | undefined, q: string) {
+  const { locale } = useLocale()
   return useQuery<ShowroomProduct[]>({
-    queryKey: [...KEY, 'products', priceList, q],
+    queryKey: [...KEY, 'products', priceList, q, locale],
     queryFn: () => api.get<ShowroomProduct[]>('/showroom-boxes/products', {
-      params: { price_list_code: priceList, q: q.trim(), limit: 30 },
+      params: { price_list_code: priceList, q: q.trim(), limit: 12, language: locale },
     }).then(response => response.data),
-    enabled: Boolean(priceList),
+    enabled: Boolean(priceList && q.trim()),
     staleTime: 30_000,
   })
 }
@@ -60,14 +84,16 @@ function useShowroomMutation<TVariables>(request: (variables: TVariables) => Pro
 }
 
 export function useCreateShowroomBox() {
+  const { locale } = useLocale()
   return useShowroomMutation<{ name: string; price_list_code: ShowroomPriceList }>(
-    body => api.post('/showroom-boxes', body),
+    body => api.post('/showroom-boxes', body, { params: { language: locale } }),
   )
 }
 
 export function useUpdateShowroomBox() {
+  const { locale } = useLocale()
   return useShowroomMutation<{ id: string; name: string; price_list_code: ShowroomPriceList }>(
-    ({ id, ...body }) => api.patch(`/showroom-boxes/${id}`, body),
+    ({ id, ...body }) => api.patch(`/showroom-boxes/${id}`, body, { params: { language: locale } }),
   )
 }
 
@@ -76,22 +102,26 @@ export function useDeleteShowroomBox() {
 }
 
 export function useAddShowroomItem() {
-  return useShowroomMutation<{ boxId: string; productId: string; quantity?: number }>(
-    ({ boxId, productId, quantity = 1 }) => api.post(`/showroom-boxes/${boxId}/items`, {
+  const { locale } = useLocale()
+  return useShowroomMutation<{ boxId: string; productId: string; quantity?: number; optionalChoices?: ShowroomOptionalChoiceInput[] }>(
+    ({ boxId, productId, quantity = 1, optionalChoices = [] }) => api.post(`/showroom-boxes/${boxId}/items`, {
       product_id: productId,
       quantity,
-    }),
+      optional_choices: optionalChoices,
+    }, { params: { language: locale } }),
   )
 }
 
 export function useUpdateShowroomItem() {
+  const { locale } = useLocale()
   return useShowroomMutation<{ boxId: string; itemId: string; quantity: number }>(
-    ({ boxId, itemId, quantity }) => api.patch(`/showroom-boxes/${boxId}/items/${itemId}`, { quantity }),
+    ({ boxId, itemId, quantity }) => api.patch(`/showroom-boxes/${boxId}/items/${itemId}`, { quantity }, { params: { language: locale } }),
   )
 }
 
 export function useRemoveShowroomItem() {
+  const { locale } = useLocale()
   return useShowroomMutation<{ boxId: string; itemId: string }>(
-    ({ boxId, itemId }) => api.delete(`/showroom-boxes/${boxId}/items/${itemId}`),
+    ({ boxId, itemId }) => api.delete(`/showroom-boxes/${boxId}/items/${itemId}`, { params: { language: locale } }),
   )
 }
