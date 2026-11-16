@@ -18,7 +18,7 @@ from app.api.deps import (
     require_platform_capability,
     require_roles,
 )
-from app.core.markets import MarketPrincipal, PlatformPrincipal
+from app.core.markets import PROTOTYPE_ROLES, MarketPrincipal, PlatformPrincipal
 from app.core.client_invites import (
     generate_invite_token, hash_invite_token, invite_expiry,
     invitation_delivery_ready, send_client_invitation,
@@ -169,8 +169,8 @@ def _audit_prototype_access(
     )
 
 
-# Papéis que podem receber a área de protótipos (vínculo EU).
-_PROTOTYPE_ROLES = frozenset({UserRole.admin, UserRole.vendedor, UserRole.produtos})
+# Papéis que podem receber a área de protótipos (vínculo EU): lista única em core/markets.py.
+_PROTOTYPE_ROLES = PROTOTYPE_ROLES
 
 
 async def _build_market_links(

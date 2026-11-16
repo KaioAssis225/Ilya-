@@ -20,7 +20,7 @@ continua sendo `EU`.
 | `user_markets` | PK `(user_id, market_code)` | `market_code` obrigatório | Papel, estado e vínculos comerciais pertencem ao mercado. Um vínculo ativo exige papel. Cliente e representante vinculados devem pertencer ao mesmo mercado. |
 | `price_lists` | `market_code` | obrigatório | `code` é único dentro do mercado. |
 | `product_markets` | PK `(product_id, market_code)` | obrigatório | Disponibilidade, textos localizados e governança de IVA por produto/mercado. IVA só é faturável com estado `approved`, taxa, aprovador e data. |
-| `market_tax_rates` | `market_code` | obrigatório | Taxa única por `(market_code, product_type)`. Não substitui a aprovação explícita exigida para Portugal. |
+| `market_tax_rates` | `market_code` | obrigatório | **Sem uso.** Nenhum código lê nem grava esta tabela; o modelo foi retirado e a tabela fica no banco até alguém confirmar que está vazia e apagá-la por migração. O imposto vem do IPI do grupo (BR) e do IVA aprovado do produto (EU). |
 | `market_order_counters` | PK `(market_code, number_owner_id)` | obrigatório | Numeração de pedido separada por mercado e dono. |
 | `market_quote_counters` | PK `market_code` | obrigatório | Numeração de orçamento separada por mercado. |
 | `clients` | `market_code` | obrigatória; default legado `BR` | E-mail e documento são únicos por mercado; estado brasileiro só é validado para BR. |
