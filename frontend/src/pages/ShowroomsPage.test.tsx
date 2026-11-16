@@ -38,14 +38,17 @@ describe('ShowroomsPage', () => {
   })
 
   it('exibe quantidade, tabela e valores vivos da box', async () => {
+    const user = userEvent.setup()
     server.use(
       http.get('*/showroom-boxes', () => HttpResponse.json([boxFixture()])),
       http.get('*/showroom-boxes/products', () => HttpResponse.json([])),
     )
     renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
 
+    await user.click(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' }))
     expect(await screen.findByRole('heading', { name: 'Estoque Portugal' })).toBeInTheDocument()
-    expect(screen.getByText('2 peças · Lojista')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Todas as boxes' })).toBeInTheDocument()
+    expect(screen.getByText('Lojista')).toBeInTheDocument()
     expect(screen.getByText('89,42 €')).toBeInTheDocument()
     expect(screen.getAllByText('178,84 €').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByLabelText('Quantidade de ICD0106')[0]).toHaveValue(2)
@@ -69,7 +72,7 @@ describe('ShowroomsPage', () => {
       }),
     )
     renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
-    await screen.findByRole('heading', { name: 'Estoque Portugal' })
+    await screen.findByRole('button', { name: 'Abrir Estoque Portugal' })
 
     await user.click(screen.getByRole('button', { name: /Nova box/ }))
     await user.type(screen.getByLabelText('Nome da box'), 'Feira Porto')
@@ -80,7 +83,8 @@ describe('ShowroomsPage', () => {
       name: 'Feira Porto', price_list_code: 'arquiteto',
     }]))
     expect(await screen.findByText('Feira Porto')).toBeInTheDocument()
-    expect(screen.getByText('0 peças · Arquiteto')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Abrir Feira Porto' })).toBeInTheDocument()
+    expect(screen.getByText('Arquiteto')).toBeInTheDocument()
   })
 
   it('adiciona, altera quantidade e remove um produto', async () => {
@@ -118,7 +122,8 @@ describe('ShowroomsPage', () => {
     )
     renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
 
-    await user.click(await screen.findByRole('button', { name: 'Adicionar' }))
+    await user.click(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' }))
+    await user.click(await screen.findByRole('button', { name: 'Adicionar à box' }))
     await waitFor(() => expect(added).toHaveBeenCalledOnce())
     const quantity = (await screen.findAllByLabelText('Quantidade de ICD0106'))[0]
     await user.clear(quantity)
@@ -128,6 +133,31 @@ describe('ShowroomsPage', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Remover ICD0106' })[0])
     await waitFor(() => expect(removed).toHaveBeenCalledOnce())
-    expect(await screen.findByText('Esta box ainda está vazia.')).toBeInTheDocument()
+    expect(await screen.findByText('Esta box ainda está vazia')).toBeInTheDocument()
+  })
+
+  it('mantém o foco somente na box aberta e permite voltar à visão geral', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('*/showroom-boxes', () => HttpResponse.json([
+        boxFixture(),
+        boxFixture({ id: 'box-2', name: 'Feira Porto' }),
+      ])),
+      http.get('*/showroom-boxes/products', () => HttpResponse.json([])),
+    )
+    renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+
+    expect(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Abrir Feira Porto' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Abrir Estoque Portugal' }))
+
+    expect(await screen.findByRole('heading', { name: 'Estoque Portugal' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Abrir Feira Porto' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Todas as boxes' }))
+
+    expect(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Abrir Feira Porto' })).toBeInTheDocument()
   })
 })
