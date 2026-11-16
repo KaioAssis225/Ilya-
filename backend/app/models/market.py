@@ -66,11 +66,19 @@ class UserMarket(Base, TimestampMixin):
     can_manage_prototypes: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Boxes de showroom/feiras (showroom_boxes_r47): só vale no vínculo EU.
+    can_manage_showrooms: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     __table_args__ = (
         CheckConstraint(
             "NOT can_manage_prototypes OR market_code = 'EU'",
             name="ck_user_markets_prototypes_eu",
+        ),
+        CheckConstraint(
+            "NOT can_manage_showrooms OR market_code = 'EU'",
+            name="ck_user_markets_showrooms_eu",
         ),
         ForeignKeyConstraint(
             ["linked_client_id", "market_code"],
