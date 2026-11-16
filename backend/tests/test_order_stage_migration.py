@@ -61,4 +61,7 @@ def test_free_country_iroko_is_the_single_head_after_vat_exempt():
     showrooms = script.get_revision("showroom_boxes_r47")
     assert showrooms is not None
     assert showrooms.down_revision == "prototype_options_r46"
-    assert script.get_heads() == ["showroom_boxes_r47"]
+    renamed_stock = script.get_revision("rename_showroom_stock_r48")
+    assert renamed_stock is not None
+    assert renamed_stock.down_revision == "showroom_boxes_r47"
+    assert script.get_heads() == ["rename_showroom_stock_r48"]

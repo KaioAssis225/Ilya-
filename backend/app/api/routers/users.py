@@ -262,7 +262,7 @@ async def _build_market_links(
         if item.can_manage_showrooms and item.market_code != "EU":
             raise HTTPException(
                 422,
-                "Showrooms só podem ser liberados no mercado EU.",
+                "O Estoque de Portugal só pode ser liberado no mercado EU.",
             )
         links.append(UserMarket(
             market_code=item.market_code,

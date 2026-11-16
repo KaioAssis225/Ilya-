@@ -96,7 +96,7 @@ function BoxDialog({ box, onClose }: { box?: ShowroomBox; onClose: () => void })
         <div className="mt-5 space-y-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted">Nome da box</span>
-            <input autoFocus required maxLength={120} className="input" placeholder="Ex.: Showroom Portugal" value={name} onChange={event => setName(event.target.value)} />
+            <input autoFocus required maxLength={120} className="input" placeholder="Ex.: Estoque Portugal" value={name} onChange={event => setName(event.target.value)} />
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted">Tabela de preço</span>
@@ -165,11 +165,7 @@ export default function ShowroomsPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-5 pb-28 md:px-6 md:py-7 md:pb-10 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink md:text-4xl">Showrooms e feiras</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">Organize as peças físicas de cada espaço e acompanhe quantidades e valores pela tabela escolhida.</p>
-        </div>
+      <header className="flex justify-end">
         <button type="button" className="btn-primary inline-flex items-center gap-2" onClick={() => setDialog('create')}><Plus className="h-4 w-4" /> Nova box</button>
       </header>
 
@@ -178,12 +174,12 @@ export default function ShowroomsPage() {
       {boxesQuery.isLoading ? (
         <div className="mt-6 rounded-2xl bg-white p-8 text-center text-sm text-muted shadow-sm">Carregando boxes…</div>
       ) : boxesQuery.isError ? (
-        <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow-sm"><p className="text-sm text-terracotta">Não foi possível carregar os showrooms.</p><button className="btn-secondary mt-4" onClick={() => boxesQuery.refetch()}>Tentar novamente</button></div>
+        <div className="mt-6 rounded-2xl bg-white p-8 text-center shadow-sm"><p className="text-sm text-terracotta">Não foi possível carregar o estoque.</p><button className="btn-secondary mt-4" onClick={() => boxesQuery.refetch()}>Tentar novamente</button></div>
       ) : boxes.length === 0 ? (
         <div className="mt-6 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-line bg-white p-8 text-center shadow-sm">
           <Boxes className="h-9 w-9 text-gold" />
           <h2 className="mt-4 font-display text-2xl font-semibold text-ink">Nenhuma box criada</h2>
-          <p className="mt-1 max-w-md text-sm text-muted">Crie uma box para o showroom, feira ou exposição e adicione os produtos que estão fisicamente nesse local.</p>
+          <p className="mt-1 max-w-md text-sm text-muted">Crie uma box para cada local de estoque, feira ou exposição e adicione os produtos que estão fisicamente ali.</p>
           <button className="btn-primary mt-5" onClick={() => setDialog('create')}>Criar primeira box</button>
         </div>
       ) : selected && (

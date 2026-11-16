@@ -72,9 +72,9 @@ describe('PlatformPage — Acesso ao Estoque', () => {
     install()
     renderPlatform()
     const withAccess = (await screen.findByText('Bia Brasil')).closest('tr') as HTMLElement
-    expect(within(withAccess).getByText('Estoque')).toBeInTheDocument()
+    expect(within(withAccess).getByText('Estoque BR')).toBeInTheDocument()
     const without = screen.getByText('Eva Europa').closest('tr') as HTMLElement
-    expect(within(without).queryByText('Estoque')).not.toBeInTheDocument()
+    expect(within(without).queryByText('Estoque BR')).not.toBeInTheDocument()
   })
 
   it('conta BR ativa mostra o checkbox e o PATCH leva o valor marcado', async () => {
@@ -186,7 +186,7 @@ describe('PlatformPage — Acesso aos protótipos', () => {
   })
 })
 
-describe('PlatformPage — Acesso aos showrooms', () => {
+describe('PlatformPage — Acesso ao Estoque de Portugal', () => {
   const SHOWROOM_ROWS: UserRead[] = [
     identity('u-james', 'James Pereira', [access({ market_code: 'EU', can_manage_showrooms: true })]),
     identity('u-eva', 'Eva Europa', [access({ market_code: 'EU' })]),
@@ -198,9 +198,9 @@ describe('PlatformPage — Acesso aos showrooms', () => {
     server.use(http.get('*/users', () => HttpResponse.json(SHOWROOM_ROWS)))
     renderPlatform()
     const james = (await screen.findByText('James Pereira')).closest('tr') as HTMLElement
-    expect(within(james).getByText('Showrooms')).toBeInTheDocument()
+    expect(within(james).getByText('Estoque PT')).toBeInTheDocument()
     const plain = screen.getByText('Eva Europa').closest('tr') as HTMLElement
-    expect(within(plain).queryByText('Showrooms')).not.toBeInTheDocument()
+    expect(within(plain).queryByText('Estoque PT')).not.toBeInTheDocument()
   })
 
   it('permite selecionar e retirar o acesso nominal pelo vínculo EU', async () => {
@@ -209,7 +209,7 @@ describe('PlatformPage — Acesso aos showrooms', () => {
     server.use(http.get('*/users', () => HttpResponse.json(SHOWROOM_ROWS)))
     renderPlatform()
     await openEditor('Eva Europa')
-    const checkbox = screen.getByLabelText('Acesso aos showrooms')
+    const checkbox = screen.getByLabelText('Acesso ao Estoque de Portugal')
     expect(checkbox).not.toBeChecked()
     await userEvent.click(checkbox)
     await userEvent.click(screen.getByRole('button', { name: 'Salvar identidade e mercados' }))
@@ -223,6 +223,6 @@ describe('PlatformPage — Acesso aos showrooms', () => {
     server.use(http.get('*/users', () => HttpResponse.json(SHOWROOM_ROWS)))
     renderPlatform()
     await openEditor('Bia Brasil')
-    expect(screen.queryByLabelText('Acesso aos showrooms')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Acesso ao Estoque de Portugal')).not.toBeInTheDocument()
   })
 })
