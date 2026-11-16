@@ -138,9 +138,9 @@ function BottomNav() {
         </NavLink>
       )}
       {canSeeShowrooms(user) && (
-        <NavLink to="/showrooms" className={itemClass('/showrooms')} aria-label="Showrooms">
+        <NavLink to="/showrooms" className={itemClass('/showrooms')} aria-label="Estoque">
           <Warehouse className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Showrooms</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider">Estoque</span>
         </NavLink>
       )}
       {canSeeOptionals(user) && (
@@ -245,7 +245,7 @@ function Nav() {
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
               {canSeePrototypes(user) && <NavLink to="/prototipos" className={linkClass} aria-label="Protótipos">Protótipos</NavLink>}
-              {canSeeShowrooms(user) && <NavLink to="/showrooms" className={linkClass} aria-label="Showrooms">Showrooms</NavLink>}
+              {canSeeShowrooms(user) && <NavLink to="/showrooms" className={linkClass} aria-label="Estoque">Estoque</NavLink>}
               {canSeeOptionals(user) && <NavLink to="/opcionais" className={linkClass} aria-label={t('optionals')}>{t('optionals')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>

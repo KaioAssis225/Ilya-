@@ -17,7 +17,7 @@ function showroomUser(permitted = true) {
 
 function boxFixture(overrides: Record<string, unknown> = {}) {
   return {
-    id: 'box-1', name: 'Showroom Portugal', market_code: 'EU',
+    id: 'box-1', name: 'Estoque Portugal', market_code: 'EU',
     price_list_code: 'lojista', currency: 'EUR',
     items: [{
       item_id: 'item-1', id: 'product-1', product_code: 'ICD0106',
@@ -34,7 +34,7 @@ describe('ShowroomsPage', () => {
   it('não renderiza a área para usuário sem a capacidade', () => {
     server.use(http.get('*/showroom-boxes', () => HttpResponse.json([])))
     renderProductPage(<ShowroomsPage />, showroomUser(false), ['/showrooms'])
-    expect(screen.queryByText('Showrooms e feiras')).not.toBeInTheDocument()
+    expect(screen.queryByText('Estoque')).not.toBeInTheDocument()
   })
 
   it('exibe quantidade, tabela e valores vivos da box', async () => {
@@ -44,7 +44,7 @@ describe('ShowroomsPage', () => {
     )
     renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
 
-    expect(await screen.findByRole('heading', { name: 'Showroom Portugal' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Estoque Portugal' })).toBeInTheDocument()
     expect(screen.getByText('2 peças · Lojista')).toBeInTheDocument()
     expect(screen.getByText('89,42 €')).toBeInTheDocument()
     expect(screen.getAllByText('178,84 €').length).toBeGreaterThanOrEqual(2)
@@ -69,7 +69,7 @@ describe('ShowroomsPage', () => {
       }),
     )
     renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
-    await screen.findByRole('heading', { name: 'Showroom Portugal' })
+    await screen.findByRole('heading', { name: 'Estoque Portugal' })
 
     await user.click(screen.getByRole('button', { name: /Nova box/ }))
     await user.type(screen.getByLabelText('Nome da box'), 'Feira Porto')
