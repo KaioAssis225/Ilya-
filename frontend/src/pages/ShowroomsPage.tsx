@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   ArrowLeft,
+  ArrowRightLeft,
   ArrowUpRight,
   Boxes,
   Check,
@@ -14,8 +15,10 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { useClientsPage } from '../hooks/useClients'
 import { useLocale } from '../hooks/useLocale'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
+import { useOrders } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import {
   type ShowroomBox,
@@ -30,6 +33,9 @@ import {
   useRemoveShowroomItem,
   useShowroomBoxes,
   useShowroomProducts,
+  useShowroomTransfers,
+  useTransferShowroomItem,
+  type ShowroomTransfer,
   useUpdateShowroomBox,
   useUpdateShowroomItem,
 } from '../hooks/useShowrooms'
@@ -75,6 +81,18 @@ const TEXT = {
     confirmRemove: (code: string) => `Remover ${code} desta box?`,
     requiredPending: (count: number) => `${count} opcional(is) obrigatório(s) sem escolha: o item será guardado como pendente.`,
     updateError: 'Não foi possível alterar a quantidade.',
+    transfer: 'Transferência', transferTitle: 'Transferir peças', transferHelp: 'A quantidade sai desta box e entra no destino escolhido.',
+    transferProduct: 'Produto', transferQuantity: 'Quantidade a transferir',
+    transferMax: (count: number) => `Máximo: ${count} (saldo da box)`,
+    transferTo: 'Destino', toBox: 'Outra box', toOrder: 'Orçamento existente', toNewOrder: 'Orçamento novo',
+    destBox: 'Box de destino', destOrder: 'Orçamento em aberto', destClient: 'Cliente do novo orçamento',
+    chooseOne: 'Escolha...', noOtherBoxes: 'Não há outra box. Crie uma antes de transferir.',
+    noOpenOrders: 'Nenhum orçamento em aberto.', searchClient: 'Buscar cliente', noClients: 'Nenhum cliente encontrado.',
+    doTransfer: 'Transferir', transferring: 'Transferindo...', transferError: 'Não foi possível transferir.',
+    transferNeedsItems: 'Adicione produtos à box para transferir.',
+    transferDone: (quantity: number, code: string, where: string) => `${quantity} x ${code} transferido(s) para ${where}.`,
+    recentTransfers: 'Transferências recentes', noTransfers: 'Nenhuma transferência ainda.',
+    orderWord: 'Orçamento',
   },
   'en-GB': {
     stock: 'Stock', stockLocation: 'Stock location', editLocation: 'Edit location',
@@ -104,6 +122,18 @@ const TEXT = {
     confirmRemove: (code: string) => `Remove ${code} from this box?`,
     requiredPending: (count: number) => `${count} required finish(es) not chosen: the item will be saved as pending.`,
     updateError: 'The quantity could not be changed.',
+    transfer: 'Transfer', transferTitle: 'Transfer pieces', transferHelp: 'The quantity leaves this box and enters the chosen destination.',
+    transferProduct: 'Product', transferQuantity: 'Quantity to transfer',
+    transferMax: (count: number) => `Maximum: ${count} (box balance)`,
+    transferTo: 'Destination', toBox: 'Another box', toOrder: 'Existing quote', toNewOrder: 'New quote',
+    destBox: 'Destination box', destOrder: 'Open quote', destClient: 'Client of the new quote',
+    chooseOne: 'Choose...', noOtherBoxes: 'There is no other box. Create one before transferring.',
+    noOpenOrders: 'No open quotes.', searchClient: 'Search client', noClients: 'No clients found.',
+    doTransfer: 'Transfer', transferring: 'Transferring...', transferError: 'The transfer could not be completed.',
+    transferNeedsItems: 'Add products to the box to transfer.',
+    transferDone: (quantity: number, code: string, where: string) => `${quantity} x ${code} transferred to ${where}.`,
+    recentTransfers: 'Recent transfers', noTransfers: 'No transfers yet.',
+    orderWord: 'Quote',
   },
 } as const
 
@@ -437,6 +467,160 @@ function ProductConfigurationDialog({ candidate, boxId, onClose }: { candidate: 
   )
 }
 
+function itemLabel(item: ShowroomItem, english: boolean) {
+  const choices = (item.optional_choices ?? []).map(choice => `${choiceLabel(choice, english)}: ${choice.custom ? customOptionLabel(english) : optionalName(choice.optional_name, english)}`)
+  return `${item.product_code} - ${item.description}${choices.length ? ` (${choices.join('; ')})` : ''} - ${item.quantity}`
+}
+
+type TransferMode = 'box' | 'order' | 'new_order'
+
+function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; boxes: ShowroomBox[]; onClose: () => void; onDone: (message: string) => void }) {
+  const { locale } = useLocale()
+  const tx = TEXT[locale]
+  const english = locale === 'en-GB'
+  const transfer = useTransferShowroomItem()
+  const otherBoxes = boxes.filter(candidate => candidate.id !== box.id)
+  const [itemId, setItemId] = useState(box.items[0]?.item_id ?? '')
+  const [quantityText, setQuantityText] = useState('1')
+  const [mode, setMode] = useState<TransferMode>(otherBoxes.length > 0 ? 'box' : 'order')
+  const [destinationBoxId, setDestinationBoxId] = useState('')
+  const [orderId, setOrderId] = useState('')
+  const [clientQuery, setClientQuery] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const item = box.items.find(candidate => candidate.item_id === itemId)
+  const quantity = Math.floor(Number(quantityText))
+  const overBalance = Boolean(item) && quantity > (item?.quantity ?? 0)
+  const validQuantity = Number.isInteger(quantity) && quantity >= 1 && !overBalance
+  const ordersQuery = useOrders({ status: 'not_finalized', limit: 100 })
+  const openOrders = (ordersQuery.data?.items ?? []).filter(order => !order.is_cancelled && !order.is_finalized)
+  const clientsQuery = useClientsPage({ skip: 0, limit: 10, q: clientQuery.trim() || undefined, include_total: false, sort_by: 'name', sort_dir: 'asc' }, mode === 'new_order')
+  const destinationReady = mode === 'box' ? Boolean(destinationBoxId) : mode === 'order' ? Boolean(orderId) : Boolean(clientId)
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!item || !validQuantity || !destinationReady) return
+    setError(null)
+    const destination = mode === 'box'
+      ? { type: 'box' as const, box_id: destinationBoxId }
+      : mode === 'order'
+        ? { type: 'order' as const, order_id: orderId }
+        : { type: 'new_order' as const, client_id: clientId }
+    try {
+      const result = await transfer.mutateAsync({ boxId: box.id, itemId: item.item_id, quantity, destination })
+      const done = result.transfer
+      const where = done.destination_type === 'box'
+        ? (done.destination_box_name ?? '')
+        : `${tx.orderWord.toLowerCase()} ${done.destination_order_code ?? ''}`.trim()
+      onDone(tx.transferDone(done.quantity, done.product_code, where))
+      onClose()
+    } catch (requestError) {
+      setError(errorDetail(requestError, tx.transferError))
+    }
+  }
+
+  const modes: Array<[TransferMode, string]> = [['box', tx.toBox], ['order', tx.toOrder], ['new_order', tx.toNewOrder]]
+  return (
+    <div className="modal-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4" role="presentation">
+      <form className="modal-panel flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="transfer-dialog-title">
+        <div className="flex items-start justify-between gap-4 border-b border-line p-5">
+          <div>
+            <h2 id="transfer-dialog-title" className="font-display text-2xl font-semibold text-ink">{tx.transferTitle}</h2>
+            <p className="mt-1 text-sm text-muted">{tx.transferHelp}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label={tx.close} className="btn-icon -mr-2 -mt-2"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="space-y-4 overflow-y-auto p-5">
+          <label className="flex flex-col gap-1.5">
+            <span className="type-label">{tx.transferProduct}</span>
+            <select className="input" aria-label={tx.transferProduct} value={itemId} onChange={event => { setItemId(event.target.value); setQuantityText('1') }}>
+              {box.items.map(candidate => <option key={candidate.item_id} value={candidate.item_id}>{itemLabel(candidate, english)}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="type-label">{tx.transferQuantity}</span>
+            <input className="input w-32 text-center tabular-nums" aria-label={tx.transferQuantity} type="number" min="1" max={item?.quantity ?? 1} inputMode="numeric" value={quantityText} onChange={event => setQuantityText(event.target.value)} />
+            <span className={`text-xs ${overBalance ? 'text-terracotta' : 'text-muted'}`}>{tx.transferMax(item?.quantity ?? 0)}</span>
+          </label>
+          <fieldset>
+            <legend className="type-label mb-2">{tx.transferTo}</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {modes.map(([value, label]) => (
+                <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setError(null) }}
+                  className={`min-h-11 rounded-xl border px-2 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30 ${mode === value ? 'border-gold bg-gold/10 text-ink' : 'border-line bg-white text-ink-2 hover:border-gold/35'}`}>{label}</button>
+              ))}
+            </div>
+          </fieldset>
+          {mode === 'box' && (otherBoxes.length === 0
+            ? <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted">{tx.noOtherBoxes}</p>
+            : <label className="flex flex-col gap-1.5"><span className="type-label">{tx.destBox}</span>
+              <select className="input" aria-label={tx.destBox} value={destinationBoxId} onChange={event => setDestinationBoxId(event.target.value)}>
+                <option value="">{tx.chooseOne}</option>
+                {otherBoxes.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+              </select></label>)}
+          {mode === 'order' && (
+            <label className="flex flex-col gap-1.5"><span className="type-label">{tx.destOrder}</span>
+              <select className="input" aria-label={tx.destOrder} value={orderId} onChange={event => setOrderId(event.target.value)}>
+                <option value="">{tx.chooseOne}</option>
+                {openOrders.map(order => <option key={order.id} value={order.id}>{`${order.code} - ${order.client_name}`}</option>)}
+              </select>
+              {!ordersQuery.isLoading && openOrders.length === 0 && <span className="text-xs text-muted">{tx.noOpenOrders}</span>}
+            </label>
+          )}
+          {mode === 'new_order' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="flex flex-col gap-1.5"><span className="type-label">{tx.searchClient}</span>
+                <input className="input" type="search" aria-label={tx.searchClient} value={clientQuery} onChange={event => { setClientQuery(event.target.value); setClientId('') }} />
+              </label>
+              <span className="type-label">{tx.destClient}</span>
+              <div className="max-h-44 overflow-y-auto rounded-xl border border-line">
+                {(clientsQuery.data?.items ?? []).map(client => (
+                  <button key={client.id} type="button" aria-pressed={clientId === client.id} onClick={() => setClientId(client.id)}
+                    className={`flex w-full items-center justify-between gap-2 border-b border-line px-3 py-2.5 text-left text-sm last:border-0 ${clientId === client.id ? 'bg-gold/10 text-ink' : 'bg-white text-ink-2 hover:bg-surface-2'}`}>
+                    <span className="truncate">{client.name}</span>{clientId === client.id && <Check className="h-4 w-4 shrink-0 text-gold" />}
+                  </button>
+                ))}
+                {!clientsQuery.isLoading && (clientsQuery.data?.items ?? []).length === 0 && <p className="p-3 text-sm text-muted">{tx.noClients}</p>}
+              </div>
+            </div>
+          )}
+        </div>
+        {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-terracotta/10 px-3 py-2 text-sm text-terracotta">{error}</p>}
+        <div className="flex justify-end gap-2 border-t border-line bg-surface-2 p-4">
+          <button type="button" className="btn-secondary" onClick={onClose}>{tx.cancel}</button>
+          <button type="submit" className="btn-primary" disabled={transfer.isPending || !item || !validQuantity || !destinationReady}>{transfer.isPending ? tx.transferring : tx.doTransfer}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function TransferHistory({ boxId }: { boxId: string }) {
+  const { locale } = useLocale()
+  const tx = TEXT[locale]
+  const query = useShowroomTransfers(boxId)
+  const rows: ShowroomTransfer[] = (query.data ?? []).slice(0, 10)
+  function destination(row: ShowroomTransfer) {
+    return row.destination_type === 'box' ? (row.destination_box_name ?? '') : `${tx.orderWord} ${row.destination_order_code ?? ''}`.trim()
+  }
+  return (
+    <section className="mt-5 overflow-hidden rounded-2xl border border-line bg-white shadow-sm" aria-labelledby="box-transfers-title">
+      <div className="border-b border-line px-5 py-4 sm:px-6"><h3 id="box-transfers-title" className="font-display text-xl font-semibold text-ink">{tx.recentTransfers}</h3></div>
+      {rows.length === 0 ? <p className="px-5 py-6 text-sm text-muted sm:px-6">{tx.noTransfers}</p> : (
+        <ul className="divide-y divide-line">
+          {rows.map(row => (
+            <li key={row.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-3 text-sm sm:px-6">
+              <span className="font-medium text-ink"><span className="type-code">{row.product_code}</span> x {row.quantity}</span>
+              <span className="text-ink-2">{row.source_box_name} {'->'} {destination(row)}</span>
+              <span className="type-meta">{new Date(row.created_at).toLocaleString(locale)} - {row.created_by_name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 export default function ShowroomsPage() {
   const { user } = useAuth()
   const { locale } = useLocale()
@@ -446,7 +630,8 @@ export default function ShowroomsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [candidate, setCandidate] = useState<ShowroomProduct | null>(null)
-  const [dialog, setDialog] = useState<'create' | 'edit' | null>(null)
+  const [dialog, setDialog] = useState<'create' | 'edit' | 'transfer' | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const removeItem = useRemoveShowroomItem()
   const removeBox = useDeleteShowroomBox()
@@ -459,6 +644,7 @@ export default function ShowroomsPage() {
   function openBox(id: string) {
     setSearch('')
     setMessage(null)
+    setNotice(null)
     setSelectedId(id)
   }
 
@@ -492,6 +678,7 @@ export default function ShowroomsPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-5 pb-28 md:px-6 md:py-7 md:pb-10 lg:px-8">
       <h1 className="sr-only">{tx.stock}</h1>
+      {notice && <p role="status" className="mb-4 rounded-xl border border-gold/30 bg-white px-4 py-3 text-sm text-ink shadow-sm">{notice}</p>}
       {message && <p role="alert" className="mb-4 rounded-xl border border-terracotta/20 bg-white px-4 py-3 text-sm text-terracotta shadow-sm">{message}</p>}
 
       {boxesQuery.isLoading ? (
@@ -510,7 +697,7 @@ export default function ShowroomsPage() {
         <div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <button type="button" onClick={closeBox} className="btn-secondary inline-flex items-center gap-2"><ArrowLeft className="h-4 w-4" /> {tx.allBoxes}</button>
-            <div className="flex items-center gap-2"><button type="button" className="btn-secondary inline-flex items-center gap-2" onClick={() => setDialog('edit')}><Edit3 className="h-4 w-4" /> {tx.editLocation}</button><button type="button" className="grid min-h-11 min-w-11 place-items-center rounded-lg border border-line bg-white text-muted shadow-sm transition-colors hover:border-terracotta/30 hover:bg-terracotta/10 hover:text-terracotta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30" onClick={() => void confirmDeleteBox()} aria-label={tx.deleteBox}><Trash2 className="h-4 w-4" /></button></div>
+            <div className="flex items-center gap-2"><button type="button" className="btn-secondary inline-flex items-center gap-2 disabled:opacity-50" onClick={() => setDialog('transfer')} disabled={selected.items.length === 0} title={selected.items.length === 0 ? tx.transferNeedsItems : undefined}><ArrowRightLeft className="h-4 w-4" /> {tx.transfer}</button><button type="button" className="btn-secondary inline-flex items-center gap-2" onClick={() => setDialog('edit')}><Edit3 className="h-4 w-4" /> {tx.editLocation}</button><button type="button" className="grid min-h-11 min-w-11 place-items-center rounded-lg border border-line bg-white text-muted shadow-sm transition-colors hover:border-terracotta/30 hover:bg-terracotta/10 hover:text-terracotta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30" onClick={() => void confirmDeleteBox()} aria-label={tx.deleteBox}><Trash2 className="h-4 w-4" /></button></div>
           </div>
 
           <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm" aria-labelledby="selected-box-title">
@@ -543,9 +730,11 @@ export default function ShowroomsPage() {
               <div className="divide-y divide-line md:hidden">{selected.items.map(item => <article key={item.item_id} className="p-4"><div className="flex gap-3"><div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-bg ring-1 ring-line">{item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-muted-3" />}</div><div className="min-w-0 flex-1"><p className="type-code">{item.product_code}</p><p className="line-clamp-2 text-sm font-medium text-ink">{item.description}</p><ItemChoices choices={item.optional_choices ?? []} english={english} noOptionals={tx.noOptionals} /></div><button className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:text-terracotta" aria-label={`${tx.remove} ${item.product_code}`} onClick={() => void removeProduct(item)}><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-[auto_1fr] items-end gap-4 border-t border-line pt-3"><QuantityField boxId={selected.id} item={item} label={tx.quantityOf} onError={setMessage} /><div className="text-right"><p className="type-meta">{money(item.unit_price, locale)} {tx.perUnit}</p><p className="mt-0.5 font-semibold tabular-nums text-ink">{money(item.line_total, locale)}</p></div></div></article>)}</div></>
             )}
           </section>
+          <TransferHistory boxId={selected.id} />
         </div>
       )}
 
+      {dialog === 'transfer' && selected && <TransferDialog box={selected} boxes={boxes} onClose={() => setDialog(null)} onDone={setNotice} />}
       {dialog === 'create' && <BoxDialog onClose={() => setDialog(null)} />}
       {dialog === 'edit' && selected && <BoxDialog box={selected} onClose={() => setDialog(null)} />}
       {candidate && selected && <ProductConfigurationDialog candidate={candidate} boxId={selected.id} onClose={() => setCandidate(null)} />}

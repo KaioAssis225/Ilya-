@@ -128,3 +128,59 @@ export function useRemoveShowroomItem() {
     ({ boxId, itemId }) => api.delete(`/showroom-boxes/${boxId}/items/${itemId}`, { params: { language: locale } }),
   )
 }
+
+export type ShowroomTransferDestination =
+  | { type: 'box'; box_id: string }
+  | { type: 'order'; order_id: string }
+  | { type: 'new_order'; client_id: string }
+
+export interface ShowroomTransfer {
+  id: string
+  created_at: string
+  created_by_name: string
+  source_box_id: string | null
+  source_box_name: string
+  destination_type: 'box' | 'order'
+  destination_box_id: string | null
+  destination_box_name: string | null
+  destination_order_id: string | null
+  destination_order_code: string | null
+  product_code: string
+  quantity: number
+  optional_choices: ShowroomOptionalChoice[]
+}
+
+export interface ShowroomTransferResult {
+  transfer: ShowroomTransfer
+  box: ShowroomBox
+}
+
+export function useShowroomTransfers(boxId: string | undefined) {
+  return useQuery<ShowroomTransfer[]>({
+    queryKey: [...KEY, 'transfers', boxId],
+    queryFn: () => api.get<ShowroomTransfer[]>(`/showroom-boxes/${boxId}/transfers`).then(response => response.data),
+    enabled: Boolean(boxId),
+  })
+}
+
+export function useTransferShowroomItem() {
+  const { locale } = useLocale()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ boxId, itemId, quantity, destination }: {
+      boxId: string
+      itemId: string
+      quantity: number
+      destination: ShowroomTransferDestination
+    }) => api.post<ShowroomTransferResult>(
+      `/showroom-boxes/${boxId}/transfers`,
+      { item_id: itemId, quantity, destination },
+      { params: { language: locale } },
+    ).then(response => response.data),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: KEY }),
+      // A peça entrou num orçamento: as listas de orçamentos precisam recarregar.
+      queryClient.invalidateQueries({ queryKey: ['orders'] }),
+    ]),
+  })
+}

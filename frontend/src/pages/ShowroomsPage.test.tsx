@@ -1,7 +1,7 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ShowroomsPage from './ShowroomsPage'
 import { productFixture, productTestUser, renderProductPage } from '../test/productTestUtils'
 import { server } from '../test/setup'
@@ -32,6 +32,11 @@ function boxFixture(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ShowroomsPage', () => {
+  beforeEach(() => {
+    // O histórico de transferências carrega junto com qualquer box aberta.
+    server.use(http.get('*/showroom-boxes/:boxId/transfers', () => HttpResponse.json([])))
+  })
+
   it('não renderiza a área para usuário sem a capacidade', () => {
     server.use(http.get('*/showroom-boxes', () => HttpResponse.json([])))
     renderProductPage(<ShowroomsPage />, showroomUser(false), ['/showrooms'])
@@ -337,5 +342,118 @@ describe('ShowroomsPage', () => {
     await user.tab()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Sem permissão nesta box.')
+  })
+
+  describe('transferência', () => {
+    const transferRecord = {
+      id: 'transfer-1', created_at: now, created_by_name: 'Maria', source_box_id: 'box-1',
+      source_box_name: 'Estoque Portugal', destination_type: 'box', destination_box_id: 'box-2',
+      destination_box_name: 'Feira Porto', destination_order_id: null, destination_order_code: null,
+      product_code: 'ICD0106', quantity: 1, optional_choices: [],
+    }
+
+    async function openTransfer(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' }))
+      await user.click(await screen.findByRole('button', { name: 'Transferência' }))
+      return screen.findByRole('dialog', { name: 'Transferir peças' })
+    }
+
+    function baseHandlers() {
+      return [
+        http.get('*/showroom-boxes', () => HttpResponse.json([
+          boxFixture(),
+          boxFixture({ id: 'box-2', name: 'Feira Porto', items: [], item_count: 0, total_quantity: 0, total_value: '0.00' }),
+        ])),
+        http.get('*/showroom-boxes/products', () => HttpResponse.json([])),
+        http.get('*/showroom-boxes/:boxId/transfers', () => HttpResponse.json([transferRecord])),
+        http.get('*/orders', () => HttpResponse.json([{
+          id: 'order-9', code: 'PED-0009', client_name: 'Cliente Teste',
+          is_finalized: false, is_cancelled: false,
+        }])),
+        http.get('*/clients', () => HttpResponse.json([{ id: 'client-7', name: 'Cliente Sete' }])),
+      ]
+    }
+
+    it('transfere para outra box e não deixa passar do saldo', async () => {
+      const user = userEvent.setup()
+      const requests: Array<Record<string, unknown>> = []
+      server.use(
+        ...baseHandlers(),
+        http.post('*/showroom-boxes/:boxId/transfers', async ({ request }) => {
+          requests.push(await request.json() as Record<string, unknown>)
+          return HttpResponse.json({ transfer: { ...transferRecord, quantity: 2 }, box: boxFixture() }, { status: 201 })
+        }),
+      )
+      renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+      const dialog = await openTransfer(user)
+
+      expect(within(dialog).getByText('Máximo: 2 (saldo da box)')).toBeInTheDocument()
+      const quantity = within(dialog).getByLabelText('Quantidade a transferir')
+      await user.clear(quantity)
+      await user.type(quantity, '3')
+      await user.selectOptions(within(dialog).getByLabelText('Box de destino'), 'box-2')
+      expect(within(dialog).getByRole('button', { name: 'Transferir' })).toBeDisabled()
+
+      await user.clear(quantity)
+      await user.type(quantity, '2')
+      await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
+
+      await waitFor(() => expect(requests).toEqual([{
+        item_id: 'item-1', quantity: 2, destination: { type: 'box', box_id: 'box-2' },
+      }]))
+      expect(await screen.findByRole('status')).toHaveTextContent('2 x ICD0106 transferido(s) para Feira Porto.')
+      expect(screen.getByText('Transferências recentes')).toBeInTheDocument()
+    })
+
+    it('leva para um orçamento novo e para um existente', async () => {
+      const user = userEvent.setup()
+      const requests: Array<Record<string, unknown>> = []
+      server.use(
+        ...baseHandlers(),
+        http.post('*/showroom-boxes/:boxId/transfers', async ({ request }) => {
+          requests.push(await request.json() as Record<string, unknown>)
+          return HttpResponse.json({
+            transfer: { ...transferRecord, destination_type: 'order', destination_box_id: null, destination_box_name: null, destination_order_id: 'order-9', destination_order_code: 'PED-0009' },
+            box: boxFixture(),
+          }, { status: 201 })
+        }),
+      )
+      renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+      let dialog = await openTransfer(user)
+
+      await user.click(within(dialog).getByRole('button', { name: 'Orçamento novo' }))
+      await user.click(await within(dialog).findByRole('button', { name: 'Cliente Sete' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
+      await waitFor(() => expect(requests).toHaveLength(1))
+      expect(requests[0]).toEqual({ item_id: 'item-1', quantity: 1, destination: { type: 'new_order', client_id: 'client-7' } })
+      expect(await screen.findByRole('status')).toHaveTextContent('orçamento PED-0009')
+
+      dialog = await openTransfer(user).catch(async () => {
+        await user.click(await screen.findByRole('button', { name: 'Transferência' }))
+        return screen.findByRole('dialog', { name: 'Transferir peças' })
+      })
+      await user.click(within(dialog).getByRole('button', { name: 'Orçamento existente' }))
+      await user.selectOptions(await within(dialog).findByLabelText('Orçamento em aberto'), 'order-9')
+      await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
+      await waitFor(() => expect(requests).toHaveLength(2))
+      expect(requests[1]).toEqual({ item_id: 'item-1', quantity: 1, destination: { type: 'order', order_id: 'order-9' } })
+    })
+
+    it('mostra o motivo quando o servidor recusa a transferência', async () => {
+      const user = userEvent.setup()
+      server.use(
+        ...baseHandlers(),
+        http.post('*/showroom-boxes/:boxId/transfers', () => HttpResponse.json(
+          { detail: 'Quantidade maior que o saldo da box: há 1 peça(s).' }, { status: 422 },
+        )),
+      )
+      renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+      const dialog = await openTransfer(user)
+
+      await user.selectOptions(within(dialog).getByLabelText('Box de destino'), 'box-2')
+      await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
+
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Quantidade maior que o saldo da box: há 1 peça(s).')
+    })
   })
 })

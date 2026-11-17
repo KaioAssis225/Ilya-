@@ -118,3 +118,53 @@ class ShowroomBoxRead(BaseModel):
     total_value: Decimal = Decimal("0.00")
     created_at: datetime
     updated_at: datetime
+
+
+class ShowroomTransferBox(BaseModel):
+    type: Literal["box"]
+    box_id: uuid.UUID
+
+
+class ShowroomTransferOrder(BaseModel):
+    """Acrescenta a peça a um orçamento em aberto."""
+
+    type: Literal["order"]
+    order_id: uuid.UUID
+
+
+class ShowroomTransferNewOrder(BaseModel):
+    """Cria um orçamento novo só com esta peça; preço, desconto e IVA vêm do servidor."""
+
+    type: Literal["new_order"]
+    client_id: uuid.UUID
+    rep_id: uuid.UUID | None = None
+    price_list_code: PriceListCode | None = None
+
+
+class ShowroomTransferCreate(BaseModel):
+    item_id: uuid.UUID
+    quantity: int = Field(ge=1, le=1_000_000)
+    destination: ShowroomTransferBox | ShowroomTransferOrder | ShowroomTransferNewOrder = Field(
+        discriminator="type",
+    )
+
+
+class ShowroomTransferRead(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    created_by_name: str
+    source_box_id: uuid.UUID | None = None
+    source_box_name: str
+    destination_type: Literal["box", "order"]
+    destination_box_id: uuid.UUID | None = None
+    destination_box_name: str | None = None
+    destination_order_id: uuid.UUID | None = None
+    destination_order_code: str | None = None
+    product_code: str
+    quantity: int
+    optional_choices: list[ShowroomOptionalChoiceRead] = Field(default_factory=list)
+
+
+class ShowroomTransferResult(BaseModel):
+    transfer: ShowroomTransferRead
+    box: ShowroomBoxRead
