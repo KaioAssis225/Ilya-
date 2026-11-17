@@ -10,6 +10,7 @@ from sqlalchemy.orm import load_only, noload
 from app.api.catalog_access import visible_catalog_scope
 from app.api.price_access import PriceScope, allows_price, visible_price_scope
 from app.core.price_lists import PRICE_LIST_ORDER, market_price_lists
+from app.core.product_prices import load_price_lists, price_sort_expression, set_product_prices
 from app.api.deps import open_prototype_search, prototype_access_allowed, open_prototype_view, get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
@@ -214,6 +215,15 @@ async def _to_market_reads(
     result = []
     for product in products:
         item = _to_read(product, price_scope if market == "BR" else None)
+        if market == "BR":
+            # `product_prices` é a fonte do preço. A coluna antiga só aparece
+            # quando o produto não tem linha na lista (transição). `prices` já
+            # vem sem as tabelas que o usuário não pode ver.
+            own = prices.get(product.id, {})
+            if "lojista" in own:
+                item.price = item.price_lojista = own["lojista"]
+            if "corporativo" in own:
+                item.price_corporativo = own["corporativo"]
         for application in sorted(applications_by_product.get(product.id, []), key=lambda a: (a.display_order, str(a.id))):
             allowed = []
             for optional in application.allowed_optionals:
@@ -693,8 +703,9 @@ async def list_products(
         # permitem um índice pequeno e previsível.
         "description": description_sort,
         "type": Product.type,
-        "price_lojista": Product.price_lojista,
-        "price_corporativo": Product.price_corporativo,
+        # O preço vem de `product_prices` (a fonte), não das colunas antigas.
+        "price_lojista": price_sort_expression(active_market, "lojista"),
+        "price_corporativo": price_sort_expression(active_market, "corporativo"),
     }[sort_by]
     order_expression = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
     # Busca do orçamento com protótipos: eles vêm primeiro, senão o limite da página
@@ -917,13 +928,7 @@ async def _create_product_for_market(
                 f"mercado {market_code}."
             ),
         )
-    for price_list in lists:
-        if price_list.code in amounts:
-            db.add(ProductPrice(
-                product_id=product.id,
-                price_list_id=price_list.id,
-                amount=amounts[price_list.code],
-            ))
+    await set_product_prices(db, product.id, {item.code: item for item in lists}, amounts)
     await db.commit()
     await db.refresh(product)
     return product
@@ -1114,22 +1119,7 @@ async def update_product(
                     "configuradas em Portugal."
                 ),
             )
-        for code, amount in price_changes.items():
-            if amount is None:
-                continue
-            price_list = lists_by_code[code]
-            existing_price = (await db.execute(select(ProductPrice).where(
-                ProductPrice.product_id == product.id,
-                ProductPrice.price_list_id == price_list.id,
-            ))).scalar_one_or_none()
-            if existing_price:
-                existing_price.amount = amount
-            else:
-                db.add(ProductPrice(
-                    product_id=product.id,
-                    price_list_id=price_list.id,
-                    amount=amount,
-                ))
+        await set_product_prices(db, product.id, lists_by_code, price_changes)
         for field, value in product_changes.items():
             setattr(product, field, value)
         _ensure_area_limit(product)
@@ -1206,18 +1196,12 @@ async def update_product(
         else:
             product.components = []
     await _apply_applications(db, product, principal.code, payload.optional_applications, components_in)
-    lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
+    br_lists = await load_price_lists(db, "BR", active_only=False)
     price_changes = {"lojista": data.get("price_lojista"), "corporativo": data.get("price_corporativo")}
-    for price_list in lists:
-        if price_changes.get(price_list.code) is not None:
-            existing_price = (await db.execute(select(ProductPrice).where(
-                ProductPrice.product_id == product.id,
-                ProductPrice.price_list_id == price_list.id,
-            ))).scalar_one_or_none()
-            if existing_price:
-                existing_price.amount = price_changes[price_list.code]
-            else:
-                db.add(ProductPrice(product_id=product.id, price_list_id=price_list.id, amount=price_changes[price_list.code]))
+    await set_product_prices(
+        db, product.id, br_lists,
+        {code: amount for code, amount in price_changes.items() if code in br_lists},
+    )
     await db.commit()
     await db.refresh(product)
     price_scope = await visible_price_scope(db, current_user, principal.code)
