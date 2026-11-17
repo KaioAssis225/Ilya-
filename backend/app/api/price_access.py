@@ -11,13 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import is_client_account
+from app.core.price_lists import PRICE_LIST_ORDER
 from app.models.client import Client
 from app.models.market import PriceList
 from app.models.representative import Representative
 from app.models.user import User, UserRole
 
 PriceScope = frozenset[str] | None
-PRICE_LIST_ORDER = ("lojista", "corporativo", "pvp", "arquiteto")
 
 
 def owner_price_scope(owner: Client | Representative) -> PriceScope:

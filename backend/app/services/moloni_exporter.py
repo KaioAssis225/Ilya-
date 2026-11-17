@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.moloni_crypto import decrypt_token, encrypt_token
 from app.core.observability import external_exception, external_invalid, httpx_event_hooks
+from app.core.product_prices import get_list_price
 from app.models.client import Client
 from app.models.market import ProductMarket
 from app.models.moloni import MoloniConnection, MoloniCustomerLink, MoloniExportJob, MoloniProductLink, MoloniTaxMapping
@@ -16,6 +17,16 @@ from app.models.product import Product
 from app.services.moloni_jobs import order_has_prototype_items
 
 class MoloniError(RuntimeError): pass
+
+
+async def _article_price(db: AsyncSession, product: Product) -> str:
+    """Preço do artigo novo no Moloni: tabela Lojista do EU, em `product_prices`.
+
+    A coluna antiga `products.price_lojista` só vale se o produto não tiver
+    linha nessa lista (transição); ela fica velha depois de importar preços.
+    """
+    amount = await get_list_price(db, product.id, "EU", "lojista")
+    return str(product.price_lojista if amount is None else amount)
 
 def _record(payload, endpoint: str = ""):
     """Normaliza respostas de criação do Moloni que podem vir como lista ou objeto."""
@@ -371,7 +382,7 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
                 "summary": product.summary or "",
                 "reference": product.product_code,
                 "ean": product.ean or "",
-                "price": str(product.price_lojista),
+                "price": await _article_price(db, product),
                 "unit_id": settings.MOLONI_PRODUCT_UNIT_ID,
                 "has_stock": 0,
                 "stock": 0,

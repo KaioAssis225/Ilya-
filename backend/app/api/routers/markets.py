@@ -20,6 +20,7 @@ from app.api.deps import (
 from app.core import media_orphans
 from app.core.config import settings
 from app.core.markets import MarketPrincipal, PlatformPrincipal
+from app.core.price_lists import EU_PRICE_LISTS
 from app.core.uploads import copy_upload_to_market, read_upload_limited
 from app.core.supplied_fabric import SUPPLIED_FABRIC_CATEGORY, round_money
 from app.models.optional_application import ProductOptionalApplication
@@ -45,7 +46,7 @@ from app.models.client import Client
 from app.models.representative import Representative
 
 router = APIRouter(prefix="/api/v1/markets", tags=["markets"])
-_EU_LISTS = ("lojista", "corporativo", "pvp", "arquiteto")
+_EU_LISTS = EU_PRICE_LISTS
 
 
 class VatDecisionRequest(BaseModel):
@@ -253,7 +254,7 @@ async def activate_europe(
     if available == 0:
         raise HTTPException(409, "Europa não pode ser ativada sem ao menos um SKU disponível.")
     if len(priced) != available:
-        raise HTTPException(409, "Europa não pode ser ativada: há SKU disponível sem as três listas de preço.")
+        raise HTTPException(409, "Europa não pode ser ativada: há SKU disponível sem as quatro listas de preço (Lojista, Corporativo, PVP e Arquiteto).")
     if unapproved_vat:
         raise HTTPException(409, "Europa não pode ser ativada: há SKU disponível sem IVA aprovado.")
     market = await db.get(Market, "EU")
