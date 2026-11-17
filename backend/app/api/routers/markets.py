@@ -1,13 +1,11 @@
 import csv
 import io
 import uuid
-from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, not_, or_, select, text, update
+from sqlalchemy import func, not_, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +17,7 @@ from app.api.deps import (
 )
 from app.core import media_orphans
 from app.core.config import settings
+from app.core.eu_vat import set_eu_vat_rate
 from app.core.markets import MarketPrincipal, PlatformPrincipal
 from app.core.uploads import copy_upload_to_market, read_upload_limited
 from app.core.supplied_fabric import SUPPLIED_FABRIC_CATEGORY, round_money
@@ -26,72 +25,20 @@ from app.models.optional_application import ProductOptionalApplication
 from app.models.optional_category import OptionalCategory
 from app.models.market import (
     Market,
+    MarketVatRateEvent,
     PriceList,
     ProductMarket,
     ProductPrice,
     ProductSuppliedFabric,
-    UserMarket,
-    VAT_APPROVED,
-    VAT_PENDING,
-    VAT_REJECTED,
-    VAT_SOURCE_IMPORT,
 )
 from app.models.product import Product, ProductPhoto
-from app.models.product_group import ProductGroup
-from app.models.product_type import ProductType
-from app.api.routers.product_groups import product_type_key
 from app.models.optional_color import OptionalColor, product_optionals
 from app.models.client import Client
 from app.models.representative import Representative
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/api/v1/markets", tags=["markets"])
 _EU_LISTS = ("lojista", "corporativo", "pvp", "arquiteto")
-
-
-class VatDecisionRequest(BaseModel):
-    status: Literal["pending", "approved", "rejected"]
-    vat_rate: Decimal | None = Field(default=None, ge=0, le=100)
-
-
-async def _apply_vat_decision(
-    db: AsyncSession,
-    product_id: uuid.UUID,
-    body: VatDecisionRequest,
-    approver_user_id: uuid.UUID,
-) -> ProductMarket:
-    product_market = await db.get(ProductMarket, (product_id, "EU"))
-    eu_product = (await db.execute(select(Product.id).where(
-        Product.id == product_id,
-        Product.market_code == "EU",
-    ))).scalar_one_or_none()
-    if product_market is None or eu_product is None:
-        raise HTTPException(404, "Produto não vinculado ao mercado EU.")
-    if body.status == VAT_APPROVED:
-        if body.vat_rate is None:
-            raise HTTPException(422, "A aprovação exige uma taxa de IVA explícita.")
-        product_market.vat_rate = body.vat_rate
-        product_market.vat_status = VAT_APPROVED
-        product_market.approved_by_user_id = approver_user_id
-        product_market.approved_at = datetime.now(timezone.utc)
-    else:
-        if body.vat_rate is not None:
-            product_market.vat_rate = body.vat_rate
-        product_market.vat_status = body.status
-        product_market.approved_by_user_id = None
-        product_market.approved_at = None
-    await db.commit()
-    return product_market
-
-
-def _vat_response(product_market: ProductMarket) -> dict:
-    return {
-        "product_id": product_market.product_id,
-        "market": "EU",
-        "vat_rate": product_market.vat_rate,
-        "vat_status": product_market.vat_status,
-        "approved_by_user_id": product_market.approved_by_user_id,
-        "approved_at": product_market.approved_at,
-    }
 
 
 def _decimal_csv(value: str) -> Decimal:
@@ -99,22 +46,6 @@ def _decimal_csv(value: str) -> Decimal:
     if "," in normalized:
         normalized = normalized.replace(".", "").replace(",", ".")
     return Decimal(normalized)
-
-
-def _parse_required_vat(raw: str | None) -> Decimal:
-    """IVA tem de vir explícito por linha; 0 é válido, vazio não.
-
-    Diferente do IPI brasileiro, não há herança do grupo do produto: cada linha
-    importada declara a própria taxa. Vazio ou fora de 0–100 levanta ValueError
-    para a linha ser rejeitada (e, com ela, o lote inteiro).
-    """
-    value = (raw or "").strip()
-    if not value:
-        raise ValueError("IVA (vat_rate) obrigatório por linha.")
-    vat = _decimal_csv(value)
-    if vat < 0 or vat > 100:
-        raise ValueError("IVA fora de 0–100.")
-    return vat
 
 
 @router.get("")
@@ -238,24 +169,17 @@ async def activate_europe(
         .group_by(ProductPrice.product_id)
         .having(func.count(func.distinct(PriceList.code)) == len(_EU_LISTS))
     )).all()
-    # IVA sem aprovação humana não fatura. A ativação só aceita taxas que
-    # passaram pelo fluxo nominal de aprovação fiscal do mercado EU.
-    unapproved_vat = (await db.execute(
-        select(func.count()).select_from(ProductMarket)
-        .join(Product, Product.id == ProductMarket.product_id)
-        .where(
-            Product.market_code == "EU",
-            ProductMarket.market_code == "EU",
-            ProductMarket.is_available.is_(True),
-            or_(ProductMarket.vat_status != VAT_APPROVED, ProductMarket.vat_rate.is_(None)),
-        )
-    )).scalar_one()
+    # O IVA é uma taxa única do mercado (não mais aprovação por SKU): a Europa
+    # só abre com essa taxa configurada, para nunca faturar sem IVA em silêncio.
+    vat_rate_configured = (await db.execute(
+        select(Market.vat_rate).where(Market.code == "EU")
+    )).scalar_one_or_none() is not None
     if available == 0:
         raise HTTPException(409, "Europa não pode ser ativada sem ao menos um SKU disponível.")
     if len(priced) != available:
         raise HTTPException(409, "Europa não pode ser ativada: há SKU disponível sem as três listas de preço.")
-    if unapproved_vat:
-        raise HTTPException(409, "Europa não pode ser ativada: há SKU disponível sem IVA aprovado.")
+    if not vat_rate_configured:
+        raise HTTPException(409, "Europa não pode ser ativada: a taxa de IVA do mercado não está configurada.")
     market = await db.get(Market, "EU")
     market.is_enabled = True
     await db.commit()
@@ -458,36 +382,88 @@ async def delete_europe_orphan_quarantine(
     )
 
 
-@router.put("/EU/products/{product_id}/vat")
-async def decide_europe_vat(
-    product_id: uuid.UUID,
-    body: VatDecisionRequest,
+# ── IVA único do mercado EU ──────────────────────────────────────────────────
+# Portugal cobra o IVA uma vez, sobre o total do documento. A taxa é uma só,
+# editada aqui (admin do mercado EU) ou na Plataforma (platform_admin), e cada
+# mudança fica na trilha `market_vat_rate_events` (quem, quando, de → para).
+
+
+class EuVatRateRequest(BaseModel):
+    vat_rate: Decimal = Field(ge=0, le=100, decimal_places=2)
+
+
+def _can_edit_eu_vat(principal: MarketPrincipal) -> bool:
+    return principal.code == "EU" and principal.access is not None and principal.actor.role == UserRole.admin
+
+
+async def _eu_vat_rate_view(db: AsyncSession, *, can_edit: bool) -> dict:
+    rate = (await db.execute(select(Market.vat_rate).where(Market.code == "EU"))).scalar_one_or_none()
+    view: dict = {"market": "EU", "vat_rate": rate, "can_edit": can_edit, "history": []}
+    if can_edit:
+        rows = (await db.execute(
+            select(
+                MarketVatRateEvent.created_at,
+                MarketVatRateEvent.old_rate,
+                MarketVatRateEvent.new_rate,
+                User.full_name,
+            )
+            .outerjoin(User, User.id == MarketVatRateEvent.actor_user_id)
+            .where(MarketVatRateEvent.market_code == "EU")
+            .order_by(MarketVatRateEvent.created_at.desc())
+            .limit(20)
+        )).all()
+        view["history"] = [
+            {"changed_at": at, "old_rate": old, "new_rate": new, "changed_by": name}
+            for at, old, new, name in rows
+        ]
+    return view
+
+
+@router.get("/EU/vat-rate")
+async def get_europe_vat_rate(
     db: AsyncSession = Depends(get_db_session),
     principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    """Registra uma decisão fiscal individual (sem inferência). A aprovação em
-    lote existe só pelo grupo EU — ver approve_europe_group_vat."""
-    if principal.code != "EU" or not principal.access or not principal.access.can_approve_tax:
-        raise HTTPException(403, "Permissão fiscal não concedida neste mercado.")
-    return _vat_response(await _apply_vat_decision(
-        db, product_id, body, principal.user.id
-    ))
+    """Taxa única vigente. Qualquer usuário do mercado EU a lê (o orçamento mostra
+    o IVA); só o admin vê o histórico e pode editar."""
+    if principal.code != "EU":
+        raise HTTPException(404, "Taxa de IVA disponível apenas no mercado europeu.")
+    return await _eu_vat_rate_view(db, can_edit=_can_edit_eu_vat(principal))
 
 
-@router.put("/EU/products/{product_id}/vat/platform")
-async def decide_europe_vat_before_activation(
-    product_id: uuid.UUID,
-    body: VatDecisionRequest,
+@router.put("/EU/vat-rate")
+async def update_europe_vat_rate(
+    body: EuVatRateRequest,
     db: AsyncSession = Depends(get_db_session),
-    platform: PlatformPrincipal = Depends(get_platform_principal),
+    principal: MarketPrincipal = Depends(get_current_principal),
 ):
-    """Aprovação preparatória enquanto EU ainda está globalmente desabilitado."""
-    access = await db.get(UserMarket, (platform.user.id, "EU"))
-    if access is None or access.status != "active" or not access.can_approve_tax:
-        raise HTTPException(403, "Permissão fiscal não concedida no mercado EU.")
-    return _vat_response(await _apply_vat_decision(
-        db, product_id, body, platform.user.id
-    ))
+    """Altera a taxa única. Só admin do mercado EU; o servidor valida 0–100 com
+    duas casas. Documentos já finalizados guardam a taxa que usaram e não mudam."""
+    if not _can_edit_eu_vat(principal):
+        raise HTTPException(403, "Somente o administrador do mercado europeu altera a taxa de IVA.")
+    await set_eu_vat_rate(db, body.vat_rate, principal.user.id)
+    await db.commit()
+    return await _eu_vat_rate_view(db, can_edit=True)
+
+
+@router.get("/EU/vat-rate/platform")
+async def get_europe_vat_rate_platform(
+    db: AsyncSession = Depends(get_db_session),
+    _: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    return await _eu_vat_rate_view(db, can_edit=True)
+
+
+@router.put("/EU/vat-rate/platform")
+async def update_europe_vat_rate_platform(
+    body: EuVatRateRequest,
+    db: AsyncSession = Depends(get_db_session),
+    platform: PlatformPrincipal = Depends(require_platform_capability("platform_admin")),
+):
+    """Mesma taxa, editada pela Plataforma (inclusive com o mercado EU fechado)."""
+    await set_eu_vat_rate(db, body.vat_rate, platform.user.id)
+    await db.commit()
+    return await _eu_vat_rate_view(db, can_edit=True)
 
 
 @router.get("/price-comparison")
@@ -515,11 +491,11 @@ async def import_europe_catalog(
 ):
     """Importação atômica sobre produtos EU já cadastrados manualmente.
 
-    Colunas: product_code, lojista, corporativo, pvp, arquiteto, vat_rate e opcionalmente
-    is_available, description_pt_pt e description_en. O vat_rate é obrigatório e
-    explícito por linha (inclusive 0) — não há herança do IPI do grupo do Ilya.
-    A importação nunca cria ou copia um produto BR. Toda taxa importada nasce
-    `pending` e limpa qualquer aprovação anterior. A
+    Colunas: product_code, lojista, corporativo, pvp, arquiteto e opcionalmente
+    is_available, description_pt_pt e description_en. O IVA não vem do arquivo:
+    é a taxa única do mercado (ver `/EU/vat-rate`); uma coluna `vat_rate`
+    antiga no CSV é ignorada e o IVA por produto já gravado fica intacto.
+    A importação nunca cria ou copia um produto BR. A
     moeda não é aceita do arquivo: as listas EU são sempre EUR.
     """
     raw = await read_upload_limited(file, 10 * 1024 * 1024, max_size_label="10MB")
@@ -528,7 +504,7 @@ async def import_europe_catalog(
     except UnicodeDecodeError:
         raise HTTPException(422, "CSV deve estar em UTF-8.")
     reader = csv.DictReader(io.StringIO(text), delimiter=";")
-    required = {"product_code", *_EU_LISTS, "vat_rate"}
+    required = {"product_code", *_EU_LISTS}
     if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
         raise HTTPException(422, f"Cabeçalho obrigatório: {';'.join(sorted(required))}.")
     parsed: list[dict] = []
@@ -544,15 +520,13 @@ async def import_europe_catalog(
             prices = {code: _decimal_csv(row.get(code) or "") for code in _EU_LISTS}
             if any(value < 0 for value in prices.values()):
                 raise ValueError("Preço negativo.")
-            vat = _parse_required_vat(row.get("vat_rate"))
         except (InvalidOperation, ValueError):
-            errors.append(f"Linha {line}: preço negativo/inválido ou vat_rate ausente/fora de 0–100.")
+            errors.append(f"Linha {line}: preço negativo ou inválido.")
             continue
         available = (row.get("is_available") or "true").strip().lower() in {"1", "true", "sim", "yes"}
         parsed.append({
             "sku": sku,
             "prices": prices,
-            "vat": vat,
             "available": available,
             "description_pt_pt": (row.get("description_pt_pt") or "").strip() or None,
             "description_en": (row.get("description_en") or "").strip() or None,
@@ -580,24 +554,14 @@ async def import_europe_catalog(
         raise HTTPException(422, {"message": "Importação rejeitada; nenhum dado foi alterado.", "errors": errors[:100]})
     for row in parsed:
         product_id = product_ids[row["sku"]]
-        # A taxa importada volta a `pending` e zera a aprovação anterior: uma
-        # nova taxa nunca herda a chancela da anterior.
-        vat_fields = {
-            "vat_rate": row["vat"],
-            "vat_status": VAT_PENDING,
-            "vat_source": VAT_SOURCE_IMPORT,
-            "approved_by_user_id": None,
-            "approved_at": None,
-        }
+        # O IVA por produto não é mais usado: a importação não o grava nem o apaga.
         await db.execute(pg_insert(ProductMarket).values(
             product_id=product_id, market_code="EU", is_available=row["available"],
             description_pt_pt=row["description_pt_pt"], description_en=row["description_en"],
-            **vat_fields,
         ).on_conflict_do_update(
             index_elements=[ProductMarket.product_id, ProductMarket.market_code],
             set_={
                 "is_available": row["available"],
-                **vat_fields,
                 **({"description_pt_pt": row["description_pt_pt"]} if row["description_pt_pt"] else {}),
                 **({"description_en": row["description_en"]} if row["description_en"] else {}),
             },
@@ -610,12 +574,7 @@ async def import_europe_catalog(
                 set_={"amount": amount},
             ))
     await db.commit()
-    # Toda taxa importada entra pendente de aprovação manual (ainda sem fluxo
-    # próprio — RBAC P2): a Europa só fatura/ativa depois que alguém aprovar.
-    return {
-        "market": "EU", "currency": "EUR", "imported": len(parsed), "errors": [],
-        "pending_vat_approval": len(parsed),
-    }
+    return {"market": "EU", "currency": "EUR", "imported": len(parsed), "errors": []}
 
 
 # ── TECIDO FORNECIDO (Portugal) ──────────────────────────────────────────────
@@ -821,54 +780,3 @@ async def import_europe_supplied_fabric(
         "applied": applied, "errors": [],
     }
 
-
-# ── IVA em lote pelo grupo (Portugal) ────────────────────────────────────────
-# Decisão de 08/10/2026: além da decisão individual acima, quem tem permissão
-# fiscal no vínculo EU pode aplicar e aprovar uma taxa em todos os produtos dos
-# subgrupos de um grupo EU (botão Editar do grupo). Cada produto continua
-# registrando quem aprovou e quando; o pedido segue lendo só product_markets.
-
-
-class GroupVatRequest(BaseModel):
-    vat_rate: Decimal = Field(ge=0, le=100, decimal_places=2)
-
-
-@router.put("/EU/groups/{group_id}/vat")
-async def approve_europe_group_vat(
-    group_id: uuid.UUID,
-    body: GroupVatRequest,
-    db: AsyncSession = Depends(get_db_session),
-    principal: MarketPrincipal = Depends(get_current_principal),
-):
-    """Aplica e aprova o IVA em todos os produtos disponíveis do grupo EU."""
-    if principal.code != "EU" or not principal.access or not principal.access.can_approve_tax:
-        raise HTTPException(403, "Permissão fiscal não concedida neste mercado.")
-    group = await db.get(ProductGroup, group_id)
-    if group is None or group.market_code != "EU":
-        raise HTTPException(404, "Grupo não encontrado.")
-    type_keys = select(product_type_key(ProductType.name)).where(
-        ProductType.group_id == group_id,
-        ProductType.market_code == "EU",
-    )
-    product_ids = select(Product.id).where(
-        Product.market_code == "EU",
-        Product.is_active.is_(True),
-        product_type_key(Product.type).in_(type_keys),
-    )
-    result = await db.execute(
-        update(ProductMarket)
-        .where(
-            ProductMarket.market_code == "EU",
-            ProductMarket.is_available.is_(True),
-            ProductMarket.product_id.in_(product_ids),
-        )
-        .values(
-            vat_rate=body.vat_rate,
-            vat_status=VAT_APPROVED,
-            approved_by_user_id=principal.user.id,
-            approved_at=datetime.now(timezone.utc),
-        )
-        .execution_options(synchronize_session=False)
-    )
-    await db.commit()
-    return {"group_id": group_id, "vat_rate": body.vat_rate, "approved_products": result.rowcount}

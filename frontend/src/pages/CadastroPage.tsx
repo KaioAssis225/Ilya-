@@ -18,7 +18,7 @@ import { useClientsPage, useCreateClient, useUpdateClient, useDeleteClient } fro
 import { useRepresentativesPage, useCreateRepresentative, useUpdateRepresentative, useDeleteRepresentative } from '../hooks/useRepresentatives'
 import { useOptionals, useCreateOptional, useUpdateOptional, useDeleteOptional, useUploadOptionalPhoto } from '../hooks/useOptionals'
 import { useProductTypes, useCreateProductType, useUpdateProductType, useDeleteProductType } from '../hooks/useProductTypes'
-import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup, useProductGroupVatSummary, useApproveGroupVat } from '../hooks/useProductGroups'
+import { useProductGroups, useCreateProductGroup, useUpdateProductGroup, useDeleteProductGroup } from '../hooks/useProductGroups'
 import { useCatalogs, useCreateCatalog, useUpdateCatalog, useDeleteCatalog } from '../hooks/useCatalogs'
 import type { Catalog } from '../hooks/useCatalogs'
 import type { ProductGroup } from '../hooks/useProductGroups'
@@ -3221,12 +3221,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   // Em Portugal o grupo só organiza o catálogo (sem IPI): move direto.
   const canAssignGroup = canEditTypes
   const isBrazil = market === 'BR'
-  // Portugal: o grupo não tem taxa; mostra o IVA já aprovado nos produtos dos
-  // seus subgrupos (aprovação continua por produto).
-  const { data: vatSummary = [] } = useProductGroupVatSummary(!isBrazil)
-  const vatByGroup = new Map(vatSummary.map(item => [item.group_id, item]))
-  const fmtRate = (rate: string | number) =>
-    `${Number(rate).toLocaleString('pt-PT', { maximumFractionDigits: 2 })}%`
   const { data: groups = [], isLoading: groupsLoading } = useProductGroups()
   const tx = useCadastroText()
   const { data: types = [], isLoading: typesLoading } = useProductTypes()
@@ -3246,11 +3240,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   // Group form state
   const [gName, setGName] = useState('')
   const [gIpi, setGIpi] = useState('0.00')
-  // Portugal: IVA aplicado e aprovado em lote nos produtos do grupo (decisão 08/10/2026).
-  const [gVat, setGVat] = useState('')
-  const { user: groupUser } = useAuth()
-  const canApproveVat = !isBrazil && !!groupUser?.can_approve_tax
-  const approveVatM = useApproveGroupVat()
   // Type form state
   const [tName, setTName] = useState('')
   const [tGroupId, setTGroupId] = useState<string | null>(null)
@@ -3260,8 +3249,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   function openNewGroup() { setGName(''); setGIpi(''); setErr(''); setModal({ kind: 'new-group' }) }
   function openEditGroup(g: ProductGroup) {
     setGName(g.name); setGIpi(Number(g.ipi).toFixed(2)); setErr('')
-    const rates = vatByGroup.get(g.id)?.approved_rates ?? []
-    setGVat(rates.length === 1 ? String(Number(rates[0])) : '')
     setModal({ kind: 'edit-group', group: g })
   }
   function openNewType(groupId: string | null) { setTName(''); setTGroupId(groupId); setErr(''); setModal({ kind: 'new-type', groupId }) }
@@ -3270,28 +3257,9 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
   async function handleGroupSubmit(e: React.FormEvent) {
     e.preventDefault(); setErr('')
     const ipiNum = isBrazil ? (parseFloat(gIpi.replace(',', '.')) || 0) : 0
-    // IVA do grupo (Portugal): confirma antes de gravar qualquer coisa, pois
-    // aprova a taxa em todos os produtos dos subgrupos de uma vez.
-    let vatToApprove: number | null = null
-    if (modal?.kind === 'edit-group' && canApproveVat && gVat.trim() !== '') {
-      const vat = Number(gVat.replace(',', '.'))
-      if (!Number.isFinite(vat) || vat < 0 || vat > 100) {
-        setErr(tx('Informe um IVA entre 0 e 100.'))
-        return
-      }
-      const summary = vatByGroup.get(modal.group.id)
-      const count = (summary?.approved_products ?? 0) + (summary?.pending_products ?? 0)
-      if (!window.confirm(tx('Aplicar e aprovar IVA de {rate}% em {count} produto(s) do grupo "{group}"?', {
-        rate: vat.toLocaleString('pt-PT', { maximumFractionDigits: 2 }), count, group: modal.group.name,
-      }))) return
-      vatToApprove = vat
-    }
     try {
       if (modal?.kind === 'edit-group') {
         await updateGroupM.mutateAsync({ id: modal.group.id, name: gName.trim(), ipi: ipiNum })
-        if (vatToApprove !== null) {
-          await approveVatM.mutateAsync({ groupId: modal.group.id, vatRate: vatToApprove })
-        }
       } else {
         await createGroupM.mutateAsync({ name: gName.trim(), ipi: ipiNum })
       }
@@ -3445,26 +3413,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
               <span className="text-xs text-muted">{tx('Nome do Grupo *')}</span>
               <input className="input" value={gName} onChange={(e) => setGName(e.target.value)} required autoFocus />
             </label>
-            {/* Portugal: IVA aplicado e aprovado nos produtos dos subgrupos. */}
-            {canApproveVat && modal.kind === 'edit-group' && (
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-muted">{tx('IVA (%)')}</span>
-                <input
-                  className="input"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  placeholder={tx('Deixe vazio para não alterar')}
-                  value={gVat}
-                  onChange={(e) => setGVat(e.target.value)}
-                />
-                <span className="text-xs text-muted">
-                  {tx('Ao salvar, a taxa é aplicada e aprovada em todos os produtos dos subgrupos deste grupo.')}
-                </span>
-              </label>
-            )}
             {/* IPI é brasileiro; grupo de Portugal só organiza o catálogo. */}
             {isBrazil && (
             <label className="flex flex-col gap-1">
@@ -3550,27 +3498,6 @@ function GroupsTab({ color, page, onPage, canEditGroups, canEditTypes, market }:
                         IPI {Number(group.ipi).toFixed(2).replace('.', ',')}%
                       </span>
                     )}
-                    {!isBrazil && (() => {
-                      const vat = vatByGroup.get(group.id)
-                      const rates = vat?.approved_rates ?? []
-                      return (
-                        <>
-                          <span
-                            title={tx('IVA aprovado nos produtos deste grupo')}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              rates.length > 0 ? 'bg-surface-note text-gold border-line-note' : 'bg-bg-2 text-muted border-line'
-                            }`}
-                          >
-                            {rates.length > 0 ? `${tx('IVA')} ${rates.map(fmtRate).join(' · ')}` : tx('IVA não aprovado')}
-                          </span>
-                          {(vat?.pending_products ?? 0) > 0 && (
-                            <span className="text-[10px] font-semibold text-warning">
-                              {tx('{count} produto(s) com IVA pendente', { count: vat!.pending_products })}
-                            </span>
-                          )}
-                        </>
-                      )
-                    })()}
                   </div>
                   {canEditGroups && <div className="flex items-center gap-1">
                     <button type="button" onClick={() => openEditGroup(group)} aria-label={`${tx('Editar')} ${group.name}`} className="btn-icon">

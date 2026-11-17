@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, status
@@ -23,8 +22,7 @@ from app.models.optional_application import ProductOptionalApplication
 from app.models.catalog import Catalog
 from app.models.user import User, UserRole
 from app.models.market import (
-    ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, UserMarket,
-    VAT_APPROVED, VAT_SOURCE_PROTOTYPE,
+    Market, ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, UserMarket,
 )
 from app.core.markets import MARKETS, MarketPrincipal, PlatformPrincipal
 from app.schemas.product import (
@@ -180,7 +178,7 @@ async def _to_market_reads(
         if allows_price(price_scope, code):
             prices.setdefault(product_id, {})[code] = amount
     localized_names: dict[uuid.UUID, tuple[str | None, str | None]] = {}
-    approved_vat: dict[uuid.UUID, Decimal] = {}
+    eu_vat_rate: Decimal | None = None
     supplied_fabric_rows: dict[uuid.UUID, ProductSuppliedFabric] = {}
     if market == "EU" and ids:
         supplied_fabric_rows = {
@@ -195,8 +193,6 @@ async def _to_market_reads(
                 ProductMarket.product_id,
                 ProductMarket.description_pt_pt,
                 ProductMarket.description_en,
-                ProductMarket.vat_rate,
-                ProductMarket.vat_status,
             ).where(
                 ProductMarket.market_code == "EU",
                 ProductMarket.product_id.in_(ids),
@@ -205,11 +201,11 @@ async def _to_market_reads(
         localized_names = {
             row.product_id: (row.description_pt_pt, row.description_en) for row in localized_rows
         }
-        # Mesmo critério do pedido: só o IVA aprovado vale para o orçamento.
-        approved_vat = {
-            row.product_id: row.vat_rate for row in localized_rows
-            if row.vat_status == VAT_APPROVED and row.vat_rate is not None
-        }
+        # IVA único do mercado (igual para todo produto). O campo `vat_rate` do
+        # produto continua na resposta só por compatibilidade com telas antigas.
+        eu_vat_rate = (await db.execute(
+            select(Market.vat_rate).where(Market.code == "EU")
+        )).scalar_one_or_none()
     result = []
     for product in products:
         item = _to_read(product, price_scope if market == "BR" else None)
@@ -247,7 +243,7 @@ async def _to_market_reads(
                         if allows_price(price_scope, code) and fabric.price_for(code) is not None
                     },
                 )
-            item.vat_rate = approved_vat.get(product.id)
+            item.vat_rate = eu_vat_rate
             descriptions = localized_names.get(product.id)
             if descriptions:
                 item.description_pt_pt, item.description_en = descriptions
@@ -785,16 +781,15 @@ async def _create_product_for_market(
     fiscal_actor_user_id: uuid.UUID | None = None,
     *,
     prototype_owner_id: uuid.UUID | None = None,
-    prototype_vat_rate: Decimal | None = None,
 ) -> Product:
     """Cria o produto. `prototype_owner_id` cria um protótipo (só EU): o código
-    já vem gerado no payload e o IVA informado fica como aprovado pelo dono."""
+    já vem gerado no payload. O IVA não é do produto: vale a taxa única do mercado."""
     is_prototype = prototype_owner_id is not None
     if not is_prototype:
         if market_code == "EU":
             reject_reserved_prototype_code(payload.product_code)
-    elif market_code != "EU" or prototype_vat_rate is None:
-        raise RuntimeError("Protótipo exige mercado EU e IVA informado.")
+    elif market_code != "EU":
+        raise RuntimeError("Protótipo exige mercado EU.")
     await _validate_product_dimensions(
         db,
         market_code,
@@ -875,25 +870,11 @@ async def _create_product_for_market(
             status_code=422,
             detail="Informe os nomes do produto em português de Portugal e inglês.",
         )
-    vat_fields = (
-        {
-            # O criador do protótipo informa o IVA; o protótipo não passa pela
-            # revisão fiscal do catálogo (nunca é faturado nem vai ao Moloni).
-            "vat_rate": prototype_vat_rate,
-            "vat_status": VAT_APPROVED,
-            "vat_source": VAT_SOURCE_PROTOTYPE,
-            "approved_by_user_id": prototype_owner_id,
-            "approved_at": datetime.now(timezone.utc),
-        }
-        if is_prototype
-        else {}
-    )
     db.add(ProductMarket(
         product_id=product.id,
         market_code=market_code,
         is_available=True,
         **localized_fields,
-        **vat_fields,
     ))
     lists = (await db.execute(select(PriceList).where(
         PriceList.market_code == market_code,

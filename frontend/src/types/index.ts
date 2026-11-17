@@ -141,8 +141,6 @@ export interface Product {
   article_category_path?: string | null
   description_pt_pt?: string | null
   description_en?: string | null
-  /** IVA aprovado do produto em Portugal; null no Brasil ou enquanto pendente. */
-  vat_rate?: string | number | null
   type: string
   catalog_id: string | null
   /** Protótipo (só EU): vem das rotas de protótipo e do orçamento do dono. */
@@ -477,6 +475,8 @@ export interface Order {
   vat_exemption_code?: string | null
   /** Texto do motivo no idioma do documento (calculado no servidor). */
   vat_exemption_label?: string | null
+  /** Taxa única de IVA (EU) usada no documento; vazio nos documentos antigos (IVA por linha) e no BR. */
+  vat_rate?: string | number | null
   notes: string | null
   items: OrderItem[]
   history: OrderHistory[]

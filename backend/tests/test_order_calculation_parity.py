@@ -23,7 +23,6 @@ from app.api.routers.orders import (
     _ensure_total_capacity,
     _money,
     _price_for_profile,
-    _resolve_eu_vat,
 )
 from app.core.markets import require_launch_country
 from app.schemas.client import ClientCreate
@@ -136,21 +135,9 @@ def test_perfil_de_preco_nao_muda_entre_mercados():
 
 
 # --- Critério 3: sem imposto zero silencioso ------------------------------
-
-def test_eu_sem_iva_aprovado_nao_cai_para_zero():
-    """O erro precisa ser explícito: um IVA ausente ou pendente não pode virar
-    0% de conveniência, nem herdar o IPI do grupo brasileiro."""
-    with pytest.raises(HTTPException) as sem_taxa:
-        _resolve_eu_vat("IML0001", None, None)
-    assert sem_taxa.value.status_code in (409, 422)
-
-    with pytest.raises(HTTPException) as pendente:
-        _resolve_eu_vat("IML0001", Decimal("23.00"), "pending")
-    assert pendente.value.status_code in (409, 422)
-
-    # Aprovado passa, e zero aprovado é um valor legítimo (isenção), não ausência.
-    assert _resolve_eu_vat("IML0001", Decimal("23.00"), "approved") == Decimal("23.00")
-    assert _resolve_eu_vat("IML0002", Decimal("0"), "approved") == Decimal("0")
+# O EU não tem mais IVA por produto: a taxa única do mercado é obrigatória (sem
+# ela o pedido é recusado, nunca vira 0%). Coberto em
+# tests/integration/test_eu_single_vat.py::test_missing_rate_blocks_quotes_*.
 
 
 # --- Critério 4: snapshot histórico estável -------------------------------

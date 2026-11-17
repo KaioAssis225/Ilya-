@@ -344,10 +344,19 @@ async def deliver_job(db: AsyncSession, job: MoloniExportJob) -> int:
             raise MoloniError("Pedido sem IVA precisa do código do motivo de isenção.")
         exempt_tax = await _exempt_tax(api, connection.company_id)
     products = []
+    # Documento com IVA único: o Moloni exige imposto por linha, então cada linha
+    # (e o artigo novo) leva a MESMA taxa única gravada no pedido. O Moloni arredonda
+    # o IVA linha a linha; nosso total arredonda na base, e a diferença é de centavos.
+    single_rate_tax = _tax_for_rate(str(order.vat_rate), mappings) if order.vat_rate is not None and Decimal(order.vat_rate) > 0 else None
     for index, item in enumerate(order.items):
         product = (await db.execute(select(Product).where(Product.market_code == "EU", Product.product_code == item.product_code))).scalar_one_or_none()
         if not product: raise MoloniError("Produto EU não encontrado: " + item.product_code)
-        if exempt_tax is not None:
+        if order.vat_rate is not None:
+            if single_rate_tax is None:
+                raise MoloniError("Taxa de IVA 0% precisa de motivo de isenção validado antes do envio ao Moloni.")
+            article_tax = single_rate_tax
+            tax = exempt_tax if exempt_tax is not None else single_rate_tax
+        elif exempt_tax is not None:
             # A linha vai a 0% com o motivo; o artigo novo no Moloni mantém o
             # IVA normal do produto para não virar isento no cadastro deles.
             product_vat = (await db.execute(select(ProductMarket.vat_rate).where(ProductMarket.product_id == product.id, ProductMarket.market_code == "EU"))).scalar_one_or_none()

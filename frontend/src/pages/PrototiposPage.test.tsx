@@ -65,7 +65,7 @@ describe('PrototiposPage', () => {
     await waitFor(() => expect(seen.some(search => search.includes('q=poltrona'))).toBe(true))
   })
 
-  it('cria o protótipo com o código automático e o IVA informado', async () => {
+  it('cria o protótipo com o código automático e sem IVA próprio', async () => {
     const created: Array<Record<string, unknown>> = []
     installProductHandlers({ catalogs: [CATALOG] })
     server.use(
@@ -89,16 +89,16 @@ describe('PrototiposPage', () => {
     const pvp = within(form).getByLabelText('PVP')
     await userEvent.clear(pvp)
     await userEvent.type(pvp, '1500')
-    const vat = within(form).getByLabelText(/IVA/)
-    await userEvent.clear(vat)
-    await userEvent.type(vat, '6')
+    // O IVA não é do protótipo: vale a taxa única do mercado (sem campo no formulário).
+    expect(within(form).queryByLabelText(/IVA/)).not.toBeInTheDocument()
     await userEvent.click(within(form).getByRole('button', { name: 'Criar protótipo' }))
 
     await waitFor(() => expect(created).toHaveLength(1))
     expect(created[0]).toMatchObject({
       description_pt_pt: 'Poltrona protótipo', description_en: 'Prototype armchair',
-      catalog_id: CATALOG.id, altura: 0.8, largura: 0.7, price_pvp: 1500, vat_rate: 6,
+      catalog_id: CATALOG.id, altura: 0.8, largura: 0.7, price_pvp: 1500,
     })
+    expect(created[0]).not.toHaveProperty('vat_rate')
     expect(created[0]).not.toHaveProperty('product_code')
     expect(await screen.findByText(/Protótipo PROT-0007 criado/)).toBeInTheDocument()
   })

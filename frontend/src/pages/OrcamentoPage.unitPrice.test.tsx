@@ -134,17 +134,23 @@ describe('OrcamentoPage — valor unitário com desconto', () => {
 
   it('IVA e total geral saem dos subtotais líquidos, sem aplicar o desconto duas vezes', async () => {
     const user = productTestUser('admin', 'EU')
-    const product = eurProduct({ vat_rate: '23.00' })
+    const product = eurProduct()
     localStorage.setItem(cartStorageKey(user.id, 'EU'), JSON.stringify([cartLine({ qty: 3, discount: 10 })]))
     writeCartPriceList(user.id, 'EU', 'pvp')
     installHandlers([product])
+    // IVA único do mercado, aplicado uma vez sobre o total (não por produto).
+    server.use(http.get('*/markets/EU/vat-rate', () => HttpResponse.json({
+      market: 'EU', vat_rate: '23.00', can_edit: false, history: [],
+    })))
 
     renderProductPage(<OrcamentoPage />, user)
 
     await screen.findByRole('listitem', { name: 'SKU-EU Mesa PT' })
+    await waitFor(() => {
+      expect(screen.getByText('Total do Orçamento:').parentElement?.textContent).toContain(`IVA (23%): ${eur(1075.06)}`)
+    })
     const summary = screen.getByText('Total do Orçamento:').parentElement?.textContent
     expect(summary).toContain(`Subtotal: ${eur(4674.19)}`)
-    expect(summary).toContain(`IVA: ${eur(1075.06)}`)
     expect(summary).toContain(eur(5749.25))
   })
 

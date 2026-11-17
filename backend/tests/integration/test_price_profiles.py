@@ -14,10 +14,11 @@ Contrato (regra, não saída):
 * tributo da linha = ROUND_HALF_UP_2(subtotal × alíquota / 100);
   total_ipi = soma dos tributos de linha já arredondados;
 * BR: alíquota = IPI do grupo fiscal do tipo; rótulo "IPI"; moeda BRL;
-* EU: alíquota = IVA aprovado nominalmente no SKU (`VAT_APPROVED`); rótulo
-  "IVA"; moeda EUR. IVA pendente/rejeitado → 422 (ISO-24), sem fallback para
-  IPI do grupo, tabela por tipo (`market_tax_rates`), SKU BR homônimo ou zero.
-  Zero só vale quando é a taxa aprovada explicitamente;
+* EU: a linha não leva IVA; o IVA é a taxa única do mercado (`markets.vat_rate`)
+  aplicada uma vez sobre o subtotal do documento, arredondada na base total;
+  rótulo "IVA"; moeda EUR. O IVA por SKU (pendente/rejeitado/aprovado) não
+  bloqueia nem muda o orçamento (ISO-24 virou: o IVA do SKU é ignorado);
+  sem fallback para IPI do grupo, tabela por tipo (`market_tax_rates`) ou SKU BR;
 * Arquiteto/PVP existem somente no EU: cliente BR não pode receber o perfil.
 
 Rejeições conferem o banco depois de reproduzir o rollback de `get_db`
@@ -32,12 +33,13 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
 from app.models.client import Client
 from app.models.market import (
+    Market,
     MarketTaxRate,
     PriceList,
     ProductMarket,
@@ -255,8 +257,12 @@ async def test_reg_price_profile_selects_list_and_tax_with_half_up_rounding(
     [item] = body["items"]
     assert _dec(item["unit_price"]) == unit
     assert _dec(item["discount"]) == _dec(discount)
-    assert _dec(item["ipi_rate"]) == rate
-    assert _dec(item["ipi_value"]) == tax
+    # BR: IPI na linha. EU: a linha não leva IVA; a taxa única fica no documento.
+    assert _dec(item["ipi_rate"]) == (rate if market == "BR" else D("0"))
+    assert _dec(item["ipi_value"]) == (tax if market == "BR" else D("0"))
+    assert (body["vat_rate"] is None) == (market == "BR")
+    if market == "EU":
+        assert _dec(body["vat_rate"]) == rate
     assert item["tax_label"] == label
     assert item["currency"] == currency
 
@@ -300,6 +306,9 @@ async def test_reg_price_rounding_is_half_up_per_line(
     code, _ = await _product(
         db_session, market, admin.user_id, amounts={"lojista": amount}, tax_rate=rate,
     )
+    if market == "EU":
+        # O IVA do EU é a taxa única do mercado, não a do SKU.
+        await db_session.execute(update(Market).where(Market.code == "EU").values(vat_rate=rate))
     client_id = await _client(db_session, market, "lojista")
 
     response = await _post_order(client, admin, client_id, [
@@ -598,26 +607,27 @@ async def test_reg_price_eu_legacy_order_keeps_original_list_on_edit(
     assert _dec(third.json()["items"][0]["unit_price"]) == D("850.00")
 
 
-# ── ISO-24: IVA pendente/rejeitado ─────────────────────────────────────────────
+# ── ISO-24: o IVA por SKU deixou de existir para o pedido ──────────────────────
 
 @pytest.mark.parametrize(
     ("vat_status", "vat_rate"),
     [
-        (VAT_PENDING, D("23.00")),
+        (VAT_PENDING, D("5.00")),
         (VAT_PENDING, None),
-        (VAT_REJECTED, D("23.00")),
+        (VAT_REJECTED, D("5.00")),
         (VAT_REJECTED, None),
     ],
     ids=["pendente-com-taxa", "pendente-sem-taxa", "rejeitado-com-taxa", "rejeitado-sem-taxa"],
 )
-async def test_iso24_unapproved_vat_is_422_without_any_fallback(
+async def test_iso24_product_vat_status_no_longer_blocks_or_changes_the_quote(
     client: AsyncClient,
     db_session: AsyncSession,
     vat_status: str,
     vat_rate: Decimal | None,
 ) -> None:
-    """Todas as fontes alternativas existem e nenhuma pode ser usada:
-    SKU BR homônimo com IPI 10%, tabela EU por tipo com 23% e grupo EU com 0%."""
+    """IVA do SKU pendente, rejeitado, ausente ou diferente é ignorado: vale só a taxa
+    única do mercado (23%). Fontes alternativas existem e nenhuma é usada: SKU BR
+    homônimo com IPI 10% e tabela EU por tipo com 7%."""
     admin = await _admin(db_session, "EU")
     br_admin = await _admin(db_session, "BR")
     code, type_name = await _product(
@@ -628,29 +638,30 @@ async def test_iso24_unapproved_vat_is_422_without_any_fallback(
         db_session, "BR", br_admin.user_id,
         amounts={"lojista": D("1000.00")}, tax_rate=D("10.00"), product_code=code,
     )
-    db_session.add(MarketTaxRate(market_code="EU", product_type=type_name, rate=D("23.00")))
+    db_session.add(MarketTaxRate(market_code="EU", product_type=type_name, rate=D("7.00")))
     client_id = await _client(db_session, "EU", "lojista")
     await db_session.commit()
 
     response = await _post_order(client, admin, client_id, [{"product_code": code, "qty": 1}])
-    assert response.status_code == 422, response.text
-    detail = response.json()["detail"]
-    assert code in detail and "IVA aprovado" in detail
 
-    await _discard_failed_request(db_session)
-    assert await _order_count(db_session, client_id) == 0
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (_dec(body["total_value"]), _dec(body["total_ipi"]), _dec(body["total_with_ipi"])) == (
+        D("1000.00"), D("230.00"), D("1230.00"),
+    )
+    assert _dec(body["vat_rate"]) == D("23.00")
 
 
-async def test_iso24_mixed_order_with_one_pending_vat_saves_nothing(
+async def test_iso24_mixed_order_applies_one_rate_to_the_whole_subtotal(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     admin = await _admin(db_session, "EU")
     approved, _ = await _product(
-        db_session, "EU", admin.user_id, amounts={"lojista": D("100.00")}, tax_rate=D("23.00"),
+        db_session, "EU", admin.user_id, amounts={"lojista": D("100.00")}, tax_rate=D("13.00"),
     )
     pending, _ = await _product(
         db_session, "EU", admin.user_id, amounts={"lojista": D("100.00")},
-        tax_rate=D("23.00"), vat_status=VAT_PENDING,
+        tax_rate=D("6.00"), vat_status=VAT_PENDING,
     )
     client_id = await _client(db_session, "EU", "lojista")
     await db_session.commit()
@@ -658,17 +669,19 @@ async def test_iso24_mixed_order_with_one_pending_vat_saves_nothing(
     response = await _post_order(client, admin, client_id, [
         {"product_code": approved, "qty": 1}, {"product_code": pending, "qty": 1},
     ])
-    assert response.status_code == 422, response.text
-    assert pending in response.json()["detail"]
 
-    await _discard_failed_request(db_session)
-    assert await _order_count(db_session, client_id) == 0
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (_dec(body["total_value"]), _dec(body["total_ipi"]), _dec(body["total_with_ipi"])) == (
+        D("200.00"), D("46.00"), D("246.00"),
+    )
+    assert [_dec(item["ipi_rate"]) for item in body["items"]] == [D("0"), D("0")]
 
 
-async def test_iso24_explicitly_approved_zero_vat_is_accepted(
+async def test_iso24_product_vat_zero_does_not_zero_the_document_vat(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Zero aprovado por pessoa é cadastro, não fallback: 100.00 × 0% = 0.00."""
+    """IVA 0% gravado no SKU é dado antigo: o documento cobra a taxa única."""
     admin = await _admin(db_session, "EU")
     code, _ = await _product(
         db_session, "EU", admin.user_id, amounts={"lojista": D("100.00")}, tax_rate=D("0.00"),
@@ -677,18 +690,20 @@ async def test_iso24_explicitly_approved_zero_vat_is_accepted(
 
     response = await _post_order(client, admin, client_id, [{"product_code": code, "qty": 1}])
     assert response.status_code == 201, response.text
-    [item] = response.json()["items"]
+    body = response.json()
+    [item] = body["items"]
     assert (_dec(item["ipi_rate"]), _dec(item["ipi_value"]), item["tax_label"]) == (
         D("0.00"), D("0.00"), "IVA",
     )
+    assert _dec(body["total_ipi"]) == D("23.00")
 
 
-async def test_iso24_recalculation_after_vat_revoked_is_422_and_keeps_snapshot(
+async def test_iso24_recalculation_after_product_vat_revoked_keeps_the_single_rate(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Pedido EU criado com IVA aprovado; IVA volta a pendente; PUT recalcula → 422.
+    """Pedido EU criado; o IVA do SKU volta a pendente; PUT recalcula e segue 200.
 
-    Snapshot original: 1000.00 × 3 = 3000.00; IVA 23% = 690.00; 3690.00.
+    1000.00 × 3 = 3000.00; IVA único 23% = 690.00; 3690.00 — antes e depois.
     """
     admin = await _admin(db_session, "EU")
     code, _ = await _product(
@@ -722,24 +737,23 @@ async def test_iso24_recalculation_after_vat_revoked_is_422_and_keeps_snapshot(
         json={"items": [item_payload]},
         headers=_auth(admin.token),
     )
-    assert response.status_code == 422, response.text
-    assert "IVA aprovado" in response.json()["detail"]
+    assert response.status_code == 200, response.text
 
-    await _discard_failed_request(db_session)
     order = (await db_session.execute(
         select(Order).where(Order.id == order_id).execution_options(**_SKIP_SCOPE)
     )).scalar_one()
     assert (order.total_value, order.total_ipi, order.total_with_ipi) == (
         D("3000.00"), D("690.00"), D("3690.00"),
     )
-    assert order.document_version == original_version
+    assert order.vat_rate == D("23.00")
+    assert order.document_version == original_version + 1
     items = (await db_session.execute(
         select(OrderItem.ipi_rate, OrderItem.ipi_value, OrderItem.tax_label)
         .where(OrderItem.order_id == order_id)
         .execution_options(**_SKIP_SCOPE)
     )).all()
     assert [(row.ipi_rate, row.ipi_value, row.tax_label) for row in items] == [
-        (D("23.00"), D("690.00"), "IVA"),
+        (D("0.00"), D("0.00"), "IVA"),
     ]
 
 

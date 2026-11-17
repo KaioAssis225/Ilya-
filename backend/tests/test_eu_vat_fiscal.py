@@ -1,12 +1,13 @@
-"""Regra fiscal do IVA europeu (decisão do responsável).
+"""Regras do mercado EU depois do IVA único (decisão do responsável).
 
-Três focos, no mesmo estilo mockado dos demais testes (AsyncMock, sem banco):
+O IVA deixou de ser por produto: é uma taxa única do mercado, aplicada só no
+total (ver `tests/integration/test_eu_single_vat.py` para o cálculo). Aqui, no
+mesmo estilo mockado dos demais testes (AsyncMock, sem banco):
 
-1. Importação sem IVA é rejeitada — coluna ausente e valor ausente por linha,
-   com 0 sendo um valor válido (não "sem IVA").
-2. Toda taxa importada nasce `pending`; não pode ser usada diretamente.
-3. Cálculo EU usa taxa aprovada do produto ou taxa aprovada uniforme do grupo;
-   sem herança do IPI brasileiro e sem zero de conveniência.
+1. A importação do catálogo EU não exige, não lê e não grava IVA por produto.
+2. A ativação da Europa exige a taxa única configurada (e não mais SKU aprovado).
+3. Quem aprovou IVA por produto no passado continua protegido contra exclusão
+   de conta (a trilha dos dados antigos é preservada).
 """
 import asyncio
 import io
@@ -20,16 +21,11 @@ from fastapi import HTTPException, Request, Response
 from sqlalchemy.dialects import postgresql
 from starlette.datastructures import UploadFile
 
-from app.api.routers.markets import (
-    _parse_required_vat,
-    activate_europe,
-    import_europe_catalog,
-)
-from app.api.routers.orders import _load_eu_group_vat_rates, _resolve_eu_vat
+from app.api.routers.markets import activate_europe, import_europe_catalog
 from app.api.routers.auth import delete_my_account
 from app.api.routers.users import delete_user
+from app.core.eu_vat import normalize_vat_rate, total_vat
 from app.schemas.auth import ReauthenticationRequest
-from app.models.market import VAT_APPROVED, VAT_PENDING, VAT_REJECTED
 
 
 ADMIN = SimpleNamespace(id=uuid.uuid4(), role="admin")
@@ -72,132 +68,91 @@ class _CountResult:
         return self._value
 
 
+class _RateResult:
+    """Resultado de `select(Market.vat_rate)`: a taxa única (ou None)."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
 # ---------------------------------------------------------------------------
-# 1. Importação sem IVA é rejeitada
+# 1. Importação não mexe em IVA
 # ---------------------------------------------------------------------------
-class TestParseRequiredVat:
-    def test_vazio_e_rejeitado(self):
-        with pytest.raises(ValueError):
-            _parse_required_vat("")
+async def _import(csv_text: str):
+    pid1, pid2 = uuid.uuid4(), uuid.uuid4()
+    statements = []
 
-    def test_none_e_rejeitado(self):
-        with pytest.raises(ValueError):
-            _parse_required_vat(None)
+    async def _execute(stmt):
+        statements.append(stmt)
+        index = len(statements)
+        if index == 1:
+            return _AllResult([(pid1, "EU-1"), (pid2, "EU-2")])
+        if index == 2:
+            return _ScalarsResult(_price_lists())
+        return MagicMock()
 
-    def test_zero_e_valido(self):
-        # 0% é uma taxa explícita legítima (isento), não "sem IVA".
-        assert _parse_required_vat("0") == Decimal("0")
-
-    def test_taxa_normal(self):
-        assert _parse_required_vat("23") == Decimal("23")
-
-    def test_decimal_com_virgula(self):
-        assert _parse_required_vat("23,5") == Decimal("23.5")
-
-    def test_acima_de_cem_e_rejeitado(self):
-        with pytest.raises(ValueError):
-            _parse_required_vat("101")
+    db = AsyncMock()
+    db.execute = _execute
+    result = await import_europe_catalog(file=_upload(csv_text), db=db, _=ADMIN)
+    return result, statements
 
 
-def test_import_sem_coluna_vat_rate_rejeita_lote():
+def _market_upserts(statements):
+    return [
+        s for s in statements
+        if getattr(getattr(s, "table", None), "name", None) == "product_markets"
+    ]
+
+
+def test_import_sem_coluna_vat_rate_e_aceito_e_nao_grava_iva():
     async def run():
-        # Cabeçalho sem vat_rate: rejeita antes de tocar o banco.
         csv_text = (
             "product_code;lojista;corporativo;pvp;arquiteto\n"
             "EU-1;100;90;150;120\n"
+            "EU-2;100;90;150;120\n"
         )
-        db = AsyncMock()
-        with pytest.raises(HTTPException) as exc:
-            await import_europe_catalog(file=_upload(csv_text), db=db, _=ADMIN)
-        assert exc.value.status_code == 422
-        assert "vat_rate" in str(exc.value.detail)
-        db.execute.assert_not_called()
-        db.commit.assert_not_called()
+        result, statements = await _import(csv_text)
+
+        assert result["imported"] == 2
+        assert "pending_vat_approval" not in result
+        # A busca de produtos não junta product_groups: sem herança do IPI.
+        assert "product_groups" not in str(statements[0])
+        upserts = _market_upserts(statements)
+        assert len(upserts) == 2
+        for stmt in upserts:
+            sql = str(stmt.compile(dialect=postgresql.dialect()))
+            assert "vat_rate" not in sql
+            assert "vat_status" not in sql
+            assert "approved_by_user_id" not in sql
 
     asyncio.run(run())
 
 
-def test_import_linha_sem_valor_de_vat_rejeita_lote():
+def test_import_com_coluna_vat_rate_antiga_ignora_o_valor():
     async def run():
-        # Coluna presente, mas uma linha sem valor → lote inteiro rejeitado,
-        # nada é gravado (nenhum commit).
+        # Planilha antiga: a coluna existe (inclusive vazia ou inválida) e é ignorada.
         csv_text = (
             "product_code;lojista;corporativo;pvp;arquiteto;vat_rate\n"
             "EU-1;100;90;150;120;23\n"
             "EU-2;100;90;150;120;\n"
         )
-        pid1, pid2 = uuid.uuid4(), uuid.uuid4()
-        db = AsyncMock()
-        db.execute.side_effect = [
-            _AllResult([(pid1, "EU-1"), (pid2, "EU-2")]),
-            _ScalarsResult(_price_lists()),
-        ]
-        with pytest.raises(HTTPException) as exc:
-            await import_europe_catalog(file=_upload(csv_text), db=db, _=ADMIN)
-        assert exc.value.status_code == 422
-        db.commit.assert_not_called()
+        result, statements = await _import(csv_text)
 
-    asyncio.run(run())
-
-
-# ---------------------------------------------------------------------------
-# 2. Taxa importada nasce pending e limpa aprovação anterior
-# ---------------------------------------------------------------------------
-def test_import_grava_pending_e_zera_aprovacao_sem_herdar_ipi():
-    async def run():
-        # Inclui a linha com 0 (válida) para provar que zero entra como taxa.
-        csv_text = (
-            "product_code;lojista;corporativo;pvp;arquiteto;vat_rate\n"
-            "EU-1;100;90;150;120;23\n"
-            "EU-2;100;90;150;120;0\n"
-        )
-        pid1, pid2 = uuid.uuid4(), uuid.uuid4()
-        statements = []
-
-        async def _execute(stmt):
-            statements.append(stmt)
-            index = len(statements)
-            if index == 1:
-                return _AllResult([(pid1, "EU-1"), (pid2, "EU-2")])
-            if index == 2:
-                return _ScalarsResult(_price_lists())
-            return MagicMock()
-
-        db = AsyncMock()
-        db.execute = _execute
-
-        result = await import_europe_catalog(file=_upload(csv_text), db=db, _=ADMIN)
-
-        # Ambas as linhas importadas (0 é válido) e todas pendentes.
         assert result["imported"] == 2
-        assert result["pending_vat_approval"] == 2
-        assert "tax_rates_inherited_from_ilya" not in result
-
-        # A busca de produtos não junta product_groups: sem herança do IPI.
-        products_sql = str(statements[0])
-        assert "product_groups" not in products_sql
-        assert "products.market_code" in products_sql
-
-        # Os upserts de product_markets gravam pending/import e limpam aprovação.
-        inserts = [
-            s for s in statements
-            if getattr(getattr(s, "table", None), "name", None) == "product_markets"
-        ]
-        assert len(inserts) == 2
-        for stmt in inserts:
-            params = stmt.compile(dialect=postgresql.dialect()).params
-            values = list(params.values())
-            assert VAT_PENDING in values
-            assert "import" in values  # VAT_SOURCE_IMPORT
-            # approval zerada: nenhum status de aprovação é escrito
-            assert VAT_APPROVED not in values
+        for stmt in _market_upserts(statements):
+            assert "vat_rate" not in str(stmt.compile(dialect=postgresql.dialect()))
 
     asyncio.run(run())
 
 
-def test_activate_recusa_eu_sem_iva_aprovado():
+# ---------------------------------------------------------------------------
+# 2. Ativação exige a taxa única do mercado
+# ---------------------------------------------------------------------------
+def test_activate_recusa_eu_sem_taxa_de_iva_configurada():
     async def run():
-        # Quatro listas OK, mas há 1 SKU disponível sem IVA aprovado → 409.
         db = AsyncMock()
         db.execute.side_effect = [
             _CountResult(0),                         # clientes sem país
@@ -205,7 +160,7 @@ def test_activate_recusa_eu_sem_iva_aprovado():
             _CountResult(0),                         # dimensões EU válidas
             _CountResult(1),                         # disponíveis
             _AllResult([(uuid.uuid4(), 4)]),         # com as 4 listas
-            _CountResult(1),                         # sem IVA aprovado
+            _RateResult(None),                       # taxa única ausente
         ]
         with pytest.raises(HTTPException) as exc:
             await activate_europe(db=db, _=ADMIN)
@@ -225,7 +180,7 @@ def test_activate_recusa_catalogo_eu_vazio():
             _CountResult(0),
             _CountResult(0),
             _AllResult([]),
-            _CountResult(0),
+            _RateResult(Decimal("23.00")),
         ]
         with pytest.raises(HTTPException) as exc:
             await activate_europe(db=db, _=ADMIN)
@@ -236,7 +191,7 @@ def test_activate_recusa_catalogo_eu_vazio():
     asyncio.run(run())
 
 
-def test_activate_passa_quando_tudo_aprovado():
+def test_activate_passa_com_taxa_de_iva_e_sem_aprovacao_por_sku():
     async def run():
         market = SimpleNamespace(is_enabled=False)
         db = AsyncMock()
@@ -246,7 +201,7 @@ def test_activate_passa_quando_tudo_aprovado():
             _CountResult(0),
             _CountResult(1),                         # disponíveis
             _AllResult([(uuid.uuid4(), 4)]),         # com as 4 listas
-            _CountResult(0),                         # nenhum sem IVA aprovado
+            _RateResult(Decimal("23.00")),           # taxa única configurada
         ]
         db.get = AsyncMock(return_value=market)
 
@@ -297,56 +252,43 @@ def test_activate_recusa_dimensao_de_produto_fora_do_mercado_eu():
 
 
 # ---------------------------------------------------------------------------
-# 3. Cálculo EU usa taxa aprovada do produto ou do grupo
+# Cálculo e validação da taxa única (puros)
 # ---------------------------------------------------------------------------
-class TestResolveEuVat:
-    def test_aprovado_usa_a_taxa(self):
-        assert _resolve_eu_vat("EU-1", Decimal("23.00"), VAT_APPROVED) == Decimal("23.00")
+class TestTotalVat:
+    def test_taxa_sobre_o_subtotal(self):
+        assert total_vat(Decimal("200.00"), Decimal("23.00")) == Decimal("46.00")
 
-    def test_aprovado_aceita_zero(self):
-        # Isenção aprovada (0%) é faturável; é diferente de taxa ausente.
-        assert _resolve_eu_vat("EU-1", Decimal("0"), VAT_APPROVED) == Decimal("0")
+    def test_arredonda_uma_vez_na_base_total(self):
+        # 99,99 × 23% = 22,9977 → 23,00.
+        assert total_vat(Decimal("99.99"), Decimal("23.00")) == Decimal("23.00")
+        # 0,20 × 23% = 0,046 → 0,05 (linha a linha dariam 0,02 + 0,02).
+        assert total_vat(Decimal("0.20"), Decimal("23.00")) == Decimal("0.05")
 
-    def test_pendente_usa_iva_do_grupo(self):
-        assert _resolve_eu_vat("EU-1", Decimal("5"), VAT_PENDING, Decimal("23")) == Decimal("23")
+    def test_meio_centavo_sobe(self):
+        assert total_vat(Decimal("0.50"), Decimal("1.00")) == Decimal("0.01")
 
-    def test_pendente_sem_taxa_de_grupo_e_recusado(self):
+    def test_isento_e_zero(self):
+        assert total_vat(Decimal("200.00"), Decimal("23.00"), exempt=True) == Decimal("0.00")
+
+    def test_taxa_zero(self):
+        assert total_vat(Decimal("200.00"), Decimal("0")) == Decimal("0.00")
+
+
+class TestNormalizeVatRate:
+    @pytest.mark.parametrize("value", ["0", "23", "23.5", "100", "7.25"])
+    def test_aceita_ate_duas_casas_entre_0_e_100(self, value):
+        assert normalize_vat_rate(Decimal(value)) == Decimal(value).quantize(Decimal("0.01"))
+
+    @pytest.mark.parametrize("value", ["-0.01", "100.01", "23.001", "NaN", "Infinity"])
+    def test_recusa_fora_da_faixa_ou_com_mais_casas(self, value):
         with pytest.raises(HTTPException) as exc:
-            _resolve_eu_vat("EU-1", Decimal("23.00"), VAT_PENDING)
-        assert exc.value.status_code == 422
-        assert "EU-1" in exc.value.detail
-
-    def test_rejeitado_usa_iva_do_grupo(self):
-        assert _resolve_eu_vat("EU-1", Decimal("5"), VAT_REJECTED, Decimal("23")) == Decimal("23")
-
-    def test_aprovado_prevalece_sobre_grupo(self):
-        assert _resolve_eu_vat("EU-1", Decimal("13"), VAT_APPROVED, Decimal("23")) == Decimal("13")
-
-    def test_aprovado_mas_sem_taxa_e_recusado(self):
-        # Defesa em profundidade: o CHECK já impede, mas a rota não confia nisso.
-        with pytest.raises(HTTPException) as exc:
-            _resolve_eu_vat("EU-1", None, VAT_APPROVED)
+            normalize_vat_rate(Decimal(value))
         assert exc.value.status_code == 422
 
 
-def test_group_vat_requires_one_approved_rate():
-    async def run():
-        group_ok, group_mixed = uuid.uuid4(), uuid.uuid4()
-        db = AsyncMock()
-        db.execute.return_value = SimpleNamespace(all=lambda: [
-            (group_ok, Decimal("23")),
-            (group_mixed, Decimal("13")),
-            (group_mixed, Decimal("23")),
-        ])
-        types = {
-            "chair": SimpleNamespace(group_id=group_ok),
-            "sofa": SimpleNamespace(group_id=group_mixed),
-        }
-        assert await _load_eu_group_vat_rates(db, types) == {group_ok: Decimal("23")}
-
-    asyncio.run(run())
-
-
+# ---------------------------------------------------------------------------
+# 3. Quem aprovou IVA no passado segue protegido contra exclusão de conta
+# ---------------------------------------------------------------------------
 def test_aprovador_com_taxa_ativa_nao_pode_ser_excluido():
     async def run():
         target_id = uuid.uuid4()

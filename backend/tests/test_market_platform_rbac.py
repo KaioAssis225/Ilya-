@@ -8,7 +8,9 @@ from fastapi import HTTPException
 
 from app.api.deps import get_market_principal, get_platform_principal, require_platform_capability
 from app.api.routers.auth import _rotate_refresh_token, login, platform_login, switch_market
-from app.api.routers.markets import VatDecisionRequest, decide_europe_vat
+from decimal import Decimal
+
+from app.api.routers.markets import EuVatRateRequest, update_europe_vat_rate
 from app.api.routers.users import (
     _build_market_links,
     _replace_market_links,
@@ -232,30 +234,28 @@ def test_switch_market_emits_the_target_markets_role():
     asyncio.run(run())
 
 
-def test_vat_approval_requires_permission_in_the_active_eu_market():
+def test_vat_rate_change_requires_admin_in_the_active_eu_market():
     async def run():
         user = _user()
-        br = UserMarket(
+        br_admin = UserMarket(
             user_id=user.id,
             market_code="BR",
             role="admin",
             status="active",
-            can_approve_tax=True,
         )
-        eu_without_permission = UserMarket(
+        eu_seller = UserMarket(
             user_id=user.id,
             market_code="EU",
-            role="admin",
+            role="vendedor",
             status="active",
-            can_approve_tax=False,
         )
-        body = VatDecisionRequest(status="approved", vat_rate=23)
+        body = EuVatRateRequest(vat_rate=Decimal("21"))
         for principal in (
-            MarketPrincipal(user, MARKETS["BR"], br),
-            MarketPrincipal(user, MARKETS["EU"], eu_without_permission),
+            MarketPrincipal(user, MARKETS["BR"], br_admin),
+            MarketPrincipal(user, MARKETS["EU"], eu_seller),
         ):
             with pytest.raises(HTTPException) as exc:
-                await decide_europe_vat(uuid.uuid4(), body, AsyncMock(), principal)
+                await update_europe_vat_rate(body, AsyncMock(), principal)
             assert exc.value.status_code == 403
     asyncio.run(run())
 

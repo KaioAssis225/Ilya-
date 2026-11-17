@@ -33,7 +33,6 @@ export interface PrototypeInput {
   price_corporativo: number
   price_pvp: number
   price_arquiteto: number
-  vat_rate: number
   observacao?: string | null
   optional_applications?: OptionalApplicationInput[]
 }

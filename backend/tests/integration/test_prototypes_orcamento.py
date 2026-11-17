@@ -89,9 +89,11 @@ async def test_dono_orca_protótipo_com_preco_e_iva_do_servidor(client: AsyncCli
     [item] = order["items"]
     assert item["product_code"] == proto["product_code"]
     assert Decimal(str(item["unit_price"])) == Decimal("1500.00")  # lista PVP escolhida
-    assert Decimal(str(item["ipi_rate"])) == Decimal("6.00")          # IVA do protótipo
+    assert Decimal(str(item["ipi_rate"])) == Decimal("0.00")          # a linha não leva IVA
     assert Decimal(str(order["total_value"])) == Decimal("3000.00")
-    assert Decimal(str(order["total_with_ipi"])) == Decimal("3180.00")
+    # IVA único do mercado (23%), uma vez sobre o total; o IVA informado no protótipo é ignorado.
+    assert Decimal(str(order["total_ipi"])) == Decimal("690.00")
+    assert Decimal(str(order["total_with_ipi"])) == Decimal("3690.00")
     assert item["description"] == "Poltrona protótipo"
 
     lojista = await _quote(client, w.james, eu_client, proto["product_code"], price_list="lojista")

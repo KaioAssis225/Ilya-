@@ -28,12 +28,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
 from app.models.catalog import Catalog
-from app.models.market import PriceList, ProductMarket, ProductPrice
+from app.models.market import Market, PriceList, ProductMarket, ProductPrice
 from app.models.product import Product
 from app.models.product_group import ProductGroup
 from app.models.product_type import ProductType
@@ -322,35 +322,24 @@ async def test_reg_prod_01_02_create_br_eu_persists_market_names_prices_and_pend
     assert eu["market_prices"]["arquiteto"] == "80.00"
 
 
-async def test_eu_product_read_sends_only_approved_vat(
+async def test_eu_product_read_sends_the_single_market_vat_rate(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """O orçamento de Portugal usa o IVA do produto; pendente sai null, Brasil não tem."""
+    """O IVA não é do produto: o produto EU devolve a taxa única do mercado, sem
+    depender de aprovação por SKU; o Brasil não tem."""
     br_token = await _token(db_session, "admin", "BR")
     eu_token = await _token(db_session, "admin", "EU")
     code = f"P05-VAT-{uuid4().hex[:10]}"
     br = await _create(client, db_session, market="BR", token=br_token, code=code)
     eu = await _create(client, db_session, market="EU", token=eu_token, code=code)
 
-    pending = await client.get(f"/api/v1/products/{eu['id']}", headers=_auth(eu_token))
-    assert pending.status_code == 200, pending.text
-    assert pending.json()["vat_rate"] is None
+    read = await client.get(f"/api/v1/products/{eu['id']}", headers=_auth(eu_token))
+    assert read.status_code == 200, read.text
+    assert read.json()["vat_rate"] == "23.00"
 
-    eu_market = (await db_session.execute(select(ProductMarket).where(
-        ProductMarket.product_id == UUID(eu["id"]), ProductMarket.market_code == "EU",
-    ).execution_options(skip_market_scope=True))).scalar_one()
-    approver = await make_user(
-        db_session, email=f"p05-vat-{uuid4().hex[:10]}@ilya-test.invalid",
-        role=UserRole.admin, home_market="EU",
-    )
-    eu_market.vat_rate = Decimal("23.00")
-    eu_market.vat_status = "approved"
-    eu_market.approved_by_user_id = approver.id
-    eu_market.approved_at = datetime.now(timezone.utc)
-    await db_session.commit()
-
-    approved = await client.get(f"/api/v1/products/{eu['id']}", headers=_auth(eu_token))
-    assert approved.json()["vat_rate"] == "23.00"
+    await db_session.execute(update(Market).where(Market.code == "EU").values(vat_rate=Decimal("6.00")))
+    changed = await client.get(f"/api/v1/products/{eu['id']}", headers=_auth(eu_token))
+    assert changed.json()["vat_rate"] == "6.00"
     brazil = await client.get(f"/api/v1/products/{br['id']}", headers=_auth(br_token))
     assert brazil.json()["vat_rate"] is None
 

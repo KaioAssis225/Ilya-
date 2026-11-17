@@ -39,6 +39,7 @@ import { CatalogConfirmDialog } from '../components/CatalogConfirmDialog'
 import { optionalMatchesLegacyName } from '../lib/optionalGroups'
 import { lineMaxDiscount, orderMaxDiscount } from '../lib/discountRules'
 import { calculateLinePricing, calculateSpecialLinePricing, lineTax, roundMoney } from '../lib/linePricing'
+import { useEuVatRate } from '../hooks/useEuVatRate'
 import { canSetVatExemption, VAT_EXEMPTION_REASONS } from '../lib/vatExemption'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -2054,6 +2055,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
   )
 
   const { data: productTypes = [] } = useProductTypes()
+  const { data: euVat } = useEuVatRate(market === 'EU')
 
   // Como o servidor: soma de subtotais de linha já arredondados.
   const lineSubtotal = (i: CartItem) => (i.is_special
@@ -2062,13 +2064,16 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
 
   const total = roundMoney(cart.reduce((sum, i) => sum + lineSubtotal(i), 0))
 
-  // Brasil: IPI do grupo do tipo. Portugal: IVA aprovado do próprio produto,
-  // o mesmo que o servidor grava no pedido (o grupo EU tem IPI 0).
+  // Brasil: IPI do grupo do tipo, por linha. Portugal: a linha não leva IVA; vale a
+  // taxa única do mercado, aplicada uma vez sobre o total (como o servidor grava).
   const taxRate = (product: Product) => product.market_code === 'EU'
-    ? (vatExempt ? 0 : Number(product.vat_rate ?? 0))
+    ? 0
     : Number(productTypes.find(t => t.name === product.type)?.group?.ipi ?? 0)
+  const euVatRate = Number(euVat?.vat_rate ?? 0)
 
-  const ipiTotal = roundMoney(cart.reduce((sum, i) => sum + lineTax(lineSubtotal(i), taxRate(i._product)), 0))
+  const ipiTotal = market === 'EU'
+    ? (vatExempt ? 0 : lineTax(total, euVatRate))
+    : roundMoney(cart.reduce((sum, i) => sum + lineTax(lineSubtotal(i), taxRate(i._product)), 0))
 
   const totalWithIpi = roundMoney(total + ipiTotal)
   const cartUnitCount = cart.reduce((sum, item) => sum + (isAreaProduct(item._product) ? (item.area_pieces ?? 1) : item.qty), 0)
@@ -2723,7 +2728,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                 {market === 'EU' && ipiTotal > 0 && (
                   <div className="flex items-center gap-4 mr-4 text-xs text-muted-2">
                     <div><span>Subtotal: </span><span className="font-semibold text-ink tabular-nums"><SafePrice value={total} currency={currency} locale={locale} /></span></div>
-                    <div><span>{taxLabel}: </span><span className="font-semibold text-ink tabular-nums"><SafePrice value={ipiTotal} currency={currency} locale={locale} /></span></div>
+                    <div><span>{taxLabel}{euVatRate > 0 ? ` (${euVatRate.toLocaleString(locale, { maximumFractionDigits: 2 })}%)` : ''}: </span><span className="font-semibold text-ink tabular-nums"><SafePrice value={ipiTotal} currency={currency} locale={locale} /></span></div>
                   </div>
                 )}
                 <span className="text-ink font-semibold text-xs uppercase tracking-wider">{isEnglish ? 'Quote Total:' : 'Total do Orçamento:'}</span>

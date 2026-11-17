@@ -287,6 +287,10 @@ function OrderDetailModal({
   const viewLocale = order.market_code === 'EU' ? locale : 'pt-BR'
   const isEuOrder = order.market_code === 'EU'
   const viewText = (pt: string, en: string) => isEuOrder && locale === 'en-GB' ? en : pt
+  // Portugal: o IVA único entra só no fecho (vat_rate gravado). A coluna de IVA por
+  // linha só aparece em documentos antigos, que ainda guardam IVA em cada linha.
+  const lineTaxColumn = !isEuOrder || order.vat_rate == null
+  const summaryColSpan = lineTaxColumn ? 8 : 7
   // Orçamento EU salva sem opcionais, mas só vira pedido com todos escolhidos.
   const pendingItems = order.is_finalized ? [] : order.items.filter(item => (item.pending_optionals?.length ?? 0) > 0)
   const pendingReason = pendingItems.length > 0
@@ -660,7 +664,7 @@ function OrderDetailModal({
                     <th className="px-3 py-2 text-center text-xs text-muted">{viewText('Qtd', 'Qty')}</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Preço Base', 'Base price')}</th>
                     <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Desconto', 'Discount')}</th>
-                    <th className="px-3 py-2 text-right text-xs text-muted">{order.market_code === 'EU' ? 'IVA' : 'IPI'}</th>
+                    {lineTaxColumn && <th className="px-3 py-2 text-right text-xs text-muted">{order.market_code === 'EU' ? 'IVA' : 'IPI'}</th>}
                     <th className="px-3 py-2 text-right text-xs text-muted">{viewText('Subtotal', 'Subtotal')}</th>
                   </tr>
                 </thead>
@@ -798,11 +802,11 @@ function OrderDetailModal({
                             <span className="text-[9px] bg-gold-wash text-gold border border-line-note px-1 py-0.5 rounded font-medium">-{Number(item.discount)}%</span>
                           ) : <span className="text-xs text-muted">—</span>}
                         </td>
-                        <td className="px-3 py-2 text-right align-middle whitespace-nowrap">
+                        {lineTaxColumn && <td className="px-3 py-2 text-right align-middle whitespace-nowrap">
                           {Number(item.ipi_rate) > 0
                             ? <span className="text-xs font-semibold text-gold">{Number(item.ipi_rate)}%</span>
                             : <span className="text-xs text-muted">—</span>}
-                        </td>
+                        </td>}
                         <td className="px-3 py-2 text-right font-bold text-ink whitespace-nowrap">
                           {/* Portugal: IVA só no fecho da tabela; Brasil: IPI na linha. */}
                           <SafePrice value={item.qty * Number(item.unit_price) * (1 - Number(item.discount) / 100) * (order.market_code === 'EU' ? 1 : 1 + Number(item.ipi_rate) / 100)} currency={order.currency} locale={viewLocale} />
@@ -814,7 +818,7 @@ function OrderDetailModal({
                 <tfoot>
                   {order.market_code === 'EU' && order.vat_exempt && (
                     <tr className="border-t border-line bg-bg">
-                      <td colSpan={8} className="px-3 py-1.5 text-right text-xs text-muted">
+                      <td colSpan={summaryColSpan} className="px-3 py-1.5 text-right text-xs text-muted">
                         <span className="uppercase tracking-wider">{viewText('IVA', 'VAT')}: {viewText('isento', 'exempt')}</span>
                         <span className="block normal-case">{[order.vat_exemption_code, order.vat_exemption_label].filter(Boolean).join(' — ')}</span>
                       </td>
@@ -824,17 +828,17 @@ function OrderDetailModal({
                   {order.market_code === 'EU' && Number(order.total_ipi) > 0 && (
                     <>
                       <tr className="border-t border-line bg-bg">
-                        <td colSpan={8} className="px-3 pt-2.5 pb-1 text-right text-xs text-muted uppercase tracking-wider">Subtotal</td>
+                        <td colSpan={summaryColSpan} className="px-3 pt-2.5 pb-1 text-right text-xs text-muted uppercase tracking-wider">Subtotal</td>
                         <td className="px-3 pt-2.5 pb-1 text-right text-sm text-ink whitespace-nowrap"><SafePrice value={Number(order.total_value)} currency={order.currency} locale={viewLocale} /></td>
                       </tr>
                       <tr className="bg-bg">
-                        <td colSpan={8} className="px-3 py-1 text-right text-xs text-muted uppercase tracking-wider">{viewText('IVA', 'VAT')}</td>
+                        <td colSpan={summaryColSpan} className="px-3 py-1 text-right text-xs text-muted uppercase tracking-wider">{viewText('IVA', 'VAT')}{order.vat_rate != null ? ` (${Number(order.vat_rate).toLocaleString(viewLocale, { maximumFractionDigits: 2 })}%)` : ''}</td>
                         <td className="px-3 py-1 text-right text-sm text-ink whitespace-nowrap"><SafePrice value={Number(order.total_ipi)} currency={order.currency} locale={viewLocale} /></td>
                       </tr>
                     </>
                   )}
                   <tr className="border-t border-line bg-bg">
-                    <td colSpan={8} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">{viewText('Valor Total', 'Total value')}</td>
+                    <td colSpan={summaryColSpan} className="px-3 py-2.5 text-right text-sm text-ink-2 font-semibold uppercase tracking-wider">{viewText('Valor Total', 'Total value')}</td>
                     <td className="px-3 py-2.5 text-right text-gold font-bold text-base">
                       <SafePrice value={Number(order.total_ipi) > 0 ? Number(order.total_with_ipi) : Number(order.total_value)} currency={order.currency} locale={viewLocale} />
                     </td>

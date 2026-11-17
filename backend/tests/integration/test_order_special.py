@@ -71,8 +71,9 @@ async def test_special_price_up_and_down_ignores_discount_ceiling_and_keeps_pare
     assert all(i["description"].startswith("ESPECIAL - ") for i in (up, down, big))
     assert not normal["description"].startswith("ESPECIAL")
     assert Decimal(body["total_value"]) == Decimal("645.00")
-    # IVA 23% calculado no servidor sobre o preço resultante.
-    assert Decimal(up["ipi_value"]) == Decimal("26.45")
+    # IVA único 23% calculado no servidor, uma vez, sobre o total (645,00 → 148,35).
+    assert Decimal(up["ipi_value"]) == Decimal("0.00")
+    assert Decimal(body["total_ipi"]) == Decimal("148.35")
     snapshot = body["history"][0]["items_snapshot"]
     assert [row["special_code"] for row in snapshot[1:]] == [i["special_code"] for i in (up, down, big)]
     assert snapshot[1]["is_special"] is True and Decimal(snapshot[1]["special_percent"]) == Decimal("15")
