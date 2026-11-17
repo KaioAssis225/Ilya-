@@ -10,6 +10,7 @@ import { useCartQuantities } from './hooks/useCart'
 import { countCartUnits, privateScopeKey } from './lib/cart'
 import ProfileModal from './components/ProfileModal'
 import DashboardFab from './components/DashboardFab'
+import type { FabShortcut } from './components/DashboardFab'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { MarketSwitcher } from './components/MarketSwitcher'
 import { createPrivateQueryClient, disposePrivateQueryClient } from './lib/queryClient'
@@ -97,19 +98,25 @@ function RoleGuard({ allowed, children }: { allowed: (user: AuthUser) => boolean
   return <>{children}</>
 }
 
-// ── DashboardFabGate: mostra o FAB do Dashboard em toda a aplicação para ──────
-// quem tem acesso ao BI (Bloco 95) — mesmo botão entra e volta do módulo.
+// ── DashboardFabGate: mostra o FAB em toda a aplicação. Ele abre os atalhos ───
+// que o usuário pode usar, com as mesmas regras das abas: Dashboard (Bloco 95),
+// Armazém (estoque do showroom de Portugal) e Protótipo. Com um único atalho
+// o botão vai direto; no Dashboard o mesmo botão volta do módulo.
 
 function DashboardFabGate() {
   const { user } = useAuth()
   const location = useLocation()
   if (!user || user.must_change_password) return null
-  if (!canSeeDashboard(user)) return null
+  const shortcuts: FabShortcut[] = []
+  if (canSeeDashboard(user)) shortcuts.push('dashboard')
+  if (canSeeShowrooms(user)) shortcuts.push('armazem')
+  if (canSeePrototypes(user)) shortcuts.push('prototipo')
+  if (shortcuts.length === 0) return null
   // No montador de orçamento o FAB pousava sobre o totalizador fixo do rodapé
   // móvel: um toque no valor ejetava o representante para o BI.
   if (location.pathname.startsWith('/orcamentos')) return null
-  if (location.pathname.startsWith('/dashboard')) return <DashboardFab mode="exit" />
-  return <DashboardFab mode="enter" currentPath={location.pathname} />
+  if (location.pathname.startsWith('/dashboard')) return canSeeDashboard(user) ? <DashboardFab mode="exit" /> : null
+  return <DashboardFab mode="enter" currentPath={location.pathname} shortcuts={shortcuts} />
 }
 
 // ── BottomNav ─────────────────────────────────────────────────────────────────

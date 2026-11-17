@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type AuthUser, type UserRole } from './contexts/AuthContext'
@@ -182,6 +183,44 @@ describe('PrivateApp em DOM', () => {
     renderPrivate(userFor('admin'), '/pedidos')
     expect(await screen.findByRole('heading', { name: /Orçamentos/, level: 1 })).toBeInTheDocument()
     await waitFor(() => expect(statuses).toContain('not_finalized'))
+  })
+
+  describe('botão flutuante de atalhos', () => {
+    async function openCatalog(user: AuthUser) {
+      mapRequests()
+      renderPrivate(user, '/produtos')
+      await screen.findByRole('heading', { name: /Cat[aá]logo|catalogue/i, level: 1 })
+    }
+
+    it('admin de Portugal com armazém e protótipos abre o menu com os 3 atalhos', async () => {
+      await openCatalog({ ...userFor('admin', 'EU'), can_manage_showrooms: true, can_manage_prototypes: true })
+      const button = screen.getByRole('button', { name: 'Atalhos rápidos' })
+      expect(button).toHaveAttribute('aria-expanded', 'false')
+      await userEvent.click(button)
+      expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Dashboard', 'Armazém', 'Protótipo'])
+    })
+
+    it('só mostra Armazém e Protótipo a quem tem essas permissões em Portugal', async () => {
+      await openCatalog({ ...userFor('admin', 'EU'), can_manage_prototypes: true })
+      await userEvent.click(screen.getByRole('button', { name: 'Atalhos rápidos' }))
+      expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Dashboard', 'Protótipo'])
+    })
+
+    it('no Brasil o botão continua indo direto ao Dashboard, sem menu', async () => {
+      await openCatalog({ ...userFor('admin', 'BR'), can_manage_showrooms: true, can_manage_prototypes: true })
+      expect(screen.getByRole('button', { name: 'Abrir Dashboard BI' })).not.toHaveAttribute('aria-expanded')
+      expect(screen.queryByRole('button', { name: 'Atalhos rápidos' })).not.toBeInTheDocument()
+    })
+
+    it('quem só tem armazém (sem Dashboard) vê o botão levando direto ao Armazém', async () => {
+      await openCatalog({ ...userFor('vendedor', 'EU'), can_manage_showrooms: true })
+      expect(screen.getByRole('button', { name: 'Abrir Armazém' })).toBeInTheDocument()
+    })
+
+    it('sem Dashboard, armazém nem protótipos não há botão flutuante', async () => {
+      await openCatalog(userFor('vendedor', 'EU'))
+      expect(screen.queryByRole('button', { name: /Atalhos|Abrir (Dashboard|Armazém|Protótipos)/ })).not.toBeInTheDocument()
+    })
   })
 
   it('rejeita request sem handler MSW usando URL absoluta', async () => {
