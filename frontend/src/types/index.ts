@@ -318,6 +318,8 @@ export interface OrderItemCreate {
   optional_choices?: OptionalChoiceInput[]
   source_order_item_id?: string
   preserve_optional_choices?: boolean
+  /** Linha vinda da Transferência do Estoque EU: o servidor baixa o saldo ao salvar o orçamento novo. */
+  showroom_source_item_id?: string
   comment?: string | null
   attachment_ids?: string[]
 }

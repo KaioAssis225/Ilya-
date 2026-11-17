@@ -409,6 +409,9 @@ interface CartItem {
   optional_choices: OptionalChoiceInput[]
   source_order_item_id?: string
   preserve_optional_choices?: boolean
+  /** Peça do Estoque EU: o servidor baixa o saldo só ao salvar este orçamento novo. */
+  showroom_source_item_id?: string
+  showroom_box_name?: string
   saved_choices?: OptionalChoice[]
   /** Comentário do item; undefined com a caixa fechada. */
   comment?: string
@@ -2102,6 +2105,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
       optional_choices,
       source_order_item_id,
       preserve_optional_choices,
+      showroom_source_item_id: item.showroom_source_item_id,
       comment: comment?.trim() || null,
       attachment_ids: attachments.map(attachment => attachment.id),
     }
@@ -2599,6 +2603,7 @@ function OrcamentoPageContent({ flash, onFlashShown, onCopyCreated }: {
                           <div className="flex-1 min-w-0">
                             <span className="type-code">{item.special_code ?? item.product_code}</span>{item.is_special && <span className="ml-2 rounded bg-gold-soft px-1.5 py-0.5 text-[10px] font-bold text-gold">ESPECIAL</span>}
                             <span className="text-ink ml-2 text-sm font-medium leading-snug break-words">{item.displayDescription ?? item._product.description}</span>
+                            {item.showroom_source_item_id && <div className="mt-1 text-xs text-gold">{isEnglish ? `From stock: ${item.showroom_box_name ?? ''}. Stock is only deducted when you save.` : `Do estoque: ${item.showroom_box_name ?? ''}. O saldo só baixa quando você salvar.`}</div>}
                             {!item.preserve_optional_choices && <div><ApplicationStatus product={item._product} choices={item.optional_choices} allOptionals={allOptionals} english={isEnglish} /></div>}
                             {item._product.components.length > 0 && (
                               <ul className="mt-0.5 space-y-0.5">

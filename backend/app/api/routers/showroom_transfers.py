@@ -18,7 +18,7 @@ from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.showroom import ShowroomBox, ShowroomBoxItem, ShowroomTransfer
 from app.models.user import User
-from app.schemas.order import OptionalChoiceCreate, OrderCreate, OrderItemCreate, OrderUpdate
+from app.schemas.order import OptionalChoiceCreate, OrderItemCreate, OrderUpdate
 from app.schemas.showroom import (
     ShowroomTransferCreate,
     ShowroomTransferRead,
@@ -102,8 +102,13 @@ async def _existing_order_items(db: AsyncSession, order_id: uuid.UUID, current_u
     )).scalar_one_or_none()
     if order is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Orçamento não encontrado.")
-    if order.is_finalized or order.is_cancelled:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Só é possível transferir para um orçamento em aberto.")
+    # Em aberto = nem finalizado (virou pedido: etapas produção/entregue só existem
+    # depois disso) nem cancelado. Orçamento já realizado nunca recebe peça.
+    if order.is_finalized or order.is_cancelled or order.order_stage is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Orçamento já realizado ou cancelado não recebe transferência: escolha um orçamento em aberto.",
+        )
     payload_items: list[OrderItemCreate] = []
     for line in order.items:
         try:
@@ -256,21 +261,9 @@ async def _transfer_item(
         )
         # As funções de pedido calculam preço, desconto e IVA e dão o commit
         # único: a saída do estoque entra nele junto com a linha do orçamento.
-        if destination.type == "order":
-            await orders_router.update_order(
-                order_id, OrderUpdate(items=[*order_items, new_line]), db, current_user, principal,
-            )
-        else:
-            order, _skipped = await orders_router._create_order_core(
-                OrderCreate(
-                    client_id=destination.client_id, rep_id=destination.rep_id,
-                    price_list_code=destination.price_list_code, locale=language, items=[new_line],
-                ),
-                db, current_user, principal,
-            )
-            transfer.destination_order_id = order.id
-            transfer.destination_order_code = order.code
-            await db.commit()
+        await orders_router.update_order(
+            order_id, OrderUpdate(items=[*order_items, new_line]), db, current_user, principal,
+        )
 
     await db.refresh(source)
     return ShowroomTransferResult(

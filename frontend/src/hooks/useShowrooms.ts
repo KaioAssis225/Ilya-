@@ -132,7 +132,6 @@ export function useRemoveShowroomItem() {
 export type ShowroomTransferDestination =
   | { type: 'box'; box_id: string }
   | { type: 'order'; order_id: string }
-  | { type: 'new_order'; client_id: string }
 
 export interface ShowroomTransfer {
   id: string

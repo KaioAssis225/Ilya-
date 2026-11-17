@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ShowroomsPage from './ShowroomsPage'
 import { productFixture, productTestUser, renderProductPage } from '../test/productTestUtils'
 import { server } from '../test/setup'
+import { showroomChoicesToCart } from '../lib/showroomCart'
 
 const now = '2026-11-16T12:00:00Z'
 
@@ -405,11 +406,20 @@ describe('ShowroomsPage', () => {
       expect(screen.getByText('Transferências recentes')).toBeInTheDocument()
     })
 
-    it('leva para um orçamento novo e para um existente', async () => {
+    it('leva para um orçamento em aberto sem oferecer os já realizados', async () => {
       const user = userEvent.setup()
       const requests: Array<Record<string, unknown>> = []
+      const orderRequests: string[] = []
+      server.use(...baseHandlers())
       server.use(
-        ...baseHandlers(),
+        http.get('*/orders', ({ request }) => {
+          orderRequests.push(new URL(request.url).searchParams.get('status') ?? '')
+          return HttpResponse.json([
+            { id: 'order-9', code: 'PED-0009', client_name: 'Cliente Aberto', is_finalized: false, is_cancelled: false },
+            { id: 'order-8', code: 'PED-0008', client_name: 'Cliente Realizado', is_finalized: true, is_cancelled: false },
+            { id: 'order-7', code: 'PED-0007', client_name: 'Cliente Cancelado', is_finalized: false, is_cancelled: true },
+          ])
+        }),
         http.post('*/showroom-boxes/:boxId/transfers', async ({ request }) => {
           requests.push(await request.json() as Record<string, unknown>)
           return HttpResponse.json({
@@ -419,24 +429,63 @@ describe('ShowroomsPage', () => {
         }),
       )
       renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
-      let dialog = await openTransfer(user)
+      const dialog = await openTransfer(user)
 
-      await user.click(within(dialog).getByRole('button', { name: 'Orçamento novo' }))
-      await user.click(await within(dialog).findByRole('button', { name: 'Cliente Sete' }))
-      await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
-      await waitFor(() => expect(requests).toHaveLength(1))
-      expect(requests[0]).toEqual({ item_id: 'item-1', quantity: 1, destination: { type: 'new_order', client_id: 'client-7' } })
-      expect(await screen.findByRole('status')).toHaveTextContent('orçamento PED-0009')
-
-      dialog = await openTransfer(user).catch(async () => {
-        await user.click(await screen.findByRole('button', { name: 'Transferência' }))
-        return screen.findByRole('dialog', { name: 'Transferir peças' })
-      })
       await user.click(within(dialog).getByRole('button', { name: 'Orçamento existente' }))
-      await user.selectOptions(await within(dialog).findByLabelText('Orçamento em aberto'), 'order-9')
+      const select = await within(dialog).findByLabelText('Orçamento em aberto')
+      expect(await within(select).findByRole('option', { name: 'PED-0009 - Cliente Aberto' })).toBeInTheDocument()
+      expect(within(select).queryByRole('option', { name: /PED-0008/ })).not.toBeInTheDocument()
+      expect(within(select).queryByRole('option', { name: /PED-0007/ })).not.toBeInTheDocument()
+      expect(orderRequests).toContain('in_progress')
+      await user.selectOptions(select, 'order-9')
       await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
-      await waitFor(() => expect(requests).toHaveLength(2))
-      expect(requests[1]).toEqual({ item_id: 'item-1', quantity: 1, destination: { type: 'order', order_id: 'order-9' } })
+
+      await waitFor(() => expect(requests).toEqual([{
+        item_id: 'item-1', quantity: 1, destination: { type: 'order', order_id: 'order-9' },
+      }]))
+      expect(await screen.findByRole('status')).toHaveTextContent('orçamento PED-0009')
+    })
+
+    it('Novo orçamento leva a peça para a aba sem criar orçamento nem tirar do estoque', async () => {
+      const user = userEvent.setup()
+      const authUser = showroomUser()
+      const posts: string[] = []
+      server.use(
+        ...baseHandlers(),
+        http.post('*/showroom-boxes/:boxId/transfers', () => { posts.push('transfer'); return HttpResponse.json({}, { status: 201 }) }),
+        http.post('*/orders', () => { posts.push('order'); return HttpResponse.json({}, { status: 201 }) }),
+      )
+      renderProductPage(<ShowroomsPage />, authUser, ['/showrooms'])
+      const dialog = await openTransfer(user)
+
+      await user.click(within(dialog).getByRole('button', { name: 'Novo orçamento' }))
+      expect(within(dialog).getByText(/O saldo só baixa do estoque quando você salvar/)).toBeInTheDocument()
+      const quantity = within(dialog).getByLabelText('Quantidade a transferir')
+      await user.clear(quantity)
+      await user.type(quantity, '2')
+      await user.click(within(dialog).getByRole('button', { name: 'Levar para Novo orçamento' }))
+
+      const stored = JSON.parse(localStorage.getItem(`carrinho_orcamento:${authUser.id}:EU`) ?? '[]')
+      expect(stored).toHaveLength(1)
+      expect(stored[0]).toMatchObject({
+        product_code: 'ICD0106', qty: 2, discount: 0,
+        showroom_source_item_id: 'item-1', showroom_box_name: 'Estoque Portugal',
+      })
+      expect(posts).toEqual([])
+    })
+
+    it('converte os opcionais do estoque (aplicação, Customizado e categoria) para o carrinho', () => {
+      expect(showroomChoicesToCart([
+        { application_id: 'app-1', category_code: 'PINTURA', optional_id: 'opt-1', optional_name: 'TAUPE' },
+        { application_id: 'app-2', category_code: 'PINTURA', optional_id: null, optional_name: 'Customizado', custom: true },
+        { application_id: null, category_code: 'TECIDO', optional_id: 'opt-3', optional_name: 'LINHO' },
+      ])).toEqual({
+        optional_choices: [
+          { application_id: 'app-1', optional_id: 'opt-1' },
+          { application_id: 'app-2', custom_text: '' },
+        ],
+        opt_categories: { TECIDO: 'LINHO' },
+      })
     })
 
     it('mostra o motivo quando o servidor recusa a transferência', async () => {

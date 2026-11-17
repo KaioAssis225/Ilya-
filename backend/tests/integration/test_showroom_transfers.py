@@ -174,44 +174,6 @@ async def allow_showrooms(db: AsyncSession, scenario: Scenario) -> None:
     await db.commit()
 
 
-async def test_transferencia_para_orcamento_novo_cria_a_linha_certa(
-    client: AsyncClient, db_session: AsyncSession,
-):
-    s = await _scenario(db_session, "EU", paint_brand="IBTW")
-    await allow_showrooms(db_session, s)
-    headers = _auth(s.token)
-    box = await make_box(client, headers, "Origem")
-    product = await db_session.get(Product, s.product_id)
-    # Escolha completa de uma aplicação e "Customizado" na outra.
-    await stock(client, headers, box, product, 4, choices=[
-        {"application_id": str(s.app_feet), "optional_id": str(s.opt_black)},
-        {"application_id": str(s.app_back), "custom": True},
-    ])
-    item = (await client.get(BASE, headers=headers)).json()[0]["items"][0]
-
-    response = await client.post(transfer_url(box), json={
-        "item_id": item["item_id"], "quantity": 3,
-        "destination": {"type": "new_order", "client_id": str(s.client_id)},
-    }, headers=headers)
-
-    assert response.status_code == 201, response.text
-    body = response.json()
-    assert body["box"]["total_quantity"] == 1
-    assert body["transfer"]["destination_type"] == "order"
-    order = (await client.get(f"/api/v1/orders/{body['transfer']['destination_order_id']}", headers=headers)).json()
-    assert order["is_finalized"] is False and order["code"] == body["transfer"]["destination_order_code"]
-    [line] = order["items"]
-    assert line["product_code"] == s.product_code
-    assert Decimal(str(line["qty"])) == 3
-    # Preço, desconto e IVA vêm do servidor: 100,00 x 3, sem desconto, IVA único no total.
-    assert Decimal(line["unit_price"]) == Decimal("100.00") and Decimal(line["discount"]) == 0
-    assert Decimal(order["total_value"]) == Decimal("300.00")
-    assert Decimal(order["total_ipi"]) == Decimal("69.00")
-    chosen = {row["application_id"]: row for row in line["optional_choices"]}
-    assert chosen[str(s.app_feet)]["optional_id"] == str(s.opt_black)
-    assert chosen[str(s.app_back)]["custom_text"] == "" and chosen[str(s.app_back)]["optional_id"] is None
-
-
 async def test_transferencia_para_orcamento_existente_acrescenta_sem_perder_as_linhas(
     client: AsyncClient, db_session: AsyncSession,
 ):
@@ -251,27 +213,6 @@ async def test_transferencia_para_orcamento_existente_acrescenta_sem_perder_as_l
     assert Decimal(order["total_value"]) == Decimal("400.00")
     history = (await client.get(transfer_url(box), headers=headers)).json()
     assert history[0]["destination_order_id"] == order_id
-
-
-async def test_falha_ao_criar_o_orcamento_devolve_a_peca_ao_estoque(
-    client: AsyncClient, db_session: AsyncSession,
-):
-    s = await _scenario(db_session, "EU")
-    await allow_showrooms(db_session, s)
-    headers = _auth(s.token)
-    box = await make_box(client, headers, "Origem")
-    product = await db_session.get(Product, s.product_id)
-    await stock(client, headers, box, product, 2)
-    item = (await client.get(BASE, headers=headers)).json()[0]["items"][0]
-
-    response = await client.post(transfer_url(box), json={
-        "item_id": item["item_id"], "quantity": 1,
-        "destination": {"type": "new_order", "client_id": str(uuid.uuid4())},
-    }, headers=headers)
-
-    assert response.status_code == 404
-    assert await quantities(client, headers, box) == {s.product_code: 2}
-    assert (await client.get(transfer_url(box), headers=headers)).json() == []
 
 
 async def test_orcamento_cancelado_nao_recebe_transferencia(
