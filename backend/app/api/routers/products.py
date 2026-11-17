@@ -8,7 +8,8 @@ from sqlalchemy import exists, func, literal_column, or_, select
 from sqlalchemy.orm import load_only, noload
 
 from app.api.catalog_access import visible_catalog_scope
-from app.api.price_access import PRICE_LIST_ORDER, PriceScope, allows_price, visible_price_scope
+from app.api.price_access import PriceScope, allows_price, visible_price_scope
+from app.core.price_lists import PRICE_LIST_ORDER, market_price_lists
 from app.api.deps import open_prototype_search, prototype_access_allowed, open_prototype_view, get_current_principal, get_db_session, get_current_user, is_client_account, require_br_fiscal_admin, require_platform_capability, require_roles
 from app.core.fiscal_audit import product_type_fiscal_snapshot, record_product_fiscal_assignment
 from app.models.client import Client
@@ -899,18 +900,13 @@ async def _create_product_for_market(
         PriceList.market_code == market_code,
         PriceList.is_active.is_(True),
     ))).scalars().all()
-    amounts = {
+    submitted = {
         "lojista": payload.price_lojista,
         "corporativo": payload.price_corporativo,
-        **(
-            {
-                "pvp": payload.price_pvp,
-                "arquiteto": payload.price_arquiteto,
-            }
-            if market_code == "EU"
-            else {}
-        ),
+        "pvp": payload.price_pvp,
+        "arquiteto": payload.price_arquiteto,
     }
+    amounts = {code: submitted[code] for code in market_price_lists(market_code)}
     required_lists = set(amounts)
     available_lists = {price_list.code for price_list in lists}
     if not required_lists.issubset(available_lists):

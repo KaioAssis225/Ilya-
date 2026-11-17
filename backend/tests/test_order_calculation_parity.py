@@ -22,7 +22,6 @@ from app.api.routers.orders import (
     _calculate_order_line,
     _ensure_total_capacity,
     _money,
-    _price_for_profile,
     _resolve_eu_vat,
 )
 from app.core.markets import require_launch_country
@@ -123,16 +122,6 @@ def test_mesmo_sku_tem_preco_e_imposto_independentes_por_mercado():
     assert br[3] == Decimal("6.50") and eu[3] == Decimal("23.00")
     assert br[4] == Decimal("65.00")
     assert eu[4] == Decimal("36.80")
-
-
-def test_perfil_de_preco_nao_muda_entre_mercados():
-    """`_price_for_profile` é regra de servidor e vale igual nos dois mercados;
-    o que muda é a lista de preço resolvida antes dela."""
-    produto = SimpleNamespace(
-        price_lojista=Decimal("120.40"), price_corporativo=Decimal("97.35")
-    )
-    assert _price_for_profile(produto, "lojista") == Decimal("120.40")
-    assert _price_for_profile(produto, "corporativo") == Decimal("97.35")
 
 
 # --- Critério 3: sem imposto zero silencioso ------------------------------

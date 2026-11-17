@@ -16,7 +16,7 @@ Contrato (regra, não saída):
 * BR: alíquota = IPI do grupo fiscal do tipo; rótulo "IPI"; moeda BRL;
 * EU: alíquota = IVA aprovado nominalmente no SKU (`VAT_APPROVED`); rótulo
   "IVA"; moeda EUR. IVA pendente/rejeitado → 422 (ISO-24), sem fallback para
-  IPI do grupo, tabela por tipo (`market_tax_rates`), SKU BR homônimo ou zero.
+  IPI do grupo, SKU BR homônimo ou zero.
   Zero só vale quando é a taxa aprovada explicitamente;
 * Arquiteto/PVP existem somente no EU: cliente BR não pode receber o perfil.
 
@@ -38,7 +38,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import create_access_token
 from app.models.client import Client
 from app.models.market import (
-    MarketTaxRate,
     PriceList,
     ProductMarket,
     VAT_APPROVED,
@@ -617,10 +616,10 @@ async def test_iso24_unapproved_vat_is_422_without_any_fallback(
     vat_rate: Decimal | None,
 ) -> None:
     """Todas as fontes alternativas existem e nenhuma pode ser usada:
-    SKU BR homônimo com IPI 10%, tabela EU por tipo com 23% e grupo EU com 0%."""
+    SKU BR homônimo com IPI 10% e grupo EU com 0%."""
     admin = await _admin(db_session, "EU")
     br_admin = await _admin(db_session, "BR")
-    code, type_name = await _product(
+    code, _type_name = await _product(
         db_session, "EU", admin.user_id,
         amounts={"lojista": D("1000.00")}, tax_rate=vat_rate, vat_status=vat_status,
     )
@@ -628,7 +627,6 @@ async def test_iso24_unapproved_vat_is_422_without_any_fallback(
         db_session, "BR", br_admin.user_id,
         amounts={"lojista": D("1000.00")}, tax_rate=D("10.00"), product_code=code,
     )
-    db_session.add(MarketTaxRate(market_code="EU", product_type=type_name, rate=D("23.00")))
     client_id = await _client(db_session, "EU", "lojista")
     await db_session.commit()
 

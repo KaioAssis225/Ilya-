@@ -222,20 +222,6 @@ class ProductPrice(Base, TimestampMixin):
     )
 
 
-class MarketTaxRate(Base, TimestampMixin):
-    __tablename__ = "market_tax_rates"
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False)
-    product_type: Mapped[str] = mapped_column(String(80), nullable=False)
-    rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
-
-    __table_args__ = (
-        CheckConstraint("rate >= 0 AND rate <= 100", name="ck_market_tax_rates_range"),
-        UniqueConstraint("market_code", "product_type", name="uq_market_tax_rates_market_type"),
-    )
-
-
 class MarketOrderCounter(Base):
     __tablename__ = "market_order_counters"
 
