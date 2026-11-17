@@ -78,6 +78,13 @@ class MarketActor:
         """Admin enxerga e opera os protótipos de todos; os demais, só os próprios."""
         return self.access.market_code == EU_MARKET and self.role == UserRole.admin
 
+    @property
+    def can_manage_showrooms(self) -> bool:
+        """Acesso EU às boxes somente quando liberado nominalmente no vínculo."""
+        if self.access.market_code != EU_MARKET:
+            return False
+        return bool(self.access.can_manage_showrooms) and self.role != UserRole.benchmark_readonly
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.identity, name)
 

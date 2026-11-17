@@ -45,6 +45,8 @@ class UserMarketAccessInput(BaseModel):
     can_approve_tax: bool = False
     # Área de protótipos; só o vínculo EU aceita (a API recusa em BR).
     can_manage_prototypes: bool = False
+    # Boxes de showroom/feiras; só o vínculo EU aceita.
+    can_manage_showrooms: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -66,6 +68,8 @@ class UserRead(BaseModel):
     can_approve_tax: bool = False
     # Área de protótipos do mercado ativo (só EU; calculado em /auth/me).
     can_manage_prototypes: bool = False
+    # Área de showrooms do mercado ativo (só EU; calculado em /auth/me).
+    can_manage_showrooms: bool = False
     home_market: Literal["BR", "EU"] = "BR"
     active_market: Literal["BR", "EU"] = "BR"
     allowed_markets: list[Literal["BR", "EU"]] = Field(default_factory=lambda: ["BR"])

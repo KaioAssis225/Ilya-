@@ -148,12 +148,13 @@ describe('PrivateApp em DOM', () => {
 
   it('rotula a aba Pedido como Order em en-GB (Portugal)', async () => {
     mapRequests()
-    const user = userFor('admin', 'EU')
+    const user = { ...userFor('admin', 'EU'), can_manage_showrooms: true }
     localStorage.setItem(`ilya-locale:${user.id}:EU`, 'en-GB')
     renderPrivate(user, '/produtos')
     await screen.findByRole('heading', { name: 'Product catalogue', level: 1 })
     expect(screen.getAllByRole('link', { name: 'Order' })).toHaveLength(2)
     expect(screen.getAllByRole('link', { name: 'Quote' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Stock' })).toHaveLength(2)
   })
 
   it('/pedidos-finalizados abre a lista de pedidos e marca só a aba Pedido como ativa', async () => {

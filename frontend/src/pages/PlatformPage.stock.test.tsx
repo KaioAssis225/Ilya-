@@ -15,7 +15,8 @@ vi.mock('../components/MoloniIntegrationPanel', () => ({ default: () => null }))
 function access(patch: Partial<UserMarketAccess> = {}): UserMarketAccess {
   return {
     market_code: 'BR', role: 'vendedor', status: 'active', linked_client_id: null,
-    rep_id: null, order_rep_id: null, can_view_dashboard: false, can_approve_tax: false, can_manage_prototypes: false, ...patch,
+    rep_id: null, order_rep_id: null, can_view_dashboard: false, can_approve_tax: false,
+    can_manage_prototypes: false, can_manage_showrooms: false, ...patch,
   }
 }
 
@@ -71,9 +72,9 @@ describe('PlatformPage — Acesso ao Estoque', () => {
     install()
     renderPlatform()
     const withAccess = (await screen.findByText('Bia Brasil')).closest('tr') as HTMLElement
-    expect(within(withAccess).getByText('Estoque')).toBeInTheDocument()
+    expect(within(withAccess).getByText('Estoque BR')).toBeInTheDocument()
     const without = screen.getByText('Eva Europa').closest('tr') as HTMLElement
-    expect(within(without).queryByText('Estoque')).not.toBeInTheDocument()
+    expect(within(without).queryByText('Estoque BR')).not.toBeInTheDocument()
   })
 
   it('conta BR ativa mostra o checkbox e o PATCH leva o valor marcado', async () => {
@@ -182,5 +183,46 @@ describe('PlatformPage — Acesso aos protótipos', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Fechar' }))
     await openEditor('Caio Cadastros')
     expect(screen.getByLabelText('Acesso aos protótipos')).toBeDisabled()
+  })
+})
+
+describe('PlatformPage — Acesso ao Estoque de Portugal', () => {
+  const SHOWROOM_ROWS: UserRead[] = [
+    identity('u-james', 'James Pereira', [access({ market_code: 'EU', can_manage_showrooms: true })]),
+    identity('u-eva', 'Eva Europa', [access({ market_code: 'EU' })]),
+    identity('u-bia', 'Bia Brasil', [access()]),
+  ]
+
+  it('mostra o selo somente para o usuário EU selecionado', async () => {
+    install()
+    server.use(http.get('*/users', () => HttpResponse.json(SHOWROOM_ROWS)))
+    renderPlatform()
+    const james = (await screen.findByText('James Pereira')).closest('tr') as HTMLElement
+    expect(within(james).getByText('Estoque PT')).toBeInTheDocument()
+    const plain = screen.getByText('Eva Europa').closest('tr') as HTMLElement
+    expect(within(plain).queryByText('Estoque PT')).not.toBeInTheDocument()
+  })
+
+  it('permite selecionar e retirar o acesso nominal pelo vínculo EU', async () => {
+    const patches: Array<Record<string, unknown>> = []
+    install(patches)
+    server.use(http.get('*/users', () => HttpResponse.json(SHOWROOM_ROWS)))
+    renderPlatform()
+    await openEditor('Eva Europa')
+    const checkbox = screen.getByLabelText('Acesso ao Estoque de Portugal')
+    expect(checkbox).not.toBeChecked()
+    await userEvent.click(checkbox)
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar identidade e mercados' }))
+    await waitFor(() => expect(patches).toHaveLength(1))
+    const accesses = patches[0].market_accesses as Array<Record<string, unknown>>
+    expect(accesses[0]).toMatchObject({ market_code: 'EU', can_manage_showrooms: true })
+  })
+
+  it('não oferece a capacidade em vínculo BR', async () => {
+    install()
+    server.use(http.get('*/users', () => HttpResponse.json(SHOWROOM_ROWS)))
+    renderPlatform()
+    await openEditor('Bia Brasil')
+    expect(screen.queryByLabelText('Acesso ao Estoque de Portugal')).not.toBeInTheDocument()
   })
 })

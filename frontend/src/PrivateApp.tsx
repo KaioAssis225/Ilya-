@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, Layers3, FlaskConical, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
+import { LayoutGrid, Layers3, FlaskConical, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck, Warehouse } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -29,6 +29,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PrototiposPage = lazy(() => import('./pages/PrototiposPage'))
+const ShowroomsPage = lazy(() => import('./pages/ShowroomsPage'))
 
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
@@ -64,6 +65,10 @@ function canSeeDashboard(user: AuthUser) {
 // Área de protótipos: só EU e só para quem o admin liberou (o servidor confere de novo).
 function canSeePrototypes(user: AuthUser) {
   return user.active_market === 'EU' && user.can_manage_prototypes === true
+}
+
+function canSeeShowrooms(user: AuthUser) {
+  return user.active_market === 'EU' && user.can_manage_showrooms === true
 }
 
 function canSeeAdmin(user: AuthUser) {
@@ -106,7 +111,7 @@ function DashboardFabGate() {
 function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
-  const { t } = useLocale()
+  const { locale, t } = useLocale()
   // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
   const cartUnits = countCartUnits(useCartQuantities(user?.id, user?.active_market))
   if (!user || user.must_change_password) return null
@@ -130,6 +135,12 @@ function BottomNav() {
         <NavLink to="/prototipos" className={itemClass('/prototipos')} aria-label="Protótipos">
           <FlaskConical className="w-5 h-5" />
           <span className="text-[11px] font-semibold uppercase tracking-wider">Protótipos</span>
+        </NavLink>
+      )}
+      {canSeeShowrooms(user) && (
+        <NavLink to="/showrooms" className={itemClass('/showrooms')} aria-label={locale === 'en-GB' ? 'Stock' : 'Estoque'}>
+          <Warehouse className="w-5 h-5" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">{locale === 'en-GB' ? 'Stock' : 'Estoque'}</span>
         </NavLink>
       )}
       {canSeeOptionals(user) && (
@@ -234,6 +245,7 @@ function Nav() {
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
               {canSeePrototypes(user) && <NavLink to="/prototipos" className={linkClass} aria-label="Protótipos">Protótipos</NavLink>}
+              {canSeeShowrooms(user) && <NavLink to="/showrooms" className={linkClass} aria-label={locale === 'en-GB' ? 'Stock' : 'Estoque'}>{locale === 'en-GB' ? 'Stock' : 'Estoque'}</NavLink>}
               {canSeeOptionals(user) && <NavLink to="/opcionais" className={linkClass} aria-label={t('optionals')}>{t('optionals')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
@@ -373,6 +385,14 @@ export default function PrivateApp() {
                     element={
                       <RoleGuard allowed={canSeePrototypes}>
                         <PrototiposPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/showrooms"
+                    element={
+                      <RoleGuard allowed={canSeeShowrooms}>
+                        <ShowroomsPage />
                       </RoleGuard>
                     }
                   />

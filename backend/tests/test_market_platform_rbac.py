@@ -79,6 +79,25 @@ def test_market_actor_uses_the_role_and_links_of_each_market():
     assert eu_actor.linked_id is None
 
 
+def test_showroom_access_is_eu_only_and_nominal_even_for_admin():
+    user = _user()
+    eu_plain_admin = UserMarket(
+        user_id=user.id, market_code="EU", role="admin", status="active",
+        can_manage_showrooms=False,
+    )
+    eu_selected = UserMarket(
+        user_id=user.id, market_code="EU", role="vendedor", status="active",
+        can_manage_showrooms=True,
+    )
+    br_selected = UserMarket(
+        user_id=user.id, market_code="BR", role="vendedor", status="active",
+        can_manage_showrooms=True,
+    )
+    assert MarketPrincipal(user, MARKETS["EU"], eu_plain_admin).actor.can_manage_showrooms is False
+    assert MarketPrincipal(user, MARKETS["EU"], eu_selected).actor.can_manage_showrooms is True
+    assert MarketPrincipal(user, MARKETS["BR"], br_selected).actor.can_manage_showrooms is False
+
+
 def test_platform_token_has_no_market_and_commercial_dependency_rejects_it():
     async def run():
         user = _user()
