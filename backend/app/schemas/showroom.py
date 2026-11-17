@@ -44,14 +44,23 @@ class ShowroomBoxUpdate(BaseModel):
 
 
 class ShowroomOptionalChoiceInput(BaseModel):
-    optional_id: uuid.UUID
+    """Um opcional do cadastro ou, em uma aplicação, a opção "Customizado"
+    (``custom``), como no orçamento EU."""
+
+    optional_id: uuid.UUID | None = None
     application_id: uuid.UUID | None = None
     category_code: str | None = Field(default=None, min_length=1, max_length=50)
+    custom: bool = False
 
     @model_validator(mode="after")
     def identifies_one_slot(self):
         if (self.application_id is None) == (self.category_code is None):
             raise ValueError("Informe a aplicação ou a categoria do opcional.")
+        if self.custom:
+            if self.optional_id is not None or self.application_id is None:
+                raise ValueError("Customizado vale só em uma aplicação, sem opcional do cadastro.")
+        elif self.optional_id is None:
+            raise ValueError("Escolha um opcional ou a opção Customizado.")
         if self.category_code is not None:
             self.category_code = self.category_code.strip()
         return self
@@ -83,8 +92,9 @@ class ShowroomOptionalChoiceRead(BaseModel):
     application_name_en: str | None = None
     category_code: str
     category_name: str
-    optional_id: uuid.UUID
+    optional_id: uuid.UUID | None = None
     optional_name: str
+    custom: bool = False
     component_name: str | None = None
     thumbnail_url: str | None = None
 
