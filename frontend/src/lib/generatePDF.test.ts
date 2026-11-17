@@ -250,8 +250,9 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   assert.ok(!drawColors.some((color) => color.join(',') === '198,157,48'))
   assert.ok(renderedTexts.includes('ORDER CONFIRMATION'))
   assert.ok(renderedTexts.includes('ORDER'))
-  assert.ok(renderedTexts.includes('DISCOUNT (%)'))
-  assert.ok(renderedTexts.includes('0%'))
+  // Sem desconto em nenhum item, o campo de desconto não aparece no PDF.
+  assert.ok(!renderedTexts.includes('DISCOUNT (%)'))
+  assert.ok(!renderedTexts.includes('0%'))
   assert.ok(!renderedTexts.includes('VAT'))
   assert.ok(renderedTexts.includes('COMPANY'))
   assert.ok(!renderedTexts.includes('SELLER / LEGAL ENTITY'))
@@ -275,7 +276,7 @@ test('gera PDF EU com marca IBTW, rótulos ORDER/VAT e valores em EUR', async ()
   assert.ok(renderedTexts.includes('Subtotal:'))
   assert.ok(renderedTexts.includes('VAT:'))
   assert.ok(renderedTexts.includes(eur(460)))
-  assert.equal(renderedTexts.filter((t) => t === eur(2000)).length, 4) // preço-base + valor c/ desc. + subtotal da linha + subtotal do fecho
+  assert.equal(renderedTexts.filter((t) => t === eur(2000)).length, 3) // preço-base + subtotal da linha + subtotal do fecho (sem desconto: sem "valor c/ desc.")
   assert.equal(renderedTexts.filter((t) => t === eur(2460)).length, 1) // só o total final
   assert.deepEqual(savedFiles, ['ORD-0002_Client_Europe.pdf'])
 })
@@ -496,7 +497,7 @@ test('tapete mostra m² apenas na linha do produto e não entra no total de iten
   assert.equal(renderedTexts[totalItemsIndex + 1], '2')
   assert.ok(!renderedTexts.includes('Área total:'))
   assert.ok(!renderedTexts.includes('Total area:'))
-  assert.ok(wrappedTexts.some(({ text, width }) => text === 'Tapete Amazonas' && width >= 36 && width <= 70))
+  assert.ok(wrappedTexts.some(({ text, width }) => text === 'Tapete Amazonas' && width >= 36 && width <= 100))
   assert.ok(!renderedTexts.some((text) => text.startsWith('DIMENSÕES:') || text.startsWith('DIMENSIONS:')))
 })
 
@@ -688,17 +689,48 @@ test('EU en-GB com desconto: Qtd, Preço-base, Desconto (%), Valor c/ desc. e Su
   assert.ok(!renderedTexts.includes(eur(4674.18)))
 })
 
-test('quantidade 1 sem desconto (0%) em pt-PT: unitário = base = subtotal e sem desconto por unidade', async () => {
+test('quantidade 1 sem desconto em pt-PT: o PDF não mostra o campo de desconto nem "0%"', async () => {
   const order = euOrder([euItem({ qty: 1, discount: 0 })], 'pt-PT')
   await buildOrderPdf({ order, client: euClient(), rep: null, products: [], documentLocale: 'pt-PT' })
 
   const eur = (value: number) => money(value, 'pt-PT', 'EUR')
   assert.ok(renderedTexts.includes('PREÇO-BASE'))
-  assert.ok(renderedTexts.includes('VALOR C/ DESC.'))
   assert.ok(renderedTexts.includes('SUBTOTAL'))
-  assert.equal(callsOf(eur(1731.18)).length, 3)
-  assert.ok(renderedTexts.includes('0%'))
+  // Sem desconto: some a coluna de desconto e o "valor c/ desc." (igual ao preço-base).
+  assert.ok(!renderedTexts.includes('DESCONTO (%)'))
+  assert.ok(!renderedTexts.includes('VALOR C/ DESC.'))
+  assert.equal(callsOf(eur(1731.18)).length, 2) // preço-base e subtotal
+  assert.ok(!renderedTexts.includes('0%'))
   assert.ok(!renderedTexts.some((text) => text.startsWith('- ')))
+})
+
+test('sem desconto em nenhum item o campo de desconto não existe, em PT e em EN, no BR e no EU', async () => {
+  const cases: Array<[string, Order, Client, string]> = [
+    ['EU pt-PT', euOrder([euItem({ discount: 0 }), euItem({ discount: 0, qty: 2 })], 'pt-PT'), euClient(), 'pt-PT'],
+    ['EU en-GB', euOrder([euItem({ discount: 0 })], 'en-GB'), euClient(), 'en-GB'],
+    ['BR', makeOrder({ items: [makeOrderItem({ discount: 0, ipi_rate: 10, ipi_value: 100 })] }), makeClient(), 'pt-BR'],
+  ]
+  for (const [label, order, client, documentLocale] of cases) {
+    textCalls.length = 0
+    renderedTexts.length = 0
+    await buildOrderPdf({ order, client, rep: null, products: [makeProduct()], documentLocale: documentLocale as 'pt-PT' })
+    assert.ok(!renderedTexts.some((text) => /DESCONTO|DISCOUNT/.test(text)), label)
+    assert.ok(!renderedTexts.includes('0%'), label)
+  }
+})
+
+test('com desconto em só um item: o campo aparece e o item sem desconto fica em branco (sem "0%")', async () => {
+  const order = euOrder([
+    euItem({ qty: 3, discount: 10 }),
+    euItem({ id: 'item-sem-desconto', qty: 1, discount: 0, unit_price: 500, product_code: 'SKU-2' }),
+  ], 'pt-PT')
+  await buildOrderPdf({ order, client: euClient(), rep: null, products: [], documentLocale: 'pt-PT' })
+
+  assert.ok(renderedTexts.includes('DESCONTO (%)'))
+  assert.ok(renderedTexts.includes('VALOR C/ DESC.'))
+  assert.equal(callsOf('10%').length, 1)
+  assert.ok(!renderedTexts.includes('0%'))
+  assert.ok(!renderedTexts.includes('-'))
 })
 
 test('Brasil mantém a coluna de IPI e o subtotal da linha inclui o IPI', async () => {
@@ -751,7 +783,8 @@ test('item especial no PDF mostra código, descrição e só o preço final, sem
   assert.ok(renderedTexts.includes(money(115, 'pt-PT', 'EUR')))
   // A % do especial é interna: nenhum texto do PDF a revela (nem a base do pai).
   assert.ok(!renderedTexts.some((text) => /especials*[+-]?d|specials*[+-]?d|15%/i.test(text)))
-  assert.ok(renderedTexts.includes('0%'))
+  // O especial não tem desconto: o campo não aparece (nem "0%").
+  assert.ok(!renderedTexts.includes('0%'))
 })
 
 test('item especial no PDF mostra as medidas gravadas na linha, não as do produto', async () => {

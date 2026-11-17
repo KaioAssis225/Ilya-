@@ -402,13 +402,19 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
       subtotalText: formatMoney(lineTotal, currency, locale),
     }
   })
+  // Desconto só aparece quando algum item tem desconto. Sem desconto em nenhum item, a
+  // coluna de desconto some do PDF, junto com "Valor c/ desc." (que seria igual ao
+  // preço-base). Com desconto em alguns itens, o item sem desconto fica em branco: nunca "0%".
+  const showDiscountColumn = itemRows.some((row) => row.discount > 0)
   type ColumnKey = 'qty' | 'base' | 'discount' | 'net' | 'ipi' | 'subtotal'
   interface NumericColumn { key: ColumnKey; label: string; minWidth: number; right: number; width: number }
   const columnDefs: Array<{ key: ColumnKey; label: string; minWidth: number }> = [
     { key: 'qty', label: L.qty, minWidth: 10 },
     { key: 'base', label: L.basePrice, minWidth: 17 },
-    { key: 'discount', label: L.discount, minWidth: 13 },
-    { key: 'net', label: L.netUnitPrice, minWidth: 17 },
+    ...(showDiscountColumn ? [
+      { key: 'discount' as const, label: L.discount, minWidth: 13 },
+      { key: 'net' as const, label: L.netUnitPrice, minWidth: 17 },
+    ] : []),
     ...(taxOnTotal ? [] : [{ key: 'ipi' as const, label: taxLabel, minWidth: 8 }]),
     { key: 'subtotal', label: L.subtotal, minWidth: 19 },
   ]
@@ -424,7 +430,7 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
         case 'base': return [[row.baseText, 7.5, 'normal']]
         case 'discount': return row.discount > 0
           ? [[row.discountText, 7.5, 'bold'], [unitDiscountText(row.pricing.unitDiscount), 6, 'normal']]
-          : [[row.discountText, 7.5, 'bold']]
+          : []
         case 'net': return [[row.netText, 7.5, 'normal']]
         case 'ipi': return [[`${row.ipiRate}%`, 7.5, 'bold']]
         default: return [[row.subtotalText, 8, 'bold']]
@@ -642,11 +648,15 @@ export async function buildOrderPdf(input: BuildOrderPdfInput): Promise<jsPDF> {
     drawMain(row.baseText, rightOf('base'), 7.5, 'normal')
     if (item.sold_by_area) drawSub('/m²', rightOf('base'))
 
-    drawMain(row.discountText, rightOf('discount'), 7.5, row.discount > 0 ? 'bold' : 'normal', row.discount > 0 ? accentColor : MUTED)
-    if (row.discount > 0) drawSub(unitDiscountText(row.pricing.unitDiscount), rightOf('discount'))
-
-    drawMain(row.netText, rightOf('net'), 7.5, 'normal')
-    if (item.sold_by_area) drawSub('/m²', rightOf('net'))
+    if (showDiscountColumn) {
+      // Item sem desconto: célula em branco (o desconto só aparece onde existe).
+      if (row.discount > 0) {
+        drawMain(row.discountText, rightOf('discount'), 7.5, 'bold', accentColor)
+        drawSub(unitDiscountText(row.pricing.unitDiscount), rightOf('discount'))
+      }
+      drawMain(row.netText, rightOf('net'), 7.5, 'normal')
+      if (item.sold_by_area) drawSub('/m²', rightOf('net'))
+    }
 
     // Brasil mantém a coluna histórica de IPI; Portugal leva o IVA só no fecho.
     if (!taxOnTotal) {
