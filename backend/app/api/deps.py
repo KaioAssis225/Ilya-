@@ -69,6 +69,7 @@ def _enforce_readonly_canary(principal: MarketPrincipal, request: Request | None
     links = principal.user.allowed_market_links
     if (len(links) != 1 or links[0].market_code != principal.code
             or links[0].can_approve_tax or links[0].can_manage_prototypes
+            or getattr(links[0], "can_manage_showrooms", False)
             or links[0].linked_client_id or links[0].rep_id):
         raise HTTPException(status_code=403, detail="Vínculo técnico inválido.")
     if request is not None:
@@ -254,6 +255,19 @@ def require_br_fiscal_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="A manutenção fiscal de IPI exige administrador no mercado BR.",
         )
+    return principal
+
+
+async def require_showroom_manager(
+    principal: MarketPrincipal = Depends(get_current_principal),
+):
+    """Guarda EU das boxes. Sem permissão, não revela que a área existe."""
+    if (
+        principal.code != EU_MARKET
+        or principal.access is None
+        or not principal.actor.can_manage_showrooms
+    ):
+        raise HTTPException(status_code=404, detail="Not Found")
     return principal
 
 
