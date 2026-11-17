@@ -90,7 +90,11 @@ export function useCreateOrder() {
   const qc = useQueryClient()
   return useMutation<Order, Error, OrderCreate>({
     mutationFn: (data) => api.post('/orders', data).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+    // Peça vinda do Estoque: salvar baixa o saldo, então as boxes precisam recarregar.
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: [KEY] }),
+      qc.invalidateQueries({ queryKey: ['showroom-boxes'] }),
+    ]),
   })
 }
 

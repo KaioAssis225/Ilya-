@@ -79,6 +79,9 @@ class OrderItemCreate(BaseModel):
     preserve_optional_choices: bool = False
     comment: Optional[str] = Field(None, max_length=1000)
     attachment_ids: List[uuid.UUID] = Field(default_factory=list, max_length=5)
+    # Linha vinda da Transferência do Estoque EU: só no orçamento NOVO. A baixa do
+    # saldo acontece ao salvar, na mesma transação; desistir não tira nada da box.
+    showroom_source_item_id: Optional[uuid.UUID] = None
     is_special: bool = False
     special_code: Optional[str] = Field(None, max_length=100)
     special_percent: Optional[Decimal] = Field(None, gt=Decimal("-100"), le=Decimal("1000"), decimal_places=2)

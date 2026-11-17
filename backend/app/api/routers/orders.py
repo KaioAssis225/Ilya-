@@ -55,6 +55,7 @@ from app.core.supplied_fabric import (
     SUPPLIED_FABRIC_NAME,
 )
 from app.core.vat_exemption import VAT_EXEMPTION_REASONS
+from app.services.showroom_stock import reject_showroom_references, take_stock_for_order
 from app.schemas.order import is_legacy_custom, OptionalChoiceCreate, OrderCopyRead, OrderCopyRequest, OrderCreate, OrderItemCreate, OrderRead, OrderListRead, OrderStageUpdate, OrderUpdate, OrderHistoryRead
 from app.services.integration_events import enqueue_event
 from app.services.area_products import area_from_dimensions, is_area_product
@@ -1316,6 +1317,8 @@ async def _create_order_core(
     _ensure_special_scope(
         current_user, principal.code, [item for item in payload.items if not is_copy_item(item)]
     )
+    if copy_source is not None or source_order is not None:
+        reject_showroom_references(payload.items, "Itens do Estoque só entram em orçamento novo, não em cópia ou revisão.")
 
     client = (await db.execute(select(Client).where(
         Client.id == payload.client_id,
@@ -1437,6 +1440,7 @@ async def _create_order_core(
     used_special_codes: set[str] = set()
     catalog_scope = order_catalog_scope(current_user, client, rep)
     strict_items: list[OrderItem] = []
+    showroom_lines: list[tuple[OrderItemCreate, OrderItem]] = []
     for item_index, item_in in enumerate(payload.items):
         lenient = is_copy_item(item_in)
         if item_in.is_special and is_client_account(current_user) and lenient:
@@ -1540,6 +1544,8 @@ async def _create_order_core(
             ))
             if not lenient:
                 strict_items.append(order_items[-1])
+                if item_in.showroom_source_item_id is not None:
+                    showroom_lines.append((item_in, order_items[-1]))
         except HTTPException as exc:
             if not lenient:
                 raise
@@ -1594,6 +1600,10 @@ async def _create_order_core(
         supersedes_order_id=source_order.id if source_order else None,
         revision_number=(source_order.revision_number + 1) if source_order else 1,
         items=order_items,
+    )
+    # Peça (antes de qualquer db.add: as consultas da baixa dão flush) vinda do Estoque EU: baixa o saldo na mesma transacao do orcamento.
+    await take_stock_for_order(
+        db, principal=principal, current_user=current_user, order=order, lines=showroom_lines,
     )
     db.add(OrderHistory(
         id=uuid.uuid4(), order_id=order.id, user_id=current_user.id,
@@ -2105,6 +2115,7 @@ async def update_order(
             )
 
     if payload.items is not None:
+        reject_showroom_references(payload.items, "Itens do Estoque só entram ao salvar um orçamento novo.")
         _ensure_special_scope(current_user, principal.code, payload.items)
         old_item_map = {item.id: item for item in order.items}
         attachment_rows = await _resolve_item_attachments(

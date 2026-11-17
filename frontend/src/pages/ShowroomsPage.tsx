@@ -14,8 +14,8 @@ import {
   Warehouse,
   X,
 } from 'lucide-react'
+import { useNavigate } from 'react-router'
 import { useAuth } from '../hooks/useAuth'
-import { useClientsPage } from '../hooks/useClients'
 import { useLocale } from '../hooks/useLocale'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
 import { useOrders } from '../hooks/useOrders'
@@ -48,6 +48,7 @@ import {
   productApplications,
 } from '../lib/optionalApplications'
 import { optionalCategoryLabel, optionalName } from '../lib/optionalLabels'
+import { addShowroomItemToCart } from '../lib/showroomCart'
 import type { OptionalColor, Product } from '../types'
 
 const PRICE_OPTIONS: ShowroomPriceList[] = ['lojista', 'arquiteto', 'corporativo', 'pvp']
@@ -84,10 +85,10 @@ const TEXT = {
     transfer: 'Transferência', transferTitle: 'Transferir peças', transferHelp: 'A quantidade sai desta box e entra no destino escolhido.',
     transferProduct: 'Produto', transferQuantity: 'Quantidade a transferir',
     transferMax: (count: number) => `Máximo: ${count} (saldo da box)`,
-    transferTo: 'Destino', toBox: 'Outra box', toOrder: 'Orçamento existente', toNewOrder: 'Orçamento novo',
-    destBox: 'Box de destino', destOrder: 'Orçamento em aberto', destClient: 'Cliente do novo orçamento',
+    transferTo: 'Destino', toBox: 'Outra box', toOrder: 'Orçamento existente', toNewOrder: 'Novo orçamento',
+    destBox: 'Box de destino', destOrder: 'Orçamento em aberto', newOrderHelp: 'A peça vai para a aba Novo orçamento, com produto, opcionais e quantidade já preenchidos. O saldo só baixa do estoque quando você salvar o orçamento; se desistir, nada sai da box.', goNewOrder: 'Levar para Novo orçamento',
     chooseOne: 'Escolha...', noOtherBoxes: 'Não há outra box. Crie uma antes de transferir.',
-    noOpenOrders: 'Nenhum orçamento em aberto.', searchClient: 'Buscar cliente', noClients: 'Nenhum cliente encontrado.',
+    noOpenOrders: 'Nenhum orçamento em aberto. Orçamentos já realizados ou cancelados não aparecem.',
     doTransfer: 'Transferir', transferring: 'Transferindo...', transferError: 'Não foi possível transferir.',
     transferNeedsItems: 'Adicione produtos à box para transferir.',
     transferDone: (quantity: number, code: string, where: string) => `${quantity} x ${code} transferido(s) para ${where}.`,
@@ -126,9 +127,9 @@ const TEXT = {
     transferProduct: 'Product', transferQuantity: 'Quantity to transfer',
     transferMax: (count: number) => `Maximum: ${count} (box balance)`,
     transferTo: 'Destination', toBox: 'Another box', toOrder: 'Existing quote', toNewOrder: 'New quote',
-    destBox: 'Destination box', destOrder: 'Open quote', destClient: 'Client of the new quote',
+    destBox: 'Destination box', destOrder: 'Open quote', newOrderHelp: 'The piece goes to the New quote tab with product, finishes and quantity filled in. Stock is only deducted when you save the quote; if you give up, nothing leaves the box.', goNewOrder: 'Take to New quote',
     chooseOne: 'Choose...', noOtherBoxes: 'There is no other box. Create one before transferring.',
-    noOpenOrders: 'No open quotes.', searchClient: 'Search client', noClients: 'No clients found.',
+    noOpenOrders: 'No open quotes. Finalised or cancelled quotes are not listed.',
     doTransfer: 'Transfer', transferring: 'Transferring...', transferError: 'The transfer could not be completed.',
     transferNeedsItems: 'Add products to the box to transfer.',
     transferDone: (quantity: number, code: string, where: string) => `${quantity} x ${code} transferred to ${where}.`,
@@ -479,33 +480,38 @@ function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; box
   const tx = TEXT[locale]
   const english = locale === 'en-GB'
   const transfer = useTransferShowroomItem()
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const otherBoxes = boxes.filter(candidate => candidate.id !== box.id)
   const [itemId, setItemId] = useState(box.items[0]?.item_id ?? '')
   const [quantityText, setQuantityText] = useState('1')
   const [mode, setMode] = useState<TransferMode>(otherBoxes.length > 0 ? 'box' : 'order')
   const [destinationBoxId, setDestinationBoxId] = useState('')
   const [orderId, setOrderId] = useState('')
-  const [clientQuery, setClientQuery] = useState('')
-  const [clientId, setClientId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const item = box.items.find(candidate => candidate.item_id === itemId)
   const quantity = Math.floor(Number(quantityText))
   const overBalance = Boolean(item) && quantity > (item?.quantity ?? 0)
   const validQuantity = Number.isInteger(quantity) && quantity >= 1 && !overBalance
-  const ordersQuery = useOrders({ status: 'not_finalized', limit: 100 })
+  const ordersQuery = useOrders({ status: 'in_progress', limit: 100 })
   const openOrders = (ordersQuery.data?.items ?? []).filter(order => !order.is_cancelled && !order.is_finalized)
-  const clientsQuery = useClientsPage({ skip: 0, limit: 10, q: clientQuery.trim() || undefined, include_total: false, sort_by: 'name', sort_dir: 'asc' }, mode === 'new_order')
-  const destinationReady = mode === 'box' ? Boolean(destinationBoxId) : mode === 'order' ? Boolean(orderId) : Boolean(clientId)
+  const destinationReady = mode === 'box' ? Boolean(destinationBoxId) : mode === 'order' ? Boolean(orderId) : true
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (!item || !validQuantity || !destinationReady) return
     setError(null)
+    if (mode === 'new_order') {
+      // Não cria orçamento nem tira nada da box: leva a peça para a aba Novo orçamento.
+      if (!user) return
+      addShowroomItemToCart(user.id, item, quantity, box.name)
+      onClose()
+      navigate('/orcamentos')
+      return
+    }
     const destination = mode === 'box'
       ? { type: 'box' as const, box_id: destinationBoxId }
-      : mode === 'order'
-        ? { type: 'order' as const, order_id: orderId }
-        : { type: 'new_order' as const, client_id: clientId }
+      : { type: 'order' as const, order_id: orderId }
     try {
       const result = await transfer.mutateAsync({ boxId: box.id, itemId: item.item_id, quantity, destination })
       const done = result.transfer
@@ -567,28 +573,12 @@ function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; box
               {!ordersQuery.isLoading && openOrders.length === 0 && <span className="text-xs text-muted">{tx.noOpenOrders}</span>}
             </label>
           )}
-          {mode === 'new_order' && (
-            <div className="flex flex-col gap-1.5">
-              <label className="flex flex-col gap-1.5"><span className="type-label">{tx.searchClient}</span>
-                <input className="input" type="search" aria-label={tx.searchClient} value={clientQuery} onChange={event => { setClientQuery(event.target.value); setClientId('') }} />
-              </label>
-              <span className="type-label">{tx.destClient}</span>
-              <div className="max-h-44 overflow-y-auto rounded-xl border border-line">
-                {(clientsQuery.data?.items ?? []).map(client => (
-                  <button key={client.id} type="button" aria-pressed={clientId === client.id} onClick={() => setClientId(client.id)}
-                    className={`flex w-full items-center justify-between gap-2 border-b border-line px-3 py-2.5 text-left text-sm last:border-0 ${clientId === client.id ? 'bg-gold/10 text-ink' : 'bg-white text-ink-2 hover:bg-surface-2'}`}>
-                    <span className="truncate">{client.name}</span>{clientId === client.id && <Check className="h-4 w-4 shrink-0 text-gold" />}
-                  </button>
-                ))}
-                {!clientsQuery.isLoading && (clientsQuery.data?.items ?? []).length === 0 && <p className="p-3 text-sm text-muted">{tx.noClients}</p>}
-              </div>
-            </div>
-          )}
+          {mode === 'new_order' && <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-ink-2">{tx.newOrderHelp}</p>}
         </div>
         {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-terracotta/10 px-3 py-2 text-sm text-terracotta">{error}</p>}
         <div className="flex justify-end gap-2 border-t border-line bg-surface-2 p-4">
           <button type="button" className="btn-secondary" onClick={onClose}>{tx.cancel}</button>
-          <button type="submit" className="btn-primary" disabled={transfer.isPending || !item || !validQuantity || !destinationReady}>{transfer.isPending ? tx.transferring : tx.doTransfer}</button>
+          <button type="submit" className="btn-primary" disabled={transfer.isPending || !item || !validQuantity || !destinationReady}>{transfer.isPending ? tx.transferring : mode === 'new_order' ? tx.goNewOrder : tx.doTransfer}</button>
         </div>
       </form>
     </div>
