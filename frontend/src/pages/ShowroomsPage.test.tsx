@@ -367,10 +367,6 @@ describe('ShowroomsPage', () => {
         ])),
         http.get('*/showroom-boxes/products', () => HttpResponse.json([])),
         http.get('*/showroom-boxes/:boxId/transfers', () => HttpResponse.json([transferRecord])),
-        http.get('*/orders', () => HttpResponse.json([{
-          id: 'order-9', code: 'PED-0009', client_name: 'Cliente Teste',
-          is_finalized: false, is_cancelled: false,
-        }])),
         http.get('*/clients', () => HttpResponse.json([{ id: 'client-7', name: 'Cliente Sete' }])),
       ]
     }
@@ -388,11 +384,11 @@ describe('ShowroomsPage', () => {
       renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
       const dialog = await openTransfer(user)
 
-      expect(within(dialog).getByText('Máximo: 2 (saldo da box)')).toBeInTheDocument()
+      expect(within(dialog).getByText('Máximo: 2 (saldo do armazém)')).toBeInTheDocument()
       const quantity = within(dialog).getByLabelText('Quantidade a transferir')
       await user.clear(quantity)
       await user.type(quantity, '3')
-      await user.selectOptions(within(dialog).getByLabelText('Box de destino'), 'box-2')
+      await user.selectOptions(within(dialog).getByLabelText('Armazém de destino'), 'box-2')
       expect(within(dialog).getByRole('button', { name: 'Transferir' })).toBeDisabled()
 
       await user.clear(quantity)
@@ -406,44 +402,21 @@ describe('ShowroomsPage', () => {
       expect(screen.getByText('Transferências recentes')).toBeInTheDocument()
     })
 
-    it('leva para um orçamento em aberto sem oferecer os já realizados', async () => {
+    it('não oferece orçamento existente: só outra box e Novo orçamento', async () => {
       const user = userEvent.setup()
-      const requests: Array<Record<string, unknown>> = []
       const orderRequests: string[] = []
-      server.use(...baseHandlers())
       server.use(
-        http.get('*/orders', ({ request }) => {
-          orderRequests.push(new URL(request.url).searchParams.get('status') ?? '')
-          return HttpResponse.json([
-            { id: 'order-9', code: 'PED-0009', client_name: 'Cliente Aberto', is_finalized: false, is_cancelled: false },
-            { id: 'order-8', code: 'PED-0008', client_name: 'Cliente Realizado', is_finalized: true, is_cancelled: false },
-            { id: 'order-7', code: 'PED-0007', client_name: 'Cliente Cancelado', is_finalized: false, is_cancelled: true },
-          ])
-        }),
-        http.post('*/showroom-boxes/:boxId/transfers', async ({ request }) => {
-          requests.push(await request.json() as Record<string, unknown>)
-          return HttpResponse.json({
-            transfer: { ...transferRecord, destination_type: 'order', destination_box_id: null, destination_box_name: null, destination_order_id: 'order-9', destination_order_code: 'PED-0009' },
-            box: boxFixture(),
-          }, { status: 201 })
-        }),
+        ...baseHandlers(),
+        http.get('*/orders', ({ request }) => { orderRequests.push(request.url); return HttpResponse.json([]) }),
       )
       renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
       const dialog = await openTransfer(user)
 
-      await user.click(within(dialog).getByRole('button', { name: 'Orçamento existente' }))
-      const select = await within(dialog).findByLabelText('Orçamento em aberto')
-      expect(await within(select).findByRole('option', { name: 'PED-0009 - Cliente Aberto' })).toBeInTheDocument()
-      expect(within(select).queryByRole('option', { name: /PED-0008/ })).not.toBeInTheDocument()
-      expect(within(select).queryByRole('option', { name: /PED-0007/ })).not.toBeInTheDocument()
-      expect(orderRequests).toContain('in_progress')
-      await user.selectOptions(select, 'order-9')
-      await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
-
-      await waitFor(() => expect(requests).toEqual([{
-        item_id: 'item-1', quantity: 1, destination: { type: 'order', order_id: 'order-9' },
-      }]))
-      expect(await screen.findByRole('status')).toHaveTextContent('orçamento PED-0009')
+      expect(within(dialog).getByRole('button', { name: 'Outro armazém' })).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Novo orçamento' })).toBeInTheDocument()
+      expect(within(dialog).queryByRole('button', { name: /Orçamento existente/ })).not.toBeInTheDocument()
+      expect(within(dialog).queryByLabelText('Orçamento em aberto')).not.toBeInTheDocument()
+      expect(orderRequests).toEqual([])
     })
 
     it('Novo orçamento leva a peça para a aba sem criar orçamento nem tirar do estoque', async () => {
@@ -493,16 +466,16 @@ describe('ShowroomsPage', () => {
       server.use(
         ...baseHandlers(),
         http.post('*/showroom-boxes/:boxId/transfers', () => HttpResponse.json(
-          { detail: 'Quantidade maior que o saldo da box: há 1 peça(s).' }, { status: 422 },
+          { detail: 'Quantidade maior que o saldo do armazém: há 1 peça(s).' }, { status: 422 },
         )),
       )
       renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
       const dialog = await openTransfer(user)
 
-      await user.selectOptions(within(dialog).getByLabelText('Box de destino'), 'box-2')
+      await user.selectOptions(within(dialog).getByLabelText('Armazém de destino'), 'box-2')
       await user.click(within(dialog).getByRole('button', { name: 'Transferir' }))
 
-      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Quantidade maior que o saldo da box: há 1 peça(s).')
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Quantidade maior que o saldo do armazém: há 1 peça(s).')
     })
   })
 })

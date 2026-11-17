@@ -129,9 +129,8 @@ export function useRemoveShowroomItem() {
   )
 }
 
-export type ShowroomTransferDestination =
-  | { type: 'box'; box_id: string }
-  | { type: 'order'; order_id: string }
+/** Só outra box: orçamento não é destino da API (a peça vai ao Novo orçamento pelo carrinho). */
+export type ShowroomTransferDestination = { type: 'box'; box_id: string }
 
 export interface ShowroomTransfer {
   id: string

@@ -125,22 +125,15 @@ class ShowroomTransferBox(BaseModel):
     box_id: uuid.UUID
 
 
-class ShowroomTransferOrder(BaseModel):
-    """Acrescenta a peça a um orçamento EM ABERTO (nunca finalizado nem cancelado).
-
-    Orçamento novo não passa por aqui: a peça vai para a tela Novo orçamento e a
-    baixa acontece ao salvar (``showroom_source_item_id`` no item do pedido)."""
-
-    type: Literal["order"]
-    order_id: uuid.UUID
-
-
 class ShowroomTransferCreate(BaseModel):
+    """Transferência direta: só para outra box. Orçamento não é destino: a peça
+    vai para a tela Novo orçamento e a baixa acontece ao salvar
+    (``showroom_source_item_id`` no item do pedido); orçamento existente nunca
+    recebe peça do estoque."""
+
     item_id: uuid.UUID
     quantity: int = Field(ge=1, le=1_000_000)
-    destination: ShowroomTransferBox | ShowroomTransferOrder = Field(
-        discriminator="type",
-    )
+    destination: ShowroomTransferBox
 
 
 class ShowroomTransferRead(BaseModel):
