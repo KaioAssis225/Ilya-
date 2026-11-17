@@ -3,10 +3,11 @@
 ## Estado e limites da primeira liberação
 
 `BR` e `EU` são mercados comerciais independentes. A chave `EU` permanece
-porque o produto poderá atender outros países europeus; a primeira liberação
-aceita somente cadastros de Portugal (`country = PT`). A inclusão de outro país
-exige regras fiscais, documentais e cadastrais próprias antes de alterar
-`EU_LAUNCH_COUNTRY`.
+porque o produto pode atender outros países europeus. Cliente e representante EU
+informam o país em texto livre (obrigatório, não pode ficar vazio); qualquer país
+é aceito. Não há mais trava por país: a configuração `EU_LAUNCH_COUNTRY` foi
+retirada. Atenção: para país fora de Portugal ainda não existe regra fiscal ou
+documental própria (por exemplo, o IVA), e isso é decisão à parte.
 
 O mercado EU permanece inacessível enquanto qualquer uma destas travas estiver
 fechada:
@@ -14,9 +15,9 @@ fechada:
 1. `EUROPE_MARKET_ENABLED=false` no backend;
 2. `markets.is_enabled=false` no banco;
 3. nenhum produto EU disponível;
-4. produto disponível sem Lojista, Corporativo e PVP em EUR;
+4. produto disponível sem Lojista, Corporativo, PVP e Arquiteto em EUR;
 5. taxa única de IVA do mercado EU não configurada (`markets.vat_rate`);
-6. cliente ou representante EU ativo fora de Portugal;
+6. cliente ou representante EU ativo sem país informado;
 7. produto EU referenciando catálogo, tipo, categoria ou opcional de BR.
 
 ## Identidade, plataforma e mercados
@@ -97,8 +98,8 @@ quem tinha essa permissão podia aprovar uma taxa em lote por grupo (decisão de
 - O pedido preserva mercado, lista, moeda e locale.
 - Cada item preserva preço, desconto, taxa, valor do imposto, rótulo e moeda.
 - BR usa BRL, pt-BR e IPI. A primeira liberação EU usa EUR, pt-PT ou en-GB e IVA.
-- Clientes e representantes EU só podem ser criados ou usados em pedidos com
-  `country = PT`.
+- Clientes e representantes EU só podem ser criados ou usados em pedidos com o
+  país informado (texto livre; qualquer país é aceito).
 - O PDF usa código postal, localidade, região e país para endereços portugueses;
   não concatena `cidade/UF`.
 - Fotos locais e em object storage são servidas pela mesma rota com URL HMAC de

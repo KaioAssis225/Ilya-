@@ -712,8 +712,6 @@ async def _load_products_and_types(
                 Product.largura,
                 Product.profundidade,
                 Product.all_optionals_categories,
-                Product.price_lojista,
-                Product.price_corporativo,
                 Product.observacao,
             ),
             noload(Product.optionals),
@@ -776,13 +774,6 @@ async def _order_item_catalog_ids(db: AsyncSession, order: Order) -> set[uuid.UU
             Product.product_code.in_(codes),
         )
     )).scalars().all())
-
-
-def _price_for_profile(product: Product, profile: str) -> Decimal:
-    """Preço faturado conforme o perfil do cliente (V-Bloco62)."""
-    if profile == "corporativo":
-        return _money(product.price_corporativo)
-    return _money(product.price_lojista)
 
 
 def _ensure_order_price_list_allowed(

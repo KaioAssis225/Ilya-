@@ -8,19 +8,8 @@ from fastapi import HTTPException
 
 from app.api.routers.orders import (
     _calculate_order_line,
-    _price_for_profile,
     _resolve_br_ipi,
 )
-
-
-def test_perfil_do_cliente_escolhe_o_preco_faturado():
-    product = SimpleNamespace(
-        price_lojista=Decimal("120.40"),
-        price_corporativo=Decimal("97.35"),
-    )
-
-    assert _price_for_profile(product, "lojista") == Decimal("120.40")
-    assert _price_for_profile(product, "corporativo") == Decimal("97.35")
 
 
 def test_linha_br_aplica_desconto_arredondamento_e_ipi():

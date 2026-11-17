@@ -317,8 +317,9 @@ async def test_render_eu_en_gb_order():
     assert "BILL TO" in full_text
     assert "PRODUCT" in full_text
     assert "BASE PRICE" in full_text
-    assert "DISCOUNT (%)" in full_text
-    assert "NET UNIT PRICE" in full_text
+    # Sem desconto em nenhum item, o campo de desconto não aparece.
+    assert "DISCOUNT (%)" not in full_text
+    assert "NET UNIT PRICE" not in full_text
     assert "SUBTOTAL" in full_text
     assert "Total items:" in full_text
     assert "GRAND TOTAL:" in full_text
@@ -423,6 +424,28 @@ async def test_render_item_discount():
     assert "- R$ 300,00" in full_text
     assert "R$ 2.000,00" in full_text
     assert "R$ 1.700,00" in full_text
+
+
+async def test_render_without_discount_hides_the_discount_field():
+    item = _make_item(
+        product_code="PROD-SEM-DESC",
+        description="Mesa sem Desconto",
+        qty=1,
+        unit_price=1000.0,
+    )
+    snapshot = _make_snapshot(
+        market_code="BR",
+        items=[item],
+        total_value=1000.0,
+        total_with_ipi=1000.0,
+    )
+
+    _, _, _, full_text = await _render(snapshot)
+
+    assert "PREÇO-BASE" in full_text
+    assert "SUBTOTAL" in full_text
+    assert "DESCONTO" not in full_text
+    assert "VALOR C/ DESC." not in full_text
 
 
 async def test_render_area_rug_with_dimensions_and_multiple_pieces():

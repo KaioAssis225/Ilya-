@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from app.core.addresses import UF_SENTINEL, is_valid_uf
 from app.core.documents import normalize_cpf_cnpj
 from app.core.product_dimensions import ensure_dimension_within_limit
+from app.core.product_prices import load_price_lists, set_product_prices
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -43,7 +44,7 @@ from app.models.client import Client
 from app.models.representative import Representative
 from app.core.config import settings
 from app.core.markets import MarketPrincipal, require_launch_country
-from app.models.market import BR_MARKET, PriceList, ProductMarket, ProductPrice
+from app.models.market import BR_MARKET, PriceList, ProductMarket
 from app.core.uploads import read_upload_limited
 
 logger = logging.getLogger("ilya.import")
@@ -1111,8 +1112,7 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             _record_error(errors, i, e)
     if not errors:
         await db.flush()
-        lists = (await db.execute(select(PriceList).where(PriceList.market_code == "BR"))).scalars().all()
-        list_ids = {item.code: item.id for item in lists}
+        br_lists = await load_price_lists(db, "BR", active_only=False)
         for product in existing.values():
             if product.product_code not in codes:
                 continue
@@ -1121,12 +1121,10 @@ async def import_products(file: UploadFile = File(...), db: AsyncSession = Depen
             ).on_conflict_do_update(
                 index_elements=[ProductMarket.product_id, ProductMarket.market_code], set_={"is_available": True}
             ))
-            for code, amount in (("lojista", product.price_lojista), ("corporativo", product.price_corporativo)):
-                await db.execute(pg_insert(ProductPrice).values(
-                    product_id=product.id, price_list_id=list_ids[code], amount=amount
-                ).on_conflict_do_update(
-                    index_elements=[ProductPrice.product_id, ProductPrice.price_list_id], set_={"amount": amount}
-                ))
+            await set_product_prices(db, product.id, br_lists, {
+                "lojista": product.price_lojista,
+                "corporativo": product.price_corporativo,
+            })
     committed = await _finalize(db, errors)
     return _summary("products", len(rows), created, updated, errors, committed)
 

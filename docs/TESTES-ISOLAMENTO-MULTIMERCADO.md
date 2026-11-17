@@ -22,7 +22,7 @@ aceito é PT.
 | ISO-10 | Conta de cliente legada com espelhos globais, sem user_markets ativo | Ler ou criar pedido em qualquer mercado | 403; users.role, home_market e linked_id não concedem acesso. |
 | ISO-11 | Representante BR A e cliente BR do representante B | A consultar, alterar ou criar pedido para o cliente de B | 403 ou 404, sem revelar a existência fora da carteira. |
 | ISO-12 | UUID de cliente/representante EU conhecido numa sessão BR | Abrir detalhe pelo UUID | 404. |
-| ISO-13 | Cadastro EU com country diferente de PT | Criar/alterar cliente, representante ou pedido | 422 enquanto EU_LAUNCH_COUNTRY=PT. |
+| ISO-13 | Cadastro EU sem país informado | Criar/alterar cliente, representante ou pedido | 422 ("Informe o país."). O país é texto livre e qualquer país é aceito. |
 | ISO-14 | Identidade com papéis diferentes em BR e EU | Alterar vínculo BR e observar o vínculo EU | O registro EU permanece inalterado e a sessão de plataforma permanece válida. |
 
 ## Catálogo, preço e pedido

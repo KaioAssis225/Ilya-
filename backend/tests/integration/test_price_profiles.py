@@ -18,7 +18,7 @@ Contrato (regra, não saída):
   aplicada uma vez sobre o subtotal do documento, arredondada na base total;
   rótulo "IVA"; moeda EUR. O IVA por SKU (pendente/rejeitado/aprovado) não
   bloqueia nem muda o orçamento (ISO-24 virou: o IVA do SKU é ignorado);
-  sem fallback para IPI do grupo, tabela por tipo (`market_tax_rates`) ou SKU BR;
+  sem fallback para IPI do grupo ou SKU BR homônimo;
 * Arquiteto/PVP existem somente no EU: cliente BR não pode receber o perfil.
 
 Rejeições conferem o banco depois de reproduzir o rollback de `get_db`
@@ -40,7 +40,6 @@ from app.core.security import create_access_token
 from app.models.client import Client
 from app.models.market import (
     Market,
-    MarketTaxRate,
     PriceList,
     ProductMarket,
     VAT_APPROVED,
@@ -626,11 +625,11 @@ async def test_iso24_product_vat_status_no_longer_blocks_or_changes_the_quote(
     vat_rate: Decimal | None,
 ) -> None:
     """IVA do SKU pendente, rejeitado, ausente ou diferente é ignorado: vale só a taxa
-    única do mercado (23%). Fontes alternativas existem e nenhuma é usada: SKU BR
-    homônimo com IPI 10% e tabela EU por tipo com 7%."""
+    única do mercado (23%). A fonte alternativa existe e não é usada: SKU BR
+    homônimo com IPI 10%."""
     admin = await _admin(db_session, "EU")
     br_admin = await _admin(db_session, "BR")
-    code, type_name = await _product(
+    code, _type_name = await _product(
         db_session, "EU", admin.user_id,
         amounts={"lojista": D("1000.00")}, tax_rate=vat_rate, vat_status=vat_status,
     )
@@ -638,7 +637,6 @@ async def test_iso24_product_vat_status_no_longer_blocks_or_changes_the_quote(
         db_session, "BR", br_admin.user_id,
         amounts={"lojista": D("1000.00")}, tax_rate=D("10.00"), product_code=code,
     )
-    db_session.add(MarketTaxRate(market_code="EU", product_type=type_name, rate=D("7.00")))
     client_id = await _client(db_session, "EU", "lojista")
     await db_session.commit()
 
