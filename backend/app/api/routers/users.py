@@ -189,6 +189,7 @@ async def _build_market_links(
             or items[0].can_view_dashboard
             or items[0].can_approve_tax
             or items[0].can_manage_prototypes
+            or items[0].can_manage_showrooms
             or items[0].order_rep_id is not None
         ):
             raise HTTPException(422, "Identidade técnica exige um mercado e nenhuma capacidade extra.")
@@ -258,6 +259,11 @@ async def _build_market_links(
                 "Protótipos só podem ser liberados no mercado EU, para admin, "
                 "vendedor ou produtos.",
             )
+        if item.can_manage_showrooms and item.market_code != "EU":
+            raise HTTPException(
+                422,
+                "O Estoque de Portugal só pode ser liberado no mercado EU.",
+            )
         links.append(UserMarket(
             market_code=item.market_code,
             role=item.role.value,
@@ -268,6 +274,7 @@ async def _build_market_links(
             can_view_dashboard=item.can_view_dashboard,
             can_approve_tax=item.can_approve_tax,
             can_manage_prototypes=item.can_manage_prototypes,
+            can_manage_showrooms=item.can_manage_showrooms,
         ))
     return links
 
@@ -290,6 +297,7 @@ async def _replace_market_links(
         for field in (
             "role", "status", "linked_client_id", "rep_id", "order_rep_id",
             "can_view_dashboard", "can_approve_tax", "can_manage_prototypes",
+            "can_manage_showrooms",
         ):
             setattr(current, field, getattr(incoming, field))
 

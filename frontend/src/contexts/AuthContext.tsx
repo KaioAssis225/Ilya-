@@ -36,6 +36,8 @@ export interface AuthUser {
   can_approve_tax?: boolean
   /** Área de protótipos do mercado ativo (só EU; calculado no servidor). */
   can_manage_prototypes?: boolean
+  /** Boxes de showroom/feiras do mercado ativo (só EU; calculado no servidor). */
+  can_manage_showrooms?: boolean
   /** Calculado no servidor: mostra o link "Estoque" (só sessão BR com acesso). */
   can_access_stock?: boolean
   home_market: 'BR' | 'EU'

@@ -32,6 +32,8 @@ export interface UserMarketAccess {
   can_approve_tax: boolean
   /** Área de protótipos (só vínculo EU; liga o admin da plataforma). */
   can_manage_prototypes: boolean
+  /** Boxes de showroom/feiras (só vínculo EU). */
+  can_manage_showrooms?: boolean
 }
 
 export interface UserCreate {
@@ -102,6 +104,8 @@ export function useCreateUser() {
           order_rep_id: null,
           can_view_dashboard: false,
           can_approve_tax: false,
+          can_manage_prototypes: false,
+          can_manage_showrooms: market_code === 'EU' && (body as UserCreate & { can_manage_showrooms?: boolean }).can_manage_showrooms === true,
         })),
       })
     },
@@ -133,6 +137,8 @@ export function useUpdateUser() {
             order_rep_id: null,
             can_view_dashboard: false,
             can_approve_tax: false,
+            can_manage_prototypes: false,
+            can_manage_showrooms: false,
           }),
           role,
           linked_client_id: role === 'cliente'
