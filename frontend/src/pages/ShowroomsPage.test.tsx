@@ -247,4 +247,95 @@ describe('ShowroomsPage', () => {
     expect((await screen.findAllByText('Pés')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('TAUPE').length).toBeGreaterThan(0)
   })
+
+  it('salva com opcional obrigatório pendente e com Customizado', async () => {
+    const user = userEvent.setup()
+    const requests: Array<Record<string, unknown>> = []
+    const application = (id: string, name: string, brand: 'IBTW' | 'ILYA') => ({
+      id, category_id: 'category-paint', category_code: 'PINTURA',
+      category_name: 'Pintura', name, name_en: name, required: true,
+      display_order: 0, allow_all: false, allow_repeat: true,
+      allowed_optionals: [{
+        id: `optional-${id}`, category: 'PINTURA', color_name: `COR ${name}`, brand,
+        photo_url: null, thumbnail_url: null,
+      }],
+    })
+    server.use(
+      http.get('*/showroom-boxes', () => HttpResponse.json([boxFixture({ items: [], item_count: 0 })])),
+      http.get('*/showroom-boxes/products', () => HttpResponse.json([{
+        id: 'product-1', product_code: 'ICD0106', description: 'ALBA - CADEIRA',
+        thumbnail_url: null, unit_price: '89.42',
+      }])),
+      http.post('*/products/batch', () => HttpResponse.json([
+        productFixture('EU', {
+          id: 'product-1', product_code: 'ICD0106', description: 'ALBA - CADEIRA',
+          optional_applications: [application('legs', 'Pés', 'IBTW'), application('top', 'Tampo', 'ILYA')],
+        }),
+      ])),
+      http.post('*/showroom-boxes/:boxId/items', async ({ request }) => {
+        requests.push(await request.json() as Record<string, unknown>)
+        return HttpResponse.json(boxFixture())
+      }),
+    )
+    renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+
+    await user.click(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' }))
+    await user.type(screen.getByLabelText('Buscar produtos'), 'ICD0106')
+    await user.click(await screen.findByRole('button', { name: 'Configurar ICD0106' }))
+    // Acabamento ILYA não oferece Customizado; o IBTW oferece.
+    expect(await screen.findAllByRole('button', { name: 'Customizado' })).toHaveLength(1)
+    expect(screen.getByText(/2 opcional\(is\) obrigatório\(s\) sem escolha/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Customizado' }))
+    await user.click(screen.getByRole('button', { name: 'Adicionar ao estoque' }))
+
+    await waitFor(() => expect(requests).toEqual([{
+      product_id: 'product-1', quantity: 1,
+      optional_choices: [{ application_id: 'legs', custom: true }],
+    }]))
+  })
+
+  it('mostra o erro do servidor ao lado do botão ao falhar ao salvar o item', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('*/showroom-boxes', () => HttpResponse.json([boxFixture({ items: [], item_count: 0 })])),
+      http.get('*/showroom-boxes/products', () => HttpResponse.json([{
+        id: 'product-1', product_code: 'ICD0106', description: 'ALBA - CADEIRA',
+        thumbnail_url: null, unit_price: '89.42',
+      }])),
+      http.post('*/products/batch', () => HttpResponse.json([
+        productFixture('EU', { id: 'product-1', product_code: 'ICD0106', description: 'ALBA - CADEIRA' }),
+      ])),
+      http.post('*/showroom-boxes/:boxId/items', () => HttpResponse.json(
+        { detail: 'Opção não autorizada em “Pés”.' }, { status: 422 },
+      )),
+    )
+    renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+
+    await user.click(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' }))
+    await user.type(screen.getByLabelText('Buscar produtos'), 'ICD0106')
+    await user.click(await screen.findByRole('button', { name: 'Configurar ICD0106' }))
+    await user.click(await screen.findByRole('button', { name: 'Adicionar ao estoque' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Opção não autorizada em “Pés”.')
+  })
+
+  it('avisa quando a alteração de quantidade é recusada pelo servidor', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('*/showroom-boxes', () => HttpResponse.json([boxFixture()])),
+      http.get('*/showroom-boxes/products', () => HttpResponse.json([])),
+      http.patch('*/showroom-boxes/:boxId/items/:itemId', () => HttpResponse.json(
+        { detail: 'Sem permissão nesta box.' }, { status: 403 },
+      )),
+    )
+    renderProductPage(<ShowroomsPage />, showroomUser(), ['/showrooms'])
+
+    await user.click(await screen.findByRole('button', { name: 'Abrir Estoque Portugal' }))
+    const quantity = (await screen.findAllByLabelText('Quantidade de ICD0106'))[0]
+    await user.clear(quantity)
+    await user.type(quantity, '5')
+    await user.tab()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sem permissão nesta box.')
+  })
 })

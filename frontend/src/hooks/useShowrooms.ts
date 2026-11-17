@@ -20,9 +20,11 @@ export interface ShowroomItem extends ShowroomProduct {
 }
 
 export interface ShowroomOptionalChoiceInput {
-  optional_id: string
+  optional_id?: string
   application_id?: string
   category_code?: string
+  /** "Customizado": vale só numa aplicação, sem opcional do cadastro. */
+  custom?: boolean
 }
 
 export interface ShowroomOptionalChoice {
@@ -31,8 +33,9 @@ export interface ShowroomOptionalChoice {
   application_name_en: string | null
   category_code: string
   category_name: string
-  optional_id: string
+  optional_id: string | null
   optional_name: string
+  custom?: boolean
   component_name: string | null
   thumbnail_url: string | null
 }

@@ -35,7 +35,10 @@ import {
 } from '../hooks/useShowrooms'
 import {
   allowedForApplication,
+  allowsCustomFor,
   applicationName,
+  customOptionLabel,
+  CUSTOM_OPTION,
   productApplications,
 } from '../lib/optionalApplications'
 import { optionalCategoryLabel, optionalName } from '../lib/optionalLabels'
@@ -70,7 +73,8 @@ const TEXT = {
     addError: 'Não foi possível adicionar o produto.', removeError: 'Não foi possível remover o produto.',
     confirmDelete: (name: string) => `Excluir a box “${name}” e todos os produtos dela?`,
     confirmRemove: (code: string) => `Remover ${code} desta box?`,
-    requiredMissing: 'Escolha todos os opcionais obrigatórios.',
+    requiredPending: (count: number) => `${count} opcional(is) obrigatório(s) sem escolha: o item será guardado como pendente.`,
+    updateError: 'Não foi possível alterar a quantidade.',
   },
   'en-GB': {
     stock: 'Stock', stockLocation: 'Stock location', editLocation: 'Edit location',
@@ -98,7 +102,8 @@ const TEXT = {
     addError: 'The product could not be added.', removeError: 'The product could not be removed.',
     confirmDelete: (name: string) => `Delete “${name}” and every product in it?`,
     confirmRemove: (code: string) => `Remove ${code} from this box?`,
-    requiredMissing: 'Choose every required finish.',
+    requiredPending: (count: number) => `${count} required finish(es) not chosen: the item will be saved as pending.`,
+    updateError: 'The quantity could not be changed.',
   },
 } as const
 
@@ -118,7 +123,8 @@ function errorDetail(error: unknown, fallback: string) {
   return fallback
 }
 
-function QuantityField({ boxId, item, label }: { boxId: string; item: ShowroomItem; label: string }) {
+function QuantityField({ boxId, item, label, onError }: { boxId: string; item: ShowroomItem; label: string; onError: (message: string) => void }) {
+  const { locale } = useLocale()
   const update = useUpdateShowroomItem()
   const [draft, setDraft] = useState<string | null>(null)
   const value = draft ?? String(item.quantity)
@@ -126,7 +132,7 @@ function QuantityField({ boxId, item, label }: { boxId: string; item: ShowroomIt
   function commit() {
     const quantity = Math.max(1, Math.floor(Number(value) || 1))
     setDraft(null)
-    if (quantity !== item.quantity) update.mutate({ boxId, itemId: item.item_id, quantity })
+    if (quantity !== item.quantity) update.mutate({ boxId, itemId: item.item_id, quantity }, { onError: error => onError(errorDetail(error, TEXT[locale].updateError)) })
   }
 
   return (
@@ -246,10 +252,10 @@ function ItemChoices({ choices, english, noOptionals }: { choices: ShowroomOptio
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
       {choices.map(choice => (
-        <span key={`${choice.application_id ?? choice.category_code}:${choice.optional_id}`} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] text-ink-2">
+        <span key={`${choice.application_id ?? choice.category_code}:${choice.optional_id ?? 'custom'}`} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] text-ink-2">
           {choice.thumbnail_url && <img src={choice.thumbnail_url} alt="" className="h-4 w-4 rounded object-cover" />}
           <strong className="truncate font-semibold text-gold">{choiceLabel(choice, english)}</strong>
-          <span className="truncate">{optionalName(choice.optional_name, english)}</span>
+          <span className="truncate">{choice.custom ? customOptionLabel(english) : optionalName(choice.optional_name, english)}</span>
         </span>
       ))}
     </div>
@@ -261,6 +267,8 @@ interface FinishSlot {
   label: string
   required: boolean
   options: OptionalColor[]
+  /** "Customizado" só nas aplicações; o seletor antigo por categoria não tem. */
+  allowCustom: boolean
   choice: (optionalId: string) => ShowroomOptionalChoiceInput
 }
 
@@ -300,7 +308,10 @@ function ProductConfigurationForm({
       label: `${componentName ? `${componentName} — ` : ''}${applicationName(application, english)}`,
       required: application.required,
       options: allowedForApplication(application, fetchedOptionals),
-      choice: (optionalId: string) => ({ application_id: application.id, optional_id: optionalId }),
+      allowCustom: allowsCustomFor(allowedForApplication(application, fetchedOptionals)),
+      choice: (optionalId: string) => optionalId === CUSTOM_OPTION
+        ? { application_id: application.id, custom: true }
+        : { application_id: application.id, optional_id: optionalId },
     })),
     ...legacyCategories.map(category => ({
       key: `category:${category}`,
@@ -309,16 +320,14 @@ function ProductConfigurationForm({
       options: freeCategories.includes(category)
         ? fetchedOptionals.filter(option => option.category === category)
         : product.optionals.filter(option => option.category === category),
+      allowCustom: false,
       choice: (optionalId: string) => ({ category_code: category, optional_id: optionalId }),
     })),
   ], [applications, english, fetchedOptionals, freeCategories, legacyCategories, product.optionals])
 
+  const pendingRequired = slots.filter(slot => slot.required && !selected[slot.key]).length
+
   async function submit() {
-    const missing = slots.some(slot => slot.required && !selected[slot.key])
-    if (missing) {
-      setError(tx.requiredMissing)
-      return
-    }
     const optionalChoices = slots.flatMap(slot => selected[slot.key] ? [slot.choice(selected[slot.key])] : [])
     setError(null)
     try {
@@ -381,13 +390,26 @@ function ProductConfigurationForm({
                       </button>
                     )
                   })}
+                  {slot.allowCustom && (
+                    <button
+                      type="button"
+                      aria-pressed={selected[slot.key] === CUSTOM_OPTION}
+                      onClick={() => { setSelected(current => ({ ...current, [slot.key]: current[slot.key] === CUSTOM_OPTION ? '' : CUSTOM_OPTION })); setError(null) }}
+                      className={`flex min-h-12 items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30 ${selected[slot.key] === CUSTOM_OPTION ? 'border-gold bg-gold/10 text-ink' : 'border-line bg-white text-ink-2 hover:border-gold/35'}`}
+                    >
+                      <span className="min-w-0 flex-1 break-words font-medium leading-snug">{customOptionLabel(english)}</span>
+                      {selected[slot.key] === CUSTOM_OPTION && <Check className="h-4 w-4 shrink-0 text-gold" />}
+                    </button>
+                  )}
                 </div>
               </fieldset>
             ))}
           </div>
         )}
-        {error && <p role="alert" className="mt-4 rounded-xl bg-terracotta/10 px-3 py-2 text-sm text-terracotta">{error}</p>}
       </div>
+      {/* Fora da área rolável: o erro do servidor precisa ficar à vista ao lado do botão. */}
+      {pendingRequired > 0 && !error && <p className="border-t border-line bg-surface-2 px-5 pt-3 text-xs text-muted">{tx.requiredPending(pendingRequired)}</p>}
+      {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-terracotta/10 px-3 py-2 text-sm text-terracotta">{error}</p>}
       <div className="flex justify-end gap-2 border-t border-line bg-surface-2 p-4">
         <button type="button" className="btn-secondary" onClick={onClose}>{tx.cancel}</button>
         <button type="button" className="btn-primary" disabled={addItem.isPending} onClick={() => void submit()}>{addItem.isPending ? tx.adding : tx.addToStock}</button>
@@ -517,8 +539,8 @@ export default function ShowroomsPage() {
             {selected.items.length === 0 ? (
               <div className="flex min-h-64 flex-col items-center justify-center px-5 py-12 text-center"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-2 text-muted-3"><PackagePlus className="h-5 w-5" /></span><p className="mt-4 text-sm font-semibold text-ink">{tx.emptyBox}</p><p className="mt-1 max-w-xs text-xs leading-relaxed text-muted">{tx.emptyBoxHelp}</p></div>
             ) : (
-              <><div className="hidden overflow-x-auto md:block"><table className="w-full text-sm"><thead className="bg-surface-2 text-xs uppercase tracking-wider text-muted"><tr><th className="px-5 py-3 text-left sm:px-6">{tx.product}</th><th className="px-4 py-3 text-center">{tx.quantity}</th><th className="px-4 py-3 text-right">{tx.unit}</th><th className="px-4 py-3 text-right">{tx.total}</th><th className="w-14 px-3 py-3"><span className="sr-only">{tx.actions}</span></th></tr></thead><tbody className="divide-y divide-line">{selected.items.map(item => <tr key={item.item_id} className="align-top transition-colors hover:bg-surface-2/60"><td className="px-5 py-3.5 sm:px-6"><div className="flex items-start gap-3"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-bg ring-1 ring-line">{item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-muted-3" />}</div><div className="min-w-0"><span className="type-code">{item.product_code}</span><p className="max-w-sm truncate font-medium text-ink">{item.description}</p><ItemChoices choices={item.optional_choices ?? []} english={english} noOptionals={tx.noOptionals} /></div></div></td><td className="px-4 py-3.5 text-center"><QuantityField boxId={selected.id} item={item} label={tx.quantityOf} /></td><td className="px-4 py-3.5 text-right tabular-nums text-ink-2">{money(item.unit_price, locale)}</td><td className="px-4 py-3.5 text-right font-semibold tabular-nums text-ink">{money(item.line_total, locale)}</td><td className="px-3 py-3.5"><button className="grid min-h-11 min-w-11 place-items-center rounded-lg text-muted transition-colors hover:bg-terracotta/10 hover:text-terracotta" aria-label={`${tx.remove} ${item.product_code}`} onClick={() => void removeProduct(item)}><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
-              <div className="divide-y divide-line md:hidden">{selected.items.map(item => <article key={item.item_id} className="p-4"><div className="flex gap-3"><div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-bg ring-1 ring-line">{item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-muted-3" />}</div><div className="min-w-0 flex-1"><p className="type-code">{item.product_code}</p><p className="line-clamp-2 text-sm font-medium text-ink">{item.description}</p><ItemChoices choices={item.optional_choices ?? []} english={english} noOptionals={tx.noOptionals} /></div><button className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:text-terracotta" aria-label={`${tx.remove} ${item.product_code}`} onClick={() => void removeProduct(item)}><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-[auto_1fr] items-end gap-4 border-t border-line pt-3"><QuantityField boxId={selected.id} item={item} label={tx.quantityOf} /><div className="text-right"><p className="type-meta">{money(item.unit_price, locale)} {tx.perUnit}</p><p className="mt-0.5 font-semibold tabular-nums text-ink">{money(item.line_total, locale)}</p></div></div></article>)}</div></>
+              <><div className="hidden overflow-x-auto md:block"><table className="w-full text-sm"><thead className="bg-surface-2 text-xs uppercase tracking-wider text-muted"><tr><th className="px-5 py-3 text-left sm:px-6">{tx.product}</th><th className="px-4 py-3 text-center">{tx.quantity}</th><th className="px-4 py-3 text-right">{tx.unit}</th><th className="px-4 py-3 text-right">{tx.total}</th><th className="w-14 px-3 py-3"><span className="sr-only">{tx.actions}</span></th></tr></thead><tbody className="divide-y divide-line">{selected.items.map(item => <tr key={item.item_id} className="align-top transition-colors hover:bg-surface-2/60"><td className="px-5 py-3.5 sm:px-6"><div className="flex items-start gap-3"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-bg ring-1 ring-line">{item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-muted-3" />}</div><div className="min-w-0"><span className="type-code">{item.product_code}</span><p className="max-w-sm truncate font-medium text-ink">{item.description}</p><ItemChoices choices={item.optional_choices ?? []} english={english} noOptionals={tx.noOptionals} /></div></div></td><td className="px-4 py-3.5 text-center"><QuantityField boxId={selected.id} item={item} label={tx.quantityOf} onError={setMessage} /></td><td className="px-4 py-3.5 text-right tabular-nums text-ink-2">{money(item.unit_price, locale)}</td><td className="px-4 py-3.5 text-right font-semibold tabular-nums text-ink">{money(item.line_total, locale)}</td><td className="px-3 py-3.5"><button className="grid min-h-11 min-w-11 place-items-center rounded-lg text-muted transition-colors hover:bg-terracotta/10 hover:text-terracotta" aria-label={`${tx.remove} ${item.product_code}`} onClick={() => void removeProduct(item)}><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
+              <div className="divide-y divide-line md:hidden">{selected.items.map(item => <article key={item.item_id} className="p-4"><div className="flex gap-3"><div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-bg ring-1 ring-line">{item.thumbnail_url ? <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-muted-3" />}</div><div className="min-w-0 flex-1"><p className="type-code">{item.product_code}</p><p className="line-clamp-2 text-sm font-medium text-ink">{item.description}</p><ItemChoices choices={item.optional_choices ?? []} english={english} noOptionals={tx.noOptionals} /></div><button className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:text-terracotta" aria-label={`${tx.remove} ${item.product_code}`} onClick={() => void removeProduct(item)}><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-[auto_1fr] items-end gap-4 border-t border-line pt-3"><QuantityField boxId={selected.id} item={item} label={tx.quantityOf} onError={setMessage} /><div className="text-right"><p className="type-meta">{money(item.unit_price, locale)} {tx.perUnit}</p><p className="mt-0.5 font-semibold tabular-nums text-ink">{money(item.line_total, locale)}</p></div></div></article>)}</div></>
             )}
           </section>
         </div>

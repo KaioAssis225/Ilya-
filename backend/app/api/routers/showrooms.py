@@ -33,6 +33,8 @@ from app.schemas.showroom import (
 
 
 router = APIRouter(prefix="/api/v1/showroom-boxes", tags=["showroom-boxes"])
+# Mesmo nome que o orçamento EU grava para a escolha "Customizado".
+CUSTOM_OPTIONAL_NAME = "Customizado"
 _MANAGER = Depends(require_showroom_manager)
 
 
@@ -67,6 +69,14 @@ def _localized_description(
         else product_market.description_pt_pt
     )
     return localized or product.description
+
+
+def _optional_thumbnail(choice: dict, current_optionals: dict) -> str | None:
+    """Miniatura vigente do opcional; "Customizado" não tem opcional do cadastro."""
+    if not choice.get("optional_id"):
+        return None
+    current = current_optionals.get(uuid.UUID(choice["optional_id"]))
+    return build_thumbnail_url(current.photo_path) if current else None
 
 
 async def _read_box(
@@ -126,9 +136,7 @@ async def _read_box(
             line_total=line_total,
             optional_choices=[{
                 **choice,
-                "thumbnail_url": build_thumbnail_url(
-                    current_optionals.get(uuid.UUID(choice["optional_id"])).photo_path
-                ) if current_optionals.get(uuid.UUID(choice["optional_id"])) else None,
+                "thumbnail_url": _optional_thumbnail(choice, current_optionals),
             } for choice in item.optional_configuration],
         ))
     return ShowroomBoxRead(
@@ -313,7 +321,7 @@ async def _optional_configuration(
     if repeated_slots:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Opcional repetido na mesma aplicação ou categoria.")
 
-    optional_ids = {row.optional_id for row in choices}
+    optional_ids = {row.optional_id for row in choices if row.optional_id is not None}
     optionals = list((await db.execute(select(OptionalColor).where(
         OptionalColor.id.in_(optional_ids),
         OptionalColor.market_code == "EU",
@@ -354,8 +362,39 @@ async def _optional_configuration(
 
     snapshots: list[dict] = []
     used_application_optionals: dict[tuple[str, uuid.UUID], ProductOptionalApplication] = {}
-    selected_application_ids: set[uuid.UUID] = set()
+    ilya_categories: set[str] = set()
+    if any(row.custom for row in choices):
+        ilya_categories = set((await db.execute(select(OptionalColor.category).where(
+            OptionalColor.market_code == "EU", OptionalColor.brand == "ILYA",
+        ).distinct())).scalars())
     for choice in choices:
+        if choice.custom:
+            application = applications_by_id.get(choice.application_id)
+            if application is None:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Aplicação de opcional inválida para este produto.")
+            # Acabamento ILYA não é personalizado (mesma regra do orçamento EU).
+            has_ilya = application.category.code in ilya_categories if application.allow_all else any(
+                row.brand == "ILYA" for row in application.allowed_optionals
+            )
+            if has_ilya:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    f"A opção Customizado não está disponível para acabamentos ILYA ({application.name}).",
+                )
+            component = components_by_id.get(application.component_id)
+            snapshots.append({
+                "application_id": str(application.id),
+                "application_name": application.name,
+                "application_name_en": application.name_en,
+                "component_name": component.description if component else None,
+                "category_code": application.category.code,
+                "category_name": application.category.name,
+                "optional_id": None,
+                "optional_name": CUSTOM_OPTIONAL_NAME,
+                "custom": True,
+                "display_order": application.display_order,
+            })
+            continue
         optional = optionals_by_id[choice.optional_id]
         if choice.application_id is not None:
             application = applications_by_id.get(choice.application_id)
@@ -377,7 +416,6 @@ async def _optional_configuration(
                     f"Opção repetida na categoria '{application.category.name}'.",
                 )
             used_application_optionals[repeat_key] = application
-            selected_application_ids.add(application.id)
             component = components_by_id.get(application.component_id)
             snapshots.append({
                 "application_id": str(application.id),
@@ -388,6 +426,7 @@ async def _optional_configuration(
                 "category_name": application.category.name,
                 "optional_id": str(optional.id),
                 "optional_name": optional.color_name,
+                "custom": False,
                 "display_order": application.display_order,
             })
             continue
@@ -410,27 +449,23 @@ async def _optional_configuration(
             "category_name": category.name,
             "optional_id": str(optional.id),
             "optional_name": optional.color_name,
+            "custom": False,
             "display_order": 10_000,
         })
 
-    missing = [
-        row.name for row in applications
-        if row.required and row.id not in selected_application_ids
-    ]
-    if missing:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            f"Selecione os opcionais obrigatórios: {', '.join(missing)}.",
-        )
+    # Como no orçamento EU, opcional obrigatório pendente não impede de salvar:
+    # a exigência vale só ao finalizar um orçamento, não no estoque físico.
 
     snapshots.sort(key=lambda row: (
         row["display_order"], row["category_code"],
-        row["application_id"] or "", row["optional_id"],
+        row["application_id"] or "", row["optional_id"] or "",
     ))
     canonical = [{
         "application_id": row["application_id"],
         "category_code": row["category_code"],
         "optional_id": row["optional_id"],
+        # Só entra na chave quando verdadeiro: as chaves já gravadas não mudam.
+        **({"custom": True} if row["custom"] else {}),
     } for row in snapshots]
     if not canonical:
         return [], "base"

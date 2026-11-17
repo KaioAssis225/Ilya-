@@ -185,11 +185,6 @@ async def test_mesmo_produto_aceita_configuracoes_distintas_e_localizadas(
         "name": "Configurações", "price_list_code": "lojista",
     }, headers=headers)).json()
 
-    missing = await client.post(f"{BASE}/{box['id']}/items", json={
-        "product_id": str(product.id), "quantity": 1,
-    }, headers=headers)
-    assert missing.status_code == 422
-
     def payload(optional_id, quantity=1):
         return {
             "product_id": str(product.id), "quantity": quantity,
@@ -224,3 +219,89 @@ async def test_mesmo_produto_aceita_configuracoes_distintas_e_localizadas(
     }, headers=headers)
     assert search.status_code == 200
     assert search.json()[0]["description"] == "Portuguese chair"
+
+
+async def configurable_product(db: AsyncSession):
+    """Produto EU com duas aplicações obrigatórias, uma IBTW e uma ILYA."""
+    product = await priced_product(db)
+    category = await make_optional_category(
+        db, market_code="EU", code="PINT_PEND", name="Pintura",
+    )
+    taupe = await make_optional(db, category, color_name="Taupe", brand="IBTW")
+    ilya = await make_optional(db, category, color_name="Oak ILYA", brand="ILYA")
+    legs = await make_application(
+        db, product, category, name="Pés", required=True, allowed=[taupe],
+        display_order=0,
+    )
+    top = await make_application(
+        db, product, category, name="Tampo", required=True, allowed=[ilya],
+        display_order=1,
+    )
+    return product, legs, top, taupe, ilya
+
+
+async def test_opcionais_pendentes_salvam_como_no_orcamento_eu(
+    client: AsyncClient, db_session: AsyncSession,
+):
+    """Regressão (James): Portugal salva com opcional obrigatório pendente.
+
+    O orçamento EU só exige tudo ao finalizar; o estoque recusava o item
+    quando faltava qualquer aplicação obrigatória.
+    """
+    user = await person(db_session, "pending", allowed=True)
+    product, legs, _top, taupe, _ilya = await configurable_product(db_session)
+    await db_session.commit()
+    headers = auth(user, "vendedor")
+    box = (await client.post(BASE, json={
+        "name": "Pendentes", "price_list_code": "lojista",
+    }, headers=headers)).json()
+
+    partial = await client.post(f"{BASE}/{box['id']}/items", json={
+        "product_id": str(product.id), "quantity": 1,
+        "optional_choices": [{
+            "application_id": str(legs.id), "optional_id": str(taupe.id),
+        }],
+    }, headers=headers)
+    assert partial.status_code == 200, partial.text
+    assert [c["optional_name"] for c in partial.json()["items"][0]["optional_choices"]] == ["Taupe"]
+
+    bare = await client.post(f"{BASE}/{box['id']}/items", json={
+        "product_id": str(product.id), "quantity": 2,
+    }, headers=headers)
+    assert bare.status_code == 200, bare.text
+    assert bare.json()["item_count"] == 2
+    assert bare.json()["total_quantity"] == 3
+
+
+async def test_customizado_vale_como_escolha_exceto_em_acabamento_ilya(
+    client: AsyncClient, db_session: AsyncSession,
+):
+    user = await person(db_session, "custom", allowed=True)
+    product, legs, top, _taupe, _ilya = await configurable_product(db_session)
+    await db_session.commit()
+    headers = auth(user, "vendedor")
+    box = (await client.post(BASE, json={
+        "name": "Customizado", "price_list_code": "lojista",
+    }, headers=headers)).json()
+
+    custom = await client.post(f"{BASE}/{box['id']}/items", json={
+        "product_id": str(product.id), "quantity": 1,
+        "optional_choices": [{"application_id": str(legs.id), "custom": True}],
+    }, headers=headers)
+    assert custom.status_code == 200, custom.text
+    choice = custom.json()["items"][0]["optional_choices"][0]
+    assert choice["custom"] is True and choice["optional_id"] is None
+    assert choice["optional_name"] == "Customizado"
+
+    again = await client.post(f"{BASE}/{box['id']}/items", json={
+        "product_id": str(product.id), "quantity": 2,
+        "optional_choices": [{"application_id": str(legs.id), "custom": True}],
+    }, headers=headers)
+    assert again.json()["item_count"] == 1 and again.json()["total_quantity"] == 3
+
+    blocked = await client.post(f"{BASE}/{box['id']}/items", json={
+        "product_id": str(product.id), "quantity": 1,
+        "optional_choices": [{"application_id": str(top.id), "custom": True}],
+    }, headers=headers)
+    assert blocked.status_code == 422
+    assert "ILYA" in blocked.json()["detail"]
