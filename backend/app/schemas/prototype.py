@@ -3,7 +3,8 @@
 Mesmos campos do produto normal, menos o que não faz sentido num protótipo:
 o código (`PROT-xxxx`, gerado no servidor), EAN e categoria de artigo (só
 servem ao Moloni, para onde protótipo nunca vai), conjunto/componentes e limite
-de área. O IVA é informado pelo criador (`vat_rate`).
+de área. O IVA não é do protótipo: vale a taxa única do mercado EU (o campo
+`vat_rate` segue aceito só por compatibilidade com telas antigas e é ignorado).
 """
 import uuid
 from decimal import Decimal

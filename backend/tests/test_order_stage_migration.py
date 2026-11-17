@@ -67,4 +67,7 @@ def test_free_country_iroko_is_the_single_head_after_vat_exempt():
     showroom_options = script.get_revision("showroom_item_options_r49")
     assert showroom_options is not None
     assert showroom_options.down_revision == "rename_showroom_stock_r48"
-    assert script.get_heads() == ["showroom_item_options_r49"]
+    single_vat = script.get_revision("eu_single_vat_rate_20261117")
+    assert single_vat is not None
+    assert single_vat.down_revision == "showroom_item_options_r49"
+    assert script.get_heads() == ["eu_single_vat_rate_20261117"]

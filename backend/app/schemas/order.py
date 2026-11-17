@@ -279,6 +279,9 @@ class OrderRead(BaseModel):
     external_code: Optional[str] = None
     vat_exempt: bool = False
     vat_exemption_code: Optional[str] = None
+    # Taxa única de IVA (EU) usada no documento; vazio nos documentos antigos
+    # (IVA por linha) e no BR.
+    vat_rate: Optional[Decimal] = None
     notes: Optional[str]
     items: List[OrderItemRead]
     history: List[OrderHistoryRead] = Field(default_factory=list)

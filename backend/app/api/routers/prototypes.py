@@ -10,7 +10,6 @@ enxerga protótipos do próprio usuário (ownership).
 import re
 import unicodedata
 import uuid
-from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
@@ -31,7 +30,7 @@ from app.api.routers.products import (
 )
 from app.core.markets import MarketPrincipal
 from app.core.search import literal_contains_pattern
-from app.models.market import ProductMarket, VAT_APPROVED, VAT_SOURCE_PROTOTYPE
+from app.models.market import ProductMarket
 from app.models.optional_application import ProductOptionalApplication
 from app.models.optional_category import OptionalCategory
 from app.models.optional_color import OptionalColor
@@ -116,7 +115,6 @@ async def create_prototype(
     product = await _create_product_for_market(
         product_payload, db, principal.code,
         prototype_owner_id=principal.user.id,
-        prototype_vat_rate=payload.vat_rate,
     )
     return await _read_one(db, product, principal)
 
@@ -194,17 +192,8 @@ async def update_prototype(
     data = payload.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Informe ao menos um campo para atualizar.")
-    vat_rate = data.pop("vat_rate", None)
-    if vat_rate is not None:
-        market_row = (await db.execute(select(ProductMarket).where(
-            ProductMarket.product_id == product.id,
-            ProductMarket.market_code == principal.code,
-        ))).scalar_one()
-        market_row.vat_rate = vat_rate
-        market_row.vat_status = VAT_APPROVED
-        market_row.vat_source = VAT_SOURCE_PROTOTYPE
-        market_row.approved_by_user_id = principal.user.id
-        market_row.approved_at = datetime.now(timezone.utc)
+    # O IVA não é mais do produto (taxa única do mercado): o campo antigo é ignorado.
+    data.pop("vat_rate", None)
     if "description_pt_pt" in data:
         data["description"] = data["description_pt_pt"]
     if data:

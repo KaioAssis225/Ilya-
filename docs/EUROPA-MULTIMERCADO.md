@@ -16,7 +16,7 @@ fechada:
 2. `markets.is_enabled=false` no banco;
 3. nenhum produto EU disponível;
 4. produto disponível sem Lojista, Corporativo, PVP e Arquiteto em EUR;
-5. produto disponível sem IVA explícito e aprovado nominalmente;
+5. taxa única de IVA do mercado EU não configurada (`markets.vat_rate`);
 6. cliente ou representante EU ativo sem país informado;
 7. produto EU referenciando catálogo, tipo, categoria ou opcional de BR.
 
@@ -58,8 +58,8 @@ Grupos de produto (`product_groups`) também são por mercado desde a revisão
 `eu_product_groups_r13_20261008` (decisão de 08/10/2026). No Brasil o grupo
 carrega o IPI e sua manutenção segue a guarda fiscal (admin BR) com evento de
 auditoria. Em Portugal o grupo só organiza o catálogo: o banco exige `ipi = 0`
-(`ck_product_groups_eu_sem_ipi`) e o pedido EU continua usando o IVA aprovado de
-`product_markets`, nunca o grupo. A FK composta
+(`ck_product_groups_eu_sem_ipi`) e o pedido EU usa a taxa única de IVA do mercado
+(`markets.vat_rate`), nunca o grupo. A FK composta
 `fk_product_types_group_same_market` impede tipo de um mercado em grupo do outro.
 
 A migration R6 classifica as dimensões legadas como BR para preservar o
@@ -69,24 +69,28 @@ catálogos, tipos, categorias, opcionais e produtos.
 
 ## IVA e importação EU
 
-`POST /api/v1/markets/EU/import` exige `vat_rate` em cada linha. Valor vazio,
-ausente ou fora de 0 a 100 rejeita o lote inteiro. A importação nunca lê IPI nem
-taxa de grupo e grava a decisão como `pending`.
+> **Atualização de 17/11/2026 — IVA único (ADR 0005).** O IVA de Portugal deixou
+> de ser por produto: é **uma taxa única do mercado** (`markets.vat_rate`,
+> inicial 23,00), aplicada **só no total** do orçamento/pedido, calculada uma vez
+> sobre o subtotal já com descontos (`round_half_up(subtotal × taxa / 100, 2)`).
+> As linhas EU saem sem IVA; o documento grava a taxa usada em `orders.vat_rate`
+> (snapshot: pedido finalizado nunca é recalculado; documento antigo, com
+> `vat_rate` nulo, mantém o IVA por linha). Quem altera a taxa: admin do mercado
+> EU (aba **IVA**, `PUT /api/v1/markets/EU/vat-rate`) ou `platform_admin`
+> (Plataforma, `.../platform`); cada mudança fica em `market_vat_rate_events`.
+> A aprovação de IVA por produto/grupo, o filtro "IVA pendente" e o campo de IVA
+> do protótipo foram removidos das telas; as colunas de `product_markets`
+> permanecem, sem uso. A ativação do mercado exige a taxa única configurada (e
+> não mais SKU com IVA aprovado).
 
-Uma taxa só pode entrar em pedido quando o vínculo `product_markets` contém:
+`POST /api/v1/markets/EU/import` não exige nem grava IVA: uma coluna `vat_rate`
+em planilhas antigas é ignorada e o IVA por produto já gravado fica intacto.
 
-- `vat_status = approved`;
-- `vat_rate` explícito, inclusive quando a taxa aprovada é zero;
-- `approved_by_user_id`;
-- `approved_at`.
-
-A aprovação exige `can_approve_tax` no vínculo EU do aprovador. Além da decisão
-por produto, quem tem essa permissão pode aplicar e aprovar uma taxa em todos os
-produtos dos subgrupos de um grupo EU (`PUT /api/v1/markets/EU/groups/{id}/vat`,
-botão Editar do grupo; decisão de 08/10/2026). Cada produto continua registrando
-quem aprovou e quando. Percentuais e a
-seleção final de itens são decisões manuais do responsável e não são inferidos
-pelo sistema.
+No regime anterior (histórico), uma taxa só podia entrar em pedido quando o
+vínculo `product_markets` continha `vat_status = approved`, `vat_rate` explícito,
+`approved_by_user_id` e `approved_at`; a aprovação exigia `can_approve_tax`, e
+quem tinha essa permissão podia aprovar uma taxa em lote por grupo (decisão de
+08/10/2026). Essas rotas de aprovação foram removidas.
 
 ## Pedidos, documentos e mídia
 
@@ -113,8 +117,8 @@ pelo sistema.
    `catalog_dimensions_r6_20261002`.
 4. Publicar o backend e o frontend compatíveis com o novo head.
 5. Provisionar a conta inicial de plataforma e confirmar login em `/platform`.
-6. Cadastrar manualmente dimensões, produtos, preços e IVA de Portugal.
-7. Aprovar individualmente o IVA e revisar o PDF de amostra.
+6. Cadastrar manualmente dimensões, produtos e preços de Portugal e conferir a taxa única de IVA.
+7. Revisar o PDF de amostra (o IVA aparece só no fecho).
 8. Executar a ativação EU; o endpoint revalida todas as travas persistidas.
 9. Habilitar `EUROPE_MARKET_ENABLED` e testar login, catálogo, orçamento, pedido,
    PDF e fotos em homologação antes de produção.

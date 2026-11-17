@@ -35,6 +35,40 @@ class Market(Base, TimestampMixin):
     locale: Mapped[str] = mapped_column(String(10), nullable=False)
     tax_label: Mapped[str] = mapped_column(String(10), nullable=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Taxa única de IVA do mercado EU, aplicada só no total do documento. BR não
+    # usa (IPI por grupo) e fica NULL; no EU, NULL bloqueia a emissão de pedidos.
+    vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "vat_rate IS NULL OR (vat_rate >= 0 AND vat_rate <= 100)",
+            name="ck_markets_vat_rate_range",
+        ),
+    )
+
+
+class MarketVatRateEvent(Base):
+    """Trilha imutável das mudanças da taxa única de IVA (quem, quando, de/para)."""
+
+    __tablename__ = "market_vat_rate_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    market_code: Mapped[str] = mapped_column(ForeignKey("markets.code"), nullable=False)
+    # Histórico sem FK: excluir a conta não apaga quem mudou a taxa.
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    old_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    new_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("market_code = 'EU'", name="ck_market_vat_rate_events_eu_only"),
+        CheckConstraint(
+            "new_rate >= 0 AND new_rate <= 100", name="ck_market_vat_rate_events_new_range"
+        ),
+        Index("ix_market_vat_rate_events_market_created", "market_code", "created_at"),
+    )
 
 
 class UserMarket(Base, TimestampMixin):

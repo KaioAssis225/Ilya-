@@ -26,7 +26,6 @@ import type { OptionalApplicationInput, Product } from '../types'
 const PAGE_SIZE = 24
 const NO_TYPE = 'Outro'
 const EU_GREEN = '#2f7d5b'
-const DEFAULT_VAT = '23'
 // Mesmo teto do servidor (MAX_UPLOAD_SIZE_MB); o servidor decide, aqui só se evita envio inútil.
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -45,7 +44,6 @@ interface FormState {
   price_corporativo: string
   price_pvp: string
   price_arquiteto: string
-  vat_rate: string
   observacao: string
   optional_applications: OptionalApplicationInput[]
 }
@@ -54,7 +52,7 @@ const EMPTY_FORM: FormState = {
   description_pt_pt: '', description_en: '', summary: '', type: NO_TYPE, catalog_id: '',
   is_circular: false, altura: '', largura: '', profundidade: '0',
   price_lojista: '0', price_corporativo: '0', price_pvp: '0', price_arquiteto: '0',
-  vat_rate: DEFAULT_VAT, observacao: '', optional_applications: [],
+  observacao: '', optional_applications: [],
 }
 
 const asText = (value: number | string | null | undefined, fallback = '') =>
@@ -90,7 +88,6 @@ function formOf(prototype: Product): FormState {
     price_corporativo: asText(prices.corporativo, '0'),
     price_pvp: asText(prices.pvp, '0'),
     price_arquiteto: asText(prices.arquiteto, '0'),
-    vat_rate: asText(prototype.vat_rate, DEFAULT_VAT),
     observacao: prototype.observacao ?? '',
     optional_applications: applicationsOf(prototype),
   }
@@ -111,7 +108,6 @@ function payloadOf(form: FormState): PrototypeInput {
     price_corporativo: Number(form.price_corporativo || 0),
     price_pvp: Number(form.price_pvp || 0),
     price_arquiteto: Number(form.price_arquiteto || 0),
-    vat_rate: Number(form.vat_rate),
     observacao: form.observacao.trim() || null,
     optional_applications: form.optional_applications.map(app => ({
       ...app,
@@ -125,8 +121,6 @@ function formError(form: FormState): string | null {
   if (!form.description_pt_pt.trim() || !form.description_en.trim()) return 'Informe o nome em português e em inglês.'
   if (!form.catalog_id) return 'Escolha o catálogo.'
   if (form.altura === '' || form.largura === '') return 'Informe altura e largura (em metros).'
-  const vat = Number(form.vat_rate)
-  if (form.vat_rate === '' || Number.isNaN(vat) || vat < 0 || vat > 100) return 'IVA deve estar entre 0 e 100.'
   if (form.optional_applications.some(app => !app.name.trim())) return 'Dê um nome a cada aplicação de opcional.'
   return null
 }
@@ -384,12 +378,11 @@ function PrototypeForm({ initial, onClose }: { initial: Product | null; onClose:
       </fieldset>
 
       <fieldset className="grid gap-3 sm:grid-cols-5">
-        <legend className="mb-1 text-xs font-semibold text-ink">Preços (EUR) e IVA</legend>
+        <legend className="mb-1 text-xs font-semibold text-ink">Preços (EUR)</legend>
         {field('price_lojista', 'Lojista', { type: 'number', step: '0.01', min: 0 })}
         {field('price_corporativo', 'Corporativo', { type: 'number', step: '0.01', min: 0 })}
         {field('price_pvp', 'PVP', { type: 'number', step: '0.01', min: 0 })}
         {field('price_arquiteto', 'Arquiteto', { type: 'number', step: '0.01', min: 0 })}
-        {field('vat_rate', 'IVA (%)', { type: 'number', step: '0.01', min: 0, max: 100, required: true })}
       </fieldset>
 
       <label className="block text-xs text-muted">Observação

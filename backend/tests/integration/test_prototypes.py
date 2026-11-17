@@ -280,13 +280,14 @@ async def test_listar_busca_ordena_e_pagina(client: AsyncClient, db_session: Asy
     assert page.headers["X-Has-More"] == "true"
 
 
-async def test_editar_preco_iva_e_nomes(client: AsyncClient, db_session: AsyncSession):
+async def test_editar_preco_e_nomes_sem_iva_proprio(client: AsyncClient, db_session: AsyncSession):
     w = await _world(db_session)
     created = await _create(client, w)
     headers = _auth(w.james, "vendedor")
+    # O IVA não é do protótipo: o campo antigo é aceito e ignorado; vale a taxa única do mercado.
     only_vat = await client.patch(f"{PROTOTYPES}/{created['id']}", json={"vat_rate": "6.00"}, headers=headers)
     assert only_vat.status_code == 200, only_vat.text
-    assert only_vat.json()["vat_rate"] == "6.00"
+    assert only_vat.json()["vat_rate"] == "23.00"
     changed = await client.patch(
         f"{PROTOTYPES}/{created['id']}",
         json={"price_pvp": "1700.00", "description_pt_pt": "Poltrona v2", "largura": "0.72"},
@@ -297,7 +298,7 @@ async def test_editar_preco_iva_e_nomes(client: AsyncClient, db_session: AsyncSe
     assert body["market_prices"]["pvp"] == "1700.00"
     assert body["description_pt_pt"] == "Poltrona v2" and body["description"] == "Poltrona v2"
     assert body["largura"] == "0.72"
-    assert body["vat_rate"] == "6.00"
+    assert body["vat_rate"] == "23.00"
     assert body["product_code"] == created["product_code"] and body["is_prototype"] is True
     for bad in ({"vat_rate": "101"}, {"vat_rate": None}, {"catalog_id": None}, {"product_code": "X"}, {}):
         assert (await client.patch(f"{PROTOTYPES}/{created['id']}", json=bad, headers=headers)).status_code == 422, bad

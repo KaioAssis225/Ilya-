@@ -6,6 +6,7 @@ admin/vendedor/produtos. O admin enxerga e opera os protótipos de TODOS; quem f
 liberado, só os próprios. BR nunca. PostgreSQL real, dados sintéticos.
 """
 import uuid
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -195,7 +196,9 @@ async def test_admin_usa_protótipo_de_outro_no_orcamento_edita_e_gera_o_pdf(cli
     created = await _quote(client, w.admin, eu_client, proto["product_code"], role="admin")
     assert created.status_code == 201, created.text
     item = created.json()["items"][0]
-    assert item["product_code"] == proto["product_code"] and str(item["ipi_rate"]) in ("6.00", "6")
+    # A linha do protótipo não leva IVA: vale a taxa única, aplicada no total.
+    assert item["product_code"] == proto["product_code"] and Decimal(str(item["ipi_rate"])) == 0
+    assert Decimal(str(created.json()["vat_rate"])) == Decimal("23.00")
     order_id = created.json()["id"]
 
     batch = await client.post(f"{PRODUCTS}/batch", json={"product_codes": [proto["product_code"]]}, headers=admin)

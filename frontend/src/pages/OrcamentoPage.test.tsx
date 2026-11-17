@@ -839,7 +839,7 @@ describe('OrcamentoPage', () => {
 
   it('orçamento EU oculta o IVA por item e só o mostra no fecho (Subtotal → IVA → Total)', async () => {
     const user = productTestUser('admin', 'EU')
-    const product = buildProduct('EU', { optional_applications: [], vat_rate: '23.00' })
+    const product = buildProduct('EU', { optional_applications: [] })
     localStorage.setItem(
       cartStorageKey(user.id, 'EU'),
       JSON.stringify([{
@@ -853,6 +853,10 @@ describe('OrcamentoPage', () => {
     )
     writeCartPriceList(user.id, 'EU', 'arquiteto')
     installOrcamentoHandlers([product])
+    // IVA único do mercado (não é mais do produto): a prévia usa a taxa do servidor.
+    server.use(http.get('*/markets/EU/vat-rate', () => HttpResponse.json({
+      market: 'EU', vat_rate: '23.00', can_edit: false, history: [],
+    })))
 
     renderProductPage(<OrcamentoPage />, user)
 
@@ -862,9 +866,11 @@ describe('OrcamentoPage', () => {
     // A linha mostra o valor sem IVA; o imposto não é embutido item a item.
     expect(item.textContent).toContain(eur(80))
     expect(item.textContent).not.toContain(eur(80 * 1.23))
+    await waitFor(() => {
+      expect(screen.getByText('Total do Orçamento:').parentElement?.textContent).toContain(`IVA (23%): ${eur(80 * 0.23)}`)
+    })
     const summary = screen.getByText('Total do Orçamento:').parentElement?.textContent
     expect(summary).toContain(`Subtotal: ${eur(80)}`)
-    expect(summary).toContain(`IVA: ${eur(80 * 0.23)}`)
     expect(summary).toContain(eur(80 * 1.23))
   })
 

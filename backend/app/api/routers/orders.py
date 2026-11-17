@@ -46,7 +46,8 @@ from app.models.optional_color import OptionalColor, product_optionals
 from app.models.optional_application import ProductOptionalApplication, OrderItemOptionalChoice
 from app.models.product_type import ProductType
 from app.models.user import User, UserRole
-from app.models.market import ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric, VAT_APPROVED
+from app.models.market import ProductMarket, ProductPrice, PriceList, ProductSuppliedFabric
+from app.core.eu_vat import load_eu_vat_rate, total_vat
 from app.core.markets import MarketPrincipal, require_launch_country
 from app.core.supplied_fabric import (
     SUPPLIED_FABRIC_CATEGORY,
@@ -841,55 +842,6 @@ def _edit_line_max_discount(
     return _decimal(max_discount)
 
 
-def _resolve_eu_vat(
-    product_code: str,
-    vat_rate: Decimal | None,
-    vat_status: str | None,
-    group_rate: Decimal | None = None,
-) -> Decimal:
-    """Usa a taxa do SKU ou a taxa aprovada e uniforme de seu grupo EU."""
-    if vat_status == VAT_APPROVED and vat_rate is not None:
-        return _decimal(vat_rate)
-    if group_rate is not None:
-        return _decimal(group_rate)
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail=f"Produto '{product_code}' não possui IVA aprovado no produto ou no grupo europeu.",
-    )
-
-
-async def _load_eu_group_vat_rates(
-    db: AsyncSession, type_map: dict[str, ProductType]
-) -> dict[uuid.UUID, Decimal]:
-    """Taxa de grupo inferida apenas se os produtos aprovados concordarem."""
-    group_ids = {type_.group_id for type_ in type_map.values() if type_.group_id}
-    if not group_ids:
-        return {}
-    type_key = lambda col: func.regexp_replace(func.lower(func.btrim(col)), "s$", "")
-    rows = (await db.execute(
-        select(ProductType.group_id, ProductMarket.vat_rate)
-        .select_from(ProductType)
-        .join(Product, and_(
-            Product.market_code == "EU",
-            Product.is_active.is_(True),
-            type_key(Product.type) == type_key(ProductType.name),
-        ))
-        .join(ProductMarket, and_(
-            ProductMarket.product_id == Product.id,
-            ProductMarket.market_code == "EU",
-            ProductMarket.is_available.is_(True),
-            ProductMarket.vat_status == VAT_APPROVED,
-            ProductMarket.vat_rate.is_not(None),
-        ))
-        .where(ProductType.market_code == "EU", ProductType.group_id.in_(group_ids))
-        .distinct()
-    )).all()
-    rates: dict[uuid.UUID, set[Decimal]] = {}
-    for group_id, rate in rows:
-        rates.setdefault(group_id, set()).add(_decimal(rate))
-    return {group_id: next(iter(values)) for group_id, values in rates.items() if len(values) == 1}
-
-
 def _resolve_br_ipi(product_code: str, product_type: ProductType | None) -> Decimal:
     """IPI faturável do Brasil, com a mesma recusa que o EU já tinha.
 
@@ -1463,8 +1415,6 @@ async def _create_order_core(
     product_market_rows = (await db.execute(
         select(
             ProductMarket.product_id,
-            ProductMarket.vat_rate,
-            ProductMarket.vat_status,
             ProductMarket.description_pt_pt,
             ProductMarket.description_en,
         ).where(
@@ -1472,10 +1422,6 @@ async def _create_order_core(
             ProductMarket.product_id.in_(product_ids),
         )
     )).all()
-    product_vat = {
-        row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
-    }
-    group_vat = await _load_eu_group_vat_rates(db, type_map) if market_code == "EU" else {}
     localized_descriptions = {
         row.product_id: (row.description_pt_pt, row.description_en)
         for row in product_market_rows
@@ -1534,16 +1480,8 @@ async def _create_order_core(
             )
             base_price = supplied_fabric.unit_price if supplied_fabric else price_map[product.id]
             product_type = type_map.get(product.type)
-            if market_code == "EU":
-                vat_rate, vat_status = product_vat.get(product.id, (None, None))
-                ipi_rate = _resolve_eu_vat(
-                    product.product_code, vat_rate, vat_status,
-                    group_vat.get(product_type.group_id) if product_type else None,
-                )
-            else:
-                ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-            if vat_exempt:
-                ipi_rate = _ZERO
+            # EU: a linha não leva IVA (cobrado uma vez no total, abaixo). BR: IPI do grupo.
+            ipi_rate = _ZERO if market_code == "EU" else _resolve_br_ipi(product.product_code, product_type)
             qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, source_items.get(item_in.source_order_item_id)
             )
@@ -1623,6 +1561,12 @@ async def _create_order_core(
     )
     total = _money(total)
     total_ipi = _money(total_ipi)
+    order_vat_rate: Decimal | None = None
+    if market_code == "EU":
+        # IVA único: um só cálculo sobre o subtotal já com descontos (arredondado
+        # na base total). Isento zera o IVA, mas o documento guarda a taxa vigente.
+        order_vat_rate = await load_eu_vat_rate(db)
+        total_ipi = total_vat(total, order_vat_rate, exempt=vat_exempt)
     total_with_ipi = _money(total + total_ipi)
     _ensure_total_capacity(total, total_ipi, total_with_ipi)
     code, orc_id, order_number = await _next_codes(db, current_user.id, market_code)
@@ -1643,6 +1587,7 @@ async def _create_order_core(
         total_value=total,
         total_ipi=total_ipi,
         total_with_ipi=total_with_ipi,
+        vat_rate=order_vat_rate,
         vat_exempt=vat_exempt,
         vat_exemption_code=vat_exemption_code,
         notes=payload.notes,
@@ -2237,18 +2182,12 @@ async def update_order(
         ))).all())
         product_market_rows = (await db.execute(select(
             ProductMarket.product_id,
-            ProductMarket.vat_rate,
-            ProductMarket.vat_status,
             ProductMarket.description_pt_pt,
             ProductMarket.description_en,
         ).where(
             ProductMarket.market_code == order.market_code,
             ProductMarket.product_id.in_(product_ids),
         ))).all()
-        product_vat = {
-            row.product_id: (row.vat_rate, row.vat_status) for row in product_market_rows
-        }
-        group_vat = await _load_eu_group_vat_rates(db, type_map) if order.market_code == "EU" else {}
         localized_descriptions = {
             row.product_id: (row.description_pt_pt, row.description_en)
             for row in product_market_rows
@@ -2296,16 +2235,8 @@ async def update_order(
             )
             base_price = supplied_fabric.unit_price if supplied_fabric else price_map[product.id]
             product_type = type_map.get(product.type)
-            if order.market_code == "EU":
-                vat_rate, vat_status = product_vat.get(product.id, (None, None))
-                ipi_rate = _resolve_eu_vat(
-                    product.product_code, vat_rate, vat_status,
-                    group_vat.get(product_type.group_id) if product_type else None,
-                )
-            else:
-                ipi_rate = _resolve_br_ipi(product.product_code, product_type)
-            if vat_exempt:
-                ipi_rate = _ZERO
+            # EU: a linha não leva IVA (cobrado uma vez no total, abaixo). BR: IPI do grupo.
+            ipi_rate = _ZERO if order.market_code == "EU" else _resolve_br_ipi(product.product_code, product_type)
             qty, sold_by_area, width_m, depth_m, area_pieces = _resolve_item_measurement(
                 product, item_in, old_item_map.get(item_in.source_order_item_id)
             )
@@ -2411,6 +2342,10 @@ async def update_order(
 
         total = _money(total)
         total_ipi = _money(total_ipi)
+        if order.market_code == "EU":
+            # Recalcular passa o orçamento aberto para a taxa única vigente.
+            order.vat_rate = await load_eu_vat_rate(db)
+            total_ipi = total_vat(total, order.vat_rate, exempt=vat_exempt)
         total_with_ipi = _money(total + total_ipi)
         _ensure_total_capacity(total, total_ipi, total_with_ipi)
         old_total = _decimal(order.total_value)

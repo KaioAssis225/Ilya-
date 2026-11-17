@@ -39,6 +39,11 @@ class Order(Base, TimestampMixin):
     # documento (PDF/Moloni) sai com o código do motivo de isenção.
     vat_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     vat_exemption_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Taxa única de IVA (EU) gravada no documento: snapshot que a mudança da taxa
+    # do mercado nunca altera. NULL = documento anterior à taxa única (IVA por
+    # linha, nunca recalculado) ou pedido do BR. Com isenção, guarda a taxa
+    # configurada e `total_ipi` fica zero.
+    vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
     is_finalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -101,6 +106,10 @@ class Order(Base, TimestampMixin):
             "(vat_exempt AND vat_exemption_code IS NOT NULL AND market_code = 'EU') "
             "OR (NOT vat_exempt AND vat_exemption_code IS NULL)",
             name="ck_orders_vat_exemption_consistent",
+        ),
+        CheckConstraint(
+            "vat_rate IS NULL OR (vat_rate >= 0 AND vat_rate <= 100)",
+            name="ck_orders_vat_rate_range",
         ),
         CheckConstraint(
             "order_number > 0",
