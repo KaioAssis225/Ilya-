@@ -18,7 +18,6 @@ import { useNavigate } from 'react-router'
 import { useAuth } from '../hooks/useAuth'
 import { useLocale } from '../hooks/useLocale'
 import { useOptionalsForCategories } from '../hooks/useOptionals'
-import { useOrders } from '../hooks/useOrders'
 import { useProductsByCodes } from '../hooks/useProducts'
 import {
   type ShowroomBox,
@@ -82,15 +81,14 @@ const TEXT = {
     confirmRemove: (code: string) => `Remover ${code} desta box?`,
     requiredPending: (count: number) => `${count} opcional(is) obrigatório(s) sem escolha: o item será guardado como pendente.`,
     updateError: 'Não foi possível alterar a quantidade.',
-    transfer: 'Transferência', transferTitle: 'Transferir peças', transferHelp: 'A quantidade sai desta box e entra no destino escolhido.',
+    transfer: 'Transferência', transferTitle: 'Transferir peças', transferHelp: 'A quantidade sai deste armazém e entra no destino escolhido.',
     transferProduct: 'Produto', transferQuantity: 'Quantidade a transferir',
-    transferMax: (count: number) => `Máximo: ${count} (saldo da box)`,
-    transferTo: 'Destino', toBox: 'Outra box', toOrder: 'Orçamento existente', toNewOrder: 'Novo orçamento',
-    destBox: 'Box de destino', destOrder: 'Orçamento em aberto', newOrderHelp: 'A peça vai para a aba Novo orçamento, com produto, opcionais e quantidade já preenchidos. O saldo só baixa do estoque quando você salvar o orçamento; se desistir, nada sai da box.', goNewOrder: 'Levar para Novo orçamento',
-    chooseOne: 'Escolha...', noOtherBoxes: 'Não há outra box. Crie uma antes de transferir.',
-    noOpenOrders: 'Nenhum orçamento em aberto. Orçamentos já realizados ou cancelados não aparecem.',
+    transferMax: (count: number) => `Máximo: ${count} (saldo do armazém)`,
+    transferTo: 'Destino', toBox: 'Outro armazém', toNewOrder: 'Novo orçamento',
+    destBox: 'Armazém de destino', newOrderHelp: 'A peça vai para a aba Novo orçamento, com produto, opcionais e quantidade já preenchidos. O saldo só baixa do estoque quando você salvar o orçamento; se desistir, nada sai do armazém.', goNewOrder: 'Levar para Novo orçamento',
+    chooseOne: 'Escolha...', noOtherBoxes: 'Não há outro armazém. Crie um antes de transferir.',
     doTransfer: 'Transferir', transferring: 'Transferindo...', transferError: 'Não foi possível transferir.',
-    transferNeedsItems: 'Adicione produtos à box para transferir.',
+    transferNeedsItems: 'Adicione produtos ao armazém para transferir.',
     transferDone: (quantity: number, code: string, where: string) => `${quantity} x ${code} transferido(s) para ${where}.`,
     recentTransfers: 'Transferências recentes', noTransfers: 'Nenhuma transferência ainda.',
     orderWord: 'Orçamento',
@@ -123,15 +121,14 @@ const TEXT = {
     confirmRemove: (code: string) => `Remove ${code} from this box?`,
     requiredPending: (count: number) => `${count} required finish(es) not chosen: the item will be saved as pending.`,
     updateError: 'The quantity could not be changed.',
-    transfer: 'Transfer', transferTitle: 'Transfer pieces', transferHelp: 'The quantity leaves this box and enters the chosen destination.',
+    transfer: 'Transfer', transferTitle: 'Transfer pieces', transferHelp: 'The quantity leaves this warehouse and enters the chosen destination.',
     transferProduct: 'Product', transferQuantity: 'Quantity to transfer',
-    transferMax: (count: number) => `Maximum: ${count} (box balance)`,
-    transferTo: 'Destination', toBox: 'Another box', toOrder: 'Existing quote', toNewOrder: 'New quote',
-    destBox: 'Destination box', destOrder: 'Open quote', newOrderHelp: 'The piece goes to the New quote tab with product, finishes and quantity filled in. Stock is only deducted when you save the quote; if you give up, nothing leaves the box.', goNewOrder: 'Take to New quote',
-    chooseOne: 'Choose...', noOtherBoxes: 'There is no other box. Create one before transferring.',
-    noOpenOrders: 'No open quotes. Finalised or cancelled quotes are not listed.',
+    transferMax: (count: number) => `Maximum: ${count} (warehouse balance)`,
+    transferTo: 'Destination', toBox: 'Another warehouse', toNewOrder: 'New quote',
+    destBox: 'Destination warehouse', newOrderHelp: 'The piece goes to the New quote tab with product, finishes and quantity filled in. Stock is only deducted when you save the quote; if you give up, nothing leaves the warehouse.', goNewOrder: 'Take to New quote',
+    chooseOne: 'Choose...', noOtherBoxes: 'There is no other warehouse. Create one before transferring.',
     doTransfer: 'Transfer', transferring: 'Transferring...', transferError: 'The transfer could not be completed.',
-    transferNeedsItems: 'Add products to the box to transfer.',
+    transferNeedsItems: 'Add products to the warehouse to transfer.',
     transferDone: (quantity: number, code: string, where: string) => `${quantity} x ${code} transferred to ${where}.`,
     recentTransfers: 'Recent transfers', noTransfers: 'No transfers yet.',
     orderWord: 'Quote',
@@ -473,7 +470,7 @@ function itemLabel(item: ShowroomItem, english: boolean) {
   return `${item.product_code} - ${item.description}${choices.length ? ` (${choices.join('; ')})` : ''} - ${item.quantity}`
 }
 
-type TransferMode = 'box' | 'order' | 'new_order'
+type TransferMode = 'box' | 'new_order'
 
 function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; boxes: ShowroomBox[]; onClose: () => void; onDone: (message: string) => void }) {
   const { locale } = useLocale()
@@ -485,17 +482,14 @@ function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; box
   const otherBoxes = boxes.filter(candidate => candidate.id !== box.id)
   const [itemId, setItemId] = useState(box.items[0]?.item_id ?? '')
   const [quantityText, setQuantityText] = useState('1')
-  const [mode, setMode] = useState<TransferMode>(otherBoxes.length > 0 ? 'box' : 'order')
+  const [mode, setMode] = useState<TransferMode>(otherBoxes.length > 0 ? 'box' : 'new_order')
   const [destinationBoxId, setDestinationBoxId] = useState('')
-  const [orderId, setOrderId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const item = box.items.find(candidate => candidate.item_id === itemId)
   const quantity = Math.floor(Number(quantityText))
   const overBalance = Boolean(item) && quantity > (item?.quantity ?? 0)
   const validQuantity = Number.isInteger(quantity) && quantity >= 1 && !overBalance
-  const ordersQuery = useOrders({ status: 'in_progress', limit: 100 })
-  const openOrders = (ordersQuery.data?.items ?? []).filter(order => !order.is_cancelled && !order.is_finalized)
-  const destinationReady = mode === 'box' ? Boolean(destinationBoxId) : mode === 'order' ? Boolean(orderId) : true
+  const destinationReady = mode === 'box' ? Boolean(destinationBoxId) : true
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -509,23 +503,19 @@ function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; box
       navigate('/orcamentos')
       return
     }
-    const destination = mode === 'box'
-      ? { type: 'box' as const, box_id: destinationBoxId }
-      : { type: 'order' as const, order_id: orderId }
     try {
-      const result = await transfer.mutateAsync({ boxId: box.id, itemId: item.item_id, quantity, destination })
+      const result = await transfer.mutateAsync({
+        boxId: box.id, itemId: item.item_id, quantity, destination: { type: 'box', box_id: destinationBoxId },
+      })
       const done = result.transfer
-      const where = done.destination_type === 'box'
-        ? (done.destination_box_name ?? '')
-        : `${tx.orderWord.toLowerCase()} ${done.destination_order_code ?? ''}`.trim()
-      onDone(tx.transferDone(done.quantity, done.product_code, where))
+      onDone(tx.transferDone(done.quantity, done.product_code, done.destination_box_name ?? ''))
       onClose()
     } catch (requestError) {
       setError(errorDetail(requestError, tx.transferError))
     }
   }
 
-  const modes: Array<[TransferMode, string]> = [['box', tx.toBox], ['order', tx.toOrder], ['new_order', tx.toNewOrder]]
+  const modes: Array<[TransferMode, string]> = [['box', tx.toBox], ['new_order', tx.toNewOrder]]
   return (
     <div className="modal-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4" role="presentation">
       <form className="modal-panel flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="transfer-dialog-title">
@@ -550,7 +540,7 @@ function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; box
           </label>
           <fieldset>
             <legend className="type-label mb-2">{tx.transferTo}</legend>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {modes.map(([value, label]) => (
                 <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setError(null) }}
                   className={`min-h-11 rounded-xl border px-2 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/30 ${mode === value ? 'border-gold bg-gold/10 text-ink' : 'border-line bg-white text-ink-2 hover:border-gold/35'}`}>{label}</button>
@@ -564,15 +554,6 @@ function TransferDialog({ box, boxes, onClose, onDone }: { box: ShowroomBox; box
                 <option value="">{tx.chooseOne}</option>
                 {otherBoxes.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
               </select></label>)}
-          {mode === 'order' && (
-            <label className="flex flex-col gap-1.5"><span className="type-label">{tx.destOrder}</span>
-              <select className="input" aria-label={tx.destOrder} value={orderId} onChange={event => setOrderId(event.target.value)}>
-                <option value="">{tx.chooseOne}</option>
-                {openOrders.map(order => <option key={order.id} value={order.id}>{`${order.code} - ${order.client_name}`}</option>)}
-              </select>
-              {!ordersQuery.isLoading && openOrders.length === 0 && <span className="text-xs text-muted">{tx.noOpenOrders}</span>}
-            </label>
-          )}
           {mode === 'new_order' && <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-ink-2">{tx.newOrderHelp}</p>}
         </div>
         {error && <p role="alert" className="mx-4 mt-3 rounded-xl bg-terracotta/10 px-3 py-2 text-sm text-terracotta">{error}</p>}

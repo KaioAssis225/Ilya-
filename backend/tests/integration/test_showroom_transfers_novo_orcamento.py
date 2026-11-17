@@ -7,7 +7,8 @@ Contrato (PostgreSQL real, HTTP):
 * ao salvar o orçamento novo com ``showroom_source_item_id`` a quantidade da
   linha sai da box na mesma transação, e a transferência entra no histórico;
 * saldo insuficiente na hora de salvar recusa com mensagem clara e não cria nada;
-* orçamento já realizado (finalizado/em etapa) ou cancelado nunca recebe peça.
+* orçamento existente (em aberto, realizado ou cancelado) nunca recebe peça pela
+  transferência: o destino "order" é recusado com 422 e nada muda.
 
 Dados 100% sintéticos.
 """
@@ -194,8 +195,7 @@ async def test_orcamento_ja_realizado_nunca_recebe_transferencia(
         "destination": {"type": "order", "order_id": order_id},
     }, headers=headers)
 
-    assert response.status_code == 409
-    assert "já realizado" in response.json()["detail"]
+    assert response.status_code == 422
     assert await quantities(client, headers, box) == {s.product_code: 2}
     assert (await client.get(transfer_url(box), headers=headers)).json() == []
     finalized = (await client.get(f"/api/v1/orders/{order_id}", headers=headers)).json()

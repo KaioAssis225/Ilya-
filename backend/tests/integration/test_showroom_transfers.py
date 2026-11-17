@@ -1,12 +1,11 @@
-"""Transferência do Estoque EU: para outra box ou para um orçamento.
+"""Transferência do Estoque EU: só para outra box.
 
 Contrato (PostgreSQL real, HTTP):
 
 * a quantidade sai da origem e entra no destino na mesma transação; passar do
   saldo é 422 e nada muda;
 * duas transferências simultâneas do mesmo item nunca deixam saldo negativo;
-* para orçamento, a linha entra com o mesmo produto e os mesmos opcionais e o
-  servidor resolve preço, desconto e IVA como num item normal;
+* orçamento existente NÃO é destino: a API recusa (422) e nada muda;
 * quem não administra o Estoque (ou está em outro mercado) não enxerga a área.
 
 Dados 100% sintéticos.
@@ -174,75 +173,45 @@ async def allow_showrooms(db: AsyncSession, scenario: Scenario) -> None:
     await db.commit()
 
 
-async def test_transferencia_para_orcamento_existente_acrescenta_sem_perder_as_linhas(
+async def test_orcamento_existente_nao_e_destino_da_transferencia(
     client: AsyncClient, db_session: AsyncSession,
 ):
+    """Orçamento em aberto, cancelado ou inexistente: a API recusa o destino
+    "order" (422) e nem o orçamento nem o saldo da box mudam."""
     s = await _scenario(db_session, "EU")
     await allow_showrooms(db_session, s)
     headers = _auth(s.token)
-    created = await client.post("/api/v1/orders", json={
-        "client_id": str(s.client_id),
-        "items": [{
-            "product_code": s.product_code, "qty": 2,
-            "optional_choices": [_choice(s.app_feet, s.opt_taupe)],
-        }],
-    }, headers=headers)
-    assert created.status_code == 201, created.text
-    order_id = created.json()["id"]
-    box = await make_box(client, headers, "Origem")
-    product = await db_session.get(Product, s.product_id)
-    # Só um dos opcionais: opcional pendente é aceito no EU, como no orçamento.
-    await stock(client, headers, box, product, 2, choices=[
-        {"application_id": str(s.app_feet), "optional_id": str(s.opt_black)},
-    ])
-    item = (await client.get(BASE, headers=headers)).json()[0]["items"][0]
 
-    response = await client.post(transfer_url(box), json={
-        "item_id": item["item_id"], "quantity": 2,
-        "destination": {"type": "order", "order_id": order_id},
-    }, headers=headers)
+    async def new_quote() -> str:
+        created = await client.post("/api/v1/orders", json={
+            "client_id": str(s.client_id),
+            "items": [{
+                "product_code": s.product_code, "qty": 2,
+                "optional_choices": [_choice(s.app_feet, s.opt_taupe)],
+            }],
+        }, headers=headers)
+        assert created.status_code == 201, created.text
+        return created.json()["id"]
 
-    assert response.status_code == 201, response.text
-    assert response.json()["box"]["items"] == []
-    order = (await client.get(f"/api/v1/orders/{order_id}", headers=headers)).json()
-    colors = sorted(
-        (row["optional_choices"][0]["optional_id"], int(Decimal(str(row["qty"]))))
-        for row in order["items"]
-    )
-    assert colors == sorted([(str(s.opt_taupe), 2), (str(s.opt_black), 2)])
-    assert Decimal(order["total_value"]) == Decimal("400.00")
-    history = (await client.get(transfer_url(box), headers=headers)).json()
-    assert history[0]["destination_order_id"] == order_id
-
-
-async def test_orcamento_cancelado_nao_recebe_transferencia(
-    client: AsyncClient, db_session: AsyncSession,
-):
-    s = await _scenario(db_session, "EU")
-    await allow_showrooms(db_session, s)
-    headers = _auth(s.token)
-    created = await client.post("/api/v1/orders", json={
-        "client_id": str(s.client_id),
-        "items": [{
-            "product_code": s.product_code, "qty": 1,
-            "optional_choices": [_choice(s.app_feet, s.opt_taupe)],
-        }],
-    }, headers=headers)
-    order_id = created.json()["id"]
-    cancelled = await client.post(f"/api/v1/orders/{order_id}/cancel", json={}, headers=headers)
+    open_id, cancelled_id = await new_quote(), await new_quote()
+    cancelled = await client.post(f"/api/v1/orders/{cancelled_id}/cancel", json={}, headers=headers)
     assert cancelled.status_code == 200, cancelled.text
     box = await make_box(client, headers, "Origem")
     product = await db_session.get(Product, s.product_id)
-    await stock(client, headers, box, product, 1)
+    await stock(client, headers, box, product, 2)
     item = (await client.get(BASE, headers=headers)).json()[0]["items"][0]
 
-    response = await client.post(transfer_url(box), json={
-        "item_id": item["item_id"], "quantity": 1,
-        "destination": {"type": "order", "order_id": order_id},
-    }, headers=headers)
+    for order_id in (open_id, cancelled_id, str(uuid.uuid4())):
+        response = await client.post(transfer_url(box), json={
+            "item_id": item["item_id"], "quantity": 1,
+            "destination": {"type": "order", "order_id": order_id},
+        }, headers=headers)
+        assert response.status_code == 422, response.text
 
-    assert response.status_code == 409
-    assert await quantities(client, headers, box) == {s.product_code: 1}
+    assert await quantities(client, headers, box) == {s.product_code: 2}
+    assert (await client.get(transfer_url(box), headers=headers)).json() == []
+    untouched = (await client.get(f"/api/v1/orders/{open_id}", headers=headers)).json()
+    assert [int(Decimal(str(row["qty"]))) for row in untouched["items"]] == [2]
 
 
 async def test_duas_transferencias_simultaneas_nao_deixam_saldo_negativo():
