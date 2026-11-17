@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.client_invites import hash_invite_token
+from app.core.product_prices import load_price_lists, set_product_prices
 from app.core.security import create_access_token
 from app.models.client_access_invitation import ClientAccessInvitation
 from app.models.privacy_event import PrivacyEvent
@@ -144,6 +145,11 @@ async def test_sort01_client_cannot_sort_by_hidden_price_table(
         )
         product.price_corporativo = Decimal(corporativo)
         await make_product_market(db_session, product)
+        # O preço que vale para ordenar é o de `product_prices`.
+        await set_product_prices(
+            db_session, product.id, await load_price_lists(db_session, "BR"),
+            {"corporativo": Decimal(corporativo)},
+        )
     prices = await make_price_list(db_session, market_code="BR")
     own = await make_client(db_session, prices, market_code="BR")
     await _member(db_session, "sort01-cliente@ilya-test.invalid", UserRole.cliente, linked_client_id=own.id)

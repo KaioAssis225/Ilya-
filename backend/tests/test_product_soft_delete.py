@@ -90,10 +90,16 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
         db.add = MagicMock(side_effect=added.append)
         returned = SimpleNamespace(product_code="EU-ONLY-001")
 
-        with patch(
-            "app.api.routers.products._to_market_reads",
-            new_callable=AsyncMock,
-            return_value=[returned],
+        with (
+            patch(
+                "app.api.routers.products._to_market_reads",
+                new_callable=AsyncMock,
+                return_value=[returned],
+            ),
+            patch(
+                "app.api.routers.products.set_product_prices",
+                new_callable=AsyncMock,
+            ) as set_prices,
         ):
             result = await create_product(
                 ProductCreate(
@@ -118,7 +124,6 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
 
         availability = next(item for item in added if isinstance(item, ProductMarket))
         product = next(item for item in added if isinstance(item, Product))
-        prices = [item for item in added if isinstance(item, ProductPrice)]
         assert availability.market_code == "EU"
         assert availability.description_pt_pt == "CADEIRA ALBA"
         assert availability.description_en == "ALBA CHAIR"
@@ -126,7 +131,12 @@ def test_create_product_in_europe_creates_only_european_availability_and_prices(
             isinstance(item, ProductMarket) and item.market_code == "BR"
             for item in added
         )
-        assert {price.amount for price in prices} == {90, 100, 120, 150}
+        # Os preços não são mais gravados aqui: passam por `set_product_prices`,
+        # com as quatro listas EU e só elas.
+        assert not any(isinstance(item, ProductPrice) for item in added)
+        assert set_prices.await_args.args[3] == {
+            "lojista": 100, "corporativo": 90, "pvp": 150, "arquiteto": 120,
+        }
         assert product.product_code == "EU-ONLY-001"
         assert result is returned
         db.commit.assert_awaited_once()
@@ -234,16 +244,11 @@ def test_update_product_in_europe_changes_only_four_euro_prices():
             SimpleNamespace(id=uuid.uuid4(), code="pvp"),
             SimpleNamespace(id=uuid.uuid4(), code="arquiteto"),
         ]
-        stored_prices = [SimpleNamespace(amount=0) for _ in price_lists]
         product_result = _ScalarResult(product)
         lists_result = MagicMock()
         lists_result.scalars.return_value.all.return_value = price_lists
         db = AsyncMock()
-        db.execute.side_effect = [
-            product_result,
-            lists_result,
-            *[_ScalarResult(price) for price in stored_prices],
-        ]
+        db.execute.side_effect = [product_result, lists_result]
         returned = SimpleNamespace(id=product.id)
 
         with (
@@ -257,6 +262,10 @@ def test_update_product_in_europe_changes_only_four_euro_prices():
                 new_callable=AsyncMock,
                 return_value=[returned],
             ),
+            patch(
+                "app.api.routers.products.set_product_prices",
+                new_callable=AsyncMock,
+            ) as set_prices,
         ):
             result = await update_product(
                 product.id,
@@ -271,7 +280,10 @@ def test_update_product_in_europe_changes_only_four_euro_prices():
                 principal=EU_PRINCIPAL,
             )
 
-        assert [price.amount for price in stored_prices] == [100, 200, 300, 400]
+        # As quatro listas EU, e só elas, vão para `set_product_prices`.
+        assert set_prices.await_args.args[3] == {
+            "lojista": 100, "corporativo": 200, "pvp": 300, "arquiteto": 400,
+        }
         assert result is returned
         db.commit.assert_awaited_once()
 
