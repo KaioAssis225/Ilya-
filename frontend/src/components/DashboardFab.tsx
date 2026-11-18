@@ -54,10 +54,13 @@ export default function DashboardFab({
   mode,
   currentPath,
   shortcuts = ['dashboard'],
+  raised = false,
 }: {
   mode: 'enter' | 'exit'
   currentPath?: string
   shortcuts?: FabShortcut[]
+  // Ergue o botão acima da barra fixa do montador de orçamento (até lg).
+  raised?: boolean
 }) {
   const navigate = useNavigate()
   const menuId = useId()
@@ -174,7 +177,12 @@ export default function DashboardFab({
     <>
       {/* O invólucro fixo carrega o botão e o leque; os itens nascem do centro
           do botão e se afastam por transform. */}
-      <div ref={wrapperRef} className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-fab w-14 h-14">
+      <div
+        ref={wrapperRef}
+        className={`fixed right-4 md:right-6 z-fab w-14 h-14 ${
+          raised ? 'bottom-36 lg:bottom-6' : 'bottom-20 md:bottom-6'
+        }`}
+      >
         {/* Véu transparente: o toque fora do menu só fecha, não "vaza" para o
             que estiver embaixo. */}
         {open && <div data-testid="fab-scrim" aria-hidden="true" className="fixed inset-0 -z-10" />}

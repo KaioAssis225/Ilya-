@@ -155,7 +155,8 @@ describe('PrivateApp em DOM', () => {
     await screen.findByRole('heading', { name: 'Product catalogue', level: 1 })
     expect(screen.getAllByRole('link', { name: 'Order' })).toHaveLength(2)
     expect(screen.getAllByRole('link', { name: 'Quote' })).toHaveLength(2)
-    expect(screen.getAllByRole('link', { name: 'Stock' })).toHaveLength(2)
+    // Estoque do showroom não tem mais aba: só o botão redondo.
+    expect(screen.queryAllByRole('link', { name: 'Stock' })).toHaveLength(0)
   })
 
   it('/pedidos-finalizados abre a lista de pedidos e marca só a aba Pedido como ativa', async () => {
@@ -215,6 +216,32 @@ describe('PrivateApp em DOM', () => {
     it('quem só tem armazém (sem Dashboard) vê o botão levando direto ao Armazém', async () => {
       await openCatalog({ ...userFor('vendedor', 'EU'), can_manage_showrooms: true })
       expect(screen.getByRole('button', { name: 'Abrir Armazém' })).toBeInTheDocument()
+    })
+
+    it('Protótipos e Estoque não aparecem mais no menu de cima nem no de baixo (só no botão redondo)', async () => {
+      await openCatalog({ ...userFor('admin', 'EU'), can_manage_showrooms: true, can_manage_prototypes: true })
+      expect(screen.queryAllByRole('link', { name: 'Protótipos' })).toHaveLength(0)
+      expect(screen.queryAllByRole('link', { name: 'Estoque' })).toHaveLength(0)
+      await userEvent.click(screen.getByRole('button', { name: 'Atalhos rápidos' }))
+      expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Dashboard', 'Armazém', 'Protótipo'])
+    })
+
+    it('as rotas continuam abrindo pela URL para quem tem permissão', async () => {
+      mapRequests()
+      server.use(http.get('*/showrooms*', empty), http.get('*/prototypes*', empty))
+      renderPrivate({ ...userFor('vendedor', 'EU'), can_manage_prototypes: true }, '/prototipos')
+      expect(await screen.findByRole('button', { name: 'Abrir Protótipos' })).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Protótipos' })).not.toBeInTheDocument()
+    })
+
+    it('em Novo Orçamento o botão aparece para quem tem Armazém/Protótipo (único acesso) e não para quem só tem Dashboard', async () => {
+      mapRequests()
+      const first = renderPrivate({ ...userFor('vendedor', 'EU'), can_manage_showrooms: true }, '/orcamentos')
+      expect(await screen.findByRole('button', { name: 'Abrir Armazém' })).toBeInTheDocument()
+      first.unmount()
+      renderPrivate({ ...userFor('admin', 'BR') }, '/orcamentos')
+      await screen.findByRole('heading', { name: /Novo Orçamento/, level: 1 })
+      expect(screen.queryByRole('button', { name: /Abrir Dashboard BI|Atalhos rápidos/ })).not.toBeInTheDocument()
     })
 
     it('sem Dashboard, armazém nem protótipos não há botão flutuante', async () => {

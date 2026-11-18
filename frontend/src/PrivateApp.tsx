@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, Layers3, FlaskConical, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck, Warehouse, Percent } from 'lucide-react'
+import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck, Percent } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -112,11 +112,15 @@ function DashboardFabGate() {
   if (canSeeShowrooms(user)) shortcuts.push('armazem')
   if (canSeePrototypes(user)) shortcuts.push('prototipo')
   if (shortcuts.length === 0) return null
-  // No montador de orçamento o FAB pousava sobre o totalizador fixo do rodapé
-  // móvel: um toque no valor ejetava o representante para o BI.
-  if (location.pathname.startsWith('/orcamentos')) return null
   if (location.pathname.startsWith('/dashboard')) return canSeeDashboard(user) ? <DashboardFab mode="exit" /> : null
-  return <DashboardFab mode="enter" currentPath={location.pathname} shortcuts={shortcuts} />
+  // No montador de orçamento o FAB pousava sobre o totalizador fixo do rodapé
+  // móvel: um toque no valor ejetava o representante para o BI. Quem só tem o
+  // Dashboard continua sem o botão ali. Armazém e Protótipo não têm mais aba no
+  // topo — o botão é o único acesso —, então ele aparece nessa tela, erguido
+  // acima da barra do totalizador (a barra some a partir de lg).
+  const onQuote = location.pathname.startsWith('/orcamentos')
+  if (onQuote && !shortcuts.includes('armazem') && !shortcuts.includes('prototipo')) return null
+  return <DashboardFab mode="enter" currentPath={location.pathname} shortcuts={shortcuts} raised={onQuote} />
 }
 
 // ── BottomNav ─────────────────────────────────────────────────────────────────
@@ -144,18 +148,6 @@ function BottomNav() {
         <LayoutGrid className="w-5 h-5" />
         <span className="text-[11px] font-semibold uppercase tracking-wider">{t('products')}</span>
       </NavLink>
-      {canSeePrototypes(user) && (
-        <NavLink to="/prototipos" className={itemClass('/prototipos')} aria-label="Protótipos">
-          <FlaskConical className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Protótipos</span>
-        </NavLink>
-      )}
-      {canSeeShowrooms(user) && (
-        <NavLink to="/showrooms" className={itemClass('/showrooms')} aria-label={locale === 'en-GB' ? 'Stock' : 'Estoque'}>
-          <Warehouse className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">{locale === 'en-GB' ? 'Stock' : 'Estoque'}</span>
-        </NavLink>
-      )}
       {canSeeOptionals(user) && (
         <NavLink to="/opcionais" className={itemClass('/opcionais')} aria-label={t('optionals')}>
           <Layers3 className="w-5 h-5" />
@@ -263,8 +255,6 @@ function Nav() {
             <div className="hidden min-w-0 items-center gap-1 overflow-x-auto md:flex">
               {canSeeCadastros(user) && <NavLink to="/cadastros" className={linkClass} aria-label={t('registrations')}>{t('registrations')}</NavLink>}
               <NavLink to="/produtos" className={linkClass} aria-label={t('products')}>{t('products')}</NavLink>
-              {canSeePrototypes(user) && <NavLink to="/prototipos" className={linkClass} aria-label="Protótipos">Protótipos</NavLink>}
-              {canSeeShowrooms(user) && <NavLink to="/showrooms" className={linkClass} aria-label={locale === 'en-GB' ? 'Stock' : 'Estoque'}>{locale === 'en-GB' ? 'Stock' : 'Estoque'}</NavLink>}
               {canSeeOptionals(user) && <NavLink to="/opcionais" className={linkClass} aria-label={t('optionals')}>{t('optionals')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && (
               <NavLink to="/orcamentos" className={linkClass} aria-label={cartUnits > 0 ? `Novo Orçamento, ${cartUnits} itens` : 'Novo Orçamento'}>
