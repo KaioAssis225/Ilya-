@@ -14,6 +14,11 @@ export type EuVatRateView = {
   history: EuVatRateEvent[]
 }
 
+/** Só o admin do mercado europeu vê e altera a taxa na tela (o servidor confere de novo). */
+export function canManageEuVat(user: { active_market?: string | null; role?: string | null } | null | undefined): boolean {
+  return user?.active_market === 'EU' && user?.role === 'admin'
+}
+
 /** "23%" para 23.00 e "7,5%" para 7.50: sem zeros que não dizem nada. */
 export function formatRate(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—'

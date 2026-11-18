@@ -72,6 +72,18 @@ describe('PrivateApp em DOM', () => {
     },
   )
 
+  it('o IVA não está no menu de cima e o antigo /iva abre a aba IVA de Cadastros (admin EU)', async () => {
+    mapRequests()
+    server.use(http.get('*/markets/EU/vat-rate', () => HttpResponse.json({
+      market: 'EU', vat_rate: '23.00', can_edit: true, history: [],
+    })))
+    renderPrivate(userFor('admin', 'EU'), '/iva')
+
+    const current = await screen.findByTestId('eu-vat-current')
+    await waitFor(() => expect(current).toHaveTextContent('23%'))
+    expect(screen.queryByRole('link', { name: 'IVA' })).not.toBeInTheDocument()
+  })
+
   it.each(roles)("mostra a aba Opcionais apenas para o papel autorizado: %s", async role => {
     mapRequests()
     renderPrivate(userFor(role), '/produtos')
