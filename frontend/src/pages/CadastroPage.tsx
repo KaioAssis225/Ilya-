@@ -9,7 +9,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { isConjuntoType } from '../lib/productType'
 import { BR_PRODUCT_COLUMN_KEYS, EU_PRODUCT_COLUMN_KEYS, INITIAL_PRODUCT_COLUMN_WIDTHS, PRODUCT_COLUMN_MIN_WIDTHS, fittedProductColumnWidths, type ProductColumnKey } from '../lib/productColumns'
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2, Plus, X, Upload, ImageIcon, Package, Users, UserCheck, Tag, Eye, UserPlus, CheckCircle, LayoutGrid, Search, Columns3, RotateCcw, BookOpen, GripVertical, Percent } from 'lucide-react'
+import { useSearchParams } from 'react-router'
+import EuVatRatePanel from '../components/EuVatRatePanel'
+import { canManageEuVat } from '../lib/euVatRate'
 import { useProductsPage, useArticleCategories, useCreateProduct, useUpdateProduct, useDeleteProduct, useUploadProductPhoto, useDeleteProductPhoto, useSaveSuppliedFabric, useDeleteSuppliedFabric } from '../hooks/useProducts'
 import { SUPPLIED_FABRIC_CATEGORY } from '../lib/optionalApplications'
 import { SuppliedFabricSection } from '../components/SuppliedFabricSection'
@@ -41,7 +44,7 @@ import { PRODUCT_DIMENSION_LIMIT_MESSAGE, hasDimensionOverLimit } from '../lib/p
 import { withMarketProductNames } from '../lib/productPayload'
 import type { Product, ProductCreate, ProductSetComponentCreate, Client, ClientCreate, Representative, ViaCepResponse, OptionalColor, OptionalColorCreate } from '../types'
 
-type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao'
+type Tab = 'produtos' | 'clientes' | 'representantes' | 'opcionais' | 'tipos' | 'catalogos' | 'importacao' | 'iva'
 type SortDir = 'asc' | 'desc'
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -72,6 +75,7 @@ const TAB_PALETTE = {
   tipos:           { color: 'var(--color-muted)',      label: 'Neutro' },
   catalogos:       { color: 'var(--color-muted)',      label: 'Neutro' },
   importacao:      { color: 'var(--color-muted)',      label: 'Neutro' },
+  iva:             { color: 'var(--color-muted)',      label: 'Neutro' },
 } as const
 
 // Lavagem translúcida de um acento (substitui o antigo `${hex}12`, que não
@@ -3844,6 +3848,7 @@ const TAB_CONFIG: { key: Tab; label: string; Icon: React.ElementType }[] = [
   { key: 'tipos',          label: 'Grupos & Subgrupos', Icon: LayoutGrid  },
   { key: 'catalogos',      label: 'Catálogos',      Icon: BookOpen    },
   { key: 'importacao',     label: 'Importação CSV', Icon: Upload      },
+  { key: 'iva',            label: 'IVA',            Icon: Percent     },
 ]
 
 // ── Bloco 77: persistência de aba/páginas do Cadastro com TTL de 5 minutos ────
@@ -3912,6 +3917,8 @@ export default function CadastroPage() {
     if (isCliente) return false
     if (isRep) return t.key === 'clientes'
     if (t.key === 'importacao') return user?.role === 'admin' || user?.role === 'cadastros'
+    // IVA único de Portugal: só o admin do mercado EU (o servidor confere de novo).
+    if (t.key === 'iva') return canManageEuVat(user)
     return true
   })
 
@@ -3921,7 +3928,12 @@ export default function CadastroPage() {
   // depois disso, volta silenciosamente aos valores padrão.
   const [persisted] = useState(loadPersistedCadastroState)
   const allowedTabs = new Set(visibleTabs.map(t => t.key))
-  const initialTab = persisted?.tab && allowedTabs.has(persisted.tab) ? persisted.tab : defaultTab
+  // `/cadastros?aba=iva` (e o antigo `/iva`, que redireciona para cá) abre a aba do IVA.
+  const [searchParams] = useSearchParams()
+  const requestedTab: Tab | null = searchParams.get('aba') === 'iva' ? 'iva' : null
+  const initialTab = requestedTab && allowedTabs.has(requestedTab)
+    ? requestedTab
+    : persisted?.tab && allowedTabs.has(persisted.tab) ? persisted.tab : defaultTab
   const [tab, setTab] = useState<Tab>(initialTab)
 
   // Estados de página isolados por tabela (Bloco 64) — persistem entre trocas de aba
@@ -3978,6 +3990,7 @@ export default function CadastroPage() {
     tipos:          productGroups?.length ?? 0,
     catalogos:      catalogsCount?.length ?? 0,
     importacao:     0,
+    iva:            0,
   }
 
   const activeColor = TAB_PALETTE[tab].color
@@ -4011,7 +4024,7 @@ export default function CadastroPage() {
               >
                 <Icon className="w-3.5 h-3.5" />
                 {label}
-                <span
+                {key !== 'iva' && <span
                   className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                   style={isActive
                     ? { backgroundColor: 'rgba(255,255,255,0.3)', color: 'white' }
@@ -4019,7 +4032,7 @@ export default function CadastroPage() {
                   }
                 >
                   {counts[key]}
-                </span>
+                </span>}
               </button>
             )
           })}
@@ -4070,7 +4083,7 @@ export default function CadastroPage() {
                     >
                       <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color } : { color: 'var(--color-muted)' }} />
                       <span className={isSidebarCollapsed ? 'sr-only' : 'flex-1'} style={isActive ? {} : { color: 'var(--color-ink-3)' }}>{label}</span>
-                      <span
+                      {key !== 'iva' && <span
                         className={isSidebarCollapsed
                           ? 'absolute -right-1 -top-1 min-w-[20px] rounded-full px-1 py-0.5 text-center text-xs font-semibold'
                           : 'min-w-[22px] rounded-full px-1.5 py-0.5 text-center text-xs font-semibold'}
@@ -4079,7 +4092,7 @@ export default function CadastroPage() {
                           : { backgroundColor: 'var(--color-bg-2)', color: 'var(--color-muted)' }}
                       >
                         {count}
-                      </span>
+                      </span>}
                     </button>
                   )
                 })}
@@ -4123,6 +4136,8 @@ export default function CadastroPage() {
             {tab === 'tipos' && <GroupsTab color={TAB_PALETTE.tipos.color} page={groupPage} onPage={setGroupPage} canEditGroups={activeMarket === 'EU' ? canEditTypes : canEditFiscal} canEditTypes={canEditTypes} market={activeMarket} />}
 
             {tab === 'catalogos' && <CatalogsTab color={TAB_PALETTE.catalogos.color} readOnly={isLimited} />}
+
+            {tab === 'iva' && <EuVatRatePanel scope="market" />}
 
             {tab === 'importacao' && <ImportTab color={TAB_PALETTE.importacao.color} canEditFiscal={canEditFiscal} market={activeMarket} />}
           </section>

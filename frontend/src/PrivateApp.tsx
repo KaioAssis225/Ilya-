@@ -2,7 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck, Percent } from 'lucide-react'
+import { LayoutGrid, Layers3, ShoppingCart, ClipboardList, PackageCheck, Users, LogOut, Bell, ShieldCheck } from 'lucide-react'
 import type { AuthUser } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { useNotifications, useMarkNotificationRead } from './hooks/useNotifications'
@@ -31,7 +31,6 @@ const TrocarSenhaPage = lazy(() => import('./pages/TrocarSenhaPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PrototiposPage = lazy(() => import('./pages/PrototiposPage'))
 const ShowroomsPage = lazy(() => import('./pages/ShowroomsPage'))
-const IvaPage = lazy(() => import('./pages/IvaPage'))
 
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
@@ -75,11 +74,6 @@ function canSeeShowrooms(user: AuthUser) {
 
 function canSeeAdmin(user: AuthUser) {
   return user.role === 'admin'
-}
-
-// Aba "IVA": a taxa única de Portugal. Só o admin do mercado europeu (o servidor confere de novo).
-function canSeeVat(user: AuthUser) {
-  return user.active_market === 'EU' && user.role === 'admin'
 }
 
 function defaultRoute(user: AuthUser) {
@@ -128,7 +122,7 @@ function DashboardFabGate() {
 function BottomNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
-  const { locale, t } = useLocale()
+  const { t } = useLocale()
   // Antes dos `return null` abaixo: hook não pode ficar após saída condicional.
   const cartUnits = countCartUnits(useCartQuantities(user?.id, user?.active_market))
   if (!user || user.must_change_password) return null
@@ -197,12 +191,6 @@ function BottomNav() {
           <span className="text-[11px] font-semibold uppercase tracking-wider">{t('admin')}</span>
         </NavLink>
       )}
-      {canSeeVat(user) && (
-        <NavLink to="/iva" className={itemClass('/iva')} aria-label={locale === 'en-GB' ? 'VAT' : 'IVA'}>
-          <Percent className="w-5 h-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">{locale === 'en-GB' ? 'VAT' : 'IVA'}</span>
-        </NavLink>
-      )}
       <StockLink variant="mobile" />
       <button
         type="button"
@@ -269,7 +257,6 @@ function Nav() {
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos" className={linkClass} aria-label={t('orders')}>{t('orders')}</NavLink>}
               {canSeeOrcamentoPedidos(user) && <NavLink to="/pedidos-finalizados" className={linkClass} aria-label={t('placedOrders')}>{t('placedOrders')}</NavLink>}
               {canSeeAdmin(user) && <NavLink to="/admin" className={linkClass} aria-label={t('admin')}>{t('admin')}</NavLink>}
-              {canSeeVat(user) && <NavLink to="/iva" className={linkClass} aria-label={locale === 'en-GB' ? 'VAT' : 'IVA'}>{locale === 'en-GB' ? 'VAT' : 'IVA'}</NavLink>}
               <StockLink variant="desktop" className="nav-link shrink-0" />
             </div>
           )}
@@ -455,14 +442,8 @@ export default function PrivateApp() {
                       </RoleGuard>
                     }
                   />
-                  <Route
-                    path="/iva"
-                    element={
-                      <RoleGuard allowed={canSeeVat}>
-                        <IvaPage />
-                      </RoleGuard>
-                    }
-                  />
+                  {/* O IVA agora é uma aba de Cadastros; o link antigo continua valendo. */}
+                  <Route path="/iva" element={<Navigate to="/cadastros?aba=iva" replace />} />
               </Routes>
             </Suspense>
             </ErrorBoundary>
