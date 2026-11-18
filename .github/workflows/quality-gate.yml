@@ -87,7 +87,9 @@ jobs:
         run: npm ci
 
       - name: Auditar dependências (CVEs de alta severidade ou crítica)
-        run: npm audit --audit-level=high
+        # Igual a `npm audit --audit-level=high`, menos os advisórios listados em
+        # scripts/audit-gate.mjs (hoje só o picomatch, sem versão corrigida).
+        run: node scripts/audit-gate.mjs
 
   backend-tests:
     name: Backend — testes
