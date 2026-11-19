@@ -147,7 +147,7 @@ const EN: Record<string, string> = {
   '+ Adicionar Novo...': '+ Add new...',
   'Catálogo': 'Catalogue',
   'Sem catálogo': 'No catalogue',
-  'Medida Redonda (Ø — circular)': 'Round (Ø — circular)',
+  'Medida redonda (Ø)': 'Round (Ø)',
   'Diâmetro Ø (m) *': 'Diameter Ø (m) *',
   'Altura A (m) *': 'Height H (m) *',
   'Largura L (m) *': 'Width W (m) *',
@@ -359,13 +359,11 @@ const EN: Record<string, string> = {
     'name, phone, email (optional), cpf_cnpj (optional), cep, numero, address, city, state',
   'name, phone, email (opcional), cpf_cnpj (opcional), cep, numero, address, city, state, price_profile, rep_email':
     'name, phone, email (optional), cpf_cnpj (optional), cep, numero, address, city, state, price_profile, rep_email',
-  'Catálogo de produtos — 2 etapas': 'Product catalogue — 2 steps',
+  'Catálogo de produtos: 2 etapas': 'Product catalogue: 2 steps',
   'Etapa 1: Subir Tabela de Produtos': 'Step 1: Upload the product table',
   'Cria/atualiza produtos pelo SKU (product_code).': 'Creates/updates products by SKU (product_code).',
   'Etapa 2: Subir Tabela de Opcionais do Produto': 'Step 2: Upload the product options table',
   'Vincula opcionais a cada SKU — rode após a Etapa 1.': 'Links options to each SKU — run after Step 1.',
-  'Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.':
-    'Select the folder with the photos — each file name must be the product code (e.g. IML0001.png); the photo is linked to the matching product automatically.',
   'Importar Foto': 'Import photo',
   'Painel de dados': 'Data panel',
   'Sem tipo': 'No type',

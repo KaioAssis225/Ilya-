@@ -94,7 +94,6 @@ export default function LoginPage() {
           {choosingMarket && user ? (
             <div>
               <h2 className="text-center font-display text-xl font-semibold text-ink">Escolha o ambiente</h2>
-              <p className="mt-1.5 text-center text-sm text-muted">Onde você quer trabalhar agora?</p>
               <div className="mt-6 grid grid-cols-2 gap-3">
                 {user.allowed_markets.map(market => (
                   <button
@@ -114,7 +113,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <label htmlFor="login-id" className="block text-xs font-semibold text-muted uppercase tracking-wider">
-                E-mail ou Usuário
+                E-mail ou usuário
               </label>
               <input
                 id="login-id"
@@ -172,7 +171,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-muted mt-6">
-          © {CURRENT_YEAR} Ilya — Uso interno
+          © {CURRENT_YEAR} Ilya · Uso interno
         </p>
       </div>
 

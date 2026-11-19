@@ -1665,7 +1665,7 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                   style={{ accentColor: color }}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-ink-2">{tx('Medida Redonda (Ø — circular)')}</span>
+                <span className="text-sm text-ink-2">{tx('Medida redonda (Ø)')}</span>
               </label>
             )}
 
@@ -2007,7 +2007,6 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 <p className="text-[10px] text-muted mt-1.5">{tx('Código deve existir no catálogo. Conjuntos não podem conter outros conjuntos.')}</p>
                 <div ref={optionalSectionRef} className="border-t border-line mt-5 pt-4 space-y-3">
                   <span className="text-xs text-muted block font-medium">Aplicações do opcional</span>
-                  <p className="text-xs text-muted">Selecione uma categoria para configurar escolhas independentes para este conjunto.</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {optCategories.map(category => <label key={category.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-line cursor-pointer">
                       <input type="checkbox" checked={activeCategories.includes(category.code)} onChange={event => {
@@ -2085,7 +2084,6 @@ function ProductsTab({ color, page, onPage }: { color: string; page: number; onP
                 {activeCategories.length > 0 && (
                   <div className="space-y-3">
                     <span className="text-xs text-muted block font-medium">Opcionais e aplicações por categoria</span>
-                    <p className="text-xs text-muted">Em cada categoria, use “Adicionar outra aplicação” para criar escolhas independentes para partes do produto.</p>
                     {activeCategories.map((catValue) => {
                       const catValueLabel = catLabel(catValue)
                       const catItems = allOptionals.filter(o => o.category === catValue)
@@ -3775,7 +3773,7 @@ function ImportUploader({ endpoint, label, hint, columns, color }: {
         <div className={`mt-3 rounded-lg border p-3 ${result.committed ? 'border-success/25 bg-success-soft' : 'border-danger/25 bg-danger-soft'}`}>
           {result.committed ? (
             <p className="text-xs text-ink">
-              ✓ <span className="font-semibold">{result.processed}</span> {tx('linhas processadas')} ·{' '}
+              <span className="font-semibold">{result.processed}</span> {tx('linhas processadas')} ·{' '}
               <span className="text-success font-semibold">{result.created}</span> {tx('criadas')} ·{' '}
               <span className="text-gold font-semibold">{result.updated}</span> {tx('atualizadas')}
             </p>
@@ -3827,13 +3825,12 @@ function ImportTab({ color, canEditFiscal, market }: {
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> {tx('Catálogo de produtos — 2 etapas')}</h3>
+        <h3 className="text-sm font-semibold text-ink flex items-center gap-2"><Package className="w-4 h-4" style={{ color }} /> {tx('Catálogo de produtos: 2 etapas')}</h3>
         {canEditFiscal && <ImportUploader endpoint="products" label={tx('Etapa 1: Subir Tabela de Produtos')} hint={tx('Cria/atualiza produtos pelo SKU (product_code).')} columns="product_code, description, type, is_circular, altura, largura, profundidade, price_lojista, price_corporativo, observacao" color={color} />}
         <ImportUploader endpoint="product-optionals" label={tx('Etapa 2: Subir Tabela de Opcionais do Produto')} hint={tx('Vincula opcionais a cada SKU — rode após a Etapa 1.')} columns="product_code, category, color_name" color={color} />
       </section>
 
-      <section className="space-y-3">
-        <p className="text-xs text-ink-3 -mt-1">{tx('Selecione a pasta com as fotos — o nome de cada arquivo deve ser o código do produto (ex.: IML0001.png); a foto é associada automaticamente ao produto correspondente.')}</p>
+      <section>
         <BatchPhotoUpload color={color} title="Importar Foto" collapsible={false} />
       </section>
     </div>

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router'
-import { Download, LayoutDashboard } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { useDashboardOverview, DASHBOARD_REGIONS, type DashboardKind } from '../hooks/useDashboard'
 import { useRepresentative, useRepresentativesPage } from '../hooks/useRepresentatives'
 import DashboardIntro from '../components/DashboardIntro'
@@ -47,7 +47,7 @@ type MetricKey =
   | 'orders_total' | 'orders_finalized' | 'orders_open' | 'orders_cancelled'
   | 'orders_production' | 'orders_delivered'
 
-interface MetricDef { label: string; small: string; kind: 'revenue' | 'orders' }
+interface MetricDef { label: string; small?: string; kind: 'revenue' | 'orders' }
 
 // As chaves seguem o contrato da API (`revenue_*` / `orders_*`); só os rótulos
 // mudam. Cada aba mostra apenas os indicadores do seu tipo: "Orçamento" é o
@@ -63,17 +63,17 @@ const TAB_METRICS: Record<DashboardKind, [MetricKey, MetricDef][]> = {
   ],
   orders: [
     ['revenue_total', { label: 'Valor total', small: 'Todos os pedidos', kind: 'revenue' }],
-    ['revenue_production', { label: 'Valor em produção', small: 'Em produção', kind: 'revenue' }],
-    ['revenue_delivered', { label: 'Valor entregue', small: 'Entregues', kind: 'revenue' }],
+    ['revenue_production', { label: 'Valor em produção', kind: 'revenue' }],
+    ['revenue_delivered', { label: 'Valor entregue', kind: 'revenue' }],
     ['orders_total', { label: 'Pedidos total', small: 'Confirmados no período', kind: 'orders' }],
-    ['orders_production', { label: 'Pedidos em produção', small: 'Etapa produção', kind: 'orders' }],
-    ['orders_delivered', { label: 'Pedidos entregues', small: 'Etapa entregue', kind: 'orders' }],
+    ['orders_production', { label: 'Pedidos em produção', kind: 'orders' }],
+    ['orders_delivered', { label: 'Pedidos entregues', kind: 'orders' }],
   ],
 }
 
-const TAB_TEXT: Record<DashboardKind, { name: string; singular: string; plural: string; subtitle: string }> = {
-  quotes: { name: 'Orçamentos', singular: 'orçamento', plural: 'orçamentos', subtitle: 'Valores e orçamentos consolidados' },
-  orders: { name: 'Pedidos', singular: 'pedido', plural: 'pedidos', subtitle: 'Valores e pedidos confirmados consolidados' },
+const TAB_TEXT: Record<DashboardKind, { name: string; singular: string; plural: string }> = {
+  quotes: { name: 'Orçamentos', singular: 'orçamento', plural: 'orçamentos' },
+  orders: { name: 'Pedidos', singular: 'pedido', plural: 'pedidos' },
 }
 
 // Aba escolhida: vai na URL (?aba=pedidos) e fica lembrada para a próxima visita.
@@ -141,7 +141,8 @@ function DashboardChart({ series, metric, noun, granularity, locale, currency, i
             fill="color-mix(in srgb, var(--color-gold) 9%, transparent)"
           />
           <path d={coords.map((c, i) => `${i ? 'L' : 'M'}${c[0]} ${c[1]}`).join(' ')} fill="none" stroke="var(--color-gold)" strokeWidth={3} />
-          {coords.map((c, i) => <circle key={i} cx={c[0]} cy={c[1]} r={4} fill="var(--color-gold)" />)}
+          {/* Só o último ponto: a linha já mostra a forma; com um ponto só, é a única marca. */}
+          <circle cx={coords.at(-1)![0]} cy={coords.at(-1)![1]} r={4} fill="var(--color-gold)" />
         </>
       ) : (
         coords.map((c, i) => {
@@ -257,10 +258,8 @@ export default function DashboardPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="font-display text-2xl font-semibold text-ink flex items-center gap-2">
-              <LayoutDashboard className="w-6 h-6 text-gold" /> Dashboard BI Comercial
-            </h1>
-            <p className="text-sm text-muted mt-1">{tab === 'clients' ? 'Quem já foi contactado e quem ainda falta contactar' : text.subtitle}</p>
+            <h1 className="font-display text-2xl font-semibold text-ink">Dashboard BI Comercial</h1>
+            {tab === 'clients' && <p className="text-sm text-muted mt-1">Quem já foi contactado e quem ainda falta contactar</p>}
           </div>
           <button
             onClick={exportCsv}
@@ -356,7 +355,7 @@ export default function DashboardPage() {
                 <strong className="block my-2 text-xl text-ink tabular-nums">
                   {config.kind === 'revenue' ? currency.format(value) : integer.format(value)}
                 </strong>
-                <small className="text-xs text-muted">{config.small}</small>
+                {config.small && <small className="text-xs text-muted">{config.small}</small>}
               </button>
             )
           })}
@@ -368,7 +367,7 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-base font-semibold text-ink">{activeDef.label}</h3>
               <p className="text-xs text-muted mt-0.5">
-                Evolução {data?.granularity === 'day' ? 'diária' : data?.granularity === 'week' ? 'semanal' : 'mensal'} em {activeDef.kind === 'revenue' ? 'reais' : `número de ${text.plural}`}
+                Evolução {data?.granularity === 'day' ? 'diária' : data?.granularity === 'week' ? 'semanal' : 'mensal'}
               </p>
             </div>
             <span className="text-gold font-bold text-base whitespace-nowrap">
@@ -386,10 +385,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white border border-line rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-ink">Desempenho por Representante</h3>
-                <p className="text-[11px] text-muted mt-0.5">{text.name} e valor no período filtrado</p>
-              </div>
+              <h3 className="text-sm font-semibold text-ink">Desempenho por representante</h3>
               {(data?.representatives.length ?? 0) > 5 && (
                 <button onClick={() => setRepsExpanded(v => !v)} className="text-xs text-gold hover:underline flex-shrink-0">
                   {repsExpanded ? 'Mostrar 5' : 'Detalhar'}
@@ -423,10 +419,7 @@ export default function DashboardPage() {
 
           <div className="bg-white border border-line rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-ink">Desempenho por Produto</h3>
-                <p className="text-[11px] text-muted mt-0.5">Quantidade e valor no período filtrado</p>
-              </div>
+              <h3 className="text-sm font-semibold text-ink">Desempenho por produto</h3>
               {(data?.products.length ?? 0) > 5 && (
                 <button onClick={() => setProductsExpanded(v => !v)} className="text-xs text-gold hover:underline flex-shrink-0">
                   {productsExpanded ? 'Mostrar 5' : 'Detalhar'}
