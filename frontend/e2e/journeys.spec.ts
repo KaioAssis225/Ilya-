@@ -13,7 +13,7 @@ function isCompact(page: Page, breakpoint = 1024) {
 
 async function login(page: Page, role = 'admin', market: 'BR' | 'EU' = 'BR') {
   await page.goto('/login')
-  await page.getByLabel('E-mail ou Usuário').fill(email(role))
+  await page.getByLabel('E-mail ou usuário').fill(email(role))
   await page.getByLabel('Senha', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Entrar' }).click()
   if (role === 'admin') {

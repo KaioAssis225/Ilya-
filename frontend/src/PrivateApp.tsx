@@ -237,7 +237,7 @@ function Nav() {
           <div
             className="mr-3 min-w-0 truncate whitespace-nowrap font-display text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
           >
-            {brandName} <span className="hidden text-xs font-semibold tracking-[0.08em] text-gold sm:inline sm:text-sm">— {marketName}</span>
+            {brandName} <span className="hidden text-xs font-semibold tracking-[0.08em] text-gold sm:inline sm:text-sm">· {marketName}</span>
           </div>
           {!user.must_change_password && (
             <div className="hidden min-w-0 items-center gap-1 overflow-x-auto md:flex">
@@ -359,7 +359,7 @@ export default function PrivateApp() {
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-skip-link focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
           >
-            Saltar para o conteúdo
+            {user.active_market === 'EU' ? 'Saltar para o conteúdo' : 'Pular para o conteúdo'}
           </a>
           <Nav />
           {/* pb no mobile: a BottomNav fixa cobria paginação e botões de rodapé. */}
