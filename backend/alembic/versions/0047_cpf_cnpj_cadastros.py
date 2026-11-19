@@ -25,20 +25,28 @@ _TABLES = ("clients", "representatives")
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
     for table in _TABLES:
-        op.add_column(
-            table,
-            sa.Column("cpf_cnpj", sa.String(length=14), nullable=True),
-        )
-        op.create_index(
-            f"uq_{table}_cpf_cnpj",
-            table,
-            ["cpf_cnpj"],
-            unique=True,
-        )
+        columns = {col["name"] for col in inspector.get_columns(table)}
+        if "cpf_cnpj" not in columns:
+            op.add_column(
+                table,
+                sa.Column("cpf_cnpj", sa.String(length=14), nullable=True),
+            )
+        index_name = f"uq_{table}_cpf_cnpj"
+        existing = {idx["name"] for idx in inspector.get_indexes(table)}
+        existing |= {
+            c["name"] for c in inspector.get_unique_constraints(table) if c.get("name")
+        }
+        if index_name not in existing:
+            op.create_index(index_name, table, ["cpf_cnpj"], unique=True)
 
 
 def downgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
     for table in _TABLES:
-        op.drop_index(f"uq_{table}_cpf_cnpj", table_name=table)
-        op.drop_column(table, "cpf_cnpj")
+        index_name = f"uq_{table}_cpf_cnpj"
+        if index_name in {idx["name"] for idx in inspector.get_indexes(table)}:
+            op.drop_index(index_name, table_name=table)
+        if "cpf_cnpj" in {col["name"] for col in inspector.get_columns(table)}:
+            op.drop_column(table, "cpf_cnpj")
