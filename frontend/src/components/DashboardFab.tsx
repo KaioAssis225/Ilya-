@@ -39,15 +39,17 @@ const SHORTCUTS: Record<FabShortcut, { label: string; openLabel: string; path: s
 }
 const SHORTCUT_ORDER: FabShortcut[] = ['dashboard', 'armazem', 'prototipo']
 
-// Leque: os itens saem do botão para cima e para a esquerda, do topo (90°) até
-// a esquerda (180°). Com este raio sobram 35px entre os itens vizinhos, e o
-// rótulo de cada um fica à esquerda do seu círculo sem encostar no do lado.
-const FAN_RADIUS = 120
+// Coluna: os itens sobem em linha reta acima do botão, centrados nele, com o
+// mesmo vão entre todos; os rótulos ficam à esquerda, alinhados pela direita.
+// O último da ordem (Protótipo) é o mais perto do botão.
 const ITEM_SIZE = 44
+const FAB_SIZE = 56
+const ITEM_GAP = 12
 
 function fanOffset(index: number, total: number) {
-  const angle = total === 1 ? Math.PI / 2 : Math.PI / 2 + (index * (Math.PI / 2)) / (total - 1)
-  return { x: Math.round(Math.cos(angle) * FAN_RADIUS), y: Math.round(-Math.sin(angle) * FAN_RADIUS) }
+  const fromButton = total - 1 - index
+  const y = FAB_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2 + fromButton * (ITEM_SIZE + ITEM_GAP)
+  return { x: 0, y: -y }
 }
 
 export default function DashboardFab({
