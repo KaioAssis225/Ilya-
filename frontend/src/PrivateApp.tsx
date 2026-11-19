@@ -32,6 +32,11 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const PrototiposPage = lazy(() => import('./pages/PrototiposPage'))
 const ShowroomsPage = lazy(() => import('./pages/ShowroomsPage'))
 
+// Visual de Portugal: 'neutro' (fundo neutro, vermelho da bandeira só no nome
+// do mercado e no filete do cabeçalho) ou 'rosado' (modelo anterior, guardado
+// em index.css para poder voltar). Só vale para o mercado EU.
+const EU_THEME_VARIANT: 'neutro' | 'rosado' = 'neutro'
+
 // ── RBAC helpers ──────────────────────────────────────────────────────────────
 
 function formatNotificationDate(value: string, locale: string) {
@@ -232,12 +237,12 @@ function Nav() {
 
   return (
     <>
-      <nav className="bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label={t('mainNavigation')}>
+      <nav className="nav-market-rule bg-white/80 backdrop-blur-md border-b border-line px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-40" aria-label={t('mainNavigation')}>
         <div className="flex items-center gap-1 min-w-0">
           <div
             className="mr-3 min-w-0 truncate whitespace-nowrap font-display text-sm font-semibold tracking-widest text-ink sm:mr-5 sm:text-base"
           >
-            {brandName} <span className="hidden text-xs font-semibold tracking-[0.08em] text-gold sm:inline sm:text-sm">· {marketName}</span>
+            {brandName} <span className="hidden text-xs font-semibold tracking-[0.08em] text-market sm:inline sm:text-sm">· {marketName}</span>
           </div>
           {!user.must_change_password && (
             <div className="hidden min-w-0 items-center gap-1 overflow-x-auto md:flex">
@@ -354,7 +359,7 @@ export default function PrivateApp() {
   return (
     <LocaleProvider key={sessionScope}>
       <PrivateSessionBoundary key={sessionScope}>
-        <div data-market={user.active_market} className="min-h-screen bg-bg">
+        <div data-market={user.active_market} data-theme-variant={EU_THEME_VARIANT} className="min-h-screen bg-bg">
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-skip-link focus:bg-white focus:text-ink focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-medium"
