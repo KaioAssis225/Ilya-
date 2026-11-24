@@ -1,0 +1,11 @@
+ARG ILYA_IMAGE=ilya:latest
+FROM ${ILYA_IMAGE}
+
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN python -m playwright install --with-deps chromium \
+    && chmod -R a+rX /opt/playwright \
+    && rm -rf /var/lib/apt/lists/*
+
+USER ilya
+CMD ["python", "-m", "app.workers.order_email_sender"]
