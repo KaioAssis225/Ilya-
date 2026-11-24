@@ -16,7 +16,7 @@ Stack de produção em `/opt/ilya-production` (Docker Compose, projeto `ilya-pro
 | Ilya: API, migração, worker de e-mail, Postgres 18, Redis 8 | no ar, saudáveis |
 | Estoque: API, migração, worker operacional, Postgres 18, Redis 8 | no ar, saudáveis |
 | Imagens | `ilya-production-api:899ad3e0`, `ilya-production-email:899ad3e0`, `ilya-production-estoque:5c94f57` |
-| Dados | **cópia nova de produção ensaiada em 2026-11-24** (Ilya `ilya_copy_20261124_163857_e35ba962`, Estoque `estoque_copy_20261124_164045_73b5cea5`); os bancos anteriores ficaram de reserva como `ilya_ensaio_20261124_175143` e `estoque_ensaio_20261124_175143` |
+| Dados | **cópia nova de produção ensaiada em 2026-11-24** (Ilya `ilya_copy_20261124_163857_e35ba962`, Estoque `estoque_copy_20261124_164045_73b5cea5`). Os bancos `*_ensaio_*` e as cópias do ensaio já foram removidos (com OK); a stack roda só nos bancos `ilya` e `estoque` |
 | Segredos | `PASSWORD_PEPPER`, `SECRET_KEY`, `MEDIA_SIGNING_KEY`, par do login único: **copiados do Railway**. Senhas de banco/Redis: novas, geradas na VPS |
 | Roles | `ilya_app`, `estoque_app`, `ilya_estoque_readonly` (GRANTs iguais aos de produção; `hashed_password` nunca liberado) |
 | Travas | `ORDER_EMAIL_MODE=off`, Moloni e webhook desligados, sync do Estoque desligado (`ILYA_AUTO_SYNC_*=false`), **nenhum `sync-once` agendado** (ele grava produtos **e** pedidos) |
@@ -118,8 +118,7 @@ as migrações sem nenhuma linha `Running upgrade` (a revisão da cópia já é 
 **Volta** (e nada foi perdido: o Railway não foi tocado) se qualquer uma falhar: o script aborta antes de renomear.
 
 Os bancos `*_ensaio_<carimbo>` ficam de reserva. **Removê-los (ou volumes antigos) é destrutivo: só com OK
-explícito do responsável.** Ensaio de 2026-11-24 deixou: `ilya_ensaio_20261124_175143`, `estoque_ensaio_20261124_175143`,
-`estoque_homologacao_20261124`, e as cópias `ilya_copy_*` (2) e `estoque_copy_*` (2) nos containers de cópia.
+explícito do responsável.** (O ensaio de 2026-11-24 já foi limpo; ver "Pendências".)
 
 ### 4. Abrir as rotas no Caddy
 O Caddyfile final é o arquivo versionado [`Caddyfile.final`](Caddyfile.final). Foi **validado só em loopback**
@@ -166,14 +165,12 @@ docker restart ilya-ingress
 A conta `qa-vps@ilya.example.com` é **admin BR+EU**. O banco restaurado da cópia final **não a tem**, então, para rodar o
 smoke, ela é recriada à mão e **removida antes de reabrir**. Ensaiado em 2026-11-24 (`ID` = o `id` dela em `users`):
 ```bash
-# recriar (copia as linhas do banco de reserva) e refazer o hash com o pepper de produção
-E=ilya_ensaio_<carimbo>; ID=<id da conta sintética>
-for t in "users|select * from users where email='qa-vps@ilya.example.com'" \
-         "user_markets|select * from user_markets where user_id='$ID'" \
-         "user_platform_permissions|select * from user_platform_permissions where user_id='$ID'"; do
-  docker compose exec -T ilya-db psql -U postgres -d $E -X -q -c "COPY (${t#*|}) TO STDOUT" \
-   | docker compose exec -T ilya-db psql -U postgres -d ilya -X -q -v ON_ERROR_STOP=1 -c "COPY ${t%%|*} FROM STDIN"
-done
+# recriar: as 3 linhas (users, user_markets, user_platform_permissions) estão guardadas na VPS em
+# /opt/ilya-acceptance/synthetic-account-rows.sql (0600, só a conta sintética; o hash é o da homologação)
+ID=07585223-1a0e-4ce2-8650-2c67dd02980b     # id da conta qa-vps@ilya.example.com
+docker compose exec -T ilya-db psql -U postgres -d ilya -X -q -v ON_ERROR_STOP=1 --single-transaction \
+  < /opt/ilya-acceptance/synthetic-account-rows.sql
+# o hash guardado é o da homologação: refazer com o pepper de produção (abaixo) antes do login
 docker compose exec -T estoque-db psql -U postgres -d estoque -X -q -c \
   "insert into stock_permissions (user_id, role, is_active) values ('$ID','consulta',true)"   # sem isso o login único dá 403
 docker compose run --rm --no-deps -u root -v $PWD/rehash_synthetic_account.py:/tmp/rehash.py:ro \
@@ -265,6 +262,9 @@ Mantenha os serviços e bancos do Railway pausados (não apagados) até a estabi
 - **IP do cliente / rate limit:** `trusted_proxies` fica indefinido (ver passo 4); o rate limit vê o IP da Vercel, como no Railway.
 - **Estoque na Vercel:** rewrite do front do Estoque para `/estoque-api/*` (repositório do Estoque, fora deste PR).
 - **Divergência Estoque × Ilya** (`reconcile-ilya`, passo 5): reavaliar antes de ligar qualquer sync. Nenhum `sync-once` foi rodado.
-- **Limpeza do ensaio (precisa de OK):** `ilya_ensaio_*`, `estoque_ensaio_*`, cópias `*_copy_*`, e o que `rehearse_return.sh` criou
-  (`ilya-return-pg18`, `ilya-return-pg16`, rede `ilya-return-net`, `/opt/ilya-production/return-rehearsal/` com dumps de produção).
+- **Limpeza do ensaio de 2026-11-24: feita, com OK do responsável.** Removidos: os bancos `ilya_ensaio_*` e `estoque_ensaio_*`,
+  as 4 cópias `*_copy_*` e tudo que `rehearse_return.sh` criou (containers `ilya-return-pg16/18`, rede `ilya-return-net`, os dois dumps
+  de produção). **Mantido de propósito:** `estoque_homologacao_20261124` (homologação, intocada). Na virada de verdade,
+  `swap_data.sh` e `rehearse_return.sh` criam de novo bancos de reserva e dumps: remova-os só com OK, e **apague os dumps de
+  produção da VPS assim que a volta deixar de ser necessária**.
 - **Senha do Redis da homologação** apareceu na saída de um comando do ensaio anterior (só homologação): rotacionar.
