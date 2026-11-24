@@ -15,6 +15,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
@@ -66,12 +67,21 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="ilya-vps-copy-") as temporary:
         dump = Path(temporary) / "copy.dump"
         print("Gerando backup consistente do Railway...", flush=True)
+        started = time.monotonic()
         create_dump("production", dump)
+        timings = {"cópia (pg_dump)": time.monotonic() - started}
+        started = time.monotonic()
         verify_catalog(dump)
+        timings["verificação do dump"] = time.monotonic() - started
         print(f"Restaurando {database} na VPS...", flush=True)
+        started = time.monotonic()
         with dump.open("rb") as stream:
             remote = shlex.join(["bash", "-c", RESTORE_SCRIPT, "restore", database])
             subprocess.run([*ssh, remote], stdin=stream, check=True)
+        timings["transferência + restauração + contagens"] = time.monotonic() - started
+    for label, seconds in timings.items():
+        print(f"  [{seconds:7.1f}s] {label}")
+    print(f"Total medido: {sum(timings.values()):.1f}s")
     print(f"Cópia validada na VPS: {database}")
 
 
