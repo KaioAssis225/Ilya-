@@ -41,7 +41,7 @@ jobs:
               --retry-all-errors \
               --max-time 20 \
               --output /dev/null \
-              "https://ilya-production-7857.up.railway.app/health/${endpoint}"
+              "https://ilya-rust.vercel.app/health/${endpoint}"
           done
 
       - name: Executar monitor sintético (saúde + sonda comercial inerte por padrão)
@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
           python3 ops/synthetic_monitor.py \
             --mode check \
-            --base-url "https://ilya-production-7857.up.railway.app" \
+            --base-url "https://ilya-rust.vercel.app" \
             --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --commit-sha "${GITHUB_SHA}" \
             --output /tmp/synthetic-monitor-result.json
@@ -96,14 +96,14 @@ jobs:
                 "",
                 "## Monitor sintético — falha detectada",
                 "",
-                `O monitor automático não conseguiu validar \`/health/live\` e \`/health/ready\` diretamente na Railway.`,
+                `O monitor automático não conseguiu validar \`/health/live\` e \`/health/ready\` pela URL pública.`,
                 "",
                 `- **Horário (UTC):** \`${nowUtc}\``,
                 `- **Horário (America/Sao_Paulo -03:00):** \`${nowSp}\``,
                 `- **Commit:** \`${context.sha}\``,
                 `- **Execução:** ${runUrl}`,
                 "",
-                "Verifique o deployment, os logs e as dependências Postgres/Redis na Railway.",
+                "Verifique o deployment, os logs e as dependências Postgres/Redis na infraestrutura de produção.",
               ].join("\n");
             }
 
