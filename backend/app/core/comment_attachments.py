@@ -11,6 +11,7 @@ from app.core.config import settings
 
 
 logger = logging.getLogger("ilya.comment_attachments")
+GOOGLE_STORAGE = "https://storage.googleapis.com"
 
 
 def _require_storage() -> None:
@@ -36,6 +37,8 @@ def _client():
             connect_timeout=5,
             read_timeout=30,
             tcp_keepalive=True,
+            **({"request_checksum_calculation": "when_required"}
+               if settings.COMMENT_ATTACHMENTS_ENDPOINT.rstrip("/") == GOOGLE_STORAGE else {}),
         ),
     )
 
@@ -46,12 +49,18 @@ async def put_comment_attachment(
     _require_storage()
 
     def put() -> None:
+        # Cloud Storage encrypts by default and uses a different encryption API.
+        encryption = (
+            {}
+            if settings.COMMENT_ATTACHMENTS_ENDPOINT.rstrip("/") == GOOGLE_STORAGE
+            else {"ServerSideEncryption": "AES256"}
+        )
         _client().put_object(
             Bucket=settings.COMMENT_ATTACHMENTS_BUCKET,
             Key=object_key,
             Body=content,
             ContentType=content_type,
-            ServerSideEncryption="AES256",
+            **encryption,
         )
 
     try:

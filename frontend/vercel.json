@@ -2,8 +2,9 @@
   "framework": "vite",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/v1/(.*)", "destination": "https://ilya-production-7857.up.railway.app/api/v1/$1" },
-    { "source": "/static/(.*)", "destination": "https://ilya-production-7857.up.railway.app/static/$1" },
+    { "source": "/api/v1/(.*)", "destination": "https://143.95.189.88/api/v1/$1" },
+    { "source": "/static/(.*)", "destination": "https://143.95.189.88/static/$1" },
+    { "source": "/health/(live|ready)", "destination": "https://143.95.189.88/health/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

@@ -17,7 +17,7 @@ import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +49,7 @@ def require_tls(url: str) -> str:
     params = dict(parse_qsl(parts.query, keep_blank_values=True))
     if params.get("sslmode") not in ("require", "verify-ca", "verify-full"):
         params["sslmode"] = "require"
-    return urlunsplit(parts._replace(query=urlencode(params)))
+    return urlunsplit(parts._replace(query=urlencode(params, quote_via=quote)))
 
 
 def dump_env(target: str) -> dict[str, str]:

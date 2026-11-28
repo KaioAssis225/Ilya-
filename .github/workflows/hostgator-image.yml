@@ -1,0 +1,40 @@
+name: Preparar imagem para a HostGator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Construir imagem de produção
+        run: docker build -f backend/Dockerfile.prod -t "ilya:${GITHUB_SHA}" backend
+
+      - name: Construir imagem do worker de e-mail
+        run: |
+          docker build -f backend/Dockerfile.email \
+            --build-arg "ILYA_IMAGE=ilya:${GITHUB_SHA}" \
+            -t "ilya-email:${GITHUB_SHA}" backend
+
+      - name: Exportar imagem e checksum
+        run: |
+          set -euo pipefail
+          docker save "ilya:${GITHUB_SHA}" "ilya-email:${GITHUB_SHA}" | gzip > "ilya.tar.gz"
+          sha256sum "ilya.tar.gz" > "ilya.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ilya-hostgator-${{ github.sha }}
+          path: |
+            ilya.tar.gz
+            ilya.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0

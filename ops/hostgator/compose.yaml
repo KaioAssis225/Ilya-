@@ -1,0 +1,288 @@
+# Stack de PRODUÇÃO do Ilya + Estoque na VPS HostGator (/opt/ilya-production).
+#
+# Separada da homologação (/opt/ilya-acceptance, /opt/ilya-estoque, ...). Nada aqui
+# é público: as duas APIs só escutam em 127.0.0.1 (o Caddy é quem decide, na
+# virada, o que vira rota pública). Os env files ficam em ./env (0600), fora do git,
+# e são criados por ops/hostgator/generate_env.py.
+#
+#   cd /opt/ilya-production
+#   docker compose up -d ilya-db ilya-redis estoque-db estoque-redis   # 1) só dados
+#   ... bootstrap_roles.py + restore (ver RUNBOOK-virada.md) ...        # 2) dados
+#   docker compose up -d                                                # 3) aplicação
+#
+# Importante: a ordem acima evita que a migração rode contra um banco vazio.
+name: ilya-production
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  logging: *logging
+
+networks:
+  # Sem saída para a internet: banco e Redis ficam aqui.
+  ilya-internal:
+    internal: true
+  estoque-internal:
+    internal: true
+  # Único caminho entre os dois sistemas: o Estoque lê o banco do Ilya com a
+  # role ilya_estoque_readonly. Não passa tráfego de API.
+  ilya-readonly-link:
+    internal: true
+  # Saída para a internet (bucket de mídia, Resend) e publicação em 127.0.0.1.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.29.10.0/24
+
+volumes:
+  ilya-db-data:
+  estoque-db-data:
+
+services:
+  # ------------------------------------------------------------------ Ilya
+  ilya-db:
+    <<: *hardening
+    image: postgres:18-alpine
+    restart: unless-stopped
+    env_file: ./env/ilya-db.env
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - log_min_duration_statement=2000
+    volumes:
+      - ilya-db-data:/var/lib/postgresql
+    networks:
+      - ilya-internal
+      - ilya-readonly-link
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ilya"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 1g
+
+  ilya-redis:
+    <<: *hardening
+    image: redis:8-alpine
+    restart: unless-stopped
+    env_file: ./env/ilya-redis.env
+    # Redis só guarda contadores de rate limit: descartável, sem persistência.
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --save "" --appendonly no
+    networks:
+      - ilya-internal
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+
+  ilya-migrate:
+    <<: *hardening
+    image: ${ILYA_IMAGE:?}
+    restart: "no"
+    env_file: ./env/ilya-api.env
+    command: ["python", "startup.py", "migrate"]
+    networks:
+      - ilya-internal
+    depends_on:
+      ilya-db:
+        condition: service_healthy
+
+  ilya-api:
+    <<: *hardening
+    image: ${ILYA_IMAGE:?}
+    restart: unless-stopped
+    env_file: ./env/ilya-api.env
+    command: ["python", "startup.py", "serve"]
+    ports:
+      - "127.0.0.1:19080:8000"
+    networks:
+      - ilya-internal
+      - edge
+    cap_drop: [ALL]
+    depends_on:
+      ilya-db:
+        condition: service_healthy
+      ilya-redis:
+        condition: service_healthy
+      ilya-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    mem_limit: 1g
+
+  # Worker de PDF/e-mail dos pedidos. Com ORDER_EMAIL_MODE=off ele não envia nada.
+  ilya-email-worker:
+    <<: *hardening
+    image: ${ILYA_EMAIL_IMAGE:?}
+    restart: unless-stopped
+    env_file: ./env/ilya-email.env
+    command: ["python", "-m", "app.workers.order_email_sender"]
+    networks:
+      - ilya-internal
+      - edge
+    depends_on:
+      ilya-db:
+        condition: service_healthy
+      ilya-migrate:
+        condition: service_completed_successfully
+    mem_limit: 1g
+
+  # ---------------------------------------------------------------- Estoque
+  estoque-db:
+    <<: *hardening
+    image: postgres:18-alpine
+    restart: unless-stopped
+    env_file: ./env/estoque-db.env
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - log_min_duration_statement=2000
+    volumes:
+      - estoque-db-data:/var/lib/postgresql
+    networks:
+      - estoque-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d estoque"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 2g
+
+  estoque-redis:
+    <<: *hardening
+    image: redis:8-alpine
+    restart: unless-stopped
+    env_file: ./env/estoque-redis.env
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --save "" --appendonly no
+    networks:
+      - estoque-internal
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+
+  estoque-migrate:
+    <<: *hardening
+    image: ${ESTOQUE_IMAGE:?}
+    restart: "no"
+    env_file: ./env/estoque.env
+    command: ["python", "startup.py", "migrate"]
+    networks:
+      - estoque-internal
+    depends_on:
+      estoque-db:
+        condition: service_healthy
+
+  estoque-api:
+    <<: *hardening
+    image: ${ESTOQUE_IMAGE:?}
+    restart: unless-stopped
+    env_file: ./env/estoque.env
+    command: ["python", "startup.py", "serve"]
+    ports:
+      - "127.0.0.1:19082:8000"
+    networks:
+      - estoque-internal
+      - ilya-readonly-link
+      - edge
+    cap_drop: [ALL]
+    depends_on:
+      estoque-db:
+        condition: service_healthy
+      estoque-redis:
+        condition: service_healthy
+      estoque-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    mem_limit: 1g
+
+  # Worker operacional do Estoque (python startup.py operations).
+  # NÃO é o sync com o Ilya: o sync automático está desligado no env
+  # (ILYA_AUTO_SYNC_ENABLED=false) e não existe serviço agendado de sync-once.
+  estoque-worker:
+    <<: *hardening
+    image: ${ESTOQUE_IMAGE:?}
+    restart: unless-stopped
+    env_file: ./env/estoque.env
+    command: ["python", "startup.py", "operations"]
+    networks:
+      - estoque-internal
+      - ilya-readonly-link
+    cap_drop: [ALL]
+    depends_on:
+      estoque-db:
+        condition: service_healthy
+      estoque-redis:
+        condition: service_healthy
+      estoque-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/tmp/operations_worker_heartbeat')<180 else 1)"
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 60s
+    mem_limit: 512m
+
+  # Comandos manuais do Estoque (nunca sobem sozinhos). Exemplos:
+  #   docker compose run --rm estoque-tools python startup.py reconcile-ilya
+  #   docker compose run --rm estoque-tools python startup.py audit-ilya-scope
+  # `sync-once` roda produtos E pedidos juntos: só com ordem explícita, na virada.
+  estoque-tools:
+    <<: *hardening
+    image: ${ESTOQUE_IMAGE:?}
+    profiles: ["manual"]
+    restart: "no"
+    env_file: ./env/estoque.env
+    command: ["python", "startup.py", "reconcile-ilya"]
+    networks:
+      - estoque-internal
+      - ilya-readonly-link
+    depends_on:
+      estoque-db:
+        condition: service_healthy
