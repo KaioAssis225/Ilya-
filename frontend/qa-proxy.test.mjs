@@ -26,7 +26,7 @@ test('temporary proxy fails closed and sends only app cookies to authenticated Q
     headers: { origin: 'https://other.example' },
   }))).status, 403);
   const result = await proxy.fetch(new Request(
-    'https://app.vercel.app/api/qa-proxy?_qa_path=/api/v1/auth/refresh&q=1&x-vercel-share=test',
+    'https://app.vercel.app/api/qa-proxy?_qa_path=/api/v1/auth/refresh&q=1&_vercel_share=test',
     { method: 'POST', headers: {
       cookie: 'ilya_refresh=test; _vercel_jwt=test', 'x-vercel-protection-bypass': 'test',
       referer: 'https://app.vercel.app/?x-vercel-share=test', authorization: 'Bearer not-for-qa',

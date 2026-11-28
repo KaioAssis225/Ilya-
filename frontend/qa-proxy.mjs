@@ -17,7 +17,7 @@ export default (app, allowedCookies) => ({
     if (!allowed(path) || path.split('/').some(part => part === '.' || part === '..')) return denied(404);
     if (request.headers.has('origin') && request.headers.get('origin') !== url.origin) return denied(403);
     for (const key of new Set(url.searchParams.keys())) {
-      if (key === '_qa_path' || /^(x-vercel-|__vercel)/i.test(key)) url.searchParams.delete(key);
+      if (key === '_qa_path' || /^(x-vercel-|_+vercel)/i.test(key)) url.searchParams.delete(key);
     }
     const upstreamUrl = new URL('/' + app + path, QA_TUNNEL_ORIGIN);
     upstreamUrl.search = url.search;
