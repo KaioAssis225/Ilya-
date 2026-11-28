@@ -7,7 +7,7 @@
 #
 # Rotas públicas (via rewrites da Vercel, frontend/vercel.json):
 #   /api/v1/*  /static/*  /health/live  /health/ready   -> Ilya    127.0.0.1:19080
-#   /estoque-api/*  (o prefixo é removido)               -> Estoque 127.0.0.1:19082
+#   /estoque-api/v1/*  (vira /api/v1/*)                  -> Estoque 127.0.0.1:19082
 #   /estoque-health/live|ready                           -> Estoque (monitor externo)
 # Todo o resto responde 404.
 #
@@ -40,7 +40,8 @@ https://143.95.189.88 {
 		reverse_proxy 127.0.0.1:19082
 	}
 
-	handle_path /estoque-api/* {
+	handle /estoque-api/v1/* {
+		uri replace /estoque-api/v1/ /api/v1/ 1
 		request_body {
 			max_size 15MB
 		}
